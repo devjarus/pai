@@ -1,0 +1,51 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { createStorage } from "@personal-ai/core";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode } from "../src/memory.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+describe("Memory", () => {
+  let storage: ReturnType<typeof createStorage>;
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-mem-"));
+    storage = createStorage(dir);
+    storage.migrate("memory", memoryMigrations);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("should create and list episodes", () => {
+    createEpisode(storage, { context: "testing", action: "wrote a test", outcome: "passed" });
+    const episodes = listEpisodes(storage);
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0]!.action).toBe("wrote a test");
+  });
+
+  it("should create and search beliefs", () => {
+    createBelief(storage, { statement: "TypeScript is better than JavaScript for large projects", confidence: 0.8 });
+    createBelief(storage, { statement: "SQLite is great for local-first apps", confidence: 0.9 });
+    const results = searchBeliefs(storage, "SQLite local");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]!.statement).toContain("SQLite");
+  });
+
+  it("should list active beliefs", () => {
+    createBelief(storage, { statement: "test belief", confidence: 0.5 });
+    const beliefs = listBeliefs(storage);
+    expect(beliefs).toHaveLength(1);
+    expect(beliefs[0]!.status).toBe("active");
+  });
+
+  it("should link belief to episode", () => {
+    const ep = createEpisode(storage, { context: "test", action: "observed", outcome: "learned" });
+    const belief = createBelief(storage, { statement: "observation is useful", confidence: 0.6 });
+    linkBeliefToEpisode(storage, belief.id, ep.id);
+    // No error = success
+  });
+});
