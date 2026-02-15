@@ -11,14 +11,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.29",
+    "ai": "^6.0.86",
+    "ai-sdk-ollama": "^3.7.0",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.4.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
     "@types/better-sqlite3": "^7.6.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
   }
 }
