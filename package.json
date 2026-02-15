@@ -1,0 +1,14 @@
+{
+  "name": "personal-ai",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "test:watch": "pnpm -r run test:watch",
+    "lint": "eslint packages/*/src",
+    "typecheck": "pnpm -r run typecheck",
+    "pai": "node packages/cli/dist/index.js"
+  },
+  "engines": { "node": ">=20.0.0" }
+}

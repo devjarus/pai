@@ -1,0 +1,23 @@
+{
+  "name": "@personal-ai/plugin-memory",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@personal-ai/core": "workspace:*",
+    "nanoid": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
