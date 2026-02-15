@@ -89,12 +89,20 @@ export function createBelief(
 }
 
 export function searchBeliefs(storage: Storage, query: string, limit = 10): Belief[] {
+  // Sanitize for FTS5: wrap each word in double quotes to avoid syntax errors
+  const sanitized = query
+    .replace(/[^\w\s]/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => `"${w}"`)
+    .join(" ");
+  if (!sanitized) return [];
   return storage.query<Belief>(
     `SELECT b.* FROM beliefs b
      JOIN beliefs_fts fts ON b.rowid = fts.rowid
      WHERE beliefs_fts MATCH ? AND b.status = 'active'
      ORDER BY rank LIMIT ?`,
-    [query, limit],
+    [sanitized, limit],
   );
 }
 

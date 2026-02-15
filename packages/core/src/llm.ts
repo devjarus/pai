@@ -8,7 +8,7 @@ export function createLLMClient(llmConfig: Config["llm"]): LLMClient {
 
   const llmModel =
     provider === "ollama"
-      ? createOllama({ baseURL: `${baseUrl}/api` })(model)
+      ? createOllama({ baseURL: baseUrl })(model)
       : createOpenAI({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
 
   async function chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult> {
