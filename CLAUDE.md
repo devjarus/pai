@@ -72,11 +72,6 @@ Coverage via `@vitest/coverage-v8` with thresholds enforced in `vitest.config.ts
 - CLI-first — no web UI in current phase
 - Target under 2000 lines of source (excluding tests)
 
-## Key Design Documents
+## Architecture Reference
 
-- `docs/plans/2026-02-15-unified-personal-ai-design.md` — Full design with rationale, learned from 44 prior failed attempts
-- `docs/plans/2026-02-15-implementation-plan.md` — 9-task TDD implementation plan with exact file contents and test-first workflow
-
-## Implementation Plan Task Order
-
-Tasks 1-4 are sequential (scaffold → types/config → storage → LLM client). Tasks 5-7 can parallelize (memory CRUD, memory LLM export, tasks plugin). Task 8 (CLI) depends on 5-7. Task 9 (polish) is last.
+See `docs/ARCHITECTURE.md` for full design, data model, and future plugin path.

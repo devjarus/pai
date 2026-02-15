@@ -59,19 +59,9 @@ Set via environment variables or `.env` file. See `.env.example` for defaults.
 
 ## Architecture
 
-pnpm monorepo with 4 packages:
+pnpm monorepo with 4 packages: `core`, `cli`, `plugin-memory`, `plugin-tasks`. SQLite + FTS5 for storage, Vercel AI SDK for LLM integration.
 
-```
-packages/
-  core/           Config, Storage (SQLite + migrations), LLM Client (Vercel AI SDK)
-  cli/            Commander.js entrypoint, plugin loading
-  plugin-memory/  Episodes + Beliefs with FTS5 search, LLM belief extraction
-  plugin-tasks/   Tasks + Goals with AI-powered prioritization
-```
-
-- **Database**: Single SQLite file with WAL mode. Each plugin owns its tables.
-- **LLM**: Vercel AI SDK (`ai` + `@ai-sdk/openai` + `ai-sdk-ollama`) with token usage tracking.
-- **Plugins**: Implement `Plugin` interface — provide `name`, `version`, `migrations[]`, and `commands(ctx)`.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 
 ## Development
 
