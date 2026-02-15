@@ -2,7 +2,7 @@ import type { LLMClient, Storage } from "@personal-ai/core";
 import { createEpisode, createBelief, searchBeliefs, reinforceBelief, linkBeliefToEpisode } from "./memory.js";
 
 export async function extractBelief(llm: LLMClient, text: string): Promise<string> {
-  return llm.chat([
+  const result = await llm.chat([
     {
       role: "system",
       content:
@@ -11,6 +11,7 @@ export async function extractBelief(llm: LLMClient, text: string): Promise<strin
     },
     { role: "user", content: text },
   ], { temperature: 0.3 });
+  return result.text;
 }
 
 export async function remember(

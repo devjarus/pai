@@ -10,7 +10,7 @@ async function aiSuggest(storage: Storage, llm: LLMClient): Promise<string> {
   const taskList = tasks.map((t) => `- [${t.priority}] ${t.title}${t.due_date ? ` (due: ${t.due_date})` : ""}`).join("\n");
   const goalList = goals.map((g) => `- ${g.title}`).join("\n");
 
-  return llm.chat([
+  const result = await llm.chat([
     {
       role: "system",
       content: "You are a productivity assistant. Given the user's tasks and goals, suggest what to work on next and why. Be concise (3-4 sentences max).",
@@ -20,6 +20,7 @@ async function aiSuggest(storage: Storage, llm: LLMClient): Promise<string> {
       content: `My goals:\n${goalList || "(none set)"}\n\nMy open tasks:\n${taskList}\n\nWhat should I focus on next?`,
     },
   ]);
+  return result.text;
 }
 
 export const tasksPlugin: Plugin = {

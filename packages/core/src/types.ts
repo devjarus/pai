@@ -25,8 +25,19 @@ export interface Storage {
   close(): void;
 }
 
+export interface TokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}
+
+export interface ChatResult {
+  text: string;
+  usage: TokenUsage;
+}
+
 export interface LLMClient {
-  chat(messages: ChatMessage[], options?: ChatOptions): Promise<string>;
+  chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult>;
   health(): Promise<{ ok: boolean; provider: string }>;
 }
 

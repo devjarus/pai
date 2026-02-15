@@ -1,5 +1,5 @@
 export type {
-  Config, Migration, Storage, LLMClient, ChatMessage, ChatOptions,
+  Config, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult,
   PluginContext, Command, Plugin,
 } from "./types.js";
 export { loadConfig } from "./config.js";

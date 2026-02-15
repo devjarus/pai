@@ -1,13 +1,32 @@
-import type { LLMClient, ChatMessage, ChatOptions, Config } from "./types.js";
+import { generateText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createOllama } from "ai-sdk-ollama";
+import type { LLMClient, ChatMessage, ChatOptions, ChatResult, Config } from "./types.js";
 
 export function createLLMClient(llmConfig: Config["llm"]): LLMClient {
   const { provider, model, baseUrl, apiKey } = llmConfig;
 
-  async function chat(messages: ChatMessage[], options?: ChatOptions): Promise<string> {
-    if (provider === "ollama") {
-      return chatOllama(baseUrl, model, messages, options);
-    }
-    return chatOpenAI(baseUrl, model, apiKey ?? "", messages, options);
+  const llmModel =
+    provider === "ollama"
+      ? createOllama({ baseURL: `${baseUrl}/api` })(model)
+      : createOpenAI({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
+
+  async function chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult> {
+    const { text, usage } = await generateText({
+      model: llmModel,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      temperature: options?.temperature ?? 0.7,
+      maxOutputTokens: options?.maxTokens,
+    });
+
+    return {
+      text,
+      usage: {
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        totalTokens: (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0),
+      },
+    };
   }
 
   async function health(): Promise<{ ok: boolean; provider: string }> {
@@ -26,53 +45,4 @@ export function createLLMClient(llmConfig: Config["llm"]): LLMClient {
   }
 
   return { chat, health };
-}
-
-async function chatOllama(
-  baseUrl: string,
-  model: string,
-  messages: ChatMessage[],
-  options?: ChatOptions,
-): Promise<string> {
-  const res = await fetch(`${baseUrl}/api/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: false,
-      options: {
-        temperature: options?.temperature ?? 0.7,
-        num_predict: options?.maxTokens,
-      },
-    }),
-  });
-  if (!res.ok) throw new Error(`Ollama error: ${res.status} ${await res.text()}`);
-  const data = (await res.json()) as { message: { content: string } };
-  return data.message.content;
-}
-
-async function chatOpenAI(
-  baseUrl: string,
-  model: string,
-  apiKey: string,
-  messages: ChatMessage[],
-  options?: ChatOptions,
-): Promise<string> {
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: options?.temperature ?? 0.7,
-      max_tokens: options?.maxTokens,
-    }),
-  });
-  if (!res.ok) throw new Error(`OpenAI error: ${res.status} ${await res.text()}`);
-  const data = (await res.json()) as { choices: Array<{ message: { content: string } }> };
-  return data.choices[0]!.message.content;
 }
