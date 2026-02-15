@@ -1,6 +1,13 @@
 {
   "name": "@personal-ai/core",
   "version": "0.1.0",
+  "description": "Core runtime: config, storage, LLM client, plugin interfaces",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devjarus/pai.git",
+    "directory": "packages/core"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

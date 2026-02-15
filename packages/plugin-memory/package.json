@@ -1,6 +1,13 @@
 {
   "name": "@personal-ai/plugin-memory",
   "version": "0.1.0",
+  "description": "Memory plugin: episodes, beliefs, FTS5 search, LLM belief extraction",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devjarus/pai.git",
+    "directory": "packages/plugin-memory"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

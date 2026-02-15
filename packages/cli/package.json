@@ -1,6 +1,13 @@
 {
   "name": "@personal-ai/cli",
   "version": "0.1.0",
+  "description": "CLI entrypoint for personal-ai (pai command)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devjarus/pai.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "bin": { "pai": "dist/index.js" },
   "scripts": {
