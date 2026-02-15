@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/plugin-memory" },
+    { "path": "packages/plugin-tasks" },
+    { "path": "packages/cli" }
+  ]
+}

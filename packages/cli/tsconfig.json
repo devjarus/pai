@@ -5,5 +5,10 @@
     "rootDir": "src",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../plugin-memory" },
+    { "path": "../plugin-tasks" }
+  ]
 }
