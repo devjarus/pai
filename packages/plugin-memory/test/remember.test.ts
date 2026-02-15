@@ -1,6 +1,11 @@
-import { describe, it, expect, vi } from "vitest";
-import { extractBelief } from "../src/remember.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
+import { memoryMigrations } from "../src/memory.js";
+import { remember, extractBelief } from "../src/remember.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 describe("extractBelief", () => {
   it("should extract a belief from episode text using LLM", async () => {
@@ -14,5 +19,56 @@ describe("extractBelief", () => {
     const result = await extractBelief(mockLLM, "Switched to TypeScript strict mode and found 12 hidden bugs");
     expect(result).toBe("TypeScript strict mode catches more bugs at compile time");
     expect(mockLLM.chat).toHaveBeenCalledOnce();
+  });
+});
+
+describe("remember", () => {
+  let storage: ReturnType<typeof createStorage>;
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-rem-"));
+    storage = createStorage(dir);
+    storage.migrate("memory", memoryMigrations);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("should create a new belief when no similar belief exists", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn().mockResolvedValue({
+        text: "Vitest is faster than Jest for TypeScript projects",
+        usage: { inputTokens: 10, outputTokens: 8 },
+      }),
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+
+    const result = await remember(storage, mockLLM, "Switched from Jest to Vitest and tests run 3x faster");
+
+    expect(result.isReinforcement).toBe(false);
+    expect(result.episodeId).toBeTruthy();
+    expect(result.beliefId).toBeTruthy();
+  });
+
+  it("should reinforce existing belief when a similar belief exists", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn().mockResolvedValue({
+        text: "Vitest is faster than Jest for TypeScript projects",
+        usage: { inputTokens: 10, outputTokens: 8 },
+      }),
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+
+    // First call creates a new belief
+    const first = await remember(storage, mockLLM, "Switched from Jest to Vitest and tests run 3x faster");
+    expect(first.isReinforcement).toBe(false);
+
+    // Second call with the same LLM response should reinforce
+    const second = await remember(storage, mockLLM, "Vitest continues to outperform Jest in our CI pipeline");
+    expect(second.isReinforcement).toBe(true);
+    expect(second.beliefId).toBe(first.beliefId);
   });
 });

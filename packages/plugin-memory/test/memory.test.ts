@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode } from "../src/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -47,5 +47,19 @@ describe("Memory", () => {
     const belief = createBelief(storage, { statement: "observation is useful", confidence: 0.6 });
     linkBeliefToEpisode(storage, belief.id, ep.id);
     // No error = success
+  });
+
+  it("should reinforce belief and increase confidence", () => {
+    const belief = createBelief(storage, { statement: "test belief", confidence: 0.5 });
+    reinforceBelief(storage, belief.id);
+    const beliefs = listBeliefs(storage);
+    expect(beliefs[0]!.confidence).toBeCloseTo(0.6);
+  });
+
+  it("should cap reinforced belief confidence at 1.0", () => {
+    const belief = createBelief(storage, { statement: "strong belief", confidence: 0.95 });
+    reinforceBelief(storage, belief.id, 0.2);
+    const beliefs = listBeliefs(storage);
+    expect(beliefs[0]!.confidence).toBeLessThanOrEqual(1.0);
   });
 });
