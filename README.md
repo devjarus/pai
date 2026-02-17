@@ -31,8 +31,9 @@ pai memory episodes
 
 # Tasks
 pai task add "Ship v0.1" --priority high --due 2026-03-01
-pai task list
-pai task done <id>
+pai task list --status open
+pai task list --status done
+pai task done <id-or-prefix>
 
 # Goals
 pai goal add "Launch personal AI"
@@ -74,6 +75,41 @@ pnpm lint                # eslint
 pnpm run verify          # typecheck + tests
 pnpm run ci              # verify + coverage
 ```
+
+### ContinuOS runtime loop (optional)
+
+Use `continuosctl` to run a tracked development cycle and collect reliability evidence.
+This flow uses the default data directory resolution from `continuosctl`.
+
+```bash
+# 1) Check model/provider health
+pnpm run runtime:health
+
+# 2) Start a run (capture the id)
+RUN_ID=$(continuosctl run start \
+  --goal "Improve personal-ai reliability" \
+  --scope product \
+  --risk low \
+  --success "pnpm run verify passes" \
+  --json | jq -r '.id')
+
+# 3) Execute project verification as a run step
+SHELL_ACTIONS_ENABLED=true SHELL_ACTIONS_ALLOWLIST=pnpm \
+continuosctl run step \
+  --run-id "$RUN_ID" \
+  --action shell \
+  --command pnpm \
+  --arg run --arg verify \
+  --cwd "$PWD" \
+  --json
+
+# 4) Complete the run and inspect insights
+continuosctl run step --run-id "$RUN_ID" --action complete --outcome success --json
+pnpm run runtime:suggestions
+pnpm run runtime:trends
+```
+
+`run step --action shell` is disabled by default. Set both `SHELL_ACTIONS_ENABLED=true` and `SHELL_ACTIONS_ALLOWLIST=pnpm` (or a stricter allowlist you control) when executing shell actions.
 
 **Git hooks** (via Husky):
 - `pre-commit` — lint-staged runs ESLint on staged `.ts` files

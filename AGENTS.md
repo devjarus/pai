@@ -10,12 +10,12 @@ Local-first personal AI with a plugin architecture. CLI tool (`pai`) backed by S
 
 pnpm monorepo with 4 packages under `packages/`:
 
-- **`core`** (~300 lines) — Config (env-based via `loadConfig`), Storage (better-sqlite3 with migration tracking), LLM Client (Ollama-first, OpenAI fallback), Plugin/Command interfaces
+- **`core`** (~300 lines) — Config (env-based via `loadConfig`), Storage (better-sqlite3 with migration tracking), LLM Client (Ollama-first, OpenAI fallback), Logger (NDJSON to stderr), Plugin/Command interfaces
 - **`cli`** — Commander.js entrypoint that loads plugins, runs migrations, and wires commands as `pai <group> <command>`
 - **`plugin-memory`** — Episodes (append-only observations) + Beliefs (durable knowledge with confidence scores). FTS5 full-text search. LLM extracts beliefs from episodes via `remember()`. Features: 30-day confidence decay, LLM-based contradiction detection, belief change audit trail, context packing for cross-plugin LLM injection.
 - **`plugin-tasks`** — Tasks (with priority/status/due dates) + Goals. `ai-suggest` feeds tasks+memory to LLM for prioritization.
 
-**Plugin contract:** Plugins implement `Plugin` interface — provide `name`, `version`, `migrations[]`, and `commands(ctx)`. They receive a `PluginContext` with config, storage, and LLM client. No lifecycle hooks or event system.
+**Plugin contract:** Plugins implement `Plugin` interface — provide `name`, `version`, `migrations[]`, and `commands(ctx)`. They receive a `PluginContext` with config, storage, LLM client, and logger. No lifecycle hooks or event system.
 
 **Database:** Single SQLite file at `{dataDir}/personal-ai.db`. Each plugin owns its tables; migrations tracked in `_migrations` table. WAL mode, foreign keys enabled.
 
@@ -49,7 +49,11 @@ pnpm run ci                              # verify + coverage thresholds
 
 ## Configuration
 
-All config via env vars (or `.env`): `PAI_DATA_DIR`, `PAI_LLM_PROVIDER`, `PAI_LLM_MODEL`, `PAI_LLM_BASE_URL`, `PAI_LLM_API_KEY`, `PAI_LLM_FALLBACK_MODE`, `PAI_PLUGINS`.
+All config via env vars (or `.env`): `PAI_DATA_DIR`, `PAI_LLM_PROVIDER`, `PAI_LLM_MODEL`, `PAI_LLM_BASE_URL`, `PAI_LLM_API_KEY`, `PAI_LLM_FALLBACK_MODE`, `PAI_PLUGINS`, `PAI_LOG_LEVEL`.
+
+## Logging
+
+Structured NDJSON logging to stderr via `createLogger()`. Controlled by `PAI_LOG_LEVEL` env var. Levels: `silent` (default), `error`, `warn`, `info`, `debug`. Set `PAI_LOG_LEVEL=debug` to see all internal activity. Redirect with `2>pai.log`.
 
 ## Git Hooks
 

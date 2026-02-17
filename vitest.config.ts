@@ -2,11 +2,12 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['packages/*/test/**/*.test.ts'],
+    // Support running vitest from repo root and from individual package directories.
+    include: ['packages/*/test/**/*.test.ts', 'test/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: ['packages/*/src/**/*.ts'],
+      include: ['packages/*/src/**/*.ts', 'src/**/*.ts'],
       exclude: [
         'packages/cli/src/index.ts',
         'packages/*/src/index.ts',

@@ -28,6 +28,8 @@ packages/
 
 **LLM Client** — Vercel AI SDK (`ai` + `@ai-sdk/openai` + `ai-sdk-ollama`). Returns `ChatResult` with text and token usage. `health()` checks provider availability.
 
+**Logger** — structured NDJSON to stderr via `createLogger()`. Levels: `silent` (default), `error`, `warn`, `info`, `debug`. Controlled by `PAI_LOG_LEVEL` env var. Zero dependencies.
+
 **Plugin Interface:**
 ```typescript
 interface Plugin {
@@ -41,6 +43,7 @@ interface PluginContext {
   config: Config
   storage: Storage
   llm: LLMClient
+  logger: Logger
 }
 ```
 
