@@ -5,6 +5,8 @@ coverage/
 *.db-journal
 *.db-wal
 *.db-shm
+pai.log
+pai.log.1
 .env
 .env.local
 .env.*.local

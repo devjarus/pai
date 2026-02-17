@@ -2,6 +2,12 @@ import type { Database, RunResult } from "better-sqlite3";
 
 export type LogLevel = "silent" | "error" | "warn" | "info" | "debug";
 
+export interface LogFileOptions {
+  dir: string;
+  level?: LogLevel;
+  maxBytes?: number;
+}
+
 export interface Logger {
   error(msg: string, data?: Record<string, unknown>): void;
   warn(msg: string, data?: Record<string, unknown>): void;

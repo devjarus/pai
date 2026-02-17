@@ -15,7 +15,7 @@ const plugins: Record<string, Plugin> = {
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const logger = createLogger(config.logLevel);
+  const logger = createLogger(config.logLevel, { dir: config.dataDir });
   const storage = createStorage(config.dataDir, logger);
   const llm = createLLMClient(config.llm, logger);
 

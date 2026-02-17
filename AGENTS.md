@@ -10,7 +10,7 @@ Local-first personal AI with a plugin architecture. CLI tool (`pai`) backed by S
 
 pnpm monorepo with 4 packages under `packages/`:
 
-- **`core`** (~300 lines) — Config (env-based via `loadConfig`), Storage (better-sqlite3 with migration tracking), LLM Client (Ollama-first, OpenAI fallback), Logger (NDJSON to stderr), Plugin/Command interfaces
+- **`core`** (~300 lines) — Config (env-based via `loadConfig`), Storage (better-sqlite3 with migration tracking), LLM Client (Ollama-first, OpenAI fallback), Logger (NDJSON to stderr + file), Plugin/Command interfaces
 - **`cli`** — Commander.js entrypoint that loads plugins, runs migrations, and wires commands as `pai <group> <command>`
 - **`plugin-memory`** — Episodes (append-only observations) + Beliefs (durable knowledge with confidence scores). FTS5 full-text search. LLM extracts beliefs from episodes via `remember()`. Features: 30-day confidence decay, LLM-based contradiction detection, belief change audit trail, context packing for cross-plugin LLM injection.
 - **`plugin-tasks`** — Tasks (with priority/status/due dates) + Goals. `ai-suggest` feeds tasks+memory to LLM for prioritization.
@@ -53,7 +53,12 @@ All config via env vars (or `.env`): `PAI_DATA_DIR`, `PAI_LLM_PROVIDER`, `PAI_LL
 
 ## Logging
 
-Structured NDJSON logging to stderr via `createLogger()`. Controlled by `PAI_LOG_LEVEL` env var. Levels: `silent` (default), `error`, `warn`, `info`, `debug`. Set `PAI_LOG_LEVEL=debug` to see all internal activity. Redirect with `2>pai.log`.
+Structured NDJSON logging via `createLogger()` with dual output:
+
+- **Stderr:** Controlled by `PAI_LOG_LEVEL` env var. Levels: `silent` (default), `error`, `warn`, `info`, `debug`. Set `PAI_LOG_LEVEL=debug` to see all internal activity.
+- **File:** Always writes to `{dataDir}/pai.log` at `info` level by default (configurable via `LogFileOptions.level`). File logging is automatic — no extra config needed.
+- **Rotation:** Size-based, 5MB max with 1 backup (`pai.log.1`). Checked at logger creation.
+- **Debugging:** Check `~/.personal-ai/pai.log` (or your `PAI_DATA_DIR`) for post-hoc debugging. Logs persist even when stderr is `silent`.
 
 ## Git Hooks
 
