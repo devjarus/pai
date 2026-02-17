@@ -52,6 +52,16 @@ export const memoryMigrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 3,
+    up: `
+      ALTER TABLE beliefs ADD COLUMN type TEXT NOT NULL DEFAULT 'insight';
+      CREATE TABLE belief_embeddings (
+        belief_id TEXT PRIMARY KEY REFERENCES beliefs(id),
+        embedding TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export interface Episode {
@@ -68,6 +78,7 @@ export interface Belief {
   statement: string;
   confidence: number;
   status: string;
+  type: string;
   created_at: string;
   updated_at: string;
 }
@@ -99,13 +110,14 @@ export function listEpisodes(storage: Storage, limit = 50): Episode[] {
 
 export function createBelief(
   storage: Storage,
-  input: { statement: string; confidence: number },
+  input: { statement: string; confidence: number; type?: string },
 ): Belief {
   const id = nanoid();
-  storage.run("INSERT INTO beliefs (id, statement, confidence) VALUES (?, ?, ?)", [
+  storage.run("INSERT INTO beliefs (id, statement, confidence, type) VALUES (?, ?, ?, ?)", [
     id,
     input.statement,
     input.confidence,
+    input.type ?? "insight",
   ]);
   return storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [id])[0]!;
 }
@@ -189,6 +201,58 @@ export function getBeliefHistory(storage: Storage, beliefId: string): BeliefChan
     "SELECT * FROM belief_changes WHERE belief_id = ? ORDER BY created_at DESC, rowid DESC",
     [beliefId],
   );
+}
+
+export function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i]! * b[i]!;
+    normA += a[i]! * a[i]!;
+    normB += b[i]! * b[i]!;
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+export interface SimilarBelief {
+  beliefId: string;
+  statement: string;
+  confidence: number;
+  similarity: number;
+}
+
+export function storeEmbedding(storage: Storage, beliefId: string, embedding: number[]): void {
+  storage.run(
+    "INSERT OR REPLACE INTO belief_embeddings (belief_id, embedding) VALUES (?, ?)",
+    [beliefId, JSON.stringify(embedding)],
+  );
+}
+
+export function findSimilarBeliefs(
+  storage: Storage,
+  queryEmbedding: number[],
+  limit: number,
+): SimilarBelief[] {
+  const rows = storage.query<{ belief_id: string; embedding: string; statement: string; confidence: number; updated_at: string }>(
+    `SELECT be.belief_id, be.embedding, b.statement, b.confidence, b.updated_at
+     FROM belief_embeddings be
+     JOIN beliefs b ON b.id = be.belief_id
+     WHERE b.status = 'active'`,
+  );
+
+  return rows
+    .map((row) => {
+      const emb = JSON.parse(row.embedding) as number[];
+      const belief = { confidence: row.confidence, updated_at: row.updated_at } as Belief;
+      return {
+        beliefId: row.belief_id,
+        statement: row.statement,
+        confidence: effectiveConfidence(belief),
+        similarity: cosineSimilarity(queryEmbedding, emb),
+      };
+    })
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
 }
 
 export function getMemoryContext(storage: Storage, query: string, beliefLimit = 5, episodeLimit = 5): string {

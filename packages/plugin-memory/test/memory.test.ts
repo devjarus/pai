@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext } from "../src/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -155,5 +155,71 @@ describe("Memory", () => {
     const context = getMemoryContext(storage, "nonexistent topic");
     expect(context).toContain("No relevant beliefs");
     expect(context).toContain("Recent observations");
+  });
+
+  it("should create belief with type", () => {
+    const fact = createBelief(storage, { statement: "User likes coffee", confidence: 0.6, type: "fact" });
+    const insight = createBelief(storage, { statement: "Morning routines help", confidence: 0.6, type: "insight" });
+    const [f] = storage.query<typeof fact>("SELECT * FROM beliefs WHERE id = ?", [fact.id]);
+    const [i] = storage.query<typeof insight>("SELECT * FROM beliefs WHERE id = ?", [insight.id]);
+    expect(f!.type).toBe("fact");
+    expect(i!.type).toBe("insight");
+  });
+
+  it("should default belief type to insight", () => {
+    const b = createBelief(storage, { statement: "test", confidence: 0.5 });
+    const [row] = storage.query<typeof b>("SELECT * FROM beliefs WHERE id = ?", [b.id]);
+    expect(row!.type).toBe("insight");
+  });
+});
+
+describe("Embeddings", () => {
+  let storage: ReturnType<typeof createStorage>;
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-emb-"));
+    storage = createStorage(dir);
+    storage.migrate("memory", memoryMigrations);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("should compute cosine similarity correctly", () => {
+    expect(cosineSimilarity([1, 0, 0], [1, 0, 0])).toBeCloseTo(1.0);
+    expect(cosineSimilarity([1, 0, 0], [0, 1, 0])).toBeCloseTo(0.0);
+    expect(cosineSimilarity([1, 0, 0], [-1, 0, 0])).toBeCloseTo(-1.0);
+  });
+
+  it("should store and retrieve embeddings", () => {
+    const belief = createBelief(storage, { statement: "test belief", confidence: 0.6 });
+    storeEmbedding(storage, belief.id, [0.1, 0.2, 0.3]);
+    const results = findSimilarBeliefs(storage, [0.1, 0.2, 0.3], 5);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.beliefId).toBe(belief.id);
+    expect(results[0]!.similarity).toBeCloseTo(1.0);
+  });
+
+  it("should rank by cosine similarity", () => {
+    const b1 = createBelief(storage, { statement: "close match", confidence: 0.6 });
+    const b2 = createBelief(storage, { statement: "distant match", confidence: 0.6 });
+    storeEmbedding(storage, b1.id, [1.0, 0.0, 0.0]);
+    storeEmbedding(storage, b2.id, [0.0, 1.0, 0.0]);
+    const results = findSimilarBeliefs(storage, [0.9, 0.1, 0.0], 5);
+    expect(results[0]!.beliefId).toBe(b1.id);
+  });
+
+  it("should only return active beliefs", () => {
+    const b1 = createBelief(storage, { statement: "active belief", confidence: 0.6 });
+    const b2 = createBelief(storage, { statement: "dead belief", confidence: 0.6 });
+    storeEmbedding(storage, b1.id, [1.0, 0.0, 0.0]);
+    storeEmbedding(storage, b2.id, [1.0, 0.0, 0.0]);
+    storage.run("UPDATE beliefs SET status = 'invalidated' WHERE id = ?", [b2.id]);
+    const results = findSimilarBeliefs(storage, [1.0, 0.0, 0.0], 5);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.beliefId).toBe(b1.id);
   });
 });
