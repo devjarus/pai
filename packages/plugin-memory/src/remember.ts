@@ -1,5 +1,5 @@
 import type { LLMClient, Storage } from "@personal-ai/core";
-import { createEpisode, createBelief, searchBeliefs, reinforceBelief, linkBeliefToEpisode } from "./memory.js";
+import { createEpisode, createBelief, searchBeliefs, reinforceBelief, linkBeliefToEpisode, logBeliefChange } from "./memory.js";
 
 export async function extractBelief(llm: LLMClient, text: string): Promise<string> {
   const result = await llm.chat([
@@ -31,11 +31,23 @@ export async function remember(
     // Reinforce existing belief
     reinforceBelief(storage, existing[0]!.id);
     linkBeliefToEpisode(storage, existing[0]!.id, episode.id);
+    logBeliefChange(storage, {
+      beliefId: existing[0]!.id,
+      changeType: "reinforced",
+      detail: `Reinforced by: "${text}"`,
+      episodeId: episode.id,
+    });
     return { episodeId: episode.id, beliefId: existing[0]!.id, isReinforcement: true };
   }
 
   // 4. Create new belief
   const belief = createBelief(storage, { statement, confidence: 0.6 });
   linkBeliefToEpisode(storage, belief.id, episode.id);
+  logBeliefChange(storage, {
+    beliefId: belief.id,
+    changeType: "created",
+    detail: `Extracted from: "${text}"`,
+    episodeId: episode.id,
+  });
   return { episodeId: episode.id, beliefId: belief.id, isReinforcement: false };
 }
