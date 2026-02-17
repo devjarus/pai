@@ -59,6 +59,15 @@ export interface Belief {
   updated_at: string;
 }
 
+const HALF_LIFE_DAYS = 30;
+
+export function effectiveConfidence(belief: Belief): number {
+  const updatedAt = new Date(belief.updated_at + "Z").getTime();
+  const now = Date.now();
+  const daysSinceUpdate = (now - updatedAt) / (1000 * 60 * 60 * 24);
+  return belief.confidence * Math.pow(0.5, daysSinceUpdate / HALF_LIFE_DAYS);
+}
+
 export function createEpisode(
   storage: Storage,
   input: { context?: string; action: string; outcome?: string; tags?: string[] },
@@ -105,14 +114,17 @@ export function searchBeliefs(storage: Storage, query: string, limit = 10): Beli
      WHERE beliefs_fts MATCH ? AND b.status = 'active'
      ORDER BY rank LIMIT ?`,
     [sanitized, limit],
-  );
+  ).map((b) => ({ ...b, confidence: effectiveConfidence(b) }));
 }
 
 export function listBeliefs(storage: Storage, status = "active"): Belief[] {
-  return storage.query<Belief>(
-    "SELECT * FROM beliefs WHERE status = ? ORDER BY confidence DESC",
+  const beliefs = storage.query<Belief>(
+    "SELECT * FROM beliefs WHERE status = ?",
     [status],
   );
+  return beliefs
+    .map((b) => ({ ...b, confidence: effectiveConfidence(b) }))
+    .sort((a, b) => b.confidence - a.confidence);
 }
 
 export function linkBeliefToEpisode(storage: Storage, beliefId: string, episodeId: string): void {

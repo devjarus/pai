@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief } from "../src/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -79,5 +79,41 @@ describe("Memory", () => {
     createBelief(storage, { statement: "C++ is fast for systems programming", confidence: 0.7 });
     const results = searchBeliefs(storage, "C++ fast");
     expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("should return full confidence for recently updated belief", () => {
+    const belief = createBelief(storage, { statement: "fresh belief", confidence: 0.8 });
+    expect(effectiveConfidence(belief)).toBeCloseTo(0.8, 1);
+  });
+
+  it("should decay confidence for old beliefs", () => {
+    const belief = createBelief(storage, { statement: "old belief", confidence: 0.8 });
+    storage.run(
+      "UPDATE beliefs SET updated_at = datetime('now', '-30 days') WHERE id = ?",
+      [belief.id],
+    );
+    const [updated] = storage.query<typeof belief>("SELECT * FROM beliefs WHERE id = ?", [belief.id]);
+    expect(effectiveConfidence(updated!)).toBeCloseTo(0.4, 1);
+  });
+
+  it("should decay to near-zero for very old beliefs", () => {
+    const belief = createBelief(storage, { statement: "ancient belief", confidence: 0.8 });
+    storage.run(
+      "UPDATE beliefs SET updated_at = datetime('now', '-120 days') WHERE id = ?",
+      [belief.id],
+    );
+    const [updated] = storage.query<typeof belief>("SELECT * FROM beliefs WHERE id = ?", [belief.id]);
+    expect(effectiveConfidence(updated!)).toBeLessThan(0.1);
+  });
+
+  it("should list beliefs with decay-adjusted confidence", () => {
+    createBelief(storage, { statement: "fresh belief", confidence: 0.8 });
+    const belief2 = createBelief(storage, { statement: "stale belief", confidence: 0.8 });
+    storage.run(
+      "UPDATE beliefs SET updated_at = datetime('now', '-60 days') WHERE id = ?",
+      [belief2.id],
+    );
+    const beliefs = listBeliefs(storage);
+    expect(beliefs[0]!.confidence).toBeGreaterThan(beliefs[1]!.confidence);
   });
 });
