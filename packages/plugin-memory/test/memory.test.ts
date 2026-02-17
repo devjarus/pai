@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory } from "../src/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -138,5 +138,22 @@ describe("Memory", () => {
     const history = getBeliefHistory(storage, belief.id);
     expect(history).toHaveLength(2);
     expect(history[0]!.change_type).toBe("reinforced");
+  });
+
+  it("should return formatted context with beliefs and episodes", () => {
+    createBelief(storage, { statement: "TypeScript catches bugs early", confidence: 0.8 });
+    createEpisode(storage, { action: "Wrote tests for memory plugin", outcome: "all passed" });
+
+    const context = getMemoryContext(storage, "TypeScript");
+    expect(context).toContain("Relevant beliefs");
+    expect(context).toContain("TypeScript catches bugs early");
+    expect(context).toContain("Recent observations");
+    expect(context).toContain("Wrote tests for memory plugin");
+  });
+
+  it("should return empty sections gracefully", () => {
+    const context = getMemoryContext(storage, "nonexistent topic");
+    expect(context).toContain("No relevant beliefs");
+    expect(context).toContain("Recent observations");
   });
 });

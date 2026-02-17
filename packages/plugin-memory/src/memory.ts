@@ -180,3 +180,18 @@ export function getBeliefHistory(storage: Storage, beliefId: string): BeliefChan
     [beliefId],
   );
 }
+
+export function getMemoryContext(storage: Storage, query: string, beliefLimit = 5, episodeLimit = 5): string {
+  const beliefs = searchBeliefs(storage, query, beliefLimit);
+  const episodes = listEpisodes(storage, episodeLimit);
+
+  const beliefSection = beliefs.length > 0
+    ? beliefs.map((b) => `- [${b.confidence.toFixed(1)}] ${b.statement}`).join("\n")
+    : "No relevant beliefs found.";
+
+  const episodeSection = episodes.length > 0
+    ? episodes.map((e) => `- [${e.timestamp}] ${e.action}`).join("\n")
+    : "No recent observations.";
+
+  return `## Relevant beliefs\n${beliefSection}\n\n## Recent observations\n${episodeSection}`;
+}
