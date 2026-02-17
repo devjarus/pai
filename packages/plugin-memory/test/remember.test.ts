@@ -2,23 +2,38 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
 import { memoryMigrations, getBeliefHistory } from "../src/memory.js";
-import { remember, extractBelief, checkContradiction } from "../src/remember.js";
+import { remember, extractBeliefs, checkContradiction } from "../src/remember.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-describe("extractBelief", () => {
-  it("should extract a belief from episode text using LLM", async () => {
+describe("extractBeliefs", () => {
+  it("should extract fact and insight from text using LLM", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn().mockResolvedValue({
-        text: "TypeScript strict mode catches more bugs at compile time",
-        usage: { inputTokens: 10, outputTokens: 5 },
+        text: '{"fact":"User likes coffee in the morning","insight":"Morning routines provide consistency"}',
+        usage: { inputTokens: 10, outputTokens: 15 },
       }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
-    const result = await extractBelief(mockLLM, "Switched to TypeScript strict mode and found 12 hidden bugs");
-    expect(result).toBe("TypeScript strict mode catches more bugs at compile time");
-    expect(mockLLM.chat).toHaveBeenCalledOnce();
+    const result = await extractBeliefs(mockLLM, "I like coffee in the morning");
+    expect(result.fact).toBe("User likes coffee in the morning");
+    expect(result.insight).toBe("Morning routines provide consistency");
+  });
+
+  it("should handle LLM returning plain text by using it as fact", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn().mockResolvedValue({
+        text: "User enjoys morning coffee",
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+    const result = await extractBeliefs(mockLLM, "I like coffee");
+    expect(result.fact).toBe("User enjoys morning coffee");
+    expect(result.insight).toBeNull();
   });
 });
 
@@ -40,9 +55,10 @@ describe("remember", () => {
   it("should create a new belief when no similar belief exists", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn().mockResolvedValue({
-        text: "Vitest is faster than Jest for TypeScript projects",
+        text: '{"fact":"Vitest is faster than Jest for TypeScript projects","insight":null}',
         usage: { inputTokens: 10, outputTokens: 8 },
       }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
@@ -50,42 +66,40 @@ describe("remember", () => {
 
     expect(result.isReinforcement).toBe(false);
     expect(result.episodeId).toBeTruthy();
-    expect(result.beliefId).toBeTruthy();
+    expect(result.beliefIds[0]).toBeTruthy();
   });
 
-  it("should reinforce existing belief when a similar belief exists", async () => {
+  it("should reinforce existing belief when semantically similar", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn()
-        // First remember: extractBelief
-        .mockResolvedValueOnce({ text: "Vitest is faster than Jest for TypeScript projects", usage: { inputTokens: 10, outputTokens: 8 } })
-        // Second remember: extractBelief
-        .mockResolvedValueOnce({ text: "Vitest is faster than Jest for TypeScript projects", usage: { inputTokens: 10, outputTokens: 8 } })
-        // Second remember: checkContradiction -> NONE
-        .mockResolvedValueOnce({ text: "NONE", usage: { inputTokens: 20, outputTokens: 1 } }),
+        // First remember: extractBeliefs
+        .mockResolvedValueOnce({ text: '{"fact":"Vitest is faster than Jest","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
+        // Second remember: extractBeliefs
+        .mockResolvedValueOnce({ text: '{"fact":"Vitest is faster than Jest","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
-    // First call creates a new belief
-    const first = await remember(storage, mockLLM, "Switched from Jest to Vitest and tests run 3x faster");
+    const first = await remember(storage, mockLLM, "Vitest is fast");
     expect(first.isReinforcement).toBe(false);
 
-    // Second call with the same LLM response should reinforce
-    const second = await remember(storage, mockLLM, "Vitest continues to outperform Jest in our CI pipeline");
+    const second = await remember(storage, mockLLM, "Vitest confirmed fast");
     expect(second.isReinforcement).toBe(true);
-    expect(second.beliefId).toBe(first.beliefId);
+    expect(second.beliefIds[0]).toBe(first.beliefIds[0]);
   });
 
   it("should log 'created' change when creating a new belief", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn().mockResolvedValue({
-        text: "New unique belief about testing",
+        text: '{"fact":"New unique belief about testing","insight":null}',
         usage: { inputTokens: 10, outputTokens: 8 },
       }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
     const result = await remember(storage, mockLLM, "Discovered something new about testing");
-    const history = getBeliefHistory(storage, result.beliefId);
+    const history = getBeliefHistory(storage, result.beliefIds[0]!);
     expect(history).toHaveLength(1);
     expect(history[0]!.change_type).toBe("created");
   });
@@ -93,18 +107,17 @@ describe("remember", () => {
   it("should log 'reinforced' change when reinforcing existing belief", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn()
-        // First remember: extractBelief
-        .mockResolvedValueOnce({ text: "Vitest is faster than Jest", usage: { inputTokens: 10, outputTokens: 8 } })
-        // Second remember: extractBelief
-        .mockResolvedValueOnce({ text: "Vitest is faster than Jest", usage: { inputTokens: 10, outputTokens: 8 } })
-        // Second remember: checkContradiction -> NONE
-        .mockResolvedValueOnce({ text: "NONE", usage: { inputTokens: 20, outputTokens: 1 } }),
+        // First remember: extractBeliefs
+        .mockResolvedValueOnce({ text: '{"fact":"Vitest is faster than Jest","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
+        // Second remember: extractBeliefs
+        .mockResolvedValueOnce({ text: '{"fact":"Vitest is faster than Jest","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
     const first = await remember(storage, mockLLM, "Vitest is fast");
     const second = await remember(storage, mockLLM, "Vitest confirmed fast again");
-    const history = getBeliefHistory(storage, second.beliefId);
+    const history = getBeliefHistory(storage, second.beliefIds[0]!);
     expect(history.some((h) => h.change_type === "reinforced")).toBe(true);
   });
 });
@@ -116,11 +129,12 @@ describe("checkContradiction", () => {
         text: "1",
         usage: { inputTokens: 20, outputTokens: 1 },
       }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
     const existing = [
-      { id: "b1", statement: "JavaScript is the best language", confidence: 0.7, status: "active", created_at: "", updated_at: "" },
+      { id: "b1", statement: "JavaScript is the best language", confidence: 0.7, status: "active", type: "", created_at: "", updated_at: "" },
     ];
     const result = await checkContradiction(mockLLM, "JavaScript is a terrible language", existing);
     expect(result).toBe("b1");
@@ -132,11 +146,12 @@ describe("checkContradiction", () => {
         text: "NONE",
         usage: { inputTokens: 20, outputTokens: 1 },
       }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
     const existing = [
-      { id: "b1", statement: "TypeScript is useful", confidence: 0.7, status: "active", created_at: "", updated_at: "" },
+      { id: "b1", statement: "TypeScript is useful", confidence: 0.7, status: "active", type: "", created_at: "", updated_at: "" },
     ];
     const result = await checkContradiction(mockLLM, "TypeScript has good tooling", existing);
     expect(result).toBeNull();
@@ -161,24 +176,26 @@ describe("remember with contradictions", () => {
   it("should invalidate contradicted belief in remember flow", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn()
-        // First remember: extract belief
-        .mockResolvedValueOnce({ text: "SQLite is slow for large datasets", usage: { inputTokens: 10, outputTokens: 8 } })
-        // Second remember: extract belief (shares enough words with first for FTS5 match)
-        .mockResolvedValueOnce({ text: "SQLite is not slow for large datasets", usage: { inputTokens: 10, outputTokens: 8 } })
-        // Second remember: contradiction check returns "1"
+        // First remember: extractBeliefs
+        .mockResolvedValueOnce({ text: '{"fact":"SQLite is slow for large datasets","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
+        // Second remember: extractBeliefs
+        .mockResolvedValueOnce({ text: '{"fact":"SQLite is not slow for large datasets","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
+        // Second remember: checkContradiction returns "1"
         .mockResolvedValueOnce({ text: "1", usage: { inputTokens: 20, outputTokens: 1 } }),
+      embed: vi.fn()
+        .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })  // first belief
+        .mockResolvedValueOnce({ embedding: [0.7, 0.7, 0.0] }),  // second belief — similarity ~0.7 (contradiction range)
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
-    const first = await remember(storage, mockLLM, "SQLite struggles with big data");
-    const second = await remember(storage, mockLLM, "SQLite handles big data easily");
+    const first = await remember(storage, mockLLM, "SQLite struggles");
+    const second = await remember(storage, mockLLM, "SQLite handles easily");
 
     expect(second.isReinforcement).toBe(false);
-    expect(second.beliefId).not.toBe(first.beliefId);
+    expect(second.beliefIds[0]).not.toBe(first.beliefIds[0]);
 
-    // Old belief should be invalidated
     const oldBelief = storage.query<{ status: string }>(
-      "SELECT status FROM beliefs WHERE id = ?", [first.beliefId]
+      "SELECT status FROM beliefs WHERE id = ?", [first.beliefIds[0]]
     );
     expect(oldBelief[0]!.status).toBe("invalidated");
   });

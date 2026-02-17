@@ -1,18 +1,29 @@
 import type { LLMClient, Storage, Logger } from "@personal-ai/core";
 import type { Belief } from "./memory.js";
-import { createEpisode, createBelief, searchBeliefs, reinforceBelief, linkBeliefToEpisode, logBeliefChange } from "./memory.js";
+import { createEpisode, createBelief, findSimilarBeliefs, storeEmbedding, reinforceBelief, linkBeliefToEpisode, logBeliefChange } from "./memory.js";
 
-export async function extractBelief(llm: LLMClient, text: string): Promise<string> {
+export async function extractBeliefs(
+  llm: LLMClient,
+  text: string,
+): Promise<{ fact: string; insight: string | null }> {
   const result = await llm.chat([
     {
       role: "system",
       content:
-        "Extract a single, concise belief or lesson from the following observation. " +
-        "Reply with ONLY the belief statement, nothing else. Keep it under 20 words.",
+        'Extract a personal fact and an optional generalized insight from the observation. ' +
+        'The fact should preserve what the user said/experienced. The insight (if any) should be a broader lesson. ' +
+        'Reply with JSON only: {"fact":"...","insight":"..."} or {"fact":"...","insight":null} if no broader lesson applies. ' +
+        'Keep each under 20 words.',
     },
     { role: "user", content: text },
   ], { temperature: 0.3 });
-  return result.text;
+
+  try {
+    const parsed = JSON.parse(result.text);
+    return { fact: parsed.fact, insight: parsed.insight ?? null };
+  } catch {
+    return { fact: result.text.trim(), insight: null };
+  }
 }
 
 export async function checkContradiction(
@@ -57,74 +68,104 @@ export async function checkContradiction(
   return null;
 }
 
-export async function remember(
+async function processNewBelief(
   storage: Storage,
   llm: LLMClient,
-  text: string,
+  statement: string,
+  type: string,
+  episodeId: string,
   logger?: Logger,
-): Promise<{ episodeId: string; beliefId: string; isReinforcement: boolean }> {
-  // 1. Create episode
-  const episode = createEpisode(storage, { action: text });
+): Promise<{ beliefId: string; isReinforcement: boolean }> {
+  const { embedding } = await llm.embed(statement);
+  const similar = findSimilarBeliefs(storage, embedding, 5);
+  logger?.debug("Semantic search results", { statement, matchCount: similar.length, topSimilarity: similar[0]?.similarity });
 
-  // 2. Extract belief via LLM
-  const statement = await extractBelief(llm, text);
-  logger?.debug("Extracted belief", { input: text, extracted: statement });
+  if (similar.length > 0 && similar[0]!.similarity > 0.85) {
+    // High similarity — merge (reinforce)
+    const match = similar[0]!;
+    reinforceBelief(storage, match.beliefId);
+    linkBeliefToEpisode(storage, match.beliefId, episodeId);
+    logBeliefChange(storage, {
+      beliefId: match.beliefId,
+      changeType: "reinforced",
+      detail: `Merged similar (${match.similarity.toFixed(2)}): "${statement}"`,
+      episodeId,
+    });
+    logger?.info("Belief merged/reinforced", { beliefId: match.beliefId, similarity: match.similarity });
+    return { beliefId: match.beliefId, isReinforcement: true };
+  }
 
-  // 3. Search for similar beliefs
-  const existing = searchBeliefs(storage, statement, 3);
-  logger?.debug("FTS5 search results", { query: statement, matchCount: existing.length, matches: existing.map((b) => b.statement) });
-
-  if (existing.length > 0) {
-    // 4. Check for contradictions
-    const contradictedId = await checkContradiction(llm, statement, existing, logger);
+  if (similar.length > 0 && similar[0]!.similarity > 0.5) {
+    // Medium similarity — check contradiction
+    const beliefs = similar.map((s) => ({
+      id: s.beliefId,
+      statement: s.statement,
+      confidence: s.confidence,
+      status: "active",
+      type: "",
+      created_at: "",
+      updated_at: "",
+    }));
+    const contradictedId = await checkContradiction(llm, statement, beliefs, logger);
 
     if (contradictedId) {
-      // Invalidate old belief
       storage.run("UPDATE beliefs SET status = 'invalidated', updated_at = datetime('now') WHERE id = ?", [contradictedId]);
       logBeliefChange(storage, {
         beliefId: contradictedId,
         changeType: "contradicted",
         detail: `Contradicted by: "${statement}"`,
-        episodeId: episode.id,
+        episodeId,
       });
-
-      // Create replacement belief
-      const belief = createBelief(storage, { statement, confidence: 0.6 });
-      linkBeliefToEpisode(storage, belief.id, episode.id);
+      const belief = createBelief(storage, { statement, confidence: 0.6, type });
+      storeEmbedding(storage, belief.id, embedding);
+      linkBeliefToEpisode(storage, belief.id, episodeId);
       logBeliefChange(storage, {
         beliefId: belief.id,
         changeType: "created",
         detail: `Replaced contradicted belief ${contradictedId}`,
-        episodeId: episode.id,
+        episodeId,
       });
       logger?.info("Belief contradicted and replaced", { oldBeliefId: contradictedId, newBeliefId: belief.id });
-      return { episodeId: episode.id, beliefId: belief.id, isReinforcement: false };
-    }
-
-    // No contradiction — reinforce closest match
-    if (existing[0]!.confidence > 0) {
-      reinforceBelief(storage, existing[0]!.id);
-      linkBeliefToEpisode(storage, existing[0]!.id, episode.id);
-      logBeliefChange(storage, {
-        beliefId: existing[0]!.id,
-        changeType: "reinforced",
-        detail: `Reinforced by: "${text}"`,
-        episodeId: episode.id,
-      });
-      logger?.info("Belief reinforced", { beliefId: existing[0]!.id, statement: existing[0]!.statement });
-      return { episodeId: episode.id, beliefId: existing[0]!.id, isReinforcement: true };
+      return { beliefId: belief.id, isReinforcement: false };
     }
   }
 
-  // 5. No existing beliefs — create new
-  const belief = createBelief(storage, { statement, confidence: 0.6 });
-  linkBeliefToEpisode(storage, belief.id, episode.id);
+  // No match or low similarity — create new
+  const belief = createBelief(storage, { statement, confidence: 0.6, type });
+  storeEmbedding(storage, belief.id, embedding);
+  linkBeliefToEpisode(storage, belief.id, episodeId);
   logBeliefChange(storage, {
     beliefId: belief.id,
     changeType: "created",
-    detail: `Extracted from: "${text}"`,
-    episodeId: episode.id,
+    detail: `Extracted from: "${statement}"`,
+    episodeId,
   });
-  logger?.info("New belief created", { beliefId: belief.id, statement });
-  return { episodeId: episode.id, beliefId: belief.id, isReinforcement: false };
+  logger?.info("New belief created", { beliefId: belief.id, type, statement });
+  return { beliefId: belief.id, isReinforcement: false };
+}
+
+export async function remember(
+  storage: Storage,
+  llm: LLMClient,
+  text: string,
+  logger?: Logger,
+): Promise<{ episodeId: string; beliefIds: string[]; isReinforcement: boolean }> {
+  const episode = createEpisode(storage, { action: text });
+  const extracted = await extractBeliefs(llm, text);
+  logger?.debug("Extracted beliefs", { input: text, fact: extracted.fact, insight: extracted.insight });
+
+  const beliefIds: string[] = [];
+  let isReinforcement = false;
+
+  const factResult = await processNewBelief(storage, llm, extracted.fact, "fact", episode.id, logger);
+  beliefIds.push(factResult.beliefId);
+  if (factResult.isReinforcement) isReinforcement = true;
+
+  if (extracted.insight) {
+    const insightResult = await processNewBelief(storage, llm, extracted.insight, "insight", episode.id, logger);
+    beliefIds.push(insightResult.beliefId);
+    if (insightResult.isReinforcement) isReinforcement = true;
+  }
+
+  return { episodeId: episode.id, beliefIds, isReinforcement };
 }

@@ -1,5 +1,5 @@
 import type { Plugin, PluginContext, Command } from "@personal-ai/core";
-import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs, getMemoryContext, getBeliefHistory } from "./memory.js";
+import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, getMemoryContext, getBeliefHistory } from "./memory.js";
 import { remember } from "./remember.js";
 
 export const memoryPlugin: Plugin = {
@@ -16,7 +16,7 @@ export const memoryPlugin: Plugin = {
         async action(args) {
           const result = await remember(ctx.storage, ctx.llm, args["text"]!, ctx.logger);
           const label = result.isReinforcement ? "Reinforced existing" : "New";
-          console.log(`${label} belief (${result.beliefId})`);
+          console.log(`${label} belief(s): ${result.beliefIds.join(", ")}`);
         },
       },
       {
@@ -24,7 +24,21 @@ export const memoryPlugin: Plugin = {
         description: "Search beliefs by text",
         args: [{ name: "query", description: "Search query", required: true }],
         async action(args) {
-          const beliefs = searchBeliefs(ctx.storage, args["query"]!);
+          const query = args["query"]!;
+          let beliefs: Array<{ statement: string; confidence: number }> = [];
+          try {
+            const { embedding } = await ctx.llm.embed(query);
+            const similar = findSimilarBeliefs(ctx.storage, embedding, 10);
+            beliefs = similar.filter((s) => s.similarity > 0.3).map((s) => ({
+              statement: s.statement,
+              confidence: s.confidence,
+            }));
+          } catch {
+            // Fallback to FTS5 if embedding fails
+          }
+          if (beliefs.length === 0) {
+            beliefs = searchBeliefs(ctx.storage, query);
+          }
           if (beliefs.length === 0) {
             console.log("No matching beliefs found.");
             return;
