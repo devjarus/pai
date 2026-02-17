@@ -78,6 +78,7 @@ export interface PluginContext {
   storage: Storage;
   llm: LLMClient;
   logger: Logger;
+  contextProvider?: (query: string) => string;
 }
 
 export interface Command {

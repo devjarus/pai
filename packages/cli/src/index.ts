@@ -2,7 +2,7 @@
 import { Command } from "commander";
 import { loadConfig, createStorage, createLLMClient, createLogger } from "@personal-ai/core";
 import type { Plugin, PluginContext } from "@personal-ai/core";
-import { memoryPlugin } from "@personal-ai/plugin-memory";
+import { memoryPlugin, getMemoryContext } from "@personal-ai/plugin-memory";
 import { tasksPlugin } from "@personal-ai/plugin-tasks";
 
 const program = new Command();
@@ -22,6 +22,10 @@ async function main(): Promise<void> {
   logger.info("Starting pai", { plugins: config.plugins, dataDir: config.dataDir });
 
   const ctx: PluginContext = { config, storage, llm, logger };
+
+  if (config.plugins.includes("memory")) {
+    ctx.contextProvider = (query: string) => getMemoryContext(storage, query);
+  }
 
   // Load and migrate active plugins
   for (const name of config.plugins) {
