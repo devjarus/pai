@@ -88,9 +88,11 @@ export function createBelief(
   return storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [id])[0]!;
 }
 
+const FTS5_OPERATORS = /\b(AND|OR|NOT|NEAR)\b/gi;
+
 export function searchBeliefs(storage: Storage, query: string, limit = 10): Belief[] {
-  // Sanitize for FTS5: wrap each word in double quotes to avoid syntax errors
   const sanitized = query
+    .replace(FTS5_OPERATORS, "")
     .replace(/[^\w\s]/g, "")
     .split(/\s+/)
     .filter(Boolean)

@@ -62,4 +62,22 @@ describe("Memory", () => {
     const beliefs = listBeliefs(storage);
     expect(beliefs[0]!.confidence).toBeLessThanOrEqual(1.0);
   });
+
+  it("should handle FTS5 operator words in search query", () => {
+    createBelief(storage, { statement: "SQLite is NOT slow for local apps", confidence: 0.8 });
+    const results = searchBeliefs(storage, "NOT slow");
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("should handle empty search query gracefully", () => {
+    createBelief(storage, { statement: "some belief", confidence: 0.5 });
+    const results = searchBeliefs(storage, "   ");
+    expect(results).toHaveLength(0);
+  });
+
+  it("should handle special characters in search query", () => {
+    createBelief(storage, { statement: "C++ is fast for systems programming", confidence: 0.7 });
+    const results = searchBeliefs(storage, "C++ fast");
+    expect(results.length).toBeGreaterThan(0);
+  });
 });
