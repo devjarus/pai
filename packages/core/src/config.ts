@@ -8,6 +8,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     llm: {
       provider: (env["PAI_LLM_PROVIDER"] as Config["llm"]["provider"]) ?? "ollama",
       model: env["PAI_LLM_MODEL"] ?? "llama3.2",
+      embedModel: env["PAI_LLM_EMBED_MODEL"],
       baseUrl: env["PAI_LLM_BASE_URL"] ?? "http://127.0.0.1:11434",
       apiKey: env["PAI_LLM_API_KEY"],
       fallbackMode:

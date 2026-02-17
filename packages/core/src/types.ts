@@ -23,6 +23,7 @@ export interface Config {
     model: string;
     baseUrl: string;
     apiKey?: string;
+    embedModel?: string;
     fallbackMode: "local-first" | "strict";
   };
   plugins: string[];
@@ -52,8 +53,13 @@ export interface ChatResult {
   usage: TokenUsage;
 }
 
+export interface EmbedResult {
+  embedding: number[];
+}
+
 export interface LLMClient {
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult>;
+  embed(text: string): Promise<EmbedResult>;
   health(): Promise<{ ok: boolean; provider: string }>;
 }
 

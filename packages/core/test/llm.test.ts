@@ -3,10 +3,12 @@ import { createLLMClient } from "../src/llm.js";
 
 vi.mock("ai", () => ({
   generateText: vi.fn(),
+  embed: vi.fn(),
 }));
 
-import { generateText } from "ai";
+import { generateText, embed as aiEmbed } from "ai";
 const mockGenerateText = vi.mocked(generateText);
+const mockEmbed = vi.mocked(aiEmbed);
 
 describe("LLMClient", () => {
   const originalFetch = globalThis.fetch;
@@ -134,6 +136,25 @@ describe("LLMClient", () => {
     const result = await client.health();
     expect(result.ok).toBe(true);
     expect(result.provider).toBe("ollama");
+  });
+
+  it("embed should return embedding vector via ollama provider", async () => {
+    mockEmbed.mockResolvedValue({
+      embedding: [0.1, 0.2, 0.3],
+      value: "test",
+      usage: { tokens: 5 },
+    } as any);
+
+    const client = createLLMClient({
+      provider: "ollama",
+      model: "llama3.2",
+      baseUrl: "http://127.0.0.1:11434",
+      fallbackMode: "local-first",
+    });
+
+    const result = await client.embed("test text");
+    expect(result.embedding).toEqual([0.1, 0.2, 0.3]);
+    expect(mockEmbed).toHaveBeenCalledOnce();
   });
 
   it("health should return not ok on fetch failure", async () => {

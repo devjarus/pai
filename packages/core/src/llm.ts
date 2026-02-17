@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { generateText, embed as aiEmbed } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOllama } from "ai-sdk-ollama";
 import type { LLMClient, ChatMessage, ChatOptions, ChatResult, Config, Logger } from "./types.js";
@@ -12,6 +12,12 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMC
     provider === "ollama"
       ? createOllama({ baseURL: baseUrl, headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined })(model)
       : createOpenAI({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
+
+  const embedModelName = llmConfig.embedModel ?? (provider === "ollama" ? "nomic-embed-text" : "text-embedding-3-small");
+  const embeddingModel =
+    provider === "ollama"
+      ? createOllama({ baseURL: baseUrl, headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined }).embeddingModel(embedModelName)
+      : createOpenAI({ baseURL: baseUrl, apiKey: apiKey ?? "" }).textEmbeddingModel(embedModelName);
 
   async function chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult> {
     log.debug("LLM chat request", { model, messageCount: messages.length });
@@ -50,5 +56,15 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMC
     }
   }
 
-  return { chat, health };
+  async function embed(text: string): Promise<{ embedding: number[] }> {
+    log.debug("Embedding request", { model: embedModelName, textLength: text.length });
+    const { embedding } = await aiEmbed({
+      model: embeddingModel,
+      value: text,
+    });
+    log.debug("Embedding response", { dimensions: embedding.length });
+    return { embedding };
+  }
+
+  return { chat, embed, health };
 }
