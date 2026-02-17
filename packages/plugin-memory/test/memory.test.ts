@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence } from "../src/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -115,5 +115,28 @@ describe("Memory", () => {
     );
     const beliefs = listBeliefs(storage);
     expect(beliefs[0]!.confidence).toBeGreaterThan(beliefs[1]!.confidence);
+  });
+
+  it("should log a belief change", () => {
+    const belief = createBelief(storage, { statement: "test belief", confidence: 0.5 });
+    const ep = createEpisode(storage, { action: "observed something" });
+    logBeliefChange(storage, {
+      beliefId: belief.id,
+      changeType: "created",
+      detail: "Initial creation",
+      episodeId: ep.id,
+    });
+    const history = getBeliefHistory(storage, belief.id);
+    expect(history).toHaveLength(1);
+    expect(history[0]!.change_type).toBe("created");
+  });
+
+  it("should return history in reverse chronological order", () => {
+    const belief = createBelief(storage, { statement: "evolving belief", confidence: 0.5 });
+    logBeliefChange(storage, { beliefId: belief.id, changeType: "created", detail: "Born" });
+    logBeliefChange(storage, { beliefId: belief.id, changeType: "reinforced", detail: "Confirmed" });
+    const history = getBeliefHistory(storage, belief.id);
+    expect(history).toHaveLength(2);
+    expect(history[0]!.change_type).toBe("reinforced");
   });
 });

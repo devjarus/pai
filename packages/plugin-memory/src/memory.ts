@@ -39,6 +39,19 @@ export const memoryMigrations: Migration[] = [
       END;
     `,
   },
+  {
+    version: 2,
+    up: `
+      CREATE TABLE belief_changes (
+        id TEXT PRIMARY KEY,
+        belief_id TEXT NOT NULL REFERENCES beliefs(id),
+        change_type TEXT NOT NULL,
+        detail TEXT,
+        episode_id TEXT REFERENCES episodes(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `,
+  },
 ];
 
 export interface Episode {
@@ -138,5 +151,32 @@ export function reinforceBelief(storage: Storage, beliefId: string, delta = 0.1)
   storage.run(
     "UPDATE beliefs SET confidence = MIN(1.0, confidence + ?), updated_at = datetime('now') WHERE id = ?",
     [delta, beliefId],
+  );
+}
+
+export interface BeliefChange {
+  id: string;
+  belief_id: string;
+  change_type: string;
+  detail: string | null;
+  episode_id: string | null;
+  created_at: string;
+}
+
+export function logBeliefChange(
+  storage: Storage,
+  input: { beliefId: string; changeType: string; detail?: string; episodeId?: string },
+): void {
+  const id = nanoid();
+  storage.run(
+    "INSERT INTO belief_changes (id, belief_id, change_type, detail, episode_id) VALUES (?, ?, ?, ?, ?)",
+    [id, input.beliefId, input.changeType, input.detail ?? null, input.episodeId ?? null],
+  );
+}
+
+export function getBeliefHistory(storage: Storage, beliefId: string): BeliefChange[] {
+  return storage.query<BeliefChange>(
+    "SELECT * FROM belief_changes WHERE belief_id = ? ORDER BY created_at DESC, rowid DESC",
+    [beliefId],
   );
 }
