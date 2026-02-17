@@ -19,12 +19,6 @@
     "verify": "pnpm run typecheck && pnpm run test",
     "ci": "pnpm run verify && pnpm run test:coverage",
     "pai": "node packages/cli/dist/index.js",
-    "continuosctl": "continuosctl",
-    "runtime:health": "continuosctl run model health --probe --provider ollama --json",
-    "runtime:suggestions": "continuosctl run suggestions --scope product --window-days 30 --json",
-    "runtime:board": "continuosctl run board --scope product --json",
-    "runtime:conflicts": "continuosctl run conflicts --scope product --json",
-    "runtime:trends": "continuosctl run trends --scope product --window-days 30 --json",
     "prepare": "husky"
   },
   "lint-staged": {
