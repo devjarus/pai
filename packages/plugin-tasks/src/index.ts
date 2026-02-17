@@ -1,5 +1,21 @@
 import type { Plugin, PluginContext, Command, LLMClient, Storage } from "@personal-ai/core";
-import { taskMigrations, addTask, listTasks, completeTask, addGoal, listGoals } from "./tasks.js";
+import {
+  taskMigrations,
+  addTask,
+  listTasks,
+  completeTask,
+  addGoal,
+  listGoals,
+  type TaskStatusFilter,
+} from "./tasks.js";
+
+function parseTaskStatus(input: string | undefined): TaskStatusFilter {
+  const status = (input ?? "open").toLowerCase();
+  if (status === "open" || status === "done" || status === "all") {
+    return status;
+  }
+  throw new Error(`Invalid status "${input}". Use one of: open, done, all.`);
+}
 
 async function aiSuggest(storage: Storage, llm: LLMClient): Promise<string> {
   const tasks = listTasks(storage);
@@ -51,13 +67,22 @@ export const tasksPlugin: Plugin = {
       },
       {
         name: "task list",
-        description: "List open tasks",
-        async action() {
-          const tasks = listTasks(ctx.storage);
-          if (tasks.length === 0) { console.log("No open tasks."); return; }
+        description: "List tasks",
+        options: [
+          { flags: "--status <status>", description: "open, done, all", defaultValue: "open" },
+        ],
+        async action(_args, opts) {
+          const status = parseTaskStatus(opts["status"]);
+          const tasks = listTasks(ctx.storage, status);
+          if (tasks.length === 0) {
+            console.log(status === "all" ? "No tasks." : `No ${status} tasks.`);
+            return;
+          }
           for (const t of tasks) {
             const due = t.due_date ? ` (due: ${t.due_date})` : "";
-            console.log(`  ${t.id.slice(0, 8)}  [${t.priority}]  ${t.title}${due}`);
+            const completed = t.completed_at ? ` (completed: ${t.completed_at})` : "";
+            const statusCol = status === "all" ? `  [${t.status}]` : "";
+            console.log(`  ${t.id.slice(0, 8)}  [${t.priority}]${statusCol}  ${t.title}${due}${completed}`);
           }
         },
       },
