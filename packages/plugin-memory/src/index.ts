@@ -1,5 +1,5 @@
 import type { Plugin, PluginContext, Command } from "@personal-ai/core";
-import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs } from "./memory.js";
+import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs, getMemoryContext, getBeliefHistory } from "./memory.js";
 import { remember } from "./remember.js";
 
 export const memoryPlugin: Plugin = {
@@ -64,8 +64,32 @@ export const memoryPlugin: Plugin = {
           }
         },
       },
+      {
+        name: "memory history",
+        description: "Show change history for a belief",
+        args: [{ name: "beliefId", description: "Belief ID (or prefix)", required: true }],
+        async action(args) {
+          const history = getBeliefHistory(ctx.storage, args["beliefId"]!);
+          if (history.length === 0) {
+            console.log("No history found for this belief.");
+            return;
+          }
+          for (const h of history) {
+            console.log(`[${h.created_at}] ${h.change_type}: ${h.detail ?? "(no detail)"}`);
+          }
+        },
+      },
+      {
+        name: "memory context",
+        description: "Preview memory context for a query",
+        args: [{ name: "query", description: "Search query to find relevant context", required: true }],
+        async action(args) {
+          const context = getMemoryContext(ctx.storage, args["query"]!);
+          console.log(context);
+        },
+      },
     ];
   },
 };
 
-export { memoryMigrations } from "./memory.js";
+export { memoryMigrations, getMemoryContext } from "./memory.js";
