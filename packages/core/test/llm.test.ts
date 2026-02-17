@@ -157,6 +157,25 @@ describe("LLMClient", () => {
     expect(mockEmbed).toHaveBeenCalledOnce();
   });
 
+  it("embed should return embedding vector via openai provider", async () => {
+    mockEmbed.mockResolvedValue({
+      embedding: [0.4, 0.5, 0.6],
+      value: "test",
+      usage: { tokens: 5 },
+    } as any);
+
+    const client = createLLMClient({
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "sk-test",
+      fallbackMode: "strict",
+    });
+
+    const result = await client.embed("test text");
+    expect(result.embedding).toEqual([0.4, 0.5, 0.6]);
+  });
+
   it("health should return not ok on fetch failure", async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
     const client = createLLMClient({

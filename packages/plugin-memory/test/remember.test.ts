@@ -69,6 +69,23 @@ describe("remember", () => {
     expect(result.beliefIds[0]).toBeTruthy();
   });
 
+  it("should create both fact and insight beliefs when insight is present", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn().mockResolvedValue({
+        text: '{"fact":"User likes coffee in the morning","insight":"Morning routines provide consistency"}',
+        usage: { inputTokens: 10, outputTokens: 15 },
+      }),
+      embed: vi.fn()
+        .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })   // fact embedding
+        .mockResolvedValueOnce({ embedding: [0.0, 1.0, 0.0] }),   // insight embedding (different direction)
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+
+    const result = await remember(storage, mockLLM, "I like coffee in the morning");
+    expect(result.beliefIds).toHaveLength(2);
+    expect(result.isReinforcement).toBe(false);
+  });
+
   it("should reinforce existing belief when semantically similar", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn()
@@ -140,6 +157,34 @@ describe("checkContradiction", () => {
     expect(result).toBe("b1");
   });
 
+  it("should return null when existing beliefs array is empty", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn(),
+      embed: vi.fn(),
+      health: vi.fn(),
+    };
+    const result = await checkContradiction(mockLLM, "anything", []);
+    expect(result).toBeNull();
+    expect(mockLLM.chat).not.toHaveBeenCalled();
+  });
+
+  it("should return null when LLM returns invalid index", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn().mockResolvedValue({
+        text: "99",
+        usage: { inputTokens: 20, outputTokens: 1 },
+      }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+
+    const existing = [
+      { id: "b1", statement: "TypeScript is useful", confidence: 0.7, status: "active", type: "", created_at: "", updated_at: "" },
+    ];
+    const result = await checkContradiction(mockLLM, "TypeScript is bad", existing);
+    expect(result).toBeNull();
+  });
+
   it("should return null when no contradiction", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn().mockResolvedValue({
@@ -171,6 +216,32 @@ describe("remember with contradictions", () => {
   afterEach(() => {
     storage.close();
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("should create new belief when medium similarity but no contradiction", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn()
+        // First remember: extractBeliefs
+        .mockResolvedValueOnce({ text: '{"fact":"Python is great for data science","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
+        // Second remember: extractBeliefs
+        .mockResolvedValueOnce({ text: '{"fact":"Python is popular for web development","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
+        // Second remember: checkContradiction returns "NONE"
+        .mockResolvedValueOnce({ text: "NONE", usage: { inputTokens: 20, outputTokens: 1 } }),
+      embed: vi.fn()
+        .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })  // first belief
+        .mockResolvedValueOnce({ embedding: [0.7, 0.7, 0.0] }),  // second — similarity ~0.7 (medium range)
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+
+    const first = await remember(storage, mockLLM, "Python for data science");
+    const second = await remember(storage, mockLLM, "Python for web");
+
+    expect(second.isReinforcement).toBe(false);
+    expect(second.beliefIds[0]).not.toBe(first.beliefIds[0]);
+
+    // Both beliefs should remain active
+    const beliefs = storage.query<{ status: string }>("SELECT status FROM beliefs");
+    expect(beliefs.every((b) => b.status === "active")).toBe(true);
   });
 
   it("should invalidate contradicted belief in remember flow", async () => {
