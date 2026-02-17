@@ -76,7 +76,7 @@ Coverage via `@vitest/coverage-v8` with thresholds enforced in `vitest.config.ts
 ## Design Constraints
 
 - TypeScript only — no Python, Docker, or separate processes
-- SQLite only — no Postgres, Redis, or vector DBs
+- SQLite only — no Postgres, Redis, or external vector DBs (embeddings stored as JSON in SQLite)
 - Every plugin must be optional — core + any single plugin = working system
 - CLI-first — no web UI in current phase
 - Target under 2000 lines of source (excluding tests)

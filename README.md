@@ -23,11 +23,13 @@ pnpm build
 # Check LLM connectivity
 pai health
 
-# Memory
+# Memory — remembers facts + insights with semantic dedup
 pai memory remember "I prefer TypeScript over JavaScript"
 pai memory recall "language preference"
 pai memory beliefs
 pai memory episodes
+pai memory history <beliefId>
+pai memory context "coding preferences"
 
 # Tasks
 pai task add "Ship v0.1" --priority high --due 2026-03-01
@@ -53,14 +55,16 @@ Set via environment variables or `.env` file. See `.env.example` for defaults.
 |----------|---------|-------------|
 | `PAI_DATA_DIR` | `~/.personal-ai` | SQLite database location |
 | `PAI_LLM_PROVIDER` | `ollama` | `ollama` or `openai` |
-| `PAI_LLM_MODEL` | `llama3.2` | Model name |
-| `PAI_LLM_BASE_URL` | `http://127.0.0.1:11434` | Provider URL |
-| `PAI_LLM_API_KEY` | | API key (OpenAI only) |
+| `PAI_LLM_MODEL` | `llama3.2` | Chat model name |
+| `PAI_LLM_EMBED_MODEL` | `nomic-embed-text` | Embedding model name |
+| `PAI_LLM_BASE_URL` | `http://127.0.0.1:11434` | Provider URL (use `https://api.ollama.com` for Ollama Cloud) |
+| `PAI_LLM_API_KEY` | | API key (required for Ollama Cloud and OpenAI) |
+| `PAI_LOG_LEVEL` | `silent` | Stderr log level: `silent`, `error`, `warn`, `info`, `debug` |
 | `PAI_PLUGINS` | `memory,tasks` | Comma-separated active plugins |
 
 ## Architecture
 
-pnpm monorepo with 4 packages: `core`, `cli`, `plugin-memory`, `plugin-tasks`. SQLite + FTS5 for storage, Vercel AI SDK for LLM integration.
+pnpm monorepo with 4 packages: `core`, `cli`, `plugin-memory`, `plugin-tasks`. SQLite + FTS5 for storage, embeddings for semantic search, Vercel AI SDK for LLM integration.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 
