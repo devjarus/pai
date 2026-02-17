@@ -50,8 +50,12 @@ No lifecycle hooks, no event system, no middleware. Plugins get context, return 
 
 - **Episodes** — append-only observations/actions/outcomes
 - **Beliefs** — durable knowledge with confidence scores, linked to episode evidence
-- **FTS5** full-text search over beliefs (no vector embeddings in v1)
-- **LLM integration** — on `remember`, LLM extracts a belief statement. Matches against existing beliefs and reinforces if consistent.
+- **FTS5** full-text search over beliefs with sanitized queries (handles operators and special chars)
+- **Confidence Decay** — 30-day half-life. Beliefs lose confidence over time if not reinforced. Computed at read time, no background jobs.
+- **Contradiction Detection** — on `remember`, LLM checks if new belief contradicts existing beliefs. Contradicted beliefs are invalidated, replaced by the new one.
+- **Change Tracking** — `belief_changes` table logs every create, reinforce, contradict, and fade event with timestamps and episode links.
+- **Context Packing** — `getMemoryContext(query)` assembles relevant beliefs + recent episodes into a formatted string for LLM context injection. Exported for cross-plugin use.
+- **LLM integration** — on `remember`, LLM extracts a belief statement. Matches against existing beliefs — reinforces if consistent, invalidates if contradicted, creates new if novel.
 
 ## Tasks Plugin
 
@@ -63,10 +67,11 @@ No lifecycle hooks, no event system, no middleware. Plugins get context, return 
 
 ```sql
 -- Memory
-episodes    (id, timestamp, context, action, outcome, tags_json)
-beliefs     (id, statement, confidence, status, created_at, updated_at)
+episodes        (id, timestamp, context, action, outcome, tags_json)
+beliefs         (id, statement, confidence, status, created_at, updated_at)
 belief_episodes (belief_id, episode_id)
-beliefs_fts (FTS5 virtual table on beliefs.statement)
+belief_changes  (id, belief_id, change_type, detail, episode_id, created_at)
+beliefs_fts     (FTS5 virtual table on beliefs.statement)
 
 -- Tasks
 tasks       (id, title, description, status, priority, goal_id, due_date, created_at, completed_at)
