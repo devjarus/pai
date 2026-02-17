@@ -14,7 +14,7 @@ export const memoryPlugin: Plugin = {
         description: "Record an observation and extract a belief",
         args: [{ name: "text", description: "What you observed or learned", required: true }],
         async action(args) {
-          const result = await remember(ctx.storage, ctx.llm, args["text"]!);
+          const result = await remember(ctx.storage, ctx.llm, args["text"]!, ctx.logger);
           const label = result.isReinforcement ? "Reinforced existing" : "New";
           console.log(`${label} belief (${result.beliefId})`);
         },

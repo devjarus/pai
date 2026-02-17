@@ -1,4 +1,4 @@
-import type { LLMClient, Storage } from "@personal-ai/core";
+import type { LLMClient, Storage, Logger } from "@personal-ai/core";
 import type { Belief } from "./memory.js";
 import { createEpisode, createBelief, searchBeliefs, reinforceBelief, linkBeliefToEpisode, logBeliefChange } from "./memory.js";
 
@@ -19,6 +19,7 @@ export async function checkContradiction(
   llm: LLMClient,
   newStatement: string,
   existingBeliefs: Belief[],
+  logger?: Logger,
 ): Promise<string | null> {
   if (existingBeliefs.length === 0) return null;
 
@@ -43,12 +44,16 @@ export async function checkContradiction(
   ], { temperature: 0 });
 
   const answer = result.text.trim();
+  logger?.debug("Contradiction check result", { answer, beliefCount: existingBeliefs.length });
+
   if (answer === "NONE") return null;
 
   const index = parseInt(answer, 10) - 1;
   if (index >= 0 && index < existingBeliefs.length) {
+    logger?.info("Contradiction detected", { contradictedId: existingBeliefs[index]!.id, answer });
     return existingBeliefs[index]!.id;
   }
+  logger?.warn("LLM returned invalid contradiction index", { answer, validRange: `1-${existingBeliefs.length}` });
   return null;
 }
 
@@ -56,19 +61,22 @@ export async function remember(
   storage: Storage,
   llm: LLMClient,
   text: string,
+  logger?: Logger,
 ): Promise<{ episodeId: string; beliefId: string; isReinforcement: boolean }> {
   // 1. Create episode
   const episode = createEpisode(storage, { action: text });
 
   // 2. Extract belief via LLM
   const statement = await extractBelief(llm, text);
+  logger?.debug("Extracted belief", { input: text, extracted: statement });
 
   // 3. Search for similar beliefs
   const existing = searchBeliefs(storage, statement, 3);
+  logger?.debug("FTS5 search results", { query: statement, matchCount: existing.length, matches: existing.map((b) => b.statement) });
 
   if (existing.length > 0) {
     // 4. Check for contradictions
-    const contradictedId = await checkContradiction(llm, statement, existing);
+    const contradictedId = await checkContradiction(llm, statement, existing, logger);
 
     if (contradictedId) {
       // Invalidate old belief
@@ -89,6 +97,7 @@ export async function remember(
         detail: `Replaced contradicted belief ${contradictedId}`,
         episodeId: episode.id,
       });
+      logger?.info("Belief contradicted and replaced", { oldBeliefId: contradictedId, newBeliefId: belief.id });
       return { episodeId: episode.id, beliefId: belief.id, isReinforcement: false };
     }
 
@@ -102,6 +111,7 @@ export async function remember(
         detail: `Reinforced by: "${text}"`,
         episodeId: episode.id,
       });
+      logger?.info("Belief reinforced", { beliefId: existing[0]!.id, statement: existing[0]!.statement });
       return { episodeId: episode.id, beliefId: existing[0]!.id, isReinforcement: true };
     }
   }
@@ -115,5 +125,6 @@ export async function remember(
     detail: `Extracted from: "${text}"`,
     episodeId: episode.id,
   });
+  logger?.info("New belief created", { beliefId: belief.id, statement });
   return { episodeId: episode.id, beliefId: belief.id, isReinforcement: false };
 }
