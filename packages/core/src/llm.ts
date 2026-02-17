@@ -10,7 +10,7 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMC
 
   const llmModel =
     provider === "ollama"
-      ? createOllama({ baseURL: baseUrl })(model)
+      ? createOllama({ baseURL: baseUrl, headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined })(model)
       : createOpenAI({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
 
   async function chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult> {
