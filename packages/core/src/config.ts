@@ -13,6 +13,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       fallbackMode:
         (env["PAI_LLM_FALLBACK_MODE"] as Config["llm"]["fallbackMode"]) ?? "local-first",
     },
+    logLevel: (env["PAI_LOG_LEVEL"] as Config["logLevel"]) ?? "silent",
     plugins: env["PAI_PLUGINS"]?.split(",").map((s) => s.trim()) ?? ["memory", "tasks"],
   };
 }

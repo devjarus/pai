@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { loadConfig, createStorage, createLLMClient } from "@personal-ai/core";
+import { loadConfig, createStorage, createLLMClient, createLogger } from "@personal-ai/core";
 import type { Plugin, PluginContext } from "@personal-ai/core";
 import { memoryPlugin } from "@personal-ai/plugin-memory";
 import { tasksPlugin } from "@personal-ai/plugin-tasks";
@@ -15,16 +15,19 @@ const plugins: Record<string, Plugin> = {
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const storage = createStorage(config.dataDir);
-  const llm = createLLMClient(config.llm);
+  const logger = createLogger(config.logLevel);
+  const storage = createStorage(config.dataDir, logger);
+  const llm = createLLMClient(config.llm, logger);
 
-  const ctx: PluginContext = { config, storage, llm };
+  logger.info("Starting pai", { plugins: config.plugins, dataDir: config.dataDir });
+
+  const ctx: PluginContext = { config, storage, llm, logger };
 
   // Load and migrate active plugins
   for (const name of config.plugins) {
     const plugin = plugins[name];
     if (!plugin) {
-      console.error(`Unknown plugin: ${name}`);
+      logger.warn(`Unknown plugin: ${name}`);
       continue;
     }
     storage.migrate(plugin.name, plugin.migrations);

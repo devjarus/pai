@@ -1,7 +1,17 @@
 import type { Database, RunResult } from "better-sqlite3";
 
+export type LogLevel = "silent" | "error" | "warn" | "info" | "debug";
+
+export interface Logger {
+  error(msg: string, data?: Record<string, unknown>): void;
+  warn(msg: string, data?: Record<string, unknown>): void;
+  info(msg: string, data?: Record<string, unknown>): void;
+  debug(msg: string, data?: Record<string, unknown>): void;
+}
+
 export interface Config {
   dataDir: string;
+  logLevel: LogLevel;
   llm: {
     provider: "ollama" | "openai";
     model: string;
@@ -55,6 +65,7 @@ export interface PluginContext {
   config: Config;
   storage: Storage;
   llm: LLMClient;
+  logger: Logger;
 }
 
 export interface Command {

@@ -1,9 +1,11 @@
 import Database from "better-sqlite3";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
-import type { Storage, Migration } from "./types.js";
+import type { Storage, Migration, Logger } from "./types.js";
+import { createLogger } from "./logger.js";
 
-export function createStorage(dataDir: string): Storage {
+export function createStorage(dataDir: string, logger?: Logger): Storage {
+  const log = logger ?? createLogger();
   mkdirSync(dataDir, { recursive: true });
   const dbPath = join(dataDir, "personal-ai.db");
   const db = new Database(dbPath);
@@ -31,6 +33,7 @@ export function createStorage(dataDir: string): Storage {
 
       for (const m of migrations) {
         if (appliedVersions.has(m.version)) continue;
+        log.info("Applying migration", { plugin: pluginName, version: m.version });
         db.exec(m.up);
         db.prepare("INSERT INTO _migrations (plugin, version) VALUES (?, ?)").run(
           pluginName,

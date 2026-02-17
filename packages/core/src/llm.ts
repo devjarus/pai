@@ -1,9 +1,11 @@
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOllama } from "ai-sdk-ollama";
-import type { LLMClient, ChatMessage, ChatOptions, ChatResult, Config } from "./types.js";
+import type { LLMClient, ChatMessage, ChatOptions, ChatResult, Config, Logger } from "./types.js";
+import { createLogger } from "./logger.js";
 
-export function createLLMClient(llmConfig: Config["llm"]): LLMClient {
+export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMClient {
+  const log = logger ?? createLogger();
   const { provider, model, baseUrl, apiKey } = llmConfig;
 
   const llmModel =
@@ -12,6 +14,7 @@ export function createLLMClient(llmConfig: Config["llm"]): LLMClient {
       : createOpenAI({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
 
   async function chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult> {
+    log.debug("LLM chat request", { model, messageCount: messages.length });
     const { text, usage } = await generateText({
       model: llmModel,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
@@ -19,7 +22,7 @@ export function createLLMClient(llmConfig: Config["llm"]): LLMClient {
       maxOutputTokens: options?.maxTokens,
     });
 
-    return {
+    const result: ChatResult = {
       text,
       usage: {
         inputTokens: usage.inputTokens,
@@ -27,6 +30,8 @@ export function createLLMClient(llmConfig: Config["llm"]): LLMClient {
         totalTokens: (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0),
       },
     };
+    log.debug("LLM chat response", { responseLength: result.text.length, usage: result.usage });
+    return result;
   }
 
   async function health(): Promise<{ ok: boolean; provider: string }> {
@@ -39,7 +44,8 @@ export function createLLMClient(llmConfig: Config["llm"]): LLMClient {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       return { ok: res.ok, provider: "openai" };
-    } catch {
+    } catch (err) {
+      log.error("Health check failed", { provider, error: err instanceof Error ? err.message : String(err) });
       return { ok: false, provider };
     }
   }

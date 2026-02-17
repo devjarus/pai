@@ -8,6 +8,7 @@ describe("loadConfig", () => {
     expect(config.llm.provider).toBe("ollama");
     expect(config.llm.model).toBe("llama3.2");
     expect(config.llm.baseUrl).toBe("http://127.0.0.1:11434");
+    expect(config.logLevel).toBe("silent");
     expect(config.llm.fallbackMode).toBe("local-first");
     expect(config.plugins).toEqual(["memory", "tasks"]);
   });
