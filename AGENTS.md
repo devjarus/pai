@@ -10,9 +10,9 @@ Local-first personal AI with a plugin architecture. CLI tool (`pai`) backed by S
 
 pnpm monorepo with 4 packages under `packages/`:
 
-- **`core`** (~300 lines) — Config (env-based via `loadConfig`), Storage (better-sqlite3 with migration tracking), LLM Client (Ollama-first, OpenAI fallback), Logger (NDJSON to stderr + file), Plugin/Command interfaces
+- **`core`** (~300 lines) — Config (env-based via `loadConfig`), Storage (better-sqlite3 with migration tracking), LLM Client (Ollama-first, OpenAI fallback, embedding support), Logger (NDJSON to stderr + file), Plugin/Command interfaces
 - **`cli`** — Commander.js entrypoint that loads plugins, runs migrations, and wires commands as `pai <group> <command>`
-- **`plugin-memory`** — Episodes (append-only observations) + Beliefs (durable knowledge with confidence scores). FTS5 full-text search. LLM extracts beliefs from episodes via `remember()`. Features: 30-day confidence decay, LLM-based contradiction detection, belief change audit trail, context packing for cross-plugin LLM injection.
+- **`plugin-memory`** — Episodes (append-only observations) + Beliefs (durable knowledge with confidence scores, typed as `fact` or `insight`). Semantic search via embeddings (cosine similarity) with FTS5 fallback. `remember()` extracts dual beliefs (personal fact + generalized insight) and uses embedding similarity for smart dedup/merge. Features: 30-day confidence decay, LLM-based contradiction detection, belief change audit trail, context packing for cross-plugin LLM injection.
 - **`plugin-tasks`** — Tasks (with priority/status/due dates) + Goals. `ai-suggest` feeds tasks+memory to LLM for prioritization.
 
 **Plugin contract:** Plugins implement `Plugin` interface — provide `name`, `version`, `migrations[]`, and `commands(ctx)`. They receive a `PluginContext` with config, storage, LLM client, and logger. No lifecycle hooks or event system.
@@ -49,7 +49,7 @@ pnpm run ci                              # verify + coverage thresholds
 
 ## Configuration
 
-All config via env vars (or `.env`): `PAI_DATA_DIR`, `PAI_LLM_PROVIDER`, `PAI_LLM_MODEL`, `PAI_LLM_BASE_URL`, `PAI_LLM_API_KEY`, `PAI_LLM_FALLBACK_MODE`, `PAI_PLUGINS`, `PAI_LOG_LEVEL`.
+All config via env vars (or `.env`): `PAI_DATA_DIR`, `PAI_LLM_PROVIDER`, `PAI_LLM_MODEL`, `PAI_LLM_EMBED_MODEL`, `PAI_LLM_BASE_URL`, `PAI_LLM_API_KEY`, `PAI_LLM_FALLBACK_MODE`, `PAI_PLUGINS`, `PAI_LOG_LEVEL`.
 
 ## Logging
 
