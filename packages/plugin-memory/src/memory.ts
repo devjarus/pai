@@ -111,15 +111,25 @@ export function createBelief(
 }
 
 const FTS5_OPERATORS = /\b(AND|OR|NOT|NEAR)\b/gi;
+const STOP_WORDS = new Set([
+  "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+  "have", "has", "had", "do", "does", "did", "will", "would", "could",
+  "should", "may", "might", "can", "shall", "to", "of", "in", "for",
+  "on", "with", "at", "by", "from", "as", "into", "about", "than",
+  "its", "it", "this", "that", "these", "those", "i", "we", "you",
+  "he", "she", "they", "me", "him", "her", "us", "them", "my", "our",
+  "your", "his", "their", "more", "most", "very", "also", "just",
+  "generally", "actually", "definitely", "really", "compared",
+]);
 
 export function searchBeliefs(storage: Storage, query: string, limit = 10): Belief[] {
-  const sanitized = query
+  const words = query
     .replace(FTS5_OPERATORS, "")
     .replace(/[^\w\s]/g, "")
     .split(/\s+/)
     .filter(Boolean)
-    .map((w) => `"${w}"`)
-    .join(" ");
+    .filter((w) => !STOP_WORDS.has(w.toLowerCase()));
+  const sanitized = words.map((w) => `"${w}"`).join(" OR ");
   if (!sanitized) return [];
   return storage.query<Belief>(
     `SELECT b.* FROM beliefs b

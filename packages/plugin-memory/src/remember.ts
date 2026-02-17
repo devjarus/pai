@@ -26,16 +26,19 @@ export async function checkContradiction(
     .map((b, i) => `${i + 1}. "${b.statement}"`)
     .join("\n");
 
+  const validNumbers = existingBeliefs.map((_, i) => String(i + 1)).join(", ");
+
   const result = await llm.chat([
     {
       role: "system",
       content:
         "You check for contradictions in a knowledge base. " +
-        "Reply with ONLY the number of the contradicted belief, or NONE.",
+        `Reply with ONLY one of these exact values: ${validNumbers}, or NONE. ` +
+        "No other text.",
     },
     {
       role: "user",
-      content: `New belief: "${newStatement}"\n\nExisting beliefs:\n${beliefList}\n\nDoes the new belief directly contradict any existing belief?`,
+      content: `New belief: "${newStatement}"\n\nExisting beliefs:\n${beliefList}\n\nDoes the new belief directly contradict any existing belief? Reply with ONLY the number (${validNumbers}) or NONE.`,
     },
   ], { temperature: 0 });
 
