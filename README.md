@@ -30,16 +30,21 @@ pai memory beliefs
 pai memory episodes
 pai memory history <beliefId>
 pai memory context "coding preferences"
+pai memory forget <id-or-prefix>
+pai memory prune --threshold 0.05
 
 # Tasks
 pai task add "Ship v0.1" --priority high --due 2026-03-01
 pai task list --status open
 pai task list --status done
 pai task done <id-or-prefix>
+pai task reopen <id-or-prefix>
+pai task edit <id-or-prefix> --title "New title" --priority high
 
 # Goals
 pai goal add "Launch personal AI"
 pai goal list
+pai goal done <id-or-prefix>
 
 # AI prioritization (uses LLM + memory context)
 pai task ai-suggest

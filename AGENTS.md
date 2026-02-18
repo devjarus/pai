@@ -81,6 +81,97 @@ Coverage via `@vitest/coverage-v8` with thresholds enforced in `vitest.config.ts
 - CLI-first — no web UI in current phase
 - Target under 2000 lines of source (excluding tests)
 
+## CLI as Agent Tools
+
+The `pai` CLI commands can be called directly from any coding agent (Claude Code, Codex) via bash. After `pnpm build`, run with `node packages/cli/dist/index.js` or alias as `pai`.
+
+### Memory — Store and retrieve personal knowledge
+
+```bash
+# Store a fact/preference — LLM extracts beliefs, deduplicates via embeddings
+pai memory remember "User prefers Vitest over Jest for TypeScript projects"
+
+# Semantic search — finds beliefs by meaning, not just keywords
+pai memory recall "testing framework preference"
+
+# Get formatted context block for LLM injection
+pai memory context "coding preferences"
+
+# List all active beliefs sorted by confidence
+pai memory beliefs
+pai memory beliefs --status forgotten    # see forgotten/invalidated beliefs
+
+# Soft-delete a belief (preserves audit trail)
+pai memory forget <id-or-prefix>
+
+# Remove low-confidence beliefs (default threshold: 0.05)
+pai memory prune
+pai memory prune --threshold 0.1
+
+# View belief change history
+pai memory history <id-or-prefix>
+
+# List raw episodes (observations)
+pai memory episodes --limit 10
+```
+
+### Tasks — Track work items
+
+```bash
+# Add a task
+pai task add "Implement auth middleware" --priority high --due 2026-03-01
+
+# List tasks (default: open)
+pai task list
+pai task list --status done
+pai task list --status all
+
+# Complete / reopen a task
+pai task done <id-or-prefix>
+pai task reopen <id-or-prefix>
+
+# Edit a task
+pai task edit <id-or-prefix> --title "New title" --priority medium --due 2026-04-01
+
+# AI-powered prioritization (uses memory context + open tasks)
+pai task ai-suggest
+```
+
+### Goals
+
+```bash
+pai goal add "Launch personal AI v1"
+pai goal list
+pai goal done <id-or-prefix>
+```
+
+### Health
+
+```bash
+pai health    # check LLM provider connectivity
+```
+
+### Agent Usage Patterns
+
+**Before starting work** — retrieve relevant context:
+```bash
+pai memory recall "error handling preferences"
+pai task list --status open
+```
+
+**During work** — store learnings:
+```bash
+pai memory remember "User's project uses Zod for validation, not Joi"
+```
+
+**After completing work** — update tasks:
+```bash
+pai task done <id>
+pai memory remember "Completed auth middleware using JWT approach"
+```
+
+**All IDs support prefix matching** — use first 8 characters instead of the full nanoid.
+
 ## Architecture Reference
 
 See `docs/ARCHITECTURE.md` for full design, data model, and future plugin path.
