@@ -241,5 +241,9 @@ export const memoryPlugin: Plugin = {
   },
 };
 
-export { memoryMigrations, getMemoryContext, findSimilarEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, listEpisodes, getBeliefHistory, forgetBelief, pruneBeliefs, reflect, exportMemory, importMemory, memoryStats } from "./memory.js";
+// Public API — used by cli and mcp
+export { memoryMigrations, getMemoryContext, listBeliefs, searchBeliefs, findSimilarBeliefs, forgetBelief, memoryStats } from "./memory.js";
 export { remember } from "./remember.js";
+
+// Types
+export type { Belief, Episode, BeliefChange, MemoryStats, MemoryExport, SimilarBelief, ReflectionResult } from "./memory.js";
