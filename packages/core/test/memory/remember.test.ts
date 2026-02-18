@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
-import { memoryMigrations, getBeliefHistory } from "../src/memory.js";
-import { remember, extractBeliefs, checkContradiction } from "../src/remember.js";
+import { memoryMigrations, getBeliefHistory } from "../../src/memory/memory.js";
+import { remember, extractBeliefs, checkContradiction } from "../../src/memory/remember.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

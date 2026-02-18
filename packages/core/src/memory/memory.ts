@@ -1,4 +1,4 @@
-import type { Storage, Migration, LLMClient } from "@personal-ai/core";
+import type { Storage, Migration, LLMClient } from "../types.js";
 import { nanoid } from "nanoid";
 
 export const memoryMigrations: Migration[] = [

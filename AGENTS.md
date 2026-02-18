@@ -8,11 +8,10 @@ Persistent AI memory layer for coding agents. CLI tool (`pai`) + MCP server back
 
 ## Architecture
 
-pnpm monorepo with 4 packages under `packages/`:
+pnpm monorepo with 3 packages under `packages/`:
 
-- **`core`** (~300 lines) — Config (env-based via `loadConfig`), Storage (better-sqlite3 with migration tracking), LLM Client (Ollama-first, OpenAI fallback, embedding support), Logger (NDJSON to stderr + file), Plugin/Command interfaces
-- **`cli`** — Commander.js entrypoint that loads plugins, runs migrations, and wires commands as `pai <group> <command>`
-- **`plugin-memory`** — Episodes (append-only observations) + Beliefs (durable knowledge with confidence scores, typed as `fact` or `insight`). Semantic search via embeddings (cosine similarity) with FTS5 fallback. `remember()` extracts dual beliefs (personal fact + generalized insight) and uses embedding similarity for smart dedup/merge. Features: 30-day confidence decay, LLM-based contradiction detection, belief change audit trail, context packing for cross-plugin LLM injection.
+- **`core`** — Config (env-based via `loadConfig`), Storage (better-sqlite3 with migration tracking), LLM Client (Ollama-first, OpenAI fallback, embedding support), Logger (NDJSON to stderr + file), Plugin/Command interfaces, **Memory** (episodes, beliefs, embeddings, semantic search, contradiction detection, context packing). Memory is always available — it's the product, not a plugin.
+- **`cli`** — Commander.js entrypoint that registers memory commands unconditionally, loads optional plugins, runs migrations, and wires commands as `pai <group> <command>`
 - **`plugin-tasks`** — Tasks (with priority/status/due dates) + Goals. `ai-suggest` feeds tasks+memory to LLM for prioritization.
 
 **Plugin contract:** Plugins implement `Plugin` interface — provide `name`, `version`, `migrations[]`, and `commands(ctx)`. They receive a `PluginContext` with config, storage, LLM client, and logger. No lifecycle hooks or event system.
@@ -26,8 +25,7 @@ pnpm install                              # install all dependencies
 pnpm build                                # build all packages (tsc)
 pnpm test                                 # run all tests (vitest)
 pnpm test:watch                           # watch mode
-pnpm --filter @personal-ai/core test      # test single package
-pnpm --filter @personal-ai/plugin-memory test
+pnpm --filter @personal-ai/core test      # test single package (includes memory)
 pnpm --filter @personal-ai/plugin-tasks test
 pnpm typecheck                            # type-check all packages
 pnpm lint                                 # eslint across all packages

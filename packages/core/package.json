@@ -1,7 +1,7 @@
 {
   "name": "@personal-ai/core",
   "version": "0.1.0",
-  "description": "Core runtime for pai: config, storage, LLM client, plugin interfaces",
+  "description": "Core runtime for pai: config, storage, LLM client, memory (belief lifecycle + semantic search), plugin interfaces",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -30,6 +30,7 @@
     "ai-sdk-ollama": "^3.7.0",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.4.0",
+    "nanoid": "^5.0.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

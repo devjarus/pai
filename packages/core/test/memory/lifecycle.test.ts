@@ -27,8 +27,8 @@ import {
   getMemoryContext,
   reflect,
   memoryStats,
-} from "../src/memory.js";
-import { remember } from "../src/remember.js";
+} from "../../src/memory/memory.js";
+import { remember } from "../../src/memory/remember.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

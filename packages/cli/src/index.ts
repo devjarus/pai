@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { loadConfig, createStorage, createLLMClient, createLogger } from "@personal-ai/core";
-import type { Plugin, PluginContext } from "@personal-ai/core";
-import { memoryPlugin, getMemoryContext } from "@personal-ai/plugin-memory";
+import { loadConfig, createStorage, createLLMClient, createLogger, memoryMigrations, memoryCommands, getMemoryContext } from "@personal-ai/core";
+import type { Plugin, PluginContext, Command as PaiCommand } from "@personal-ai/core";
 import { tasksPlugin } from "@personal-ai/plugin-tasks";
 
 const program = new Command();
@@ -13,9 +12,63 @@ program
   .option("--json", "Output as JSON for agent consumption");
 
 const plugins: Record<string, Plugin> = {
-  memory: memoryPlugin,
   tasks: tasksPlugin,
 };
+
+function registerCommand(parent: Command, ctx: PluginContext, cmd: PaiCommand): void {
+  const parts = cmd.name.split(" ");
+  let target = parent;
+
+  // Handle subcommands like "memory remember" or "task add"
+  if (parts.length === 2) {
+    const groupName = parts[0]!;
+    let group = parent.commands.find((c) => c.name() === groupName);
+    if (!group) {
+      group = parent.command(groupName).description(`${groupName} commands`);
+    }
+    target = group;
+  }
+
+  const sub = target.command(parts[parts.length - 1]!).description(cmd.description);
+
+  for (const arg of cmd.args ?? []) {
+    if (arg.required) {
+      sub.argument(`<${arg.name}>`, arg.description);
+    } else {
+      sub.argument(`[${arg.name}]`, arg.description);
+    }
+  }
+
+  for (const opt of cmd.options ?? []) {
+    sub.option(opt.flags, opt.description, opt.defaultValue);
+  }
+
+  sub.action(async (...actionArgs: unknown[]) => {
+    try {
+      // Set json mode from global flag before each action
+      ctx.json = program.opts()["json"] ?? false;
+
+      // Commander passes positional args first, then opts object, then the Command
+      const cmdObj = actionArgs[actionArgs.length - 1] as { opts: () => Record<string, string> };
+      const opts = cmdObj.opts();
+      const argValues: Record<string, string> = {};
+      const argDefs = cmd.args ?? [];
+      for (let i = 0; i < argDefs.length; i++) {
+        argValues[argDefs[i]!.name] = actionArgs[i] as string;
+      }
+      ctx.exitCode = undefined;
+      await cmd.action(argValues, opts);
+      if (ctx.exitCode) process.exitCode = ctx.exitCode;
+    } catch (err) {
+      if (ctx.json) {
+        console.log(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+      } else {
+        console.error("Error:", err instanceof Error ? err.message : err);
+      }
+      process.exitCode = 1;
+    }
+  });
+}
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -27,12 +80,17 @@ async function main(): Promise<void> {
 
   const ctx: PluginContext = { config, storage, llm, logger };
 
-  if (config.plugins.includes("memory")) {
-    ctx.contextProvider = (query: string) => getMemoryContext(storage, query, { llm });
+  // Memory is always available — run migrations and register commands unconditionally
+  storage.migrate("memory", memoryMigrations);
+  ctx.contextProvider = (query: string) => getMemoryContext(storage, query, { llm });
+
+  for (const cmd of memoryCommands(ctx)) {
+    registerCommand(program, ctx, cmd);
   }
 
-  // Load and migrate active plugins
-  for (const name of config.plugins) {
+  // Load and migrate active plugins (filter out "memory" for backwards compat)
+  const activePlugins = config.plugins.filter((p) => p !== "memory");
+  for (const name of activePlugins) {
     const plugin = plugins[name];
     if (!plugin) {
       logger.warn(`Unknown plugin: ${name}`);
@@ -40,60 +98,8 @@ async function main(): Promise<void> {
     }
     storage.migrate(plugin.name, plugin.migrations);
 
-    // Register plugin commands
     for (const cmd of plugin.commands(ctx)) {
-      const parts = cmd.name.split(" ");
-      let parent = program;
-
-      // Handle subcommands like "memory remember" or "task add"
-      if (parts.length === 2) {
-        const groupName = parts[0]!;
-        let group = program.commands.find((c) => c.name() === groupName);
-        if (!group) {
-          group = program.command(groupName).description(`${groupName} commands`);
-        }
-        parent = group;
-      }
-
-      const sub = parent.command(parts[parts.length - 1]!).description(cmd.description);
-
-      for (const arg of cmd.args ?? []) {
-        if (arg.required) {
-          sub.argument(`<${arg.name}>`, arg.description);
-        } else {
-          sub.argument(`[${arg.name}]`, arg.description);
-        }
-      }
-
-      for (const opt of cmd.options ?? []) {
-        sub.option(opt.flags, opt.description, opt.defaultValue);
-      }
-
-      sub.action(async (...actionArgs: unknown[]) => {
-        try {
-          // Set json mode from global flag before each action
-          ctx.json = program.opts()["json"] ?? false;
-
-          // Commander passes positional args first, then opts object, then the Command
-          const cmdObj = actionArgs[actionArgs.length - 1] as { opts: () => Record<string, string> };
-          const opts = cmdObj.opts();
-          const argValues: Record<string, string> = {};
-          const argDefs = cmd.args ?? [];
-          for (let i = 0; i < argDefs.length; i++) {
-            argValues[argDefs[i]!.name] = actionArgs[i] as string;
-          }
-          ctx.exitCode = undefined;
-          await cmd.action(argValues, opts);
-          if (ctx.exitCode) process.exitCode = ctx.exitCode;
-        } catch (err) {
-          if (ctx.json) {
-            console.log(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
-          } else {
-            console.error("Error:", err instanceof Error ? err.message : err);
-          }
-          process.exitCode = 1;
-        }
-      });
+      registerCommand(program, ctx, cmd);
     }
   }
 

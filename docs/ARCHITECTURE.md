@@ -10,16 +10,15 @@ Persistent AI memory layer for coding agents. Agents remember facts, build belie
 2. **Local-first.** Single SQLite file. No cloud dependency.
 3. **Agent-native.** MCP server + CLI with `--json` and exit codes.
 4. **One stack.** TypeScript only. No Python, Docker, or separate processes.
-5. **Plugin architecture.** Core + any single plugin = working system.
-6. **Start minimal.** Two plugins, not twenty features.
+5. **Plugin architecture.** Memory is core; optional features (tasks, etc.) are plugins.
+6. **Start minimal.** One plugin, not twenty features.
 
 ## Package Structure
 
 ```
 packages/
-  core/             Config, Storage, LLM Client (chat + embed), Logger, Plugin interface
+  core/             Config, Storage, LLM Client (chat + embed), Logger, Plugin interface, Memory (belief lifecycle)
   cli/              Commander.js CLI + MCP server (stdio transport)
-  plugin-memory/    Belief lifecycle: episodes, beliefs, embeddings, semantic search, contradiction detection
   plugin-tasks/     Tasks + Goals with AI prioritization using memory context
 ```
 
@@ -79,9 +78,9 @@ No lifecycle hooks, no event system, no middleware. Plugins get context, return 
 
 ---
 
-## Memory Plugin
+## Memory (in core)
 
-The core of pai. Manages the full belief lifecycle.
+The heart of pai. Manages the full belief lifecycle. Lives in `packages/core/src/memory/` — always available, not a plugin.
 
 ### Episodes
 
@@ -202,7 +201,7 @@ pai goal done <id>
 ## Data Model
 
 ```sql
--- Memory Plugin
+-- Memory (core)
 episodes          (id, timestamp, context, action, outcome, tags_json)
 episode_embeddings(episode_id PK, embedding TEXT)   -- JSON array of floats
 beliefs           (id, statement, confidence, status, type, created_at, updated_at)

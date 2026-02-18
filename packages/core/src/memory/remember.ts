@@ -1,4 +1,4 @@
-import type { LLMClient, Storage, Logger } from "@personal-ai/core";
+import type { LLMClient, Storage, Logger } from "../types.js";
 import type { Belief } from "./memory.js";
 import { createEpisode, createBelief, findSimilarBeliefs, storeEmbedding, storeEpisodeEmbedding, reinforceBelief, linkBeliefToEpisode, logBeliefChange } from "./memory.js";
 

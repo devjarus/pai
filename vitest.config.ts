@@ -13,6 +13,7 @@ export default defineConfig({
         'packages/cli/src/mcp.ts',
         'packages/*/src/index.ts',
         'packages/core/src/types.ts',
+        'packages/core/src/memory/index.ts',
       ],
       thresholds: {
         statements: 95,

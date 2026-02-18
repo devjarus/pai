@@ -8,7 +8,6 @@
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../core" },
-    { "path": "../plugin-memory" },
     { "path": "../plugin-tasks" }
   ]
 }

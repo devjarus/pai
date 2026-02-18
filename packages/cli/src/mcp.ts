@@ -12,7 +12,7 @@ import {
   findSimilarBeliefs,
   forgetBelief,
   memoryStats,
-} from "@personal-ai/plugin-memory";
+} from "@personal-ai/core";
 import {
   taskMigrations,
   addTask,
