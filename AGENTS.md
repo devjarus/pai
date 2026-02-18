@@ -221,28 +221,56 @@ pai memory remember "Completed auth middleware using JWT approach"
 
 **All IDs support prefix matching** — use first 8 characters instead of the full nanoid.
 
-## Development Workflow
+## Dogfooding (MANDATORY)
 
-When working on this project, use `pai` itself to guide development:
+This project builds `pai` — a persistent memory tool for coding agents. You ARE the target user. Use `pai` throughout every session, not just at the end. The CLI is at `node packages/cli/dist/index.js` (build first with `pnpm build`).
+
+### Session Start — recall before doing anything
 
 ```bash
-# 1. Check what to work on
-pai task ai-suggest
-
-# 2. Before implementing, recall relevant context
-pai memory recall "<topic>"
-
-# 3. After implementing, remember what you learned
-pai memory remember "<what you learned or decided>"
-
-# 4. Mark completed work
-pai task done <id>
-
-# 5. Add new tasks discovered during work
-pai task add "<title>" --priority <low|medium|high>
+pai memory recall "<topic you're about to work on>"
+pai task list
 ```
 
-Keep it simple. Don't add features unless they're clearly valuable. Prefer small, composable commands over complex workflows.
+Apply retrieved beliefs to your approach. If a belief says "User prefers X over Y", follow it.
+
+### During Work — store decisions as they happen
+
+**When the user makes a design decision or rejects an approach**, store it immediately:
+
+```bash
+pai memory remember "<decision and rationale>"
+```
+
+Don't wait until the end. Decisions made mid-conversation are the most valuable beliefs — they capture the "why" that code can't.
+
+**When you discover something about the codebase**, store it:
+
+```bash
+pai memory remember "<what you learned>"
+```
+
+### When Deciding What To Work On
+
+```bash
+pai task ai-suggest
+```
+
+### After Completing Work
+
+```bash
+pai memory remember "<what was done and key outcomes>"
+pai task done <id>
+pai task add "<new tasks discovered>" --priority <low|medium|high>
+```
+
+### Per-Session Checklist
+
+- [ ] `memory recall` before starting work
+- [ ] `memory remember` after every design decision or rejection
+- [ ] `memory remember` when discovering codebase facts
+- [ ] `task ai-suggest` when choosing what to work on
+- [ ] `memory remember` + `task done` after completing work
 
 ## Architecture Reference
 
