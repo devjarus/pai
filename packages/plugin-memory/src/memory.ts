@@ -410,6 +410,9 @@ export function exportMemory(storage: Storage): MemoryExport {
 }
 
 export function importMemory(storage: Storage, data: MemoryExport): { beliefs: number; episodes: number } {
+  if (!data || !Array.isArray(data.episodes) || !Array.isArray(data.beliefs)) {
+    throw new Error("Invalid import format. Expected { beliefs: [], episodes: [], belief_changes?: [] }.");
+  }
   let beliefs = 0;
   let episodes = 0;
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, pruneBeliefs, reflect } from "../src/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, pruneBeliefs, reflect, exportMemory, importMemory } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -350,5 +350,58 @@ describe("Embeddings", () => {
     expect(result.duplicates).toHaveLength(0);
     expect(result.stale).toHaveLength(0);
     expect(result.total).toBe(1);
+  });
+
+  it("should resolve belief history by prefix", () => {
+    const b = createBelief(storage, { statement: "Test belief", confidence: 0.9 });
+    logBeliefChange(storage, { beliefId: b.id, changeType: "created", detail: "initial" });
+    const prefix = b.id.slice(0, 8);
+    const history = getBeliefHistory(storage, prefix);
+    expect(history.length).toBeGreaterThan(0);
+    expect(history[0]!.belief_id).toBe(b.id);
+  });
+
+  it("should export all memory data", () => {
+    createEpisode(storage, { context: "test", action: "exported", outcome: "ok" });
+    const b = createBelief(storage, { statement: "Export test", confidence: 0.7 });
+    logBeliefChange(storage, { beliefId: b.id, changeType: "created", detail: "initial" });
+
+    const data = exportMemory(storage);
+    expect(data.version).toBe(1);
+    expect(data.exported_at).toBeTruthy();
+    expect(data.episodes).toHaveLength(1);
+    expect(data.beliefs).toHaveLength(1);
+    expect(data.belief_changes.length).toBeGreaterThan(0);
+  });
+
+  it("should import memory data and skip duplicates", () => {
+    createEpisode(storage, { context: "test", action: "original", outcome: "ok" });
+    const b = createBelief(storage, { statement: "Original", confidence: 0.7 });
+    logBeliefChange(storage, { beliefId: b.id, changeType: "created", detail: "initial" });
+
+    const exported = exportMemory(storage);
+
+    // Import into a fresh storage
+    const dir2 = mkdtempSync(join(tmpdir(), "pai-mem-import-"));
+    const storage2 = createStorage(dir2);
+    storage2.migrate("memory", memoryMigrations);
+
+    const result = importMemory(storage2, exported);
+    expect(result.beliefs).toBe(1);
+    expect(result.episodes).toBe(1);
+
+    // Re-import should skip duplicates
+    const result2 = importMemory(storage2, exported);
+    expect(result2.beliefs).toBe(0);
+    expect(result2.episodes).toBe(0);
+
+    storage2.close();
+    rmSync(dir2, { recursive: true, force: true });
+  });
+
+  it("should reject invalid import data", () => {
+    expect(() => importMemory(storage, {} as any)).toThrow(/invalid import format/i);
+    expect(() => importMemory(storage, null as any)).toThrow(/invalid import format/i);
+    expect(() => importMemory(storage, { beliefs: "not-array" } as any)).toThrow(/invalid import format/i);
   });
 });

@@ -83,7 +83,9 @@ export const memoryPlugin: Plugin = {
         description: "List recent episodes",
         options: [{ flags: "--limit <n>", description: "Max episodes", defaultValue: "20" }],
         async action(_args, opts) {
-          const episodes = listEpisodes(ctx.storage, parseInt(opts["limit"] ?? "20", 10));
+          const limit = parseInt(opts["limit"] ?? "20", 10);
+          if (Number.isNaN(limit) || limit < 1) throw new Error(`Invalid limit: "${opts["limit"]}". Must be a positive number.`);
+          const episodes = listEpisodes(ctx.storage, limit);
           if (episodes.length === 0) ctx.exitCode = 2;
           if (ctx.json) {
             console.log(JSON.stringify(episodes));
@@ -133,6 +135,7 @@ export const memoryPlugin: Plugin = {
         options: [{ flags: "--threshold <n>", description: "Confidence threshold (default 0.05)", defaultValue: "0.05" }],
         async action(_args, opts) {
           const threshold = parseFloat(opts["threshold"] ?? "0.05");
+          if (Number.isNaN(threshold)) throw new Error(`Invalid threshold: "${opts["threshold"]}". Must be a number.`);
           const pruned = pruneBeliefs(ctx.storage, threshold);
           if (ctx.json) {
             console.log(JSON.stringify({ pruned }));

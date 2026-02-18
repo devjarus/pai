@@ -151,4 +151,23 @@ describe("Tasks", () => {
     completeGoal(storage, goal.id);
     expect(() => completeGoal(storage, goal.id)).toThrow(/no active goal/i);
   });
+
+  it("should reject empty task title", () => {
+    expect(() => addTask(storage, { title: "" })).toThrow(/title cannot be empty/i);
+    expect(() => addTask(storage, { title: "  " })).toThrow(/title cannot be empty/i);
+  });
+
+  it("should reject invalid priority on add", () => {
+    expect(() => addTask(storage, { title: "Test", priority: "banana" })).toThrow(/invalid priority/i);
+  });
+
+  it("should reject invalid priority on edit", () => {
+    const task = addTask(storage, { title: "Test" });
+    expect(() => editTask(storage, task.id, { priority: "banana" })).toThrow(/invalid priority/i);
+  });
+
+  it("should reject empty title on edit", () => {
+    const task = addTask(storage, { title: "Test" });
+    expect(() => editTask(storage, task.id, { title: "" })).toThrow(/title cannot be empty/i);
+  });
 });

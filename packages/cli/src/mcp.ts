@@ -17,8 +17,11 @@ import {
   addTask,
   listTasks,
   completeTask,
+  editTask,
+  reopenTask,
   addGoal,
   listGoals,
+  completeGoal,
 } from "@personal-ai/plugin-tasks";
 
 const config = loadConfig();
@@ -29,6 +32,23 @@ const llm = createLLMClient(config.llm, logger);
 // Run migrations
 storage.migrate("memory", memoryMigrations);
 storage.migrate("tasks", taskMigrations);
+
+// Clean shutdown
+function shutdown(): void {
+  storage.close();
+  process.exit(0);
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+
+function ok(data: unknown): { content: Array<{ type: "text"; text: string }> } {
+  return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
+}
+
+function err(error: unknown): { content: Array<{ type: "text"; text: string }>; isError: true } {
+  const msg = error instanceof Error ? error.message : String(error);
+  return { content: [{ type: "text" as const, text: JSON.stringify({ error: msg }) }], isError: true };
+}
 
 const server = new McpServer({
   name: "personal-ai",
@@ -45,8 +65,10 @@ server.registerTool(
     inputSchema: { text: z.string().describe("What you observed or learned") },
   },
   async ({ text }) => {
-    const result = await remember(storage, llm, text, logger);
-    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    try {
+      const result = await remember(storage, llm, text, logger);
+      return ok(result);
+    } catch (e) { return err(e); }
   },
 );
 
@@ -57,21 +79,23 @@ server.registerTool(
     inputSchema: { query: z.string().describe("Search query") },
   },
   async ({ query }) => {
-    let beliefs: Array<{ statement: string; confidence: number }> = [];
     try {
-      const { embedding } = await llm.embed(query);
-      const similar = findSimilarBeliefs(storage, embedding, 10);
-      beliefs = similar.filter((s) => s.similarity > 0.3).map((s) => ({
-        statement: s.statement,
-        confidence: s.confidence,
-      }));
-    } catch {
-      // Fallback
-    }
-    if (beliefs.length === 0) {
-      beliefs = searchBeliefs(storage, query);
-    }
-    return { content: [{ type: "text" as const, text: JSON.stringify(beliefs) }] };
+      let beliefs: Array<{ statement: string; confidence: number }> = [];
+      try {
+        const { embedding } = await llm.embed(query);
+        const similar = findSimilarBeliefs(storage, embedding, 10);
+        beliefs = similar.filter((s) => s.similarity > 0.3).map((s) => ({
+          statement: s.statement,
+          confidence: s.confidence,
+        }));
+      } catch {
+        // Fallback to FTS5
+      }
+      if (beliefs.length === 0) {
+        beliefs = searchBeliefs(storage, query);
+      }
+      return ok(beliefs);
+    } catch (e) { return err(e); }
   },
 );
 
@@ -82,8 +106,10 @@ server.registerTool(
     inputSchema: { query: z.string().describe("Topic to get context for") },
   },
   async ({ query }) => {
-    const context = await getMemoryContext(storage, query, { llm });
-    return { content: [{ type: "text" as const, text: context }] };
+    try {
+      const context = await getMemoryContext(storage, query, { llm });
+      return ok({ context });
+    } catch (e) { return err(e); }
   },
 );
 
@@ -96,8 +122,9 @@ server.registerTool(
     },
   },
   async ({ status }) => {
-    const beliefs = listBeliefs(storage, status);
-    return { content: [{ type: "text" as const, text: JSON.stringify(beliefs) }] };
+    try {
+      return ok(listBeliefs(storage, status));
+    } catch (e) { return err(e); }
   },
 );
 
@@ -108,8 +135,10 @@ server.registerTool(
     inputSchema: { beliefId: z.string().describe("Belief ID or prefix (8+ chars)") },
   },
   async ({ beliefId }) => {
-    forgetBelief(storage, beliefId);
-    return { content: [{ type: "text" as const, text: JSON.stringify({ ok: true }) }] };
+    try {
+      forgetBelief(storage, beliefId);
+      return ok({ ok: true });
+    } catch (e) { return err(e); }
   },
 );
 
@@ -124,8 +153,9 @@ server.registerTool(
     },
   },
   async ({ status }) => {
-    const tasks = listTasks(storage, status);
-    return { content: [{ type: "text" as const, text: JSON.stringify(tasks) }] };
+    try {
+      return ok(listTasks(storage, status));
+    } catch (e) { return err(e); }
   },
 );
 
@@ -134,14 +164,15 @@ server.registerTool(
   {
     description: "Create a new task.",
     inputSchema: {
-      title: z.string().describe("Task title"),
+      title: z.string().min(1).describe("Task title"),
       priority: z.enum(["low", "medium", "high"]).default("medium").describe("Priority level"),
       due: z.string().optional().describe("Due date (YYYY-MM-DD)"),
     },
   },
   async ({ title, priority, due }) => {
-    const task = addTask(storage, { title, priority, dueDate: due });
-    return { content: [{ type: "text" as const, text: JSON.stringify(task) }] };
+    try {
+      return ok(addTask(storage, { title, priority, dueDate: due }));
+    } catch (e) { return err(e); }
   },
 );
 
@@ -152,8 +183,43 @@ server.registerTool(
     inputSchema: { id: z.string().describe("Task ID or prefix (8+ chars)") },
   },
   async ({ id }) => {
-    completeTask(storage, id);
-    return { content: [{ type: "text" as const, text: JSON.stringify({ ok: true }) }] };
+    try {
+      completeTask(storage, id);
+      return ok({ ok: true });
+    } catch (e) { return err(e); }
+  },
+);
+
+server.registerTool(
+  "task-edit",
+  {
+    description: "Edit an open task's title, priority, or due date.",
+    inputSchema: {
+      id: z.string().describe("Task ID or prefix (8+ chars)"),
+      title: z.string().optional().describe("New title"),
+      priority: z.enum(["low", "medium", "high"]).optional().describe("New priority"),
+      due: z.string().optional().describe("New due date (YYYY-MM-DD), or empty string to clear"),
+    },
+  },
+  async ({ id, title, priority, due }) => {
+    try {
+      editTask(storage, id, { title, priority, dueDate: due });
+      return ok({ ok: true });
+    } catch (e) { return err(e); }
+  },
+);
+
+server.registerTool(
+  "task-reopen",
+  {
+    description: "Reopen a completed task.",
+    inputSchema: { id: z.string().describe("Task ID or prefix (8+ chars)") },
+  },
+  async ({ id }) => {
+    try {
+      reopenTask(storage, id);
+      return ok({ ok: true });
+    } catch (e) { return err(e); }
   },
 );
 
@@ -164,8 +230,9 @@ server.registerTool(
     inputSchema: {},
   },
   async () => {
-    const goals = listGoals(storage);
-    return { content: [{ type: "text" as const, text: JSON.stringify(goals) }] };
+    try {
+      return ok(listGoals(storage));
+    } catch (e) { return err(e); }
   },
 );
 
@@ -173,11 +240,26 @@ server.registerTool(
   "goal-add",
   {
     description: "Create a new goal.",
-    inputSchema: { title: z.string().describe("Goal title") },
+    inputSchema: { title: z.string().min(1).describe("Goal title") },
   },
   async ({ title }) => {
-    const goal = addGoal(storage, { title });
-    return { content: [{ type: "text" as const, text: JSON.stringify(goal) }] };
+    try {
+      return ok(addGoal(storage, { title }));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.registerTool(
+  "goal-done",
+  {
+    description: "Mark a goal as complete by ID or prefix.",
+    inputSchema: { id: z.string().describe("Goal ID or prefix (8+ chars)") },
+  },
+  async ({ id }) => {
+    try {
+      completeGoal(storage, id);
+      return ok({ ok: true });
+    } catch (e) { return err(e); }
   },
 );
 

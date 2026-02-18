@@ -51,14 +51,20 @@ export type TaskStatusFilter = "open" | "done" | "all";
 
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
+const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
+
 export function addTask(
   storage: Storage,
   input: { title: string; description?: string; priority?: string; goalId?: string; dueDate?: string },
 ): Task {
+  const title = input.title.trim();
+  if (!title) throw new Error("Task title cannot be empty.");
+  const priority = input.priority ?? "medium";
+  if (!VALID_PRIORITIES.has(priority)) throw new Error(`Invalid priority "${priority}". Use: low, medium, high.`);
   const id = nanoid();
   storage.run(
     "INSERT INTO tasks (id, title, description, priority, goal_id, due_date) VALUES (?, ?, ?, ?, ?, ?)",
-    [id, input.title, input.description ?? null, input.priority ?? "medium", input.goalId ?? null, input.dueDate ?? null],
+    [id, title, input.description ?? null, priority, input.goalId ?? null, input.dueDate ?? null],
   );
   return storage.query<Task>("SELECT * FROM tasks WHERE id = ?", [id])[0]!;
 }
@@ -99,8 +105,15 @@ export function editTask(
   const task = resolveTaskId(storage, taskId);
   const sets: string[] = [];
   const params: unknown[] = [];
-  if (updates.title !== undefined) { sets.push("title = ?"); params.push(updates.title); }
-  if (updates.priority !== undefined) { sets.push("priority = ?"); params.push(updates.priority); }
+  if (updates.title !== undefined) {
+    const title = updates.title.trim();
+    if (!title) throw new Error("Task title cannot be empty.");
+    sets.push("title = ?"); params.push(title);
+  }
+  if (updates.priority !== undefined) {
+    if (!VALID_PRIORITIES.has(updates.priority)) throw new Error(`Invalid priority "${updates.priority}". Use: low, medium, high.`);
+    sets.push("priority = ?"); params.push(updates.priority);
+  }
   if (updates.dueDate !== undefined) { sets.push("due_date = ?"); params.push(updates.dueDate || null); }
   if (sets.length === 0) throw new Error("No updates provided.");
   params.push(task.id);

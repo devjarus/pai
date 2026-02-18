@@ -10,6 +10,7 @@ export default defineConfig({
       include: ['packages/*/src/**/*.ts', 'src/**/*.ts'],
       exclude: [
         'packages/cli/src/index.ts',
+        'packages/cli/src/mcp.ts',
         'packages/*/src/index.ts',
         'packages/core/src/types.ts',
       ],
