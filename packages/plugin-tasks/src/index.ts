@@ -4,8 +4,11 @@ import {
   addTask,
   listTasks,
   completeTask,
+  editTask,
+  reopenTask,
   addGoal,
   listGoals,
+  completeGoal,
   type TaskStatusFilter,
 } from "./tasks.js";
 
@@ -97,6 +100,33 @@ export const tasksPlugin: Plugin = {
         },
       },
       {
+        name: "task edit",
+        description: "Edit a task's title, priority, or due date",
+        args: [{ name: "id", description: "Task ID (or prefix)", required: true }],
+        options: [
+          { flags: "--title <title>", description: "New title" },
+          { flags: "--priority <priority>", description: "low, medium, high" },
+          { flags: "--due <date>", description: "Due date (YYYY-MM-DD), empty to clear" },
+        ],
+        async action(args, opts) {
+          editTask(ctx.storage, args["id"]!, {
+            title: opts["title"],
+            priority: opts["priority"],
+            dueDate: opts["due"],
+          });
+          console.log("Task updated.");
+        },
+      },
+      {
+        name: "task reopen",
+        description: "Reopen a completed task",
+        args: [{ name: "id", description: "Task ID (or prefix)", required: true }],
+        async action(args) {
+          reopenTask(ctx.storage, args["id"]!);
+          console.log("Task reopened.");
+        },
+      },
+      {
         name: "goal add",
         description: "Add a new goal",
         args: [{ name: "title", description: "Goal title", required: true }],
@@ -114,6 +144,15 @@ export const tasksPlugin: Plugin = {
           for (const g of goals) {
             console.log(`  ${g.id.slice(0, 8)}  ${g.title}`);
           }
+        },
+      },
+      {
+        name: "goal done",
+        description: "Mark a goal as complete",
+        args: [{ name: "id", description: "Goal ID (or prefix)", required: true }],
+        async action(args) {
+          completeGoal(ctx.storage, args["id"]!);
+          console.log("Goal completed.");
         },
       },
       {

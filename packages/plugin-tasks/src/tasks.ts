@@ -71,28 +71,62 @@ export function listTasks(storage: Storage, status: TaskStatusFilter = "open"): 
   return tasks.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 1) - (PRIORITY_ORDER[b.priority] ?? 1));
 }
 
-export function completeTask(storage: Storage, taskId: string): void {
-  const exactMatch = storage.query<Pick<Task, "id">>(
-    "SELECT id FROM tasks WHERE id = ? AND status = 'open' LIMIT 1",
-    [taskId],
+function resolveTaskId(storage: Storage, taskId: string, status = "open"): Pick<Task, "id"> {
+  const exact = storage.query<Pick<Task, "id">>(
+    `SELECT id FROM tasks WHERE id = ? AND status = ? LIMIT 1`,
+    [taskId, status],
   );
-  const resolvedTaskId =
-    exactMatch[0]?.id ??
-    (() => {
-      const prefixMatches = storage.query<Pick<Task, "id">>(
-        "SELECT id FROM tasks WHERE id LIKE ? AND status = 'open' ORDER BY created_at DESC LIMIT 2",
-        [`${taskId}%`],
-      );
-      if (prefixMatches.length === 0) {
-        throw new Error(`No open task matches "${taskId}".`);
-      }
-      if (prefixMatches.length > 1) {
-        throw new Error(`Task id prefix "${taskId}" is ambiguous. Provide more characters.`);
-      }
-      return prefixMatches[0]!.id;
-    })();
+  if (exact[0]) return exact[0];
+  const prefixMatches = storage.query<Pick<Task, "id">>(
+    `SELECT id FROM tasks WHERE id LIKE ? AND status = ? ORDER BY created_at DESC LIMIT 2`,
+    [`${taskId}%`, status],
+  );
+  if (prefixMatches.length === 0) throw new Error(`No ${status} task matches "${taskId}".`);
+  if (prefixMatches.length > 1) throw new Error(`Task id prefix "${taskId}" is ambiguous. Provide more characters.`);
+  return prefixMatches[0]!;
+}
 
-  storage.run("UPDATE tasks SET status = 'done', completed_at = datetime('now') WHERE id = ?", [resolvedTaskId]);
+export function completeTask(storage: Storage, taskId: string): void {
+  const task = resolveTaskId(storage, taskId);
+  storage.run("UPDATE tasks SET status = 'done', completed_at = datetime('now') WHERE id = ?", [task.id]);
+}
+
+export function editTask(
+  storage: Storage,
+  taskId: string,
+  updates: { title?: string; priority?: string; dueDate?: string },
+): void {
+  const task = resolveTaskId(storage, taskId);
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (updates.title !== undefined) { sets.push("title = ?"); params.push(updates.title); }
+  if (updates.priority !== undefined) { sets.push("priority = ?"); params.push(updates.priority); }
+  if (updates.dueDate !== undefined) { sets.push("due_date = ?"); params.push(updates.dueDate || null); }
+  if (sets.length === 0) throw new Error("No updates provided.");
+  params.push(task.id);
+  storage.run(`UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`, params);
+}
+
+export function reopenTask(storage: Storage, taskId: string): void {
+  const task = resolveTaskId(storage, taskId, "done");
+  storage.run("UPDATE tasks SET status = 'open', completed_at = NULL WHERE id = ?", [task.id]);
+}
+
+export function completeGoal(storage: Storage, goalId: string): void {
+  const rows = storage.query<Pick<Goal, "id">>(
+    "SELECT id FROM goals WHERE id = ? AND status = 'active' LIMIT 1",
+    [goalId],
+  );
+  const id = rows[0]?.id ?? (() => {
+    const prefixMatches = storage.query<Pick<Goal, "id">>(
+      "SELECT id FROM goals WHERE id LIKE ? AND status = 'active' ORDER BY created_at DESC LIMIT 2",
+      [`${goalId}%`],
+    );
+    if (prefixMatches.length === 0) throw new Error(`No active goal matches "${goalId}".`);
+    if (prefixMatches.length > 1) throw new Error(`Goal id prefix "${goalId}" is ambiguous. Provide more characters.`);
+    return prefixMatches[0]!.id;
+  })();
+  storage.run("UPDATE goals SET status = 'done' WHERE id = ?", [id]);
 }
 
 export function addGoal(storage: Storage, input: { title: string; description?: string }): Goal {
