@@ -44,13 +44,14 @@ export async function checkContradiction(
     {
       role: "system",
       content:
-        "You check for contradictions in a knowledge base. " +
-        `Reply with ONLY one of these exact values: ${validNumbers}, or NONE. ` +
-        "No other text.",
+        "You detect DIRECT contradictions in a knowledge base. " +
+        "A contradiction means BOTH statements CANNOT be true at the same time. " +
+        "Two statements about different topics, or one adding detail to another, are NOT contradictions. " +
+        `Reply with ONLY one of: ${validNumbers}, or NONE. No other text.`,
     },
     {
       role: "user",
-      content: `New belief: "${newStatement}"\n\nExisting beliefs:\n${beliefList}\n\nDoes the new belief directly contradict any existing belief? Reply with ONLY the number (${validNumbers}) or NONE.`,
+      content: `New belief: "${newStatement}"\n\nExisting beliefs:\n${beliefList}\n\nDo any existing beliefs DIRECTLY contradict the new belief (cannot both be true)? Reply ONLY: ${validNumbers} or NONE.`,
     },
   ], { temperature: 0 });
 
@@ -95,8 +96,8 @@ async function processNewBelief(
     return { beliefId: match.beliefId, isReinforcement: true };
   }
 
-  if (similar.length > 0 && similar[0]!.similarity > 0.5) {
-    // Medium similarity — check contradiction
+  if (similar.length > 0 && similar[0]!.similarity > 0.7) {
+    // High-medium similarity — check contradiction (0.7-0.85 range)
     const beliefs = similar.map((s) => ({
       id: s.beliefId,
       statement: s.statement,
