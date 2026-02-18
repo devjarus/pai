@@ -9,6 +9,7 @@
     "directory": "packages/cli"
   },
   "type": "module",
+  "files": ["dist"],
   "bin": {
     "pai": "dist/index.js",
     "pai-mcp": "dist/mcp.js"
