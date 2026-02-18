@@ -1,4 +1,4 @@
-import type { Plugin, PluginContext, Command, LLMClient, Storage } from "@personal-ai/core";
+import type { Plugin, PluginContext, Command } from "@personal-ai/core";
 import {
   taskMigrations,
   addTask,
@@ -17,23 +17,24 @@ function parseTaskStatus(input: string | undefined): TaskStatusFilter {
   throw new Error(`Invalid status "${input}". Use one of: open, done, all.`);
 }
 
-async function aiSuggest(storage: Storage, llm: LLMClient): Promise<string> {
-  const tasks = listTasks(storage);
-  const goals = listGoals(storage);
+async function aiSuggest(ctx: PluginContext): Promise<string> {
+  const tasks = listTasks(ctx.storage);
+  const goals = listGoals(ctx.storage);
 
   if (tasks.length === 0) return "No open tasks. Add some with `pai task add`.";
 
   const taskList = tasks.map((t) => `- [${t.priority}] ${t.title}${t.due_date ? ` (due: ${t.due_date})` : ""}`).join("\n");
   const goalList = goals.map((g) => `- ${g.title}`).join("\n");
+  const memoryContext = ctx.contextProvider?.("task prioritization goals productivity");
 
-  const result = await llm.chat([
+  const result = await ctx.llm.chat([
     {
       role: "system",
-      content: "You are a productivity assistant. Given the user's tasks and goals, suggest what to work on next and why. Be concise (3-4 sentences max).",
+      content: "You are a productivity assistant. Given the user's tasks, goals, and personal context, suggest what to work on next and why. Be concise (3-4 sentences max).",
     },
     {
       role: "user",
-      content: `My goals:\n${goalList || "(none set)"}\n\nMy open tasks:\n${taskList}\n\nWhat should I focus on next?`,
+      content: `${memoryContext ? `${memoryContext}\n\n` : ""}My goals:\n${goalList || "(none set)"}\n\nMy open tasks:\n${taskList}\n\nWhat should I focus on next?`,
     },
   ]);
   return result.text;
@@ -119,7 +120,7 @@ export const tasksPlugin: Plugin = {
         name: "task ai-suggest",
         description: "Get AI-powered task prioritization",
         async action() {
-          const suggestion = await aiSuggest(ctx.storage, ctx.llm);
+          const suggestion = await aiSuggest(ctx);
           console.log(suggestion);
         },
       },
