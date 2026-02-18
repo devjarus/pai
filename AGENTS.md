@@ -65,7 +65,7 @@ Structured NDJSON logging via `createLogger()` with dual output:
 Pre-commit and pre-push hooks via Husky:
 
 - **Pre-commit:** Runs `lint-staged` — lints staged `.ts` files with ESLint
-- **Pre-push:** Runs `pnpm run verify` — typecheck + tests must pass
+- **Pre-push:** Runs `pnpm run ci` — typecheck + tests + coverage thresholds must pass
 
 To skip hooks in emergencies: `git commit --no-verify` / `git push --no-verify`
 
@@ -110,6 +110,9 @@ pai memory prune --threshold 0.1
 
 # Scan for duplicate and stale beliefs
 pai memory reflect
+
+# Memory health summary
+pai memory stats
 
 # Export/import memory for backup or migration
 pai memory export backup.json
@@ -179,7 +182,7 @@ node packages/cli/dist/mcp.js    # stdio transport
 }
 ```
 
-**Available tools:** `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`, `goal-list`, `goal-add`, `goal-done`
+**Available tools:** `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `memory-stats`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`, `goal-list`, `goal-add`, `goal-done`
 
 ### Exit Codes
 

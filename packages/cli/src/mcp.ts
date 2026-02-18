@@ -11,6 +11,7 @@ import {
   searchBeliefs,
   findSimilarBeliefs,
   forgetBelief,
+  memoryStats,
 } from "@personal-ai/plugin-memory";
 import {
   taskMigrations,
@@ -142,6 +143,19 @@ server.registerTool(
     try {
       forgetBelief(storage, beliefId);
       return ok({ ok: true });
+    } catch (e) { return err(e); }
+  },
+);
+
+server.registerTool(
+  "memory-stats",
+  {
+    description: "Get memory system statistics (belief counts, episode count, avg confidence).",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      return ok(memoryStats(storage));
     } catch (e) { return err(e); }
   },
 );

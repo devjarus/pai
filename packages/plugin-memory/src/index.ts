@@ -1,5 +1,5 @@
 import type { Plugin, PluginContext, Command } from "@personal-ai/core";
-import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, getMemoryContext, getBeliefHistory, forgetBelief, pruneBeliefs, reflect, exportMemory, importMemory } from "./memory.js";
+import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, getMemoryContext, getBeliefHistory, forgetBelief, pruneBeliefs, reflect, exportMemory, importMemory, memoryStats } from "./memory.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import { remember } from "./remember.js";
 
@@ -196,6 +196,22 @@ export const memoryPlugin: Plugin = {
         },
       },
       {
+        name: "memory stats",
+        description: "Show memory system statistics",
+        async action() {
+          const stats = memoryStats(ctx.storage);
+          if (ctx.json) {
+            console.log(JSON.stringify(stats));
+            return;
+          }
+          console.log(`Beliefs: ${stats.beliefs.active} active, ${stats.beliefs.invalidated} invalidated, ${stats.beliefs.forgotten} forgotten (${stats.beliefs.total} total)`);
+          console.log(`Episodes: ${stats.episodes}`);
+          console.log(`Avg confidence: ${stats.avgConfidence.toFixed(2)}`);
+          if (stats.oldestBelief) console.log(`Oldest belief: ${stats.oldestBelief}`);
+          if (stats.newestBelief) console.log(`Newest belief: ${stats.newestBelief}`);
+        },
+      },
+      {
         name: "memory export",
         description: "Export all memory data to a JSON file",
         args: [{ name: "file", description: "Output file path (default: stdout)", required: false }],
@@ -225,5 +241,5 @@ export const memoryPlugin: Plugin = {
   },
 };
 
-export { memoryMigrations, getMemoryContext, findSimilarEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, listEpisodes, getBeliefHistory, forgetBelief, pruneBeliefs, reflect, exportMemory, importMemory } from "./memory.js";
+export { memoryMigrations, getMemoryContext, findSimilarEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, listEpisodes, getBeliefHistory, forgetBelief, pruneBeliefs, reflect, exportMemory, importMemory, memoryStats } from "./memory.js";
 export { remember } from "./remember.js";

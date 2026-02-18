@@ -393,6 +393,50 @@ export function reflect(storage: Storage, options?: { similarityThreshold?: numb
   return { duplicates, stale, total: allBeliefs.length };
 }
 
+export interface MemoryStats {
+  beliefs: { total: number; active: number; invalidated: number; forgotten: number };
+  episodes: number;
+  avgConfidence: number;
+  oldestBelief: string | null;
+  newestBelief: string | null;
+}
+
+export function memoryStats(storage: Storage): MemoryStats {
+  const counts = storage.query<{ status: string; cnt: number }>(
+    "SELECT status, COUNT(*) as cnt FROM beliefs GROUP BY status",
+  );
+  const statusMap: Record<string, number> = {};
+  let total = 0;
+  for (const r of counts) { statusMap[r.status] = r.cnt; total += r.cnt; }
+
+  const epCount = storage.query<{ cnt: number }>("SELECT COUNT(*) as cnt FROM episodes")[0]!.cnt;
+
+  const avgRow = storage.query<{ avg: number | null }>(
+    "SELECT AVG(confidence) as avg FROM beliefs WHERE status = 'active'",
+  )[0];
+
+  const oldest = storage.query<{ created_at: string }>(
+    "SELECT created_at FROM beliefs WHERE status = 'active' ORDER BY created_at ASC LIMIT 1",
+  )[0]?.created_at ?? null;
+
+  const newest = storage.query<{ created_at: string }>(
+    "SELECT created_at FROM beliefs WHERE status = 'active' ORDER BY created_at DESC LIMIT 1",
+  )[0]?.created_at ?? null;
+
+  return {
+    beliefs: {
+      total,
+      active: statusMap["active"] ?? 0,
+      invalidated: statusMap["invalidated"] ?? 0,
+      forgotten: statusMap["forgotten"] ?? 0,
+    },
+    episodes: epCount,
+    avgConfidence: avgRow?.avg ?? 0,
+    oldestBelief: oldest,
+    newestBelief: newest,
+  };
+}
+
 export interface MemoryExport {
   version: number;
   exported_at: string;

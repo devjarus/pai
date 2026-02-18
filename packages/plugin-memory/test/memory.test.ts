@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, pruneBeliefs, reflect, exportMemory, importMemory } from "../src/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, pruneBeliefs, reflect, exportMemory, importMemory, memoryStats } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -403,5 +403,21 @@ describe("Embeddings", () => {
     expect(() => importMemory(storage, {} as any)).toThrow(/invalid import format/i);
     expect(() => importMemory(storage, null as any)).toThrow(/invalid import format/i);
     expect(() => importMemory(storage, { beliefs: "not-array" } as any)).toThrow(/invalid import format/i);
+  });
+
+  it("should return memory stats", () => {
+    createEpisode(storage, { context: "test", action: "stats test", outcome: "ok" });
+    createBelief(storage, { statement: "Active belief", confidence: 0.8 });
+    const b2 = createBelief(storage, { statement: "Forgotten belief", confidence: 0.5 });
+    forgetBelief(storage, b2.id);
+
+    const stats = memoryStats(storage);
+    expect(stats.beliefs.active).toBe(1);
+    expect(stats.beliefs.forgotten).toBe(1);
+    expect(stats.beliefs.total).toBe(2);
+    expect(stats.episodes).toBe(1);
+    expect(stats.avgConfidence).toBeCloseTo(0.8, 1);
+    expect(stats.oldestBelief).toBeTruthy();
+    expect(stats.newestBelief).toBeTruthy();
   });
 });
