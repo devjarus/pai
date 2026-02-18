@@ -129,4 +129,4 @@ export const memoryPlugin: Plugin = {
   },
 };
 
-export { memoryMigrations, getMemoryContext } from "./memory.js";
+export { memoryMigrations, getMemoryContext, findSimilarEpisodes } from "./memory.js";

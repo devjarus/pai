@@ -62,6 +62,15 @@ export const memoryMigrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 4,
+    up: `
+      CREATE TABLE episode_embeddings (
+        episode_id TEXT PRIMARY KEY REFERENCES episodes(id),
+        embedding TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export interface Episode {
@@ -288,6 +297,45 @@ export function findSimilarBeliefs(
     .slice(0, limit);
 }
 
+export interface SimilarEpisode {
+  episodeId: string;
+  action: string;
+  timestamp: string;
+  similarity: number;
+}
+
+export function storeEpisodeEmbedding(storage: Storage, episodeId: string, embedding: number[]): void {
+  storage.run(
+    "INSERT OR REPLACE INTO episode_embeddings (episode_id, embedding) VALUES (?, ?)",
+    [episodeId, JSON.stringify(embedding)],
+  );
+}
+
+export function findSimilarEpisodes(
+  storage: Storage,
+  queryEmbedding: number[],
+  limit: number,
+): SimilarEpisode[] {
+  const rows = storage.query<{ episode_id: string; embedding: string; action: string; timestamp: string }>(
+    `SELECT ee.episode_id, ee.embedding, e.action, e.timestamp
+     FROM episode_embeddings ee
+     JOIN episodes e ON e.id = ee.episode_id`,
+  );
+
+  return rows
+    .map((row) => {
+      const emb = JSON.parse(row.embedding) as number[];
+      return {
+        episodeId: row.episode_id,
+        action: row.action,
+        timestamp: row.timestamp,
+        similarity: cosineSimilarity(queryEmbedding, emb),
+      };
+    })
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
+}
+
 export async function getMemoryContext(
   storage: Storage,
   query: string,
@@ -297,20 +345,27 @@ export async function getMemoryContext(
   const episodeLimit = options?.episodeLimit ?? 5;
 
   let beliefs: Array<{ statement: string; confidence: number }> = [];
+  let episodes: Array<{ action: string; timestamp: string }> = [];
+
   if (options?.llm) {
     try {
       const { embedding } = await options.llm.embed(query);
       beliefs = findSimilarBeliefs(storage, embedding, beliefLimit)
         .filter((s) => s.similarity > 0.3)
         .map((s) => ({ statement: s.statement, confidence: s.confidence }));
+      episodes = findSimilarEpisodes(storage, embedding, episodeLimit)
+        .filter((s) => s.similarity > 0.3)
+        .map((s) => ({ action: s.action, timestamp: s.timestamp }));
     } catch {
-      // Fallback to FTS5 if embedding fails
+      // Fallback to FTS5/recent on embedding failure
     }
   }
   if (beliefs.length === 0) {
     beliefs = searchBeliefs(storage, query, beliefLimit);
   }
-  const episodes = listEpisodes(storage, episodeLimit);
+  if (episodes.length === 0) {
+    episodes = listEpisodes(storage, episodeLimit);
+  }
 
   const beliefSection = beliefs.length > 0
     ? beliefs.map((b) => `- [${b.confidence.toFixed(1)}] ${b.statement}`).join("\n")

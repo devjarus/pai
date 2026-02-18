@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, forgetBelief, pruneBeliefs } from "../src/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, pruneBeliefs } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -289,5 +289,37 @@ describe("Embeddings", () => {
     const results = findSimilarBeliefs(storage, [1.0, 0.0, 0.0], 5);
     expect(results).toHaveLength(1);
     expect(results[0]!.beliefId).toBe(b1.id);
+  });
+
+  it("should store and retrieve episode embeddings", () => {
+    const ep = createEpisode(storage, { action: "Debugged auth issue" });
+    storeEpisodeEmbedding(storage, ep.id, [0.5, 0.5, 0.0]);
+    const results = findSimilarEpisodes(storage, [0.5, 0.5, 0.0], 5);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.episodeId).toBe(ep.id);
+    expect(results[0]!.similarity).toBeCloseTo(1.0);
+  });
+
+  it("should rank episodes by cosine similarity", () => {
+    const ep1 = createEpisode(storage, { action: "Worked on testing" });
+    const ep2 = createEpisode(storage, { action: "Reviewed PR" });
+    storeEpisodeEmbedding(storage, ep1.id, [1.0, 0.0, 0.0]);
+    storeEpisodeEmbedding(storage, ep2.id, [0.0, 1.0, 0.0]);
+    const results = findSimilarEpisodes(storage, [0.9, 0.1, 0.0], 5);
+    expect(results[0]!.episodeId).toBe(ep1.id);
+  });
+
+  it("should use semantic episode search in getMemoryContext", async () => {
+    const ep = createEpisode(storage, { action: "Fixed memory plugin tests" });
+    storeEpisodeEmbedding(storage, ep.id, [1.0, 0.0, 0.0]);
+
+    const mockLLM: LLMClient = {
+      chat: vi.fn(),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.9, 0.1, 0.0] }),
+      health: vi.fn(),
+    };
+
+    const context = await getMemoryContext(storage, "testing", { llm: mockLLM });
+    expect(context).toContain("Fixed memory plugin tests");
   });
 });

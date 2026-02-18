@@ -67,6 +67,12 @@ describe("remember", () => {
     expect(result.isReinforcement).toBe(false);
     expect(result.episodeId).toBeTruthy();
     expect(result.beliefIds[0]).toBeTruthy();
+
+    // Episode embedding should be stored
+    const embRows = storage.query<{ episode_id: string }>(
+      "SELECT episode_id FROM episode_embeddings WHERE episode_id = ?", [result.episodeId]
+    );
+    expect(embRows).toHaveLength(1);
   });
 
   it("should create both fact and insight beliefs when insight is present", async () => {
@@ -76,6 +82,7 @@ describe("remember", () => {
         usage: { inputTokens: 10, outputTokens: 15 },
       }),
       embed: vi.fn()
+        .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })   // episode embedding
         .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })   // fact embedding
         .mockResolvedValueOnce({ embedding: [0.0, 1.0, 0.0] }),   // insight embedding (different direction)
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
@@ -228,8 +235,10 @@ describe("remember with contradictions", () => {
         // Second remember: checkContradiction returns "NONE"
         .mockResolvedValueOnce({ text: "NONE", usage: { inputTokens: 20, outputTokens: 1 } }),
       embed: vi.fn()
+        .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })  // first episode embedding
         .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })  // first belief
-        .mockResolvedValueOnce({ embedding: [0.7, 0.7, 0.0] }),  // second — similarity ~0.7 (medium range)
+        .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })  // second episode embedding
+        .mockResolvedValueOnce({ embedding: [0.7, 0.7, 0.0] }),  // second belief — similarity ~0.7 (medium range)
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
@@ -254,7 +263,9 @@ describe("remember with contradictions", () => {
         // Second remember: checkContradiction returns "1"
         .mockResolvedValueOnce({ text: "1", usage: { inputTokens: 20, outputTokens: 1 } }),
       embed: vi.fn()
+        .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })  // first episode embedding
         .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })  // first belief
+        .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })  // second episode embedding
         .mockResolvedValueOnce({ embedding: [0.7, 0.7, 0.0] }),  // second belief — similarity ~0.7 (contradiction range)
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };

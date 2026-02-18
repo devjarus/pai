@@ -1,6 +1,6 @@
 import type { LLMClient, Storage, Logger } from "@personal-ai/core";
 import type { Belief } from "./memory.js";
-import { createEpisode, createBelief, findSimilarBeliefs, storeEmbedding, reinforceBelief, linkBeliefToEpisode, logBeliefChange } from "./memory.js";
+import { createEpisode, createBelief, findSimilarBeliefs, storeEmbedding, storeEpisodeEmbedding, reinforceBelief, linkBeliefToEpisode, logBeliefChange } from "./memory.js";
 
 export async function extractBeliefs(
   llm: LLMClient,
@@ -151,6 +151,15 @@ export async function remember(
   logger?: Logger,
 ): Promise<{ episodeId: string; beliefIds: string[]; isReinforcement: boolean }> {
   const episode = createEpisode(storage, { action: text });
+
+  // Store episode embedding for semantic episode search
+  try {
+    const { embedding } = await llm.embed(text);
+    storeEpisodeEmbedding(storage, episode.id, embedding);
+  } catch {
+    logger?.warn("Failed to embed episode", { episodeId: episode.id });
+  }
+
   const extracted = await extractBeliefs(llm, text);
   logger?.debug("Extracted beliefs", { input: text, fact: extracted.fact, insight: extracted.insight });
 
