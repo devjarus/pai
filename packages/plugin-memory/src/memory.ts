@@ -505,7 +505,7 @@ export async function getMemoryContext(
   const beliefLimit = options?.beliefLimit ?? 5;
   const episodeLimit = options?.episodeLimit ?? 5;
 
-  let beliefs: Array<{ statement: string; confidence: number }> = [];
+  let beliefs: Array<{ statement: string; confidence: number; type: string }> = [];
   let episodes: Array<{ action: string; timestamp: string }> = [];
 
   if (options?.llm) {
@@ -513,7 +513,7 @@ export async function getMemoryContext(
       const { embedding } = await options.llm.embed(query);
       beliefs = findSimilarBeliefs(storage, embedding, beliefLimit)
         .filter((s) => s.similarity > 0.3)
-        .map((s) => ({ statement: s.statement, confidence: s.confidence }));
+        .map((s) => ({ statement: s.statement, confidence: s.confidence, type: s.type }));
       episodes = findSimilarEpisodes(storage, embedding, episodeLimit)
         .filter((s) => s.similarity > 0.3)
         .map((s) => ({ action: s.action, timestamp: s.timestamp }));
@@ -522,14 +522,19 @@ export async function getMemoryContext(
     }
   }
   if (beliefs.length === 0) {
-    beliefs = searchBeliefs(storage, query, beliefLimit);
+    beliefs = searchBeliefs(storage, query, beliefLimit).map((b) => ({
+      statement: b.statement, confidence: b.confidence, type: b.type,
+    }));
   }
   if (episodes.length === 0) {
     episodes = listEpisodes(storage, episodeLimit);
   }
 
+  // Sort beliefs by confidence (strongest first)
+  beliefs.sort((a, b) => b.confidence - a.confidence);
+
   const beliefSection = beliefs.length > 0
-    ? beliefs.map((b) => `- [${b.confidence.toFixed(1)}] ${b.statement}`).join("\n")
+    ? beliefs.map((b) => `- [${b.type}|${b.confidence.toFixed(1)}] ${b.statement}`).join("\n")
     : "No relevant beliefs found.";
 
   const episodeSection = episodes.length > 0
