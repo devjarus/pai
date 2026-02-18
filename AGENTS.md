@@ -174,6 +174,14 @@ node packages/cli/dist/mcp.js    # stdio transport
 
 **Available tools:** `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `task-list`, `task-add`, `task-done`, `goal-list`, `goal-add`
 
+### Exit Codes
+
+- **0** — success (results found or mutation succeeded)
+- **1** — error (invalid ID, missing args, LLM failure)
+- **2** — no results (empty search, no tasks/beliefs/episodes)
+
+Agents can branch on `$?`: `pai memory recall "topic" && echo "found" || echo "empty or error"`.
+
 ### JSON Mode
 
 All commands support `--json` for structured output:

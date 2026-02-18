@@ -82,6 +82,7 @@ export const tasksPlugin: Plugin = {
         async action(_args, opts) {
           const status = parseTaskStatus(opts["status"]);
           const tasks = listTasks(ctx.storage, status);
+          if (tasks.length === 0) ctx.exitCode = 2;
           if (ctx.json) {
             console.log(JSON.stringify(tasks));
             return;
@@ -148,6 +149,7 @@ export const tasksPlugin: Plugin = {
         description: "List active goals",
         async action() {
           const goals = listGoals(ctx.storage);
+          if (goals.length === 0) ctx.exitCode = 2;
           if (ctx.json) {
             console.log(JSON.stringify(goals));
             return;

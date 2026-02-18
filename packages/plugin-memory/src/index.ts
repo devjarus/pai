@@ -43,6 +43,7 @@ export const memoryPlugin: Plugin = {
           if (beliefs.length === 0) {
             beliefs = searchBeliefs(ctx.storage, query);
           }
+          if (beliefs.length === 0) ctx.exitCode = 2;
           if (ctx.json) {
             console.log(JSON.stringify(beliefs));
             return;
@@ -62,6 +63,7 @@ export const memoryPlugin: Plugin = {
         options: [{ flags: "--status <status>", description: "Filter by status", defaultValue: "active" }],
         async action(_args, opts) {
           const beliefs = listBeliefs(ctx.storage, opts["status"]);
+          if (beliefs.length === 0) ctx.exitCode = 2;
           if (ctx.json) {
             console.log(JSON.stringify(beliefs));
             return;
@@ -81,6 +83,7 @@ export const memoryPlugin: Plugin = {
         options: [{ flags: "--limit <n>", description: "Max episodes", defaultValue: "20" }],
         async action(_args, opts) {
           const episodes = listEpisodes(ctx.storage, parseInt(opts["limit"] ?? "20", 10));
+          if (episodes.length === 0) ctx.exitCode = 2;
           if (ctx.json) {
             console.log(JSON.stringify(episodes));
             return;
@@ -100,6 +103,7 @@ export const memoryPlugin: Plugin = {
         args: [{ name: "beliefId", description: "Belief ID (or prefix)", required: true }],
         async action(args) {
           const history = getBeliefHistory(ctx.storage, args["beliefId"]!);
+          if (history.length === 0) ctx.exitCode = 2;
           if (ctx.json) {
             console.log(JSON.stringify(history));
             return;

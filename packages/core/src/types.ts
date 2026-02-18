@@ -79,6 +79,7 @@ export interface PluginContext {
   llm: LLMClient;
   logger: Logger;
   json?: boolean;
+  exitCode?: number;
   contextProvider?: (query: string) => Promise<string>;
 }
 

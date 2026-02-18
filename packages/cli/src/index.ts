@@ -82,7 +82,9 @@ async function main(): Promise<void> {
           for (let i = 0; i < argDefs.length; i++) {
             argValues[argDefs[i]!.name] = actionArgs[i] as string;
           }
+          ctx.exitCode = undefined;
           await cmd.action(argValues, opts);
+          if (ctx.exitCode) process.exitCode = ctx.exitCode;
         } catch (err) {
           if (ctx.json) {
             console.log(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
