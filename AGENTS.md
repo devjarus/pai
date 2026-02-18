@@ -108,6 +108,13 @@ pai memory forget <id-or-prefix>
 pai memory prune
 pai memory prune --threshold 0.1
 
+# Scan for duplicate and stale beliefs
+pai memory reflect
+
+# Export/import memory for backup or migration
+pai memory export backup.json
+pai memory import backup.json
+
 # View belief change history
 pai memory history <id-or-prefix>
 
