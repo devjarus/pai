@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, pruneBeliefs } from "../src/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, pruneBeliefs, reflect } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -321,5 +321,34 @@ describe("Embeddings", () => {
 
     const context = await getMemoryContext(storage, "testing", { llm: mockLLM });
     expect(context).toContain("Fixed memory plugin tests");
+  });
+
+  it("should detect duplicate beliefs in reflect", () => {
+    const b1 = createBelief(storage, { statement: "TypeScript is great", confidence: 0.8 });
+    const b2 = createBelief(storage, { statement: "TypeScript is awesome", confidence: 0.7 });
+    storeEmbedding(storage, b1.id, [1.0, 0.0, 0.0]);
+    storeEmbedding(storage, b2.id, [0.99, 0.1, 0.0]); // very similar
+    const result = reflect(storage);
+    expect(result.duplicates).toHaveLength(1);
+    expect(result.duplicates[0]!.ids).toContain(b1.id);
+    expect(result.duplicates[0]!.ids).toContain(b2.id);
+  });
+
+  it("should detect stale beliefs in reflect", () => {
+    const b = createBelief(storage, { statement: "Old belief", confidence: 0.1 });
+    storeEmbedding(storage, b.id, [1.0, 0.0, 0.0]);
+    storage.run("UPDATE beliefs SET updated_at = datetime('now', '-120 days') WHERE id = ?", [b.id]);
+    const result = reflect(storage);
+    expect(result.stale.length).toBeGreaterThan(0);
+    expect(result.stale.some((s) => s.id === b.id)).toBe(true);
+  });
+
+  it("should return empty results when no issues in reflect", () => {
+    const b = createBelief(storage, { statement: "Unique belief", confidence: 0.8 });
+    storeEmbedding(storage, b.id, [1.0, 0.0, 0.0]);
+    const result = reflect(storage);
+    expect(result.duplicates).toHaveLength(0);
+    expect(result.stale).toHaveLength(0);
+    expect(result.total).toBe(1);
   });
 });

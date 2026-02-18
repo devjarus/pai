@@ -336,6 +336,61 @@ export function findSimilarEpisodes(
     .slice(0, limit);
 }
 
+export interface ReflectionResult {
+  duplicates: Array<{ ids: string[]; statements: string[]; similarity: number }>;
+  stale: Array<{ id: string; statement: string; effectiveConfidence: number }>;
+  total: number;
+}
+
+export function reflect(storage: Storage, options?: { similarityThreshold?: number; staleThreshold?: number; limit?: number }): ReflectionResult {
+  const simThreshold = options?.similarityThreshold ?? 0.85;
+  const staleThreshold = options?.staleThreshold ?? 0.1;
+  const limit = options?.limit ?? 200;
+
+  const rows = storage.query<{ belief_id: string; embedding: string; statement: string; confidence: number; updated_at: string }>(
+    `SELECT be.belief_id, be.embedding, b.statement, b.confidence, b.updated_at
+     FROM belief_embeddings be
+     JOIN beliefs b ON b.id = be.belief_id
+     WHERE b.status = 'active'
+     ORDER BY b.updated_at DESC
+     LIMIT ?`,
+    [limit],
+  );
+
+  // Find near-duplicate pairs
+  const seen = new Set<string>();
+  const duplicates: ReflectionResult["duplicates"] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (seen.has(rows[i]!.belief_id)) continue;
+    const embA = JSON.parse(rows[i]!.embedding) as number[];
+    const cluster = [rows[i]!];
+    for (let j = i + 1; j < rows.length; j++) {
+      if (seen.has(rows[j]!.belief_id)) continue;
+      const embB = JSON.parse(rows[j]!.embedding) as number[];
+      if (cosineSimilarity(embA, embB) >= simThreshold) {
+        cluster.push(rows[j]!);
+        seen.add(rows[j]!.belief_id);
+      }
+    }
+    if (cluster.length > 1) {
+      seen.add(rows[i]!.belief_id);
+      duplicates.push({
+        ids: cluster.map((r) => r.belief_id),
+        statements: cluster.map((r) => r.statement),
+        similarity: simThreshold,
+      });
+    }
+  }
+
+  // Find stale beliefs
+  const allBeliefs = storage.query<Belief>("SELECT * FROM beliefs WHERE status = 'active'");
+  const stale = allBeliefs
+    .filter((b) => effectiveConfidence(b) < staleThreshold)
+    .map((b) => ({ id: b.id, statement: b.statement, effectiveConfidence: effectiveConfidence(b) }));
+
+  return { duplicates, stale, total: allBeliefs.length };
+}
+
 export async function getMemoryContext(
   storage: Storage,
   query: string,

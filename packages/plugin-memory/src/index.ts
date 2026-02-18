@@ -1,5 +1,5 @@
 import type { Plugin, PluginContext, Command } from "@personal-ai/core";
-import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, getMemoryContext, getBeliefHistory, forgetBelief, pruneBeliefs } from "./memory.js";
+import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, getMemoryContext, getBeliefHistory, forgetBelief, pruneBeliefs, reflect } from "./memory.js";
 import { remember } from "./remember.js";
 
 function out(ctx: PluginContext, data: unknown, humanText: string): void {
@@ -153,9 +153,40 @@ export const memoryPlugin: Plugin = {
           console.log(ctx.json ? JSON.stringify({ context }) : context);
         },
       },
+      {
+        name: "memory reflect",
+        description: "Scan beliefs for near-duplicates and stale entries",
+        async action() {
+          const result = reflect(ctx.storage);
+          if (ctx.json) {
+            console.log(JSON.stringify(result));
+            return;
+          }
+          console.log(`${result.total} active beliefs scanned.`);
+          if (result.duplicates.length > 0) {
+            console.log(`\n${result.duplicates.length} duplicate cluster(s):`);
+            for (const d of result.duplicates) {
+              console.log(`  Cluster (${d.ids.length} beliefs):`);
+              for (let i = 0; i < d.ids.length; i++) {
+                console.log(`    ${d.ids[i]!.slice(0, 8)}  ${d.statements[i]}`);
+              }
+            }
+          } else {
+            console.log("No duplicates found.");
+          }
+          if (result.stale.length > 0) {
+            console.log(`\n${result.stale.length} stale belief(s) (confidence < 0.1):`);
+            for (const s of result.stale) {
+              console.log(`  ${s.id.slice(0, 8)}  [${s.effectiveConfidence.toFixed(3)}] ${s.statement}`);
+            }
+          } else {
+            console.log("No stale beliefs.");
+          }
+        },
+      },
     ];
   },
 };
 
-export { memoryMigrations, getMemoryContext, findSimilarEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, listEpisodes, getBeliefHistory, forgetBelief, pruneBeliefs } from "./memory.js";
+export { memoryMigrations, getMemoryContext, findSimilarEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, listEpisodes, getBeliefHistory, forgetBelief, pruneBeliefs, reflect } from "./memory.js";
 export { remember } from "./remember.js";
