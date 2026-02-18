@@ -179,7 +179,7 @@ node packages/cli/dist/mcp.js    # stdio transport
 }
 ```
 
-**Available tools:** `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `task-list`, `task-add`, `task-done`, `goal-list`, `goal-add`
+**Available tools:** `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`, `goal-list`, `goal-add`, `goal-done`
 
 ### Exit Codes
 

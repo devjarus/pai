@@ -80,19 +80,23 @@ server.registerTool(
   },
   async ({ query }) => {
     try {
-      let beliefs: Array<{ statement: string; confidence: number }> = [];
+      let beliefs: Array<{ id: string; statement: string; confidence: number; type: string }> = [];
       try {
         const { embedding } = await llm.embed(query);
         const similar = findSimilarBeliefs(storage, embedding, 10);
         beliefs = similar.filter((s) => s.similarity > 0.3).map((s) => ({
+          id: s.beliefId,
           statement: s.statement,
           confidence: s.confidence,
+          type: s.type,
         }));
       } catch {
         // Fallback to FTS5
       }
       if (beliefs.length === 0) {
-        beliefs = searchBeliefs(storage, query);
+        beliefs = searchBeliefs(storage, query).map((b) => ({
+          id: b.id, statement: b.statement, confidence: b.confidence, type: b.type,
+        }));
       }
       return ok(beliefs);
     } catch (e) { return err(e); }

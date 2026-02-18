@@ -261,6 +261,7 @@ export interface SimilarBelief {
   statement: string;
   confidence: number;
   similarity: number;
+  type: string;
 }
 
 export function storeEmbedding(storage: Storage, beliefId: string, embedding: number[]): void {
@@ -275,8 +276,8 @@ export function findSimilarBeliefs(
   queryEmbedding: number[],
   limit: number,
 ): SimilarBelief[] {
-  const rows = storage.query<{ belief_id: string; embedding: string; statement: string; confidence: number; updated_at: string }>(
-    `SELECT be.belief_id, be.embedding, b.statement, b.confidence, b.updated_at
+  const rows = storage.query<{ belief_id: string; embedding: string; statement: string; confidence: number; updated_at: string; type: string }>(
+    `SELECT be.belief_id, be.embedding, b.statement, b.confidence, b.updated_at, b.type
      FROM belief_embeddings be
      JOIN beliefs b ON b.id = be.belief_id
      WHERE b.status = 'active'`,
@@ -291,6 +292,7 @@ export function findSimilarBeliefs(
         statement: row.statement,
         confidence: effectiveConfidence(belief),
         similarity: cosineSimilarity(queryEmbedding, emb),
+        type: row.type,
       };
     })
     .sort((a, b) => b.similarity - a.similarity)

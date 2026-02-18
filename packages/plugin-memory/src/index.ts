@@ -30,19 +30,26 @@ export const memoryPlugin: Plugin = {
         args: [{ name: "query", description: "Search query", required: true }],
         async action(args) {
           const query = args["query"]!;
-          let beliefs: Array<{ statement: string; confidence: number }> = [];
+          let beliefs: Array<{ id: string; statement: string; confidence: number; type: string }> = [];
           try {
             const { embedding } = await ctx.llm.embed(query);
             const similar = findSimilarBeliefs(ctx.storage, embedding, 10);
             beliefs = similar.filter((s) => s.similarity > 0.3).map((s) => ({
+              id: s.beliefId,
               statement: s.statement,
               confidence: s.confidence,
+              type: s.type ?? "insight",
             }));
           } catch {
             // Fallback to FTS5 if embedding fails
           }
           if (beliefs.length === 0) {
-            beliefs = searchBeliefs(ctx.storage, query);
+            beliefs = searchBeliefs(ctx.storage, query).map((b) => ({
+              id: b.id,
+              statement: b.statement,
+              confidence: b.confidence,
+              type: b.type,
+            }));
           }
           if (beliefs.length === 0) ctx.exitCode = 2;
           if (ctx.json) {
