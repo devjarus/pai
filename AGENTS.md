@@ -151,6 +151,16 @@ pai goal done <id-or-prefix>
 pai health    # check LLM provider connectivity
 ```
 
+### JSON Mode
+
+All commands support `--json` for structured output:
+```bash
+pai --json task list          # returns JSON array of task objects
+pai --json memory beliefs     # returns JSON array of belief objects
+pai --json memory recall "X"  # returns JSON array (empty [] if no results)
+pai --json task done <id>     # returns {"ok":true} or {"error":"..."} with exit code 1
+```
+
 ### Agent Usage Patterns
 
 **Before starting work** — retrieve relevant context:
@@ -171,6 +181,29 @@ pai memory remember "Completed auth middleware using JWT approach"
 ```
 
 **All IDs support prefix matching** — use first 8 characters instead of the full nanoid.
+
+## Development Workflow
+
+When working on this project, use `pai` itself to guide development:
+
+```bash
+# 1. Check what to work on
+pai task ai-suggest
+
+# 2. Before implementing, recall relevant context
+pai memory recall "<topic>"
+
+# 3. After implementing, remember what you learned
+pai memory remember "<what you learned or decided>"
+
+# 4. Mark completed work
+pai task done <id>
+
+# 5. Add new tasks discovered during work
+pai task add "<title>" --priority <low|medium|high>
+```
+
+Keep it simple. Don't add features unless they're clearly valuable. Prefer small, composable commands over complex workflows.
 
 ## Architecture Reference
 
