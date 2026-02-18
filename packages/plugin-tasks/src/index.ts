@@ -20,6 +20,10 @@ function parseTaskStatus(input: string | undefined): TaskStatusFilter {
   throw new Error(`Invalid status "${input}". Use one of: open, done, all.`);
 }
 
+function out(ctx: PluginContext, data: unknown, humanText: string): void {
+  console.log(ctx.json ? JSON.stringify(data) : humanText);
+}
+
 async function aiSuggest(ctx: PluginContext): Promise<string> {
   const tasks = listTasks(ctx.storage);
   const goals = listGoals(ctx.storage);
@@ -66,7 +70,7 @@ export const tasksPlugin: Plugin = {
             goalId: opts["goal"],
             dueDate: opts["due"],
           });
-          console.log(`Task added: ${task.id} — ${task.title}`);
+          out(ctx, task, `Task added: ${task.id} — ${task.title}`);
         },
       },
       {
@@ -78,6 +82,10 @@ export const tasksPlugin: Plugin = {
         async action(_args, opts) {
           const status = parseTaskStatus(opts["status"]);
           const tasks = listTasks(ctx.storage, status);
+          if (ctx.json) {
+            console.log(JSON.stringify(tasks));
+            return;
+          }
           if (tasks.length === 0) {
             console.log(status === "all" ? "No tasks." : `No ${status} tasks.`);
             return;
@@ -96,7 +104,7 @@ export const tasksPlugin: Plugin = {
         args: [{ name: "id", description: "Task ID (or prefix)", required: true }],
         async action(args) {
           completeTask(ctx.storage, args["id"]!);
-          console.log("Task completed.");
+          out(ctx, { ok: true }, "Task completed.");
         },
       },
       {
@@ -114,7 +122,7 @@ export const tasksPlugin: Plugin = {
             priority: opts["priority"],
             dueDate: opts["due"],
           });
-          console.log("Task updated.");
+          out(ctx, { ok: true }, "Task updated.");
         },
       },
       {
@@ -123,7 +131,7 @@ export const tasksPlugin: Plugin = {
         args: [{ name: "id", description: "Task ID (or prefix)", required: true }],
         async action(args) {
           reopenTask(ctx.storage, args["id"]!);
-          console.log("Task reopened.");
+          out(ctx, { ok: true }, "Task reopened.");
         },
       },
       {
@@ -132,7 +140,7 @@ export const tasksPlugin: Plugin = {
         args: [{ name: "title", description: "Goal title", required: true }],
         async action(args) {
           const goal = addGoal(ctx.storage, { title: args["title"]! });
-          console.log(`Goal added: ${goal.id} — ${goal.title}`);
+          out(ctx, goal, `Goal added: ${goal.id} — ${goal.title}`);
         },
       },
       {
@@ -140,6 +148,10 @@ export const tasksPlugin: Plugin = {
         description: "List active goals",
         async action() {
           const goals = listGoals(ctx.storage);
+          if (ctx.json) {
+            console.log(JSON.stringify(goals));
+            return;
+          }
           if (goals.length === 0) { console.log("No active goals."); return; }
           for (const g of goals) {
             console.log(`  ${g.id.slice(0, 8)}  ${g.title}`);
@@ -152,7 +164,7 @@ export const tasksPlugin: Plugin = {
         args: [{ name: "id", description: "Goal ID (or prefix)", required: true }],
         async action(args) {
           completeGoal(ctx.storage, args["id"]!);
-          console.log("Goal completed.");
+          out(ctx, { ok: true }, "Goal completed.");
         },
       },
       {
@@ -160,7 +172,7 @@ export const tasksPlugin: Plugin = {
         description: "Get AI-powered task prioritization",
         async action() {
           const suggestion = await aiSuggest(ctx);
-          console.log(suggestion);
+          out(ctx, { suggestion }, suggestion);
         },
       },
     ];

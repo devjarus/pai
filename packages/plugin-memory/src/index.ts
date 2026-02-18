@@ -2,6 +2,10 @@ import type { Plugin, PluginContext, Command } from "@personal-ai/core";
 import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, getMemoryContext, getBeliefHistory, forgetBelief, pruneBeliefs } from "./memory.js";
 import { remember } from "./remember.js";
 
+function out(ctx: PluginContext, data: unknown, humanText: string): void {
+  console.log(ctx.json ? JSON.stringify(data) : humanText);
+}
+
 export const memoryPlugin: Plugin = {
   name: "memory",
   version: "0.1.0",
@@ -16,7 +20,7 @@ export const memoryPlugin: Plugin = {
         async action(args) {
           const result = await remember(ctx.storage, ctx.llm, args["text"]!, ctx.logger);
           const label = result.isReinforcement ? "Reinforced existing" : "New";
-          console.log(`${label} belief(s): ${result.beliefIds.join(", ")}`);
+          out(ctx, result, `${label} belief(s): ${result.beliefIds.join(", ")}`);
         },
       },
       {
@@ -39,6 +43,10 @@ export const memoryPlugin: Plugin = {
           if (beliefs.length === 0) {
             beliefs = searchBeliefs(ctx.storage, query);
           }
+          if (ctx.json) {
+            console.log(JSON.stringify(beliefs));
+            return;
+          }
           if (beliefs.length === 0) {
             console.log("No matching beliefs found.");
             return;
@@ -54,6 +62,10 @@ export const memoryPlugin: Plugin = {
         options: [{ flags: "--status <status>", description: "Filter by status", defaultValue: "active" }],
         async action(_args, opts) {
           const beliefs = listBeliefs(ctx.storage, opts["status"]);
+          if (ctx.json) {
+            console.log(JSON.stringify(beliefs));
+            return;
+          }
           if (beliefs.length === 0) {
             console.log("No beliefs found.");
             return;
@@ -69,6 +81,10 @@ export const memoryPlugin: Plugin = {
         options: [{ flags: "--limit <n>", description: "Max episodes", defaultValue: "20" }],
         async action(_args, opts) {
           const episodes = listEpisodes(ctx.storage, parseInt(opts["limit"] ?? "20", 10));
+          if (ctx.json) {
+            console.log(JSON.stringify(episodes));
+            return;
+          }
           if (episodes.length === 0) {
             console.log("No episodes found.");
             return;
@@ -84,6 +100,10 @@ export const memoryPlugin: Plugin = {
         args: [{ name: "beliefId", description: "Belief ID (or prefix)", required: true }],
         async action(args) {
           const history = getBeliefHistory(ctx.storage, args["beliefId"]!);
+          if (ctx.json) {
+            console.log(JSON.stringify(history));
+            return;
+          }
           if (history.length === 0) {
             console.log("No history found for this belief.");
             return;
@@ -99,7 +119,7 @@ export const memoryPlugin: Plugin = {
         args: [{ name: "beliefId", description: "Belief ID (or prefix)", required: true }],
         async action(args) {
           forgetBelief(ctx.storage, args["beliefId"]!);
-          console.log("Belief forgotten.");
+          out(ctx, { ok: true }, "Belief forgotten.");
         },
       },
       {
@@ -109,6 +129,10 @@ export const memoryPlugin: Plugin = {
         async action(_args, opts) {
           const threshold = parseFloat(opts["threshold"] ?? "0.05");
           const pruned = pruneBeliefs(ctx.storage, threshold);
+          if (ctx.json) {
+            console.log(JSON.stringify({ pruned }));
+            return;
+          }
           if (pruned.length === 0) {
             console.log("No beliefs below threshold.");
           } else {
@@ -122,7 +146,7 @@ export const memoryPlugin: Plugin = {
         args: [{ name: "query", description: "Search query to find relevant context", required: true }],
         async action(args) {
           const context = await getMemoryContext(ctx.storage, args["query"]!, { llm: ctx.llm });
-          console.log(context);
+          console.log(ctx.json ? JSON.stringify({ context }) : context);
         },
       },
     ];

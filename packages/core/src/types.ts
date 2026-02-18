@@ -78,6 +78,7 @@ export interface PluginContext {
   storage: Storage;
   llm: LLMClient;
   logger: Logger;
+  json?: boolean;
   contextProvider?: (query: string) => Promise<string>;
 }
 

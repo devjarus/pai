@@ -6,7 +6,11 @@ import { memoryPlugin, getMemoryContext } from "@personal-ai/plugin-memory";
 import { tasksPlugin } from "@personal-ai/plugin-tasks";
 
 const program = new Command();
-program.name("pai").description("Personal AI — your local-first assistant").version("0.1.0");
+program
+  .name("pai")
+  .description("Personal AI — your local-first assistant")
+  .version("0.1.0")
+  .option("--json", "Output as JSON for agent consumption");
 
 const plugins: Record<string, Plugin> = {
   memory: memoryPlugin,
@@ -67,6 +71,9 @@ async function main(): Promise<void> {
 
       sub.action(async (...actionArgs: unknown[]) => {
         try {
+          // Set json mode from global flag before each action
+          ctx.json = program.opts()["json"] ?? false;
+
           // Commander passes positional args first, then opts object, then the Command
           const cmdObj = actionArgs[actionArgs.length - 1] as { opts: () => Record<string, string> };
           const opts = cmdObj.opts();
@@ -77,7 +84,11 @@ async function main(): Promise<void> {
           }
           await cmd.action(argValues, opts);
         } catch (err) {
-          console.error("Error:", err instanceof Error ? err.message : err);
+          if (ctx.json) {
+            console.log(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+          } else {
+            console.error("Error:", err instanceof Error ? err.message : err);
+          }
           process.exitCode = 1;
         }
       });
@@ -90,8 +101,12 @@ async function main(): Promise<void> {
     .description("Check LLM provider health")
     .action(async () => {
       const result = await llm.health();
-      console.log(`Provider: ${result.provider}`);
-      console.log(`Status: ${result.ok ? "OK" : "UNAVAILABLE"}`);
+      if (program.opts()["json"]) {
+        console.log(JSON.stringify(result));
+      } else {
+        console.log(`Provider: ${result.provider}`);
+        console.log(`Status: ${result.ok ? "OK" : "UNAVAILABLE"}`);
+      }
       if (!result.ok) process.exitCode = 1;
     });
 
