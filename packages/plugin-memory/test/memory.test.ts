@@ -405,6 +405,53 @@ describe("Embeddings", () => {
     expect(() => importMemory(storage, { beliefs: "not-array" } as any)).toThrow(/invalid import format/i);
   });
 
+  it("should import data without belief_changes field", () => {
+    const ep = createEpisode(storage, { action: "import test" });
+    const b = createBelief(storage, { statement: "Import no changes", confidence: 0.7 });
+    const exported = exportMemory(storage);
+    // Remove belief_changes to simulate an older export format
+    const partial = { ...exported, belief_changes: undefined } as any;
+
+    const dir2 = mkdtempSync(join(tmpdir(), "pai-mem-import2-"));
+    const storage2 = createStorage(dir2);
+    storage2.migrate("memory", memoryMigrations);
+
+    const result = importMemory(storage2, partial);
+    expect(result.beliefs).toBe(1);
+    expect(result.episodes).toBe(1);
+
+    storage2.close();
+    rmSync(dir2, { recursive: true, force: true });
+  });
+
+  it("should throw when forgetting non-existent belief", () => {
+    expect(() => forgetBelief(storage, "nonexistent-id")).toThrow(/no active belief/i);
+  });
+
+  it("should throw on ambiguous prefix when forgetting", () => {
+    // Create two beliefs with same first char
+    const b1 = createBelief(storage, { statement: "Belief one", confidence: 0.5 });
+    const b2 = createBelief(storage, { statement: "Belief two", confidence: 0.5 });
+    // Use single character prefix — likely ambiguous
+    const prefix = ""; // empty prefix matches all
+    expect(() => forgetBelief(storage, prefix)).toThrow(/ambiguous/i);
+  });
+
+  it("should handle cosine similarity with zero vectors", () => {
+    expect(cosineSimilarity([0, 0, 0], [1, 0, 0])).toBe(0);
+    expect(cosineSimilarity([0, 0, 0], [0, 0, 0])).toBe(0);
+  });
+
+  it("should return empty stats on empty database", () => {
+    const stats = memoryStats(storage);
+    expect(stats.beliefs.total).toBe(0);
+    expect(stats.beliefs.active).toBe(0);
+    expect(stats.episodes).toBe(0);
+    expect(stats.avgConfidence).toBe(0);
+    expect(stats.oldestBelief).toBeNull();
+    expect(stats.newestBelief).toBeNull();
+  });
+
   it("should return memory stats", () => {
     createEpisode(storage, { context: "test", action: "stats test", outcome: "ok" });
     createBelief(storage, { statement: "Active belief", confidence: 0.8 });

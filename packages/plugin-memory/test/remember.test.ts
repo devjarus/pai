@@ -112,6 +112,29 @@ describe("remember", () => {
     expect(second.beliefIds[0]).toBe(first.beliefIds[0]);
   });
 
+  it("should continue when episode embedding fails", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn().mockResolvedValue({
+        text: '{"fact":"Embedding failure is handled gracefully","insight":null}',
+        usage: { inputTokens: 10, outputTokens: 8 },
+      }),
+      embed: vi.fn()
+        .mockRejectedValueOnce(new Error("Embedding service down"))  // episode embed fails
+        .mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),         // belief embed succeeds
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+
+    const result = await remember(storage, mockLLM, "Test embed failure recovery");
+    expect(result.episodeId).toBeTruthy();
+    expect(result.beliefIds).toHaveLength(1);
+
+    // Episode embedding should NOT be stored
+    const embRows = storage.query<{ episode_id: string }>(
+      "SELECT episode_id FROM episode_embeddings WHERE episode_id = ?", [result.episodeId]
+    );
+    expect(embRows).toHaveLength(0);
+  });
+
   it("should log 'created' change when creating a new belief", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn().mockResolvedValue({

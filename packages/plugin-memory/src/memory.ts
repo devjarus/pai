@@ -94,11 +94,14 @@ export interface Belief {
 
 const HALF_LIFE_DAYS = 30;
 
+function decayConfidence(confidence: number, updatedAt: string): number {
+  const ts = new Date(updatedAt + "Z").getTime();
+  const daysSinceUpdate = (Date.now() - ts) / (1000 * 60 * 60 * 24);
+  return confidence * Math.pow(0.5, daysSinceUpdate / HALF_LIFE_DAYS);
+}
+
 export function effectiveConfidence(belief: Belief): number {
-  const updatedAt = new Date(belief.updated_at + "Z").getTime();
-  const now = Date.now();
-  const daysSinceUpdate = (now - updatedAt) / (1000 * 60 * 60 * 24);
-  return belief.confidence * Math.pow(0.5, daysSinceUpdate / HALF_LIFE_DAYS);
+  return decayConfidence(belief.confidence, belief.updated_at);
 }
 
 export function createEpisode(
@@ -286,11 +289,10 @@ export function findSimilarBeliefs(
   return rows
     .map((row) => {
       const emb = JSON.parse(row.embedding) as number[];
-      const belief = { confidence: row.confidence, updated_at: row.updated_at } as Belief;
       return {
         beliefId: row.belief_id,
         statement: row.statement,
-        confidence: effectiveConfidence(belief),
+        confidence: decayConfidence(row.confidence, row.updated_at),
         similarity: cosineSimilarity(queryEmbedding, emb),
         type: row.type,
       };
@@ -484,7 +486,7 @@ export function importMemory(storage: Storage, data: MemoryExport): { beliefs: n
     }
   }
 
-  for (const bc of data.belief_changes) {
+  for (const bc of data.belief_changes ?? []) {
     const exists = storage.query<{ id: string }>("SELECT id FROM belief_changes WHERE id = ?", [bc.id]);
     if (exists.length === 0) {
       storage.run(
