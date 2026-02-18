@@ -4,7 +4,7 @@ This file provides guidance to coding agents (Codex, Claude Code) when working w
 
 ## Project Overview
 
-Local-first personal AI with a plugin architecture. CLI tool (`pai`) backed by SQLite and Ollama/OpenAI.
+Persistent AI memory layer for coding agents. CLI tool (`pai`) + MCP server backed by SQLite and Ollama/OpenAI. Core value: belief lifecycle (create → reinforce → contradict → decay → prune) with semantic search.
 
 ## Architecture
 
@@ -163,7 +163,7 @@ pai health    # check LLM provider connectivity
 
 ## MCP Server
 
-pai exposes an MCP (Model Context Protocol) server for native integration with Claude Code, Cursor, Windsurf, and any MCP-compatible agent.
+pai exposes an MCP (Model Context Protocol) server for native integration with Claude Code, Cursor, Windsurf, and any MCP-compatible agent. This is the primary integration point for coding agents.
 
 **Start the server:**
 ```bash
@@ -174,7 +174,7 @@ node packages/cli/dist/mcp.js    # stdio transport
 ```json
 {
   "mcpServers": {
-    "personal-ai": {
+    "pai": {
       "command": "node",
       "args": ["/absolute/path/to/packages/cli/dist/mcp.js"]
     }

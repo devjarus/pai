@@ -1,8 +1,8 @@
 {
   "name": "personal-ai",
   "private": true,
-  "description": "Local-first personal AI with plugin architecture — memory, tasks, and LLM-powered prioritization",
-  "keywords": ["personal-ai", "memory", "agent", "mcp", "sqlite", "local-first", "llm", "cli"],
+  "description": "Persistent AI memory layer — belief lifecycle, semantic search, and task management for coding agents",
+  "keywords": ["ai-memory", "agent-memory", "mcp", "sqlite", "local-first", "llm", "cli", "persistent-memory", "coding-agent"],
   "license": "MIT",
   "author": "devjarus",
   "repository": {

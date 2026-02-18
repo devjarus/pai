@@ -1,7 +1,7 @@
 {
   "name": "@personal-ai/plugin-tasks",
   "version": "0.1.0",
-  "description": "Tasks plugin: task CRUD, goals, AI-powered prioritization",
+  "description": "Tasks plugin: task management, goals, AI-powered prioritization with memory context",
   "license": "MIT",
   "repository": {
     "type": "git",

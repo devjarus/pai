@@ -8,7 +8,7 @@ import { tasksPlugin } from "@personal-ai/plugin-tasks";
 const program = new Command();
 program
   .name("pai")
-  .description("Personal AI — your local-first assistant")
+  .description("Persistent AI memory — belief lifecycle, semantic search, and tasks for coding agents")
   .version("0.1.0")
   .option("--json", "Output as JSON for agent consumption");
 

@@ -52,9 +52,9 @@ function err(error: unknown): { content: Array<{ type: "text"; text: string }>; 
 }
 
 const server = new McpServer({
-  name: "personal-ai",
+  name: "pai",
   version: "0.1.0",
-  description: "Local-first personal AI — memory and task management",
+  description: "Persistent AI memory — belief lifecycle, semantic search, and tasks for coding agents",
 });
 
 // --- Memory tools ---

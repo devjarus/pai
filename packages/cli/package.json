@@ -1,7 +1,7 @@
 {
   "name": "@personal-ai/cli",
   "version": "0.1.0",
-  "description": "CLI entrypoint for personal-ai (pai command)",
+  "description": "CLI and MCP server for pai — persistent AI memory for coding agents",
   "license": "MIT",
   "repository": {
     "type": "git",

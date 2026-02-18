@@ -1,7 +1,7 @@
 {
   "name": "@personal-ai/plugin-memory",
   "version": "0.1.0",
-  "description": "Memory plugin: episodes, beliefs, FTS5 search, LLM belief extraction",
+  "description": "Memory plugin: belief lifecycle, semantic search, contradiction detection, context packing",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -1,7 +1,7 @@
 {
   "name": "@personal-ai/core",
   "version": "0.1.0",
-  "description": "Core runtime: config, storage, LLM client, plugin interfaces",
+  "description": "Core runtime for pai: config, storage, LLM client, plugin interfaces",
   "license": "MIT",
   "repository": {
     "type": "git",

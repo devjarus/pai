@@ -1,6 +1,8 @@
-# pai — Personal AI
+# pai — Persistent AI Memory
 
-Local-first personal AI with plugin architecture. Memory, tasks, and LLM-powered prioritization — all stored in a single SQLite file on your machine.
+Local-first memory layer for coding agents. Belief lifecycle, semantic search, contradiction detection, and task management — all in a single SQLite file on your machine.
+
+**What makes pai different:** Beliefs aren't just stored — they're reinforced when repeated, invalidated when contradicted, and decay when stale. Your agent's memory gets smarter over time.
 
 ## Prerequisites
 
@@ -17,44 +19,69 @@ pnpm install
 pnpm build
 ```
 
-## Usage
+## MCP Server (for coding agents)
+
+pai exposes an MCP server for native integration with Claude Code, Cursor, Windsurf, and any MCP-compatible agent.
+
+**Configure in Claude Code** (`~/.claude/claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "pai": {
+      "command": "node",
+      "args": ["/absolute/path/to/packages/cli/dist/mcp.js"]
+    }
+  }
+}
+```
+
+**14 MCP tools:** `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `memory-stats`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`, `goal-list`, `goal-add`, `goal-done`
+
+## CLI Usage
 
 ```bash
-# Check LLM connectivity
-pai health
-
-# Memory — remembers facts + insights with semantic dedup
+# Memory — belief lifecycle with semantic dedup
 pai memory remember "I prefer TypeScript over JavaScript"
 pai memory recall "language preference"
 pai memory beliefs
-pai memory episodes
-pai memory history <beliefId>
 pai memory context "coding preferences"
 pai memory forget <id-or-prefix>
-pai memory prune --threshold 0.05
+pai memory reflect                    # find duplicates and stale beliefs
+pai memory stats                      # memory health summary
+pai memory export backup.json         # export for backup
+pai memory import backup.json         # import (skips duplicates)
 
 # Tasks
 pai task add "Ship v0.1" --priority high --due 2026-03-01
-pai task list --status open
-pai task list --status done
+pai task list
 pai task done <id-or-prefix>
-pai task reopen <id-or-prefix>
-pai task edit <id-or-prefix> --title "New title" --priority high
+pai task ai-suggest                   # LLM prioritization with memory context
 
 # Goals
-pai goal add "Launch personal AI"
+pai goal add "Launch v1"
 pai goal list
 pai goal done <id-or-prefix>
 
-# AI prioritization (uses LLM + memory context)
-pai task ai-suggest
+# All commands support --json for structured output
+pai --json memory recall "topic"
 ```
 
-> Run `pai --help` for all available commands.
+> All IDs support prefix matching — use first 8 characters instead of the full ID.
+
+## How Memory Works
+
+```
+observe → extract fact + insight → embed → compare to existing beliefs
+  ├── similarity > 0.85  → reinforce (boost confidence, reset decay)
+  ├── similarity 0.7-0.85 → LLM contradiction check → invalidate or create new
+  └── similarity < 0.7   → create new belief with embedding
+```
+
+Beliefs decay with a 30-day half-life. Stale beliefs fade; reinforced beliefs stay strong. The `reflect` command finds duplicates and `prune` removes low-confidence beliefs.
 
 ## Configuration
 
-Set via environment variables or `.env` file. See `.env.example` for defaults.
+Set via environment variables or `.env` file.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -62,7 +89,7 @@ Set via environment variables or `.env` file. See `.env.example` for defaults.
 | `PAI_LLM_PROVIDER` | `ollama` | `ollama` or `openai` |
 | `PAI_LLM_MODEL` | `llama3.2` | Chat model name |
 | `PAI_LLM_EMBED_MODEL` | `nomic-embed-text` | Embedding model name |
-| `PAI_LLM_BASE_URL` | `http://127.0.0.1:11434` | Provider URL (use `https://api.ollama.com` for Ollama Cloud) |
+| `PAI_LLM_BASE_URL` | `http://127.0.0.1:11434` | Provider URL |
 | `PAI_LLM_API_KEY` | | API key (required for Ollama Cloud and OpenAI) |
 | `PAI_LOG_LEVEL` | `silent` | Stderr log level: `silent`, `error`, `warn`, `info`, `debug` |
 | `PAI_PLUGINS` | `memory,tasks` | Comma-separated active plugins |
@@ -81,23 +108,12 @@ pnpm test:watch          # watch mode
 pnpm test:coverage       # coverage report with thresholds
 pnpm typecheck           # type-check all packages
 pnpm lint                # eslint
-pnpm run verify          # typecheck + tests
-pnpm run ci              # verify + coverage
+pnpm run ci              # typecheck + tests + coverage
 ```
 
 **Git hooks** (via Husky):
 - `pre-commit` — lint-staged runs ESLint on staged `.ts` files
-- `pre-push` — runs `pnpm run verify` (typecheck + tests)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Write tests first (TDD — tests live in `packages/*/test/`)
-4. Make your changes
-5. Ensure `pnpm run ci` passes
-6. Commit and push
-7. Open a Pull Request
+- `pre-push` — runs `pnpm run ci` (typecheck + tests + coverage)
 
 ## License
 
