@@ -9,7 +9,10 @@
     "directory": "packages/cli"
   },
   "type": "module",
-  "bin": { "pai": "dist/index.js" },
+  "bin": {
+    "pai": "dist/index.js",
+    "pai-mcp": "dist/mcp.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run --passWithNoTests",
@@ -17,14 +20,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@personal-ai/core": "workspace:*",
     "@personal-ai/plugin-memory": "workspace:*",
     "@personal-ai/plugin-tasks": "workspace:*",
-    "commander": "^13.0.0"
+    "commander": "^13.0.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^3.0.0"
   }
 }

@@ -153,4 +153,5 @@ export const memoryPlugin: Plugin = {
   },
 };
 
-export { memoryMigrations, getMemoryContext, findSimilarEpisodes } from "./memory.js";
+export { memoryMigrations, getMemoryContext, findSimilarEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, listEpisodes, getBeliefHistory, forgetBelief, pruneBeliefs } from "./memory.js";
+export { remember } from "./remember.js";

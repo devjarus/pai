@@ -151,6 +151,29 @@ pai goal done <id-or-prefix>
 pai health    # check LLM provider connectivity
 ```
 
+## MCP Server
+
+pai exposes an MCP (Model Context Protocol) server for native integration with Claude Code, Cursor, Windsurf, and any MCP-compatible agent.
+
+**Start the server:**
+```bash
+node packages/cli/dist/mcp.js    # stdio transport
+```
+
+**Configure in Claude Code** (`~/.claude/claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "personal-ai": {
+      "command": "node",
+      "args": ["/absolute/path/to/packages/cli/dist/mcp.js"]
+    }
+  }
+}
+```
+
+**Available tools:** `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `task-list`, `task-add`, `task-done`, `goal-list`, `goal-add`
+
 ### JSON Mode
 
 All commands support `--json` for structured output:
