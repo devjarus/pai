@@ -391,6 +391,63 @@ export function reflect(storage: Storage, options?: { similarityThreshold?: numb
   return { duplicates, stale, total: allBeliefs.length };
 }
 
+export interface MemoryExport {
+  version: number;
+  exported_at: string;
+  beliefs: Belief[];
+  episodes: Episode[];
+  belief_changes: BeliefChange[];
+}
+
+export function exportMemory(storage: Storage): MemoryExport {
+  return {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    beliefs: storage.query<Belief>("SELECT * FROM beliefs"),
+    episodes: storage.query<Episode>("SELECT * FROM episodes"),
+    belief_changes: storage.query<BeliefChange>("SELECT * FROM belief_changes"),
+  };
+}
+
+export function importMemory(storage: Storage, data: MemoryExport): { beliefs: number; episodes: number } {
+  let beliefs = 0;
+  let episodes = 0;
+
+  for (const ep of data.episodes) {
+    const exists = storage.query<{ id: string }>("SELECT id FROM episodes WHERE id = ?", [ep.id]);
+    if (exists.length === 0) {
+      storage.run(
+        "INSERT INTO episodes (id, timestamp, context, action, outcome, tags_json) VALUES (?, ?, ?, ?, ?, ?)",
+        [ep.id, ep.timestamp, ep.context, ep.action, ep.outcome, ep.tags_json],
+      );
+      episodes++;
+    }
+  }
+
+  for (const b of data.beliefs) {
+    const exists = storage.query<{ id: string }>("SELECT id FROM beliefs WHERE id = ?", [b.id]);
+    if (exists.length === 0) {
+      storage.run(
+        "INSERT INTO beliefs (id, statement, confidence, status, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [b.id, b.statement, b.confidence, b.status, b.type, b.created_at, b.updated_at],
+      );
+      beliefs++;
+    }
+  }
+
+  for (const bc of data.belief_changes) {
+    const exists = storage.query<{ id: string }>("SELECT id FROM belief_changes WHERE id = ?", [bc.id]);
+    if (exists.length === 0) {
+      storage.run(
+        "INSERT INTO belief_changes (id, belief_id, change_type, detail, episode_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        [bc.id, bc.belief_id, bc.change_type, bc.detail, bc.episode_id, bc.created_at],
+      );
+    }
+  }
+
+  return { beliefs, episodes };
+}
+
 export async function getMemoryContext(
   storage: Storage,
   query: string,
