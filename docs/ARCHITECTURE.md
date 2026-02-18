@@ -84,7 +84,7 @@ Append-only observations/actions/outcomes. Each `remember` call creates an episo
 Durable knowledge with confidence scores. Each belief has:
 
 - **`type`** — `fact` (preserves what user said) or `insight` (LLM-inferred generalization)
-- **`confidence`** — 0.0–1.0, subject to 30-day half-life decay (computed at read time, no background jobs)
+- **`confidence`** — 0.0–1.0. The database stores the *base* confidence (set at creation, boosted on reinforcement). All read paths apply a 30-day half-life exponential decay at query time via `effectiveConfidence()`. This means the displayed confidence decreases over time without background jobs or write-back. Raw DB values represent the peak confidence, not the current effective value.
 - **`status`** — `active` or `invalidated`
 - **Embedding** — 768-dim vector stored in `belief_embeddings` table for semantic similarity
 

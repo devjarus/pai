@@ -162,6 +162,34 @@ export function listBeliefs(storage: Storage, status = "active"): Belief[] {
     .sort((a, b) => b.confidence - a.confidence);
 }
 
+export function forgetBelief(storage: Storage, beliefId: string): void {
+  const rows = storage.query<Pick<Belief, "id">>(
+    "SELECT id FROM beliefs WHERE id = ? AND status = 'active' LIMIT 1",
+    [beliefId],
+  );
+  const id = rows[0]?.id ?? (() => {
+    const prefixMatches = storage.query<Pick<Belief, "id">>(
+      "SELECT id FROM beliefs WHERE id LIKE ? AND status = 'active' ORDER BY created_at DESC LIMIT 2",
+      [`${beliefId}%`],
+    );
+    if (prefixMatches.length === 0) throw new Error(`No active belief matches "${beliefId}".`);
+    if (prefixMatches.length > 1) throw new Error(`Belief id prefix "${beliefId}" is ambiguous. Provide more characters.`);
+    return prefixMatches[0]!.id;
+  })();
+  storage.run("UPDATE beliefs SET status = 'forgotten', updated_at = datetime('now') WHERE id = ?", [id]);
+  logBeliefChange(storage, { beliefId: id, changeType: "forgotten", detail: "Manually forgotten by user" });
+}
+
+export function pruneBeliefs(storage: Storage, threshold = 0.05): string[] {
+  const beliefs = storage.query<Belief>("SELECT * FROM beliefs WHERE status = 'active'");
+  const toPrune = beliefs.filter((b) => effectiveConfidence(b) < threshold);
+  for (const b of toPrune) {
+    storage.run("UPDATE beliefs SET status = 'pruned', updated_at = datetime('now') WHERE id = ?", [b.id]);
+    logBeliefChange(storage, { beliefId: b.id, changeType: "pruned", detail: `Effective confidence ${effectiveConfidence(b).toFixed(3)} below threshold ${threshold}` });
+  }
+  return toPrune.map((b) => b.id);
+}
+
 export function linkBeliefToEpisode(storage: Storage, beliefId: string, episodeId: string): void {
   storage.run("INSERT OR IGNORE INTO belief_episodes (belief_id, episode_id) VALUES (?, ?)", [
     beliefId,
@@ -197,9 +225,14 @@ export function logBeliefChange(
 }
 
 export function getBeliefHistory(storage: Storage, beliefId: string): BeliefChange[] {
-  return storage.query<BeliefChange>(
+  const exact = storage.query<BeliefChange>(
     "SELECT * FROM belief_changes WHERE belief_id = ? ORDER BY created_at DESC, rowid DESC",
     [beliefId],
+  );
+  if (exact.length > 0) return exact;
+  return storage.query<BeliefChange>(
+    "SELECT * FROM belief_changes WHERE belief_id LIKE ? ORDER BY created_at DESC, rowid DESC",
+    [`${beliefId}%`],
   );
 }
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs } from "../src/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, forgetBelief, pruneBeliefs } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -199,6 +199,45 @@ describe("Memory", () => {
     const b = createBelief(storage, { statement: "test", confidence: 0.5 });
     const [row] = storage.query<typeof b>("SELECT * FROM beliefs WHERE id = ?", [b.id]);
     expect(row!.type).toBe("insight");
+  });
+
+  it("should forget a belief by setting status to forgotten", () => {
+    const belief = createBelief(storage, { statement: "Forgettable fact", confidence: 0.5 });
+    forgetBelief(storage, belief.id);
+    const [row] = storage.query<{ status: string }>("SELECT status FROM beliefs WHERE id = ?", [belief.id]);
+    expect(row!.status).toBe("forgotten");
+    // Should not appear in active list
+    expect(listBeliefs(storage).find((b) => b.id === belief.id)).toBeUndefined();
+  });
+
+  it("should forget a belief by prefix", () => {
+    const belief = createBelief(storage, { statement: "Prefix test", confidence: 0.5 });
+    forgetBelief(storage, belief.id.slice(0, 8));
+    const [row] = storage.query<{ status: string }>("SELECT status FROM beliefs WHERE id = ?", [belief.id]);
+    expect(row!.status).toBe("forgotten");
+  });
+
+  it("should log forgotten change in belief history", () => {
+    const belief = createBelief(storage, { statement: "Will be forgotten", confidence: 0.5 });
+    forgetBelief(storage, belief.id);
+    const history = getBeliefHistory(storage, belief.id);
+    expect(history.some((h) => h.change_type === "forgotten")).toBe(true);
+  });
+
+  it("should prune beliefs below threshold", () => {
+    // Create a belief with very old updated_at so decay makes it near zero
+    const b = createBelief(storage, { statement: "Ancient belief", confidence: 0.1 });
+    storage.run("UPDATE beliefs SET updated_at = datetime('now', '-365 days') WHERE id = ?", [b.id]);
+    const pruned = pruneBeliefs(storage, 0.05);
+    expect(pruned).toContain(b.id);
+    const [row] = storage.query<{ status: string }>("SELECT status FROM beliefs WHERE id = ?", [b.id]);
+    expect(row!.status).toBe("pruned");
+  });
+
+  it("should not prune beliefs above threshold", () => {
+    createBelief(storage, { statement: "Fresh belief", confidence: 0.9 });
+    const pruned = pruneBeliefs(storage, 0.05);
+    expect(pruned).toHaveLength(0);
   });
 });
 

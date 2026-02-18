@@ -1,5 +1,5 @@
 import type { Plugin, PluginContext, Command } from "@personal-ai/core";
-import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, getMemoryContext, getBeliefHistory } from "./memory.js";
+import { memoryMigrations, listEpisodes, listBeliefs, searchBeliefs, findSimilarBeliefs, getMemoryContext, getBeliefHistory, forgetBelief, pruneBeliefs } from "./memory.js";
 import { remember } from "./remember.js";
 
 export const memoryPlugin: Plugin = {
@@ -90,6 +90,29 @@ export const memoryPlugin: Plugin = {
           }
           for (const h of history) {
             console.log(`[${h.created_at}] ${h.change_type}: ${h.detail ?? "(no detail)"}`);
+          }
+        },
+      },
+      {
+        name: "memory forget",
+        description: "Soft-delete a belief (sets status to 'forgotten')",
+        args: [{ name: "beliefId", description: "Belief ID (or prefix)", required: true }],
+        async action(args) {
+          forgetBelief(ctx.storage, args["beliefId"]!);
+          console.log("Belief forgotten.");
+        },
+      },
+      {
+        name: "memory prune",
+        description: "Remove beliefs with effective confidence below threshold",
+        options: [{ flags: "--threshold <n>", description: "Confidence threshold (default 0.05)", defaultValue: "0.05" }],
+        async action(_args, opts) {
+          const threshold = parseFloat(opts["threshold"] ?? "0.05");
+          const pruned = pruneBeliefs(ctx.storage, threshold);
+          if (pruned.length === 0) {
+            console.log("No beliefs below threshold.");
+          } else {
+            console.log(`Pruned ${pruned.length} belief(s).`);
           }
         },
       },
