@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
+import type { LLMClient } from "@personal-ai/core";
 import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs } from "../src/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -140,21 +141,49 @@ describe("Memory", () => {
     expect(history[0]!.change_type).toBe("reinforced");
   });
 
-  it("should return formatted context with beliefs and episodes", () => {
+  it("should return formatted context with beliefs and episodes", async () => {
     createBelief(storage, { statement: "TypeScript catches bugs early", confidence: 0.8 });
     createEpisode(storage, { action: "Wrote tests for memory plugin", outcome: "all passed" });
 
-    const context = getMemoryContext(storage, "TypeScript");
+    const context = await getMemoryContext(storage, "TypeScript");
     expect(context).toContain("Relevant beliefs");
     expect(context).toContain("TypeScript catches bugs early");
     expect(context).toContain("Recent observations");
     expect(context).toContain("Wrote tests for memory plugin");
   });
 
-  it("should return empty sections gracefully", () => {
-    const context = getMemoryContext(storage, "nonexistent topic");
+  it("should return empty sections gracefully", async () => {
+    const context = await getMemoryContext(storage, "nonexistent topic");
     expect(context).toContain("No relevant beliefs");
     expect(context).toContain("Recent observations");
+  });
+
+  it("should use semantic search when llm is provided", async () => {
+    const belief = createBelief(storage, { statement: "Vitest is fast for testing", confidence: 0.9 });
+    storeEmbedding(storage, belief.id, [1.0, 0.0, 0.0]);
+
+    const mockLLM: LLMClient = {
+      chat: vi.fn(),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.9, 0.1, 0.0] }),
+      health: vi.fn(),
+    };
+
+    const context = await getMemoryContext(storage, "testing frameworks", { llm: mockLLM });
+    expect(context).toContain("Vitest is fast for testing");
+    expect(mockLLM.embed).toHaveBeenCalledWith("testing frameworks");
+  });
+
+  it("should fall back to FTS5 when embedding fails", async () => {
+    createBelief(storage, { statement: "TypeScript improves code quality", confidence: 0.8 });
+
+    const mockLLM: LLMClient = {
+      chat: vi.fn(),
+      embed: vi.fn().mockRejectedValue(new Error("Embedding service unavailable")),
+      health: vi.fn(),
+    };
+
+    const context = await getMemoryContext(storage, "TypeScript", { llm: mockLLM });
+    expect(context).toContain("TypeScript improves code quality");
   });
 
   it("should create belief with type", () => {

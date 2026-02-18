@@ -98,7 +98,7 @@ export const memoryPlugin: Plugin = {
         description: "Preview memory context for a query",
         args: [{ name: "query", description: "Search query to find relevant context", required: true }],
         async action(args) {
-          const context = getMemoryContext(ctx.storage, args["query"]!);
+          const context = await getMemoryContext(ctx.storage, args["query"]!, { llm: ctx.llm });
           console.log(context);
         },
       },

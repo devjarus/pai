@@ -25,7 +25,7 @@ async function aiSuggest(ctx: PluginContext): Promise<string> {
 
   const taskList = tasks.map((t) => `- [${t.priority}] ${t.title}${t.due_date ? ` (due: ${t.due_date})` : ""}`).join("\n");
   const goalList = goals.map((g) => `- ${g.title}`).join("\n");
-  const memoryContext = ctx.contextProvider?.("task prioritization goals productivity");
+  const memoryContext = await ctx.contextProvider?.("task prioritization goals productivity");
 
   const result = await ctx.llm.chat([
     {

@@ -24,7 +24,7 @@ async function main(): Promise<void> {
   const ctx: PluginContext = { config, storage, llm, logger };
 
   if (config.plugins.includes("memory")) {
-    ctx.contextProvider = (query: string) => getMemoryContext(storage, query);
+    ctx.contextProvider = (query: string) => getMemoryContext(storage, query, { llm });
   }
 
   // Load and migrate active plugins

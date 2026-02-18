@@ -1,4 +1,4 @@
-import type { Storage, Migration } from "@personal-ai/core";
+import type { Storage, Migration, LLMClient } from "@personal-ai/core";
 import { nanoid } from "nanoid";
 
 export const memoryMigrations: Migration[] = [
@@ -255,8 +255,28 @@ export function findSimilarBeliefs(
     .slice(0, limit);
 }
 
-export function getMemoryContext(storage: Storage, query: string, beliefLimit = 5, episodeLimit = 5): string {
-  const beliefs = searchBeliefs(storage, query, beliefLimit);
+export async function getMemoryContext(
+  storage: Storage,
+  query: string,
+  options?: { llm?: LLMClient; beliefLimit?: number; episodeLimit?: number },
+): Promise<string> {
+  const beliefLimit = options?.beliefLimit ?? 5;
+  const episodeLimit = options?.episodeLimit ?? 5;
+
+  let beliefs: Array<{ statement: string; confidence: number }> = [];
+  if (options?.llm) {
+    try {
+      const { embedding } = await options.llm.embed(query);
+      beliefs = findSimilarBeliefs(storage, embedding, beliefLimit)
+        .filter((s) => s.similarity > 0.3)
+        .map((s) => ({ statement: s.statement, confidence: s.confidence }));
+    } catch {
+      // Fallback to FTS5 if embedding fails
+    }
+  }
+  if (beliefs.length === 0) {
+    beliefs = searchBeliefs(storage, query, beliefLimit);
+  }
   const episodes = listEpisodes(storage, episodeLimit);
 
   const beliefSection = beliefs.length > 0
