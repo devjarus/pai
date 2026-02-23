@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, pruneBeliefs, reflect, exportMemory, importMemory, memoryStats } from "../../src/memory/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, pruneBeliefs, reflect, mergeDuplicates, exportMemory, importMemory, memoryStats, semanticSearch, linkBeliefs, getLinkedBeliefs, recordAccess, countSupportingEpisodes, synthesize, findContradictions } from "../../src/memory/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -343,6 +343,19 @@ describe("Embeddings", () => {
     expect(result.stale.some((s) => s.id === b.id)).toBe(true);
   });
 
+  it("should skip malformed embeddings in reflect without throwing", () => {
+    const b1 = createBelief(storage, { statement: "Good embedding belief", confidence: 0.8 });
+    const b2 = createBelief(storage, { statement: "Bad embedding belief", confidence: 0.8 });
+    storeEmbedding(storage, b1.id, [1.0, 0.0, 0.0]);
+    // Store malformed embedding
+    storage.run("INSERT OR REPLACE INTO belief_embeddings (belief_id, embedding) VALUES (?, ?)", [b2.id, "not-json"]);
+
+    // Should not throw
+    const result = reflect(storage);
+    expect(result.skippedEmbeddings).toBe(1);
+    expect(result.total).toBe(2);
+  });
+
   it("should return empty results when no issues in reflect", () => {
     const b = createBelief(storage, { statement: "Unique belief", confidence: 0.8 });
     storeEmbedding(storage, b.id, [1.0, 0.0, 0.0]);
@@ -350,6 +363,36 @@ describe("Embeddings", () => {
     expect(result.duplicates).toHaveLength(0);
     expect(result.stale).toHaveLength(0);
     expect(result.total).toBe(1);
+  });
+
+  it("should merge duplicate clusters via mergeDuplicates", () => {
+    const ep = createEpisode(storage, { action: "test episode" });
+    const b1 = createBelief(storage, { statement: "User prefers dark mode", confidence: 0.9 });
+    const b2 = createBelief(storage, { statement: "User prefers dark mode theme", confidence: 0.6 });
+    const b3 = createBelief(storage, { statement: "User likes dark mode", confidence: 0.5 });
+    storeEmbedding(storage, b1.id, [1.0, 0.0, 0.0]);
+    storeEmbedding(storage, b2.id, [0.99, 0.01, 0.0]);
+    storeEmbedding(storage, b3.id, [0.98, 0.02, 0.0]);
+    linkBeliefToEpisode(storage, b2.id, ep.id);
+    linkBeliefToEpisode(storage, b3.id, ep.id);
+
+    const clusters = [{ ids: [b1.id, b2.id, b3.id], statements: ["a", "b", "c"], similarity: 0.85 }];
+    const result = mergeDuplicates(storage, clusters);
+
+    expect(result.merged).toBe(2);
+    expect(result.kept).toContain(b1.id);
+
+    // b2 and b3 should be invalidated
+    const remaining = listBeliefs(storage, "active");
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.id).toBe(b1.id);
+
+    // Episodes should be transferred to winner
+    const winnerEpisodes = storage.query<{ episode_id: string }>(
+      "SELECT episode_id FROM belief_episodes WHERE belief_id = ?", [b1.id]
+    );
+    expect(winnerEpisodes.length).toBe(1);
+    expect(winnerEpisodes[0]!.episode_id).toBe(ep.id);
   });
 
   it("should resolve belief history by prefix", () => {
@@ -367,11 +410,16 @@ describe("Embeddings", () => {
     logBeliefChange(storage, { beliefId: b.id, changeType: "created", detail: "initial" });
 
     const data = exportMemory(storage);
-    expect(data.version).toBe(1);
+    expect(data.version).toBe(2);
     expect(data.exported_at).toBeTruthy();
     expect(data.episodes).toHaveLength(1);
     expect(data.beliefs).toHaveLength(1);
     expect(data.belief_changes.length).toBeGreaterThan(0);
+    // V2 fields
+    expect(data.belief_episodes).toBeDefined();
+    expect(data.belief_embeddings).toBeDefined();
+    expect(data.episode_embeddings).toBeDefined();
+    expect(data.belief_links).toBeDefined();
   });
 
   it("should import memory data and skip duplicates", () => {
@@ -424,6 +472,70 @@ describe("Embeddings", () => {
     rmSync(dir2, { recursive: true, force: true });
   });
 
+  it("should export/import v2 with embeddings and links", () => {
+    const b1 = createBelief(storage, { statement: "V2 export test", confidence: 0.8 });
+    const b2 = createBelief(storage, { statement: "V2 linked belief", confidence: 0.7 });
+    const ep = createEpisode(storage, { action: "v2 test" });
+    storeEmbedding(storage, b1.id, [1.0, 0.0, 0.0]);
+    storeEmbedding(storage, b2.id, [0.0, 1.0, 0.0]);
+    linkBeliefToEpisode(storage, b1.id, ep.id);
+    linkBeliefs(storage, b1.id, b2.id);
+
+    const exported = exportMemory(storage);
+    expect(exported.version).toBe(2);
+    expect(exported.belief_embeddings.length).toBe(2);
+    expect(exported.belief_episodes.length).toBe(1);
+    expect(exported.belief_links.length).toBe(1);
+
+    // Import into fresh storage
+    const dir2 = mkdtempSync(join(tmpdir(), "pai-v2-import-"));
+    const storage2 = createStorage(dir2);
+    storage2.migrate("memory", memoryMigrations);
+
+    const result = importMemory(storage2, exported);
+    expect(result.beliefs).toBe(2);
+    expect(result.episodes).toBe(1);
+
+    // Verify embeddings were restored
+    const embs = storage2.query<{ belief_id: string }>("SELECT belief_id FROM belief_embeddings");
+    expect(embs.length).toBe(2);
+
+    // Verify links were restored
+    const links = storage2.query<{ belief_a: string }>("SELECT belief_a FROM belief_links");
+    expect(links.length).toBe(1);
+
+    storage2.close();
+    rmSync(dir2, { recursive: true, force: true });
+  });
+
+  it("should import v1 format with defaults for v2 fields", () => {
+    const v1Data = {
+      version: 1 as const,
+      exported_at: new Date().toISOString(),
+      beliefs: [{ id: "v1-b1", statement: "V1 belief", confidence: 0.7, status: "active", type: "factual", created_at: new Date().toISOString(), updated_at: new Date().toISOString() }],
+      episodes: [{ id: "v1-e1", timestamp: new Date().toISOString(), context: null, action: "v1 episode", outcome: null, tags_json: "[]" }],
+      belief_changes: [],
+    };
+
+    const dir2 = mkdtempSync(join(tmpdir(), "pai-v1-import-"));
+    const storage2 = createStorage(dir2);
+    storage2.migrate("memory", memoryMigrations);
+
+    const result = importMemory(storage2, v1Data as any);
+    expect(result.beliefs).toBe(1);
+    expect(result.episodes).toBe(1);
+
+    // V2 fields should have defaults
+    const imported = storage2.query<{ importance: number; stability: number }>(
+      "SELECT importance, stability FROM beliefs WHERE id = ?", ["v1-b1"],
+    );
+    expect(imported[0]!.importance).toBe(5);
+    expect(imported[0]!.stability).toBe(1.0);
+
+    storage2.close();
+    rmSync(dir2, { recursive: true, force: true });
+  });
+
   it("should throw when forgetting non-existent belief", () => {
     expect(() => forgetBelief(storage, "nonexistent-id")).toThrow(/no active belief/i);
   });
@@ -466,5 +578,185 @@ describe("Embeddings", () => {
     expect(stats.avgConfidence).toBeCloseTo(0.8, 1);
     expect(stats.oldestBelief).toBeTruthy();
     expect(stats.newestBelief).toBeTruthy();
+  });
+
+  it("should link beliefs bidirectionally and retrieve links", () => {
+    const b1 = createBelief(storage, { statement: "TypeScript is great", confidence: 0.6, type: "factual" });
+    const b2 = createBelief(storage, { statement: "Strict mode catches bugs", confidence: 0.6, type: "factual" });
+    const b3 = createBelief(storage, { statement: "Vitest is fast", confidence: 0.6, type: "preference" });
+
+    linkBeliefs(storage, b1.id, b2.id);
+    linkBeliefs(storage, b1.id, b3.id);
+
+    const links1 = getLinkedBeliefs(storage, b1.id);
+    expect(links1).toHaveLength(2);
+    expect(links1).toContain(b2.id);
+    expect(links1).toContain(b3.id);
+
+    const links2 = getLinkedBeliefs(storage, b2.id);
+    expect(links2).toHaveLength(1);
+    expect(links2).toContain(b1.id);
+
+    // Duplicate link should be ignored
+    linkBeliefs(storage, b2.id, b1.id);
+    expect(getLinkedBeliefs(storage, b1.id)).toHaveLength(2);
+  });
+
+  it("should track access count and stability via recordAccess", () => {
+    const b = createBelief(storage, { statement: "Test access tracking", confidence: 0.6, type: "factual" });
+
+    recordAccess(storage, b.id);
+    recordAccess(storage, b.id);
+    recordAccess(storage, b.id);
+
+    const row = storage.query<{ access_count: number; stability: number; last_accessed: string }>(
+      "SELECT access_count, stability, last_accessed FROM beliefs WHERE id = ?", [b.id],
+    )[0]!;
+    expect(row.access_count).toBe(3);
+    expect(row.stability).toBeCloseTo(1.3, 1);
+    expect(row.last_accessed).toBeTruthy();
+  });
+
+  it("should count supporting episodes", () => {
+    const b = createBelief(storage, { statement: "Counting test", confidence: 0.6, type: "factual" });
+    const e1 = createEpisode(storage, { action: "episode 1" });
+    const e2 = createEpisode(storage, { action: "episode 2" });
+
+    expect(countSupportingEpisodes(storage, b.id)).toBe(0);
+    linkBeliefToEpisode(storage, b.id, e1.id);
+    expect(countSupportingEpisodes(storage, b.id)).toBe(1);
+    linkBeliefToEpisode(storage, b.id, e2.id);
+    expect(countSupportingEpisodes(storage, b.id)).toBe(2);
+  });
+
+  it("should return linked neighbors in semanticSearch", () => {
+    // Create two beliefs with embeddings
+    const b1 = createBelief(storage, { statement: "Primary belief", confidence: 0.8, type: "factual" });
+    const b2 = createBelief(storage, { statement: "Linked neighbor", confidence: 0.7, type: "factual" });
+    storeEmbedding(storage, b1.id, [1.0, 0.0, 0.0]);
+    storeEmbedding(storage, b2.id, [0.0, 1.0, 0.0]); // orthogonal — won't match by similarity
+
+    // Link them
+    linkBeliefs(storage, b1.id, b2.id);
+
+    // Search with embedding close to b1 — b2 should appear via graph traversal
+    const results = semanticSearch(storage, [0.9, 0.1, 0.0], 10);
+    expect(results.length).toBe(2);
+    expect(results.map((r) => r.beliefId)).toContain(b1.id);
+    expect(results.map((r) => r.beliefId)).toContain(b2.id);
+  });
+
+  it("should filter by cosine threshold in semanticSearch", () => {
+    const b1 = createBelief(storage, { statement: "Highly relevant belief", confidence: 0.8, type: "factual" });
+    const b2 = createBelief(storage, { statement: "Orthogonal belief", confidence: 0.8, type: "factual" });
+    storeEmbedding(storage, b1.id, [1.0, 0.0, 0.0]);
+    storeEmbedding(storage, b2.id, [0.0, 1.0, 0.0]); // orthogonal — cosine ≈ 0
+
+    // Search close to b1 — b2 should be filtered out by cosine threshold
+    const results = semanticSearch(storage, [0.95, 0.05, 0.0], 10);
+    const ids = results.map((r) => r.beliefId);
+    expect(ids).toContain(b1.id);
+    // b2 is orthogonal (cosine near 0) — should not appear unless linked
+    expect(ids).not.toContain(b2.id);
+  });
+
+  it("should include cosine field on semantic search results", () => {
+    const b = createBelief(storage, { statement: "Test cosine field", confidence: 0.8, type: "factual" });
+    storeEmbedding(storage, b.id, [1.0, 0.0, 0.0]);
+    const results = semanticSearch(storage, [1.0, 0.0, 0.0], 10);
+    expect(results.length).toBe(1);
+    expect(results[0]!.cosine).toBeDefined();
+    expect(results[0]!.cosine).toBeGreaterThan(0.9);
+  });
+
+  it("should synthesize meta-beliefs from clusters", async () => {
+    // Create a cluster of similar beliefs with embeddings
+    const b1 = createBelief(storage, { statement: "TypeScript strict mode is helpful", confidence: 0.6, type: "factual" });
+    const b2 = createBelief(storage, { statement: "TypeScript strict mode catches bugs", confidence: 0.6, type: "factual" });
+    // Embeddings with similarity > 0.6 (synthesize threshold)
+    storeEmbedding(storage, b1.id, [0.9, 0.1, 0.0]);
+    storeEmbedding(storage, b2.id, [0.85, 0.15, 0.0]);
+
+    const mockLLM: LLMClient = {
+      chat: vi.fn().mockResolvedValue({
+        text: "TypeScript strict mode improves code quality",
+        usage: { inputTokens: 20, outputTokens: 10 },
+      }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.8, 0.2, 0.0] }),
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+
+    const result = await synthesize(storage, mockLLM);
+    expect(result.metaBeliefs).toHaveLength(1);
+    expect(result.metaBeliefs[0]).toBe("TypeScript strict mode improves code quality");
+
+    // Meta-belief should exist with type "meta" and high stability
+    const metaBelief = storage.query<{ type: string; stability: number; confidence: number }>(
+      "SELECT type, stability, confidence FROM beliefs WHERE statement = ?",
+      ["TypeScript strict mode improves code quality"],
+    )[0]!;
+    expect(metaBelief.type).toBe("meta");
+    expect(metaBelief.stability).toBe(3.0);
+    expect(metaBelief.confidence).toBe(0.8);
+
+    // Should be linked to source beliefs
+    const metaId = storage.query<{ id: string }>(
+      "SELECT id FROM beliefs WHERE statement = ?",
+      ["TypeScript strict mode improves code quality"],
+    )[0]!.id;
+    const links = getLinkedBeliefs(storage, metaId);
+    expect(links).toContain(b1.id);
+    expect(links).toContain(b2.id);
+  });
+
+  describe("findContradictions", () => {
+    it("should detect contradicting belief pairs via LLM", async () => {
+      const b1 = createBelief(storage, { statement: "Monica's favorite color is blue", confidence: 0.8, type: "factual" });
+      const b2 = createBelief(storage, { statement: "Monica's favorite color is lavender", confidence: 0.7, type: "factual" });
+      storeEmbedding(storage, b1.id, [0.9, 0.4, 0.0]);
+      storeEmbedding(storage, b2.id, [0.3, 0.9, 0.2]);
+
+      const mockLlm = {
+        chat: vi.fn().mockResolvedValue({
+          text: "1. CONTRADICTION: Both claim different favorite colors for Monica.",
+        }),
+      } as unknown as LLMClient;
+
+      const results = await findContradictions(storage, mockLlm);
+      expect(results.length).toBe(1);
+      const ids = [results[0]!.beliefA.id, results[0]!.beliefB.id];
+      expect(ids).toContain(b1.id);
+      expect(ids).toContain(b2.id);
+      expect(results[0]!.explanation).toContain("CONTRADICTION");
+    });
+
+    it("should skip pairs outside the 0.4-0.85 cosine range", async () => {
+      const b1 = createBelief(storage, { statement: "User likes TypeScript", confidence: 0.8, type: "preference" });
+      const b2 = createBelief(storage, { statement: "User prefers TypeScript", confidence: 0.7, type: "preference" });
+      storeEmbedding(storage, b1.id, [1.0, 0.0, 0.0]);
+      storeEmbedding(storage, b2.id, [0.99, 0.01, 0.0]);
+
+      const b3 = createBelief(storage, { statement: "The sky is blue", confidence: 0.8, type: "factual" });
+      storeEmbedding(storage, b3.id, [0.0, 0.0, 1.0]);
+
+      const mockLlm = { chat: vi.fn() } as unknown as LLMClient;
+      const results = await findContradictions(storage, mockLlm);
+      expect(results).toEqual([]);
+      expect(mockLlm.chat).not.toHaveBeenCalled();
+    });
+
+    it("should return empty array when LLM says no contradiction", async () => {
+      const b1 = createBelief(storage, { statement: "Monica likes painting", confidence: 0.8, type: "factual" });
+      const b2 = createBelief(storage, { statement: "Monica likes drawing", confidence: 0.7, type: "factual" });
+      storeEmbedding(storage, b1.id, [0.9, 0.4, 0.0]);
+      storeEmbedding(storage, b2.id, [0.3, 0.9, 0.2]);
+
+      const mockLlm = {
+        chat: vi.fn().mockResolvedValue({ text: "1. COMPATIBLE" }),
+      } as unknown as LLMClient;
+
+      const results = await findContradictions(storage, mockLlm);
+      expect(results).toEqual([]);
+    });
   });
 });

@@ -4,17 +4,38 @@ import {
   listEpisodes,
   listBeliefs,
   searchBeliefs,
-  findSimilarBeliefs,
+  semanticSearch,
   getMemoryContext,
   getBeliefHistory,
   forgetBelief,
   pruneBeliefs,
   reflect,
+  mergeDuplicates,
+  synthesize,
   exportMemory,
   importMemory,
   memoryStats,
 } from "./memory.js";
 import { remember } from "./remember.js";
+import { generateMemoryFile } from "./memory-file.js";
+import { findGitRoot } from "../config.js";
+import { join } from "node:path";
+
+function resolveMemoryFilePath(): string | null {
+  const gitRoot = findGitRoot(process.cwd());
+  if (!gitRoot) return null;
+  return join(gitRoot, ".claude", "memory.md");
+}
+
+function syncMemoryFile(ctx: PluginContext): void {
+  const filePath = resolveMemoryFilePath();
+  if (!filePath) return;
+  try {
+    generateMemoryFile(ctx.storage, filePath);
+  } catch {
+    ctx.logger?.warn("Failed to sync memory file");
+  }
+}
 
 function out(ctx: PluginContext, data: unknown, humanText: string): void {
   console.log(ctx.json ? JSON.stringify(data) : humanText);
@@ -28,6 +49,7 @@ export function memoryCommands(ctx: PluginContext): Command[] {
       args: [{ name: "text", description: "What you observed or learned", required: true }],
       async action(args) {
         const result = await remember(ctx.storage, ctx.llm, args["text"]!, ctx.logger);
+        syncMemoryFile(ctx);
         const label = result.isReinforcement ? "Reinforced existing" : "New";
         out(ctx, result, `${label} belief(s): ${result.beliefIds.join(", ")}`);
       },
@@ -36,13 +58,15 @@ export function memoryCommands(ctx: PluginContext): Command[] {
       name: "memory recall",
       description: "Search beliefs by text",
       args: [{ name: "query", description: "Search query", required: true }],
-      async action(args) {
+      options: [{ flags: "--type <type>", description: "Filter by belief type (factual, preference, procedural, architectural, insight, meta)" }],
+      async action(args, opts) {
         const query = args["query"]!;
+        const typeFilter = opts?.["type"] as string | undefined;
         let beliefs: Array<{ id: string; statement: string; confidence: number; type: string }> = [];
         try {
           const { embedding } = await ctx.llm.embed(query);
-          const similar = findSimilarBeliefs(ctx.storage, embedding, 10);
-          beliefs = similar.filter((s) => s.similarity > 0.3).map((s) => ({
+          const similar = semanticSearch(ctx.storage, embedding, 10, query);
+          beliefs = similar.filter((s) => s.similarity > 0.2).map((s) => ({
             id: s.beliefId,
             statement: s.statement,
             confidence: s.confidence,
@@ -59,6 +83,9 @@ export function memoryCommands(ctx: PluginContext): Command[] {
             type: b.type,
           }));
         }
+        if (typeFilter) {
+          beliefs = beliefs.filter((b) => b.type === typeFilter);
+        }
         if (beliefs.length === 0) ctx.exitCode = 2;
         if (ctx.json) {
           console.log(JSON.stringify(beliefs));
@@ -69,16 +96,23 @@ export function memoryCommands(ctx: PluginContext): Command[] {
           return;
         }
         for (const b of beliefs) {
-          console.log(`[${b.confidence.toFixed(1)}] ${b.statement}`);
+          console.log(`[${b.confidence.toFixed(1)}] (${b.type}) ${b.statement}`);
         }
       },
     },
     {
       name: "memory beliefs",
       description: "List all active beliefs",
-      options: [{ flags: "--status <status>", description: "Filter by status", defaultValue: "active" }],
+      options: [
+        { flags: "--status <status>", description: "Filter by status", defaultValue: "active" },
+        { flags: "--type <type>", description: "Filter by belief type (factual, preference, procedural, architectural, insight, meta)" },
+      ],
       async action(_args, opts) {
-        const beliefs = listBeliefs(ctx.storage, opts["status"]);
+        let beliefs = listBeliefs(ctx.storage, opts["status"]);
+        const typeFilter = opts["type"] as string | undefined;
+        if (typeFilter) {
+          beliefs = beliefs.filter((b) => b.type === typeFilter);
+        }
         if (beliefs.length === 0) ctx.exitCode = 2;
         if (ctx.json) {
           console.log(JSON.stringify(beliefs));
@@ -89,7 +123,7 @@ export function memoryCommands(ctx: PluginContext): Command[] {
           return;
         }
         for (const b of beliefs) {
-          console.log(`[${b.confidence.toFixed(1)}] ${b.statement}`);
+          console.log(`[${b.confidence.toFixed(1)}] (${b.type}) ${b.statement}`);
         }
       },
     },
@@ -175,8 +209,22 @@ export function memoryCommands(ctx: PluginContext): Command[] {
     {
       name: "memory reflect",
       description: "Scan beliefs for near-duplicates and stale entries",
-      async action() {
+      options: [{ flags: "--merge", description: "Auto-merge duplicate clusters (keep highest confidence, invalidate rest)" }],
+      async action(_args, opts) {
         const result = reflect(ctx.storage);
+        const shouldMerge = opts?.["merge"] !== undefined;
+
+        if (shouldMerge && result.duplicates.length > 0) {
+          const mergeResult = mergeDuplicates(ctx.storage, result.duplicates);
+          if (ctx.json) {
+            console.log(JSON.stringify({ ...result, mergeResult }));
+            return;
+          }
+          console.log(`${result.total} active beliefs scanned.`);
+          console.log(`Merged ${mergeResult.merged} duplicate(s) into ${mergeResult.kept.length} belief(s).`);
+          return;
+        }
+
         if (ctx.json) {
           console.log(JSON.stringify(result));
           return;
@@ -200,6 +248,26 @@ export function memoryCommands(ctx: PluginContext): Command[] {
           }
         } else {
           console.log("No stale beliefs.");
+        }
+      },
+    },
+    {
+      name: "memory synthesize",
+      description: "Generate meta-beliefs from belief clusters",
+      async action() {
+        const result = await synthesize(ctx.storage, ctx.llm);
+        if (ctx.json) {
+          console.log(JSON.stringify(result));
+          return;
+        }
+        if (result.metaBeliefs.length === 0) {
+          console.log("No belief clusters found for synthesis.");
+          ctx.exitCode = 2;
+          return;
+        }
+        console.log(`Synthesized ${result.metaBeliefs.length} meta-belief(s) from ${result.clustersProcessed} cluster(s):\n`);
+        for (const mb of result.metaBeliefs) {
+          console.log(`  [meta] ${mb}`);
         }
       },
     },
@@ -245,12 +313,30 @@ export function memoryCommands(ctx: PluginContext): Command[] {
         out(ctx, result, `Imported ${result.beliefs} belief(s) and ${result.episodes} episode(s).`);
       },
     },
+    {
+      name: "memory sync",
+      description: "Regenerate .claude/memory.md from current beliefs",
+      async action() {
+        const filePath = resolveMemoryFilePath();
+        if (!filePath) {
+          console.log("No git root found — cannot determine .claude/memory.md location.");
+          ctx.exitCode = 1;
+          return;
+        }
+        const result = generateMemoryFile(ctx.storage, filePath);
+        out(ctx, result, `Synced ${result.beliefCount} belief(s) to ${result.path}`);
+      },
+    },
   ];
 }
 
 // Public API
-export { memoryMigrations, getMemoryContext, listBeliefs, searchBeliefs, findSimilarBeliefs, forgetBelief, memoryStats } from "./memory.js";
+export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, memoryStats, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, backfillSubjects, findContradictions } from "./memory.js";
 export { remember } from "./remember.js";
+export { generateMemoryFile } from "./memory-file.js";
+export { needsMemoryPreflight } from "./preflight.js";
+export { consolidateConversation } from "./consolidate.js";
 
 // Types
-export type { Belief, Episode, BeliefChange, MemoryStats, MemoryExport, SimilarBelief, ReflectionResult } from "./memory.js";
+export type { Belief, Episode, BeliefChange, MemoryStats, MemoryExport, MemoryExportV1, MemoryExportV2, SimilarBelief, ReflectionResult, UnifiedRetrievalResult } from "./memory.js";
+export type { ConsolidationResult } from "./consolidate.js";

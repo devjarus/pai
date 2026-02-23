@@ -406,8 +406,7 @@ describe("Belief Lifecycle", () => {
       ],
       embedResponses: [
         { embedding: [0.5, 0.5, 0.0] }, // episode 1
-        { embedding: [1.0, 0.0, 0.0] }, // fact 1 (Zod)
-        { embedding: [0.0, 1.0, 0.0] }, // insight 1 (different direction)
+        { embedding: [1.0, 0.0, 0.0] }, // fact 1 (Zod) — insight is no longer stored
         { embedding: [0.5, 0.5, 0.0] }, // episode 2
         { embedding: [1.0, 0.0, 0.0] }, // fact 2 (same as Zod → reinforce)
         { embedding: [0.5, 0.5, 0.0] }, // episode 3
@@ -417,7 +416,7 @@ describe("Belief Lifecycle", () => {
 
     // Step 1: Agent learns project uses Zod
     const r1 = await remember(storage, llm, "This project uses Zod for schema validation");
-    expect(r1.beliefIds).toHaveLength(2); // fact + insight
+    expect(r1.beliefIds).toHaveLength(1); // fact only (insights no longer stored)
     expect(r1.isReinforcement).toBe(false);
 
     // Step 2: Agent confirms Zod usage → should reinforce
@@ -442,13 +441,13 @@ describe("Belief Lifecycle", () => {
     );
     expect(zodStatus[0]!.status).toBe("invalidated");
 
-    // Final state: insight (active) + Joi belief (active), Zod (invalidated)
+    // Final state: Joi belief (active), Zod (invalidated) — insights no longer stored
     const active = listBeliefs(storage);
-    expect(active.length).toBe(2); // insight + Joi
+    expect(active.length).toBe(1); // Joi only
 
     // Stats should reflect the lifecycle
     const stats = memoryStats(storage);
-    expect(stats.beliefs.active).toBe(2);
+    expect(stats.beliefs.active).toBe(1);
     expect(stats.beliefs.invalidated).toBe(1);
   });
 });
