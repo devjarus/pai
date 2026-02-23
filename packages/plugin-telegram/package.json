@@ -1,0 +1,35 @@
+{
+  "name": "@personal-ai/plugin-telegram",
+  "version": "0.1.0",
+  "description": "Telegram bot plugin — chat with the Personal Assistant via Telegram",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@personal-ai/core": "workspace:*",
+    "@personal-ai/plugin-assistant": "workspace:*",
+    "@personal-ai/plugin-tasks": "workspace:*",
+    "grammy": "^1.31.0",
+    "ai": "^6.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "@types/node": "^22.0.0"
+  }
+}
