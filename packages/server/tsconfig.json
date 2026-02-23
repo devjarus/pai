@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../plugin-assistant" },
+    { "path": "../plugin-curator" },
+    { "path": "../plugin-telegram" }
+  ]
+}

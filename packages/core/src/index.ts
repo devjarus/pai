@@ -1,13 +1,33 @@
 export type {
-  Config, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult, EmbedResult,
-  PluginContext, Command, Plugin, Logger, LogLevel, LogFileOptions,
+  Config, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult, EmbedResult, StreamEvent,
+  PluginContext, Command, Plugin, AgentPlugin, AgentContext, Logger, LogLevel, LogFileOptions,
 } from "./types.js";
-export { loadConfig } from "./config.js";
+export { loadConfig, loadConfigFile, writeConfig, findGitRoot } from "./config.js";
 export { createStorage } from "./storage.js";
 export { createLLMClient } from "./llm.js";
 export { createLogger } from "./logger.js";
 
+// Threads
+export {
+  threadMigrations,
+  DEFAULT_USER_ID,
+  listThreads,
+  listMessages,
+  createThread,
+  ensureThread,
+  appendMessages,
+  clearThread,
+  deleteThread,
+  getThread,
+  withThreadLock,
+} from "./threads.js";
+export type { ThreadRow, ThreadMessageRow, ThreadMessageInput, EnsureThreadOptions, ListMessagesOptions, AppendMessagesOptions } from "./threads.js";
+
+// Knowledge
+export { knowledgeMigrations, chunkContent, hasSource, listSources, getSourceChunks, learnFromContent, knowledgeSearch, searchKnowledgeFTS, forgetSource } from "./knowledge.js";
+export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult } from "./knowledge.js";
+
 // Memory
-export { memoryMigrations, getMemoryContext, listBeliefs, searchBeliefs, findSimilarBeliefs, forgetBelief, memoryStats, memoryCommands } from "./memory/index.js";
+export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, memoryStats, memoryCommands, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, generateMemoryFile, backfillSubjects, needsMemoryPreflight, consolidateConversation, findContradictions } from "./memory/index.js";
 export { remember } from "./memory/index.js";
-export type { Belief, Episode, BeliefChange, MemoryStats, MemoryExport, SimilarBelief, ReflectionResult } from "./memory/index.js";
+export type { Belief, Episode, BeliefChange, MemoryStats, MemoryExport, MemoryExportV1, MemoryExportV2, SimilarBelief, ReflectionResult, UnifiedRetrievalResult, ConsolidationResult } from "./memory/index.js";

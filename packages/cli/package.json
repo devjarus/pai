@@ -23,6 +23,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@personal-ai/core": "workspace:*",
+    "@personal-ai/plugin-assistant": "workspace:*",
     "@personal-ai/plugin-tasks": "workspace:*",
     "commander": "^13.0.0",
     "zod": "^3.24.0"

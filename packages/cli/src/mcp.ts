@@ -5,14 +5,21 @@ import { z } from "zod";
 import { loadConfig, createStorage, createLLMClient, createLogger } from "@personal-ai/core";
 import {
   memoryMigrations,
+  knowledgeMigrations,
   getMemoryContext,
   remember,
   listBeliefs,
   searchBeliefs,
-  findSimilarBeliefs,
+  semanticSearch,
   forgetBelief,
   memoryStats,
+  synthesize,
+  learnFromContent,
+  knowledgeSearch,
+  listSources,
+  forgetSource,
 } from "@personal-ai/core";
+import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import {
   taskMigrations,
   addTask,
@@ -32,6 +39,7 @@ const llm = createLLMClient(config.llm, logger);
 
 // Run migrations
 storage.migrate("memory", memoryMigrations);
+storage.migrate("knowledge", knowledgeMigrations);
 storage.migrate("tasks", taskMigrations);
 
 // Clean shutdown
@@ -84,12 +92,12 @@ server.registerTool(
       let beliefs: Array<{ id: string; statement: string; confidence: number; type: string }> = [];
       try {
         const { embedding } = await llm.embed(query);
-        const similar = findSimilarBeliefs(storage, embedding, 10);
-        beliefs = similar.filter((s) => s.similarity > 0.3).map((s) => ({
+        const similar = semanticSearch(storage, embedding, 10, query);
+        beliefs = similar.filter((s) => s.similarity > 0.2).map((s) => ({
           id: s.beliefId,
           statement: s.statement,
           confidence: s.confidence,
-          type: s.type,
+          type: s.type ?? "insight",
         }));
       } catch {
         // Fallback to FTS5
@@ -156,6 +164,20 @@ server.registerTool(
   async () => {
     try {
       return ok(memoryStats(storage));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.registerTool(
+  "memory-synthesize",
+  {
+    description: "Generate meta-beliefs from clusters of related beliefs. Finds thematic groups and creates higher-level insights.",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      const result = await synthesize(storage, llm);
+      return ok(result);
     } catch (e) { return err(e); }
   },
 );
@@ -277,6 +299,87 @@ server.registerTool(
     try {
       completeGoal(storage, id);
       return ok({ ok: true });
+    } catch (e) { return err(e); }
+  },
+);
+
+// --- Knowledge tools ---
+
+server.registerTool(
+  "knowledge-learn",
+  {
+    description: "Learn from a web page — fetch, extract content, chunk, and store in the knowledge base. Returns source title and chunk count.",
+    inputSchema: {
+      url: z.string().url().describe("URL of the web page to learn from"),
+    },
+  },
+  async ({ url }) => {
+    try {
+      const page = await fetchPageAsMarkdown(url);
+      if (!page) return err(new Error("Could not extract content from URL. The page may require JavaScript or is not an article."));
+      const result = await learnFromContent(storage, llm, url, page.title, page.markdown);
+      if (result.skipped) return ok({ skipped: true, title: result.source.title });
+      return ok({ title: result.source.title, chunks: result.chunksStored, url: result.source.url });
+    } catch (e) { return err(e); }
+  },
+);
+
+server.registerTool(
+  "knowledge-search",
+  {
+    description: "Search the knowledge base for information learned from web pages. Returns matching content chunks with source attribution.",
+    inputSchema: {
+      query: z.string().describe("Search query"),
+    },
+  },
+  async ({ query }) => {
+    try {
+      const results = await knowledgeSearch(storage, llm, query);
+      return ok(results.map((r) => ({
+        content: r.chunk.content.slice(0, 1000),
+        source: r.source.title,
+        url: r.source.url,
+        relevance: Math.round(r.score * 100),
+      })));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.registerTool(
+  "knowledge-sources",
+  {
+    description: "List all URLs/pages that have been learned and stored in the knowledge base.",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      const sources = listSources(storage);
+      return ok(sources.map((s) => ({
+        id: s.id.slice(0, 8),
+        title: s.title,
+        url: s.url,
+        chunks: s.chunk_count,
+        learnedAt: s.fetched_at,
+      })));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.registerTool(
+  "knowledge-forget",
+  {
+    description: "Remove a learned source and all its chunks from the knowledge base by source ID or prefix.",
+    inputSchema: {
+      sourceId: z.string().describe("Source ID or prefix (8+ chars)"),
+    },
+  },
+  async ({ sourceId }) => {
+    try {
+      const sources = listSources(storage);
+      const match = sources.find((s) => s.id.startsWith(sourceId));
+      if (!match) return err(new Error("Source not found"));
+      forgetSource(storage, match.id);
+      return ok({ ok: true, title: match.title, chunks: match.chunk_count });
     } catch (e) { return err(e); }
   },
 );

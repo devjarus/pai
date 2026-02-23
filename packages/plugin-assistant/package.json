@@ -1,0 +1,56 @@
+{
+  "name": "@personal-ai/plugin-assistant",
+  "version": "0.1.0",
+  "description": "Personal Assistant agent plugin — conversational agent with memory awareness",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devjarus/pai.git",
+    "directory": "packages/plugin-assistant"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./web-search": {
+      "types": "./dist/web-search.d.ts",
+      "import": "./dist/web-search.js"
+    },
+    "./page-fetch": {
+      "types": "./dist/page-fetch.d.ts",
+      "import": "./dist/page-fetch.js"
+    },
+    "./tools": {
+      "types": "./dist/tools.d.ts",
+      "import": "./dist/tools.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "@personal-ai/core": "workspace:*",
+    "@personal-ai/plugin-tasks": "workspace:*",
+    "ai": "^6.0.0",
+    "linkedom": "^0.18.12",
+    "turndown": "^7.2.2",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

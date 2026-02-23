@@ -3,7 +3,9 @@ import { createLLMClient } from "../src/llm.js";
 
 vi.mock("ai", () => ({
   generateText: vi.fn(),
+  streamText: vi.fn(),
   embed: vi.fn(),
+  stepCountIs: vi.fn().mockReturnValue({ type: "step-count" }),
 }));
 
 import { generateText, embed as aiEmbed } from "ai";
@@ -27,6 +29,7 @@ describe("LLMClient", () => {
     });
     expect(client).toBeDefined();
     expect(client.chat).toBeTypeOf("function");
+    expect(client.streamChat).toBeTypeOf("function");
     expect(client.health).toBeTypeOf("function");
   });
 
@@ -186,5 +189,81 @@ describe("LLMClient", () => {
     });
     const result = await client.health();
     expect(result.ok).toBe(false);
+  });
+
+  it("should construct with anthropic config", () => {
+    const client = createLLMClient({
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      baseUrl: "https://api.anthropic.com",
+      apiKey: "sk-ant-test",
+      fallbackMode: "strict",
+    });
+    expect(client).toBeDefined();
+    expect(client.chat).toBeTypeOf("function");
+    expect(client.health).toBeTypeOf("function");
+    expect(client.embed).toBeTypeOf("function");
+  });
+
+  it("chat should return text and usage via anthropic provider", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "Anthropic says hi",
+      usage: { inputTokens: 12, outputTokens: 6 },
+    } as any);
+
+    const client = createLLMClient({
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      baseUrl: "https://api.anthropic.com",
+      apiKey: "sk-ant-test",
+      fallbackMode: "strict",
+    });
+
+    const result = await client.chat([{ role: "user", content: "Hi" }]);
+    expect(result.text).toBe("Anthropic says hi");
+    expect(result.usage).toBeDefined();
+    expect(result.usage.inputTokens).toBe(12);
+    expect(result.usage.outputTokens).toBe(6);
+    expect(result.usage.totalTokens).toBe(18);
+  });
+
+  it("health should return ok for anthropic", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    globalThis.fetch = mockFetch;
+    const client = createLLMClient({
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      baseUrl: "https://api.anthropic.com",
+      apiKey: "sk-ant-test",
+      fallbackMode: "strict",
+    });
+    const result = await client.health();
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe("anthropic");
+    // Verify it calls the right endpoint with x-api-key header
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.anthropic.com/v1/models",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "x-api-key": "sk-ant-test" }),
+      }),
+    );
+  });
+
+  it("embed should use local fallback for anthropic provider (no native embeddings)", async () => {
+    const client = createLLMClient({
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      baseUrl: "https://api.anthropic.com",
+      apiKey: "sk-ant-test",
+      fallbackMode: "strict",
+    });
+
+    // Anthropic has no native embeddings, so with embedProvider=auto it falls back to local
+    // Local embeddings are available since @huggingface/transformers is installed
+    const result = await client.embed("test text");
+    expect(result.embedding).toBeInstanceOf(Array);
+    expect(result.embedding.length).toBe(384); // all-MiniLM-L6-v2 dimensions
+    // Remote mock should NOT have been called (no OpenAI fallback with Anthropic key)
+    expect(mockEmbed).not.toHaveBeenCalled();
   });
 });

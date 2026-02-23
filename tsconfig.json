@@ -3,6 +3,9 @@
   "references": [
     { "path": "packages/core" },
     { "path": "packages/plugin-tasks" },
-    { "path": "packages/cli" }
+    { "path": "packages/cli" },
+    { "path": "packages/plugin-assistant" },
+    { "path": "packages/server" },
+    { "path": "packages/plugin-telegram" }
   ]
 }

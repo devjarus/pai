@@ -19,14 +19,23 @@ export interface Config {
   dataDir: string;
   logLevel: LogLevel;
   llm: {
-    provider: "ollama" | "openai";
+    provider: "ollama" | "openai" | "anthropic";
     model: string;
     baseUrl: string;
     apiKey?: string;
     embedModel?: string;
-    fallbackMode: "local-first" | "strict";
+    embedProvider?: "auto" | "ollama" | "openai" | "local";
+    /** @deprecated Not used — embedding fallback handled by embedProvider: "auto" */
+    fallbackMode?: "local-first" | "strict";
   };
   plugins: string[];
+  webSearchEnabled?: boolean;
+  authToken?: string;
+  telegram?: {
+    token?: string;
+    enabled?: boolean;
+    ownerUsername?: string;
+  };
 }
 
 export interface Migration {
@@ -59,8 +68,11 @@ export interface EmbedResult {
 
 export interface LLMClient {
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult>;
+  streamChat(messages: ChatMessage[], options?: ChatOptions): AsyncGenerator<StreamEvent>;
   embed(text: string): Promise<EmbedResult>;
   health(): Promise<{ ok: boolean; provider: string }>;
+  /** Get the underlying AI SDK LanguageModel for direct streamText usage */
+  getModel(): unknown;
 }
 
 export interface ChatMessage {
@@ -71,7 +83,17 @@ export interface ChatMessage {
 export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
+  tools?: Record<string, unknown>;
+  toolChoice?: "auto" | "required" | "none";
+  maxSteps?: number;
 }
+
+export type StreamEvent =
+  | { type: "text-delta"; content: string }
+  | { type: "tool-call"; toolName: string; args: Record<string, unknown> }
+  | { type: "tool-result"; toolName: string; result: unknown }
+  | { type: "done"; text: string; usage: TokenUsage }
+  | { type: "error"; error: string };
 
 export interface PluginContext {
   config: Config;
@@ -96,4 +118,30 @@ export interface Plugin {
   version: string;
   migrations: Migration[];
   commands(ctx: PluginContext): Command[];
+}
+
+// Agent plugin — conversational agent that shares memory
+export interface AgentPlugin extends Plugin {
+  agent: {
+    displayName: string;           // "Personal Assistant"
+    description: string;           // Shown in UI agent picker
+    systemPrompt: string;          // Agent's personality/instructions
+    capabilities?: string[];       // ["tasks", "memory", "general"]
+
+    // Return tools available to this agent (AI SDK ToolSet)
+    createTools?(ctx: AgentContext): Record<string, unknown>;
+
+    // Called before each response — inject relevant memory context (legacy, prefer createTools)
+    beforeResponse?(ctx: AgentContext): Promise<string>;
+
+    // Called after each exchange — extract learnings
+    afterResponse?(ctx: AgentContext, response: string): Promise<void>;
+  };
+}
+
+export interface AgentContext extends PluginContext {
+  userMessage: string;
+  conversationHistory: ChatMessage[];
+  /** Identity of the person sending the message (for multi-user awareness) */
+  sender?: { displayName?: string; username?: string };
 }

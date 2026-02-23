@@ -11,9 +11,12 @@ export default defineConfig({
       exclude: [
         'packages/cli/src/index.ts',
         'packages/cli/src/mcp.ts',
+        'packages/cli/src/init.ts',
         'packages/*/src/index.ts',
         'packages/core/src/types.ts',
         'packages/core/src/memory/index.ts',
+        'packages/server/src/index.ts',
+        'packages/ui/**',
       ],
       thresholds: {
         statements: 95,

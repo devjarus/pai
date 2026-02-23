@@ -1,0 +1,1161 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import Fastify from "fastify";
+import type { FastifyInstance } from "fastify";
+import { registerMemoryRoutes } from "../src/routes/memory.js";
+import { registerAgentRoutes, threadMigrations } from "../src/routes/agents.js";
+import { registerConfigRoutes } from "../src/routes/config.js";
+import type { ServerContext } from "../src/index.js";
+
+// ---------------------------------------------------------------------------
+// Mock @personal-ai/core — isolate route handlers from real storage/LLM
+// ---------------------------------------------------------------------------
+vi.mock("@personal-ai/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@personal-ai/core")>();
+  const threadHelpers = await import("../../core/src/threads.js");
+  return {
+    ...actual,
+    // Explicitly forward thread helpers to avoid mock export issues
+    ensureThread: threadHelpers.ensureThread,
+    listMessages: threadHelpers.listMessages,
+    listThreads: threadHelpers.listThreads,
+    createThread: threadHelpers.createThread,
+    appendMessages: threadHelpers.appendMessages,
+    clearThread: threadHelpers.clearThread,
+    deleteThread: threadHelpers.deleteThread,
+    getThread: threadHelpers.getThread,
+    withThreadLock: threadHelpers.withThreadLock,
+    threadMigrations: threadHelpers.threadMigrations,
+    consolidateConversation: actual.consolidateConversation,
+    listBeliefs: vi.fn(),
+    searchBeliefs: vi.fn(),
+    semanticSearch: vi.fn(),
+    forgetBelief: vi.fn(),
+    memoryStats: vi.fn(),
+    remember: vi.fn(),
+    getMemoryContext: vi.fn().mockResolvedValue(""),
+  };
+});
+
+// ---------------------------------------------------------------------------
+// Mock "ai" module — streamText + createUIMessageStream used by chat route
+// ---------------------------------------------------------------------------
+const mockStreamText = vi.fn();
+const mockCreateUIMessageStream = vi.fn();
+const mockStepCountIs = vi.fn().mockReturnValue(() => false);
+
+vi.mock("ai", () => ({
+  streamText: (...args: unknown[]) => mockStreamText(...args),
+  createUIMessageStream: (...args: unknown[]) => mockCreateUIMessageStream(...args),
+  createUIMessageStreamResponse: ({ stream }: { stream: ReadableStream }) =>
+    new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8" } }),
+  stepCountIs: (...args: unknown[]) => mockStepCountIs(...args),
+}));
+
+/**
+ * Set up the default AI SDK mocks. `streamText` triggers `onFinish` synchronously
+ * so that conversation history is saved, and returns a mock `toUIMessageStream`.
+ * `createUIMessageStream` calls the `execute` callback then returns a Node-friendly
+ * ReadableStream that Fastify's inject can consume.
+ */
+function setupDefaultAIMocks(responseText = "Hello from AI"): void {
+  mockStreamText.mockImplementation((opts: Record<string, unknown>) => {
+    // Trigger onFinish so history gets saved
+    const onFinish = opts?.onFinish as ((result: { text: string; steps: unknown[] }) => void) | undefined;
+    if (onFinish) {
+      onFinish({ text: responseText, steps: [{}] });
+    }
+    return {
+      toUIMessageStream: vi.fn().mockReturnValue(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(`0:${JSON.stringify(responseText)}\n`);
+            controller.close();
+          },
+        }),
+      ),
+    };
+  });
+
+  mockCreateUIMessageStream.mockImplementation(
+    ({ execute, onError }: { execute: (ctx: { writer: { write: unknown; merge: unknown } }) => Promise<void>; onError?: (e: unknown) => string }) => {
+      const chunks: string[] = [];
+      const mockWriter = {
+        write: vi.fn(),
+        merge: vi.fn().mockImplementation((stream: ReadableStream) => {
+          // Read the stream and collect chunks
+          const reader = stream.getReader();
+          const pump = (): Promise<void> =>
+            reader.read().then(({ done, value }) => {
+              if (done) return;
+              chunks.push(typeof value === "string" ? value : new TextDecoder().decode(value));
+              return pump();
+            });
+          pump().catch(() => {});
+        }),
+      };
+
+      // Execute the callback (async but we handle errors)
+      try {
+        const result = execute({ writer: mockWriter });
+        if (result && typeof result.then === "function") {
+          result.catch((e: unknown) => {
+            if (onError) onError(e);
+          });
+        }
+      } catch (e) {
+        if (onError) onError(e);
+      }
+
+      // Return a simple ReadableStream with the collected text
+      const encoder = new TextEncoder();
+      return new ReadableStream({
+        start(controller) {
+          // Use a microtask to let the execute callback's async merge run
+          queueMicrotask(() => {
+            const body = chunks.length > 0 ? chunks.join("") : `0:${JSON.stringify(responseText)}\n`;
+            controller.enqueue(encoder.encode(body));
+            controller.close();
+          });
+        },
+      });
+    },
+  );
+}
+
+import {
+  listBeliefs,
+  searchBeliefs,
+  semanticSearch,
+  forgetBelief,
+  memoryStats,
+  remember,
+} from "@personal-ai/core";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const MOCK_BELIEF = {
+  id: "belief_abc123",
+  statement: "User prefers Vitest over Jest",
+  confidence: 0.9,
+  status: "active",
+  type: "preference",
+  created_at: "2026-01-15T10:00:00Z",
+  updated_at: "2026-02-01T12:00:00Z",
+  superseded_by: null,
+  supersedes: null,
+  importance: 0.8,
+  last_accessed: "2026-02-10T08:00:00Z",
+  access_count: 5,
+  stability: 2.5,
+};
+
+const MOCK_BELIEF_FACTUAL = {
+  ...MOCK_BELIEF,
+  id: "belief_def456",
+  statement: "Project uses SQLite with WAL mode",
+  type: "factual",
+  confidence: 0.95,
+};
+
+/**
+ * Create an in-memory SQLite-like storage mock that supports threads.
+ * Uses simple Maps to simulate tables for testing.
+ */
+function createMockStorage() {
+  const threads = new Map<string, Record<string, unknown>>();
+  const threadMessages = new Map<string, Array<Record<string, unknown>>>();
+
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query: vi.fn().mockImplementation((sql: string, params?: unknown[]): any[] => {
+      if (sql.includes("FROM threads") && sql.includes("ORDER BY")) {
+        const userId = params?.[0] as string | undefined;
+        const all = [...threads.values()].filter((t) => !userId || t.user_id === userId);
+        return all.sort(
+          (a, b) => new Date(b.updated_at as string).getTime() - new Date(a.updated_at as string).getTime(),
+        );
+      }
+      if (sql.includes("FROM threads") && sql.includes("WHERE id")) {
+        const id = params?.[0] as string;
+        const t = threads.get(id);
+        if (sql.includes("SELECT *")) return t ? [t] : [];
+        return t ? [{ id: t.id }] : [];
+      }
+      if (sql.includes("FROM thread_messages") && sql.includes("MAX(sequence)")) {
+        const id = params?.[0] as string;
+        const msgs = threadMessages.get(id) ?? [];
+        const maxSeq = msgs.reduce((max, m) => Math.max(max, (m.sequence as number) ?? 0), 0);
+        return [{ seq: maxSeq }];
+      }
+      if (sql.includes("FROM thread_messages") && sql.includes("COUNT(*)") && sql.includes("role = 'user'")) {
+        const id = params?.[0] as string;
+        const msgs = threadMessages.get(id) ?? [];
+        const count = msgs.filter((m) => m.role === "user").length;
+        return [{ count }];
+      }
+      if (sql.includes("FROM thread_messages") && sql.includes("COUNT(*)")) {
+        const id = params?.[0] as string;
+        const msgs = threadMessages.get(id) ?? [];
+        return [{ count: msgs.length }];
+      }
+      if (sql.includes("FROM thread_messages") && sql.includes("SELECT sequence")) {
+        const id = params?.[0] as string;
+        for (const msgs of threadMessages.values()) {
+          const match = msgs.find((m) => m.id === id);
+          if (match) return [{ sequence: match.sequence }];
+        }
+        return [];
+      }
+      if (sql.includes("FROM thread_messages") && sql.includes("ORDER BY sequence DESC")) {
+        const threadId = params?.[0] as string;
+        const hasBefore = sql.includes("sequence < ?");
+        const before = hasBefore ? (params?.[1] as number | undefined) : undefined;
+        const limit = hasBefore ? (params?.[2] as number | undefined) : (params?.[1] as number | undefined);
+        let msgs = (threadMessages.get(threadId) ?? []).slice();
+        if (before) msgs = msgs.filter((m) => (m.sequence as number) < before);
+        msgs.sort((a, b) => (b.sequence as number) - (a.sequence as number));
+        if (limit) msgs = msgs.slice(0, limit);
+        return msgs;
+      }
+      return [];
+    }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: vi.fn().mockImplementation((sql: string, params?: unknown[]): any => {
+      if (sql.startsWith("INSERT INTO threads")) {
+        const [id, title, agent_name, user_id, created_at, updated_at] = params as string[];
+        threads.set(id, { id, title, agent_name, user_id, created_at, updated_at, message_count: 0 });
+      }
+      if (sql.startsWith("INSERT INTO thread_messages")) {
+        const [id, thread_id, role, content, parts_json, created_at, sequence] = params as [string, string, string, string, string | null, string, number];
+        const msgs = threadMessages.get(thread_id) ?? [];
+        msgs.push({ id, thread_id, role, content, parts_json, created_at, sequence });
+        threadMessages.set(thread_id, msgs);
+      }
+      if (sql.includes("DELETE FROM thread_messages WHERE thread_id")) {
+        const id = params?.[0] as string;
+        threadMessages.delete(id);
+      }
+      if (sql.includes("DELETE FROM thread_messages WHERE id IN")) {
+        const [threadId, toDelete] = params as [string, number];
+        const msgs = (threadMessages.get(threadId) ?? []).slice().sort((a, b) => (a.sequence as number) - (b.sequence as number));
+        const remaining = msgs.slice(toDelete);
+        threadMessages.set(threadId, remaining);
+      }
+      if (sql.includes("DELETE FROM threads")) {
+        const id = params?.[0] as string;
+        threads.delete(id);
+        threadMessages.delete(id);
+      }
+      if (sql.includes("UPDATE threads SET title")) {
+        const [title, id] = params as string[];
+        const t = threads.get(id);
+        if (t) t.title = title;
+      }
+      if (sql.includes("UPDATE threads SET updated_at") && sql.includes("message_count = 0")) {
+        const [updated_at, id] = params as [string, string];
+        const t = threads.get(id);
+        if (t) {
+          t.updated_at = updated_at;
+          t.message_count = 0;
+        }
+      } else if (sql.includes("UPDATE threads SET updated_at") && sql.includes("title = CASE")) {
+        const [updated_at, message_count, title, id] = params as [string, number, string, string];
+        const t = threads.get(id);
+        if (t) {
+          t.updated_at = updated_at;
+          t.message_count = message_count;
+          if (t.title === "New conversation") t.title = title;
+        }
+      } else if (sql.includes("UPDATE threads SET updated_at")) {
+        const [updated_at, message_count, id] = params as [string, number, string];
+        const t = threads.get(id);
+        if (t) {
+          t.updated_at = updated_at;
+          t.message_count = message_count;
+        }
+      }
+      return { changes: 1 };
+    }),
+    close: vi.fn(),
+    migrate: vi.fn(),
+    db: {
+      transaction: (fn: () => void) => () => fn(),
+    },
+  };
+}
+
+function createMockServerCtx(): ServerContext {
+  const storage = createMockStorage();
+  return {
+    ctx: {
+      config: {
+        dataDir: "/tmp/test",
+        logLevel: "silent" as const,
+        llm: {
+          provider: "ollama" as const,
+          model: "llama3.2",
+          baseUrl: "http://127.0.0.1:11434",
+          fallbackMode: "local-first" as const,
+        },
+        plugins: ["memory", "tasks"],
+      },
+      storage: storage as any,
+      llm: {
+        chat: vi.fn().mockResolvedValue({
+          text: "Hello from AI",
+          usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+        }),
+        streamChat: vi.fn(),
+        embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+        health: vi.fn().mockResolvedValue({ ok: true, provider: "ollama" }),
+        getModel: vi.fn().mockReturnValue({}),
+      },
+      logger: {
+        error: vi.fn(),
+        warn: vi.fn(),
+        info: vi.fn(),
+        debug: vi.fn(),
+      },
+    },
+    agents: [
+      {
+        name: "assistant",
+        version: "0.1.0",
+        migrations: [],
+        commands: () => [],
+        agent: {
+          displayName: "Test Assistant",
+          description: "A test assistant for unit tests",
+          systemPrompt: "You are a helpful assistant.",
+          capabilities: ["general", "memory"],
+          createTools: vi.fn().mockReturnValue(undefined),
+          afterResponse: vi.fn().mockResolvedValue(undefined),
+        },
+      },
+    ],
+    reinitialize: vi.fn(),
+    telegramBot: null,
+    telegramStatus: { running: false },
+    startTelegramBot: vi.fn(),
+    stopTelegramBot: vi.fn(),
+  };
+}
+
+// ==========================================================================
+// Memory Routes
+// ==========================================================================
+
+describe("memory routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = Fastify();
+    serverCtx = createMockServerCtx();
+    registerMemoryRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  // -- GET /api/beliefs ----------------------------------------------------
+
+  it("GET /api/beliefs returns beliefs list", async () => {
+    vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF, MOCK_BELIEF_FACTUAL]);
+
+    const res = await app.inject({ method: "GET", url: "/api/beliefs" });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toHaveLength(2);
+    expect(body[0].statement).toBe("User prefers Vitest over Jest");
+    expect(listBeliefs).toHaveBeenCalledWith(serverCtx.ctx.storage, "active");
+  });
+
+  it("GET /api/beliefs defaults to status=active", async () => {
+    vi.mocked(listBeliefs).mockReturnValue([]);
+
+    await app.inject({ method: "GET", url: "/api/beliefs" });
+
+    expect(listBeliefs).toHaveBeenCalledWith(serverCtx.ctx.storage, "active");
+  });
+
+  it("GET /api/beliefs?status=forgotten passes status through", async () => {
+    vi.mocked(listBeliefs).mockReturnValue([]);
+
+    await app.inject({ method: "GET", url: "/api/beliefs?status=forgotten" });
+
+    expect(listBeliefs).toHaveBeenCalledWith(serverCtx.ctx.storage, "forgotten");
+  });
+
+  it("GET /api/beliefs?type=preference filters by type", async () => {
+    vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF, MOCK_BELIEF_FACTUAL]);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/beliefs?type=preference",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toHaveLength(1);
+    expect(body[0].type).toBe("preference");
+  });
+
+  it("GET /api/beliefs?type=procedural returns empty when no match", async () => {
+    vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF, MOCK_BELIEF_FACTUAL]);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/beliefs?type=procedural",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toHaveLength(0);
+  });
+
+  // -- GET /api/beliefs/:id ------------------------------------------------
+
+  it("GET /api/beliefs/:id returns single belief by full ID", async () => {
+    vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF, MOCK_BELIEF_FACTUAL]);
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/beliefs/${MOCK_BELIEF.id}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.id).toBe(MOCK_BELIEF.id);
+    expect(body.statement).toBe("User prefers Vitest over Jest");
+  });
+
+  it("GET /api/beliefs/:id supports prefix matching", async () => {
+    vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF, MOCK_BELIEF_FACTUAL]);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/beliefs/belief_abc",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.id).toBe(MOCK_BELIEF.id);
+  });
+
+  it("GET /api/beliefs/:id returns 404 when not found", async () => {
+    vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF]);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/beliefs/nonexistent_id",
+    });
+
+    expect(res.statusCode).toBe(404);
+    const body = JSON.parse(res.payload);
+    expect(body.error).toBe("Belief not found");
+  });
+
+  // -- GET /api/search -----------------------------------------------------
+
+  it("GET /api/search?q=test returns semantic search results", async () => {
+    // semanticSearch returns { beliefId, similarity, ... }
+    vi.mocked(semanticSearch).mockReturnValue([
+      { beliefId: MOCK_BELIEF.id, similarity: 0.85 },
+    ]);
+    // The route then queries storage for full belief objects
+    vi.mocked(serverCtx.ctx.storage.query).mockImplementation((sql: string, params?: unknown[]) => {
+      if (typeof sql === "string" && sql.includes("FROM beliefs WHERE id")) {
+        const id = (params as string[])?.[0];
+        if (id === MOCK_BELIEF.id) return [MOCK_BELIEF];
+      }
+      return [];
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/search?q=testing+framework",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toHaveLength(1);
+    expect(body[0].similarity).toBe(0.85);
+    expect(body[0].statement).toBe(MOCK_BELIEF.statement);
+    expect(serverCtx.ctx.llm.embed).toHaveBeenCalledWith("testing framework");
+  });
+
+  it("GET /api/search filters out low-similarity results", async () => {
+    vi.mocked(semanticSearch).mockReturnValue([
+      { beliefId: MOCK_BELIEF.id, similarity: 0.85 },
+      { beliefId: MOCK_BELIEF_FACTUAL.id, similarity: 0.1 }, // below threshold
+    ]);
+    // The route queries storage for full beliefs — only high-similarity ones should appear
+    vi.mocked(serverCtx.ctx.storage.query).mockImplementation((sql: string, params?: unknown[]) => {
+      if (typeof sql === "string" && sql.includes("FROM beliefs WHERE id")) {
+        const id = (params as string[])?.[0];
+        if (id === MOCK_BELIEF.id) return [MOCK_BELIEF];
+        if (id === MOCK_BELIEF_FACTUAL.id) return [MOCK_BELIEF_FACTUAL];
+      }
+      return [];
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/search?q=test",
+    });
+
+    const body = JSON.parse(res.payload);
+    expect(body).toHaveLength(2);
+    expect(body[0].similarity).toBe(0.85);
+    expect(body[1].similarity).toBe(0.1);
+  });
+
+  it("GET /api/search falls back to FTS when embedding fails", async () => {
+    vi.mocked(serverCtx.ctx.llm.embed).mockRejectedValueOnce(new Error("Embedding unavailable"));
+    vi.mocked(searchBeliefs).mockReturnValue([MOCK_BELIEF]);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/search?q=vitest",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toHaveLength(1);
+    expect(searchBeliefs).toHaveBeenCalledWith(serverCtx.ctx.storage, "vitest");
+  });
+
+  it("GET /api/search with no query returns empty array", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/search",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toEqual([]);
+    expect(serverCtx.ctx.llm.embed).not.toHaveBeenCalled();
+  });
+
+  it("GET /api/search?q= with empty string returns empty array", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/search?q=",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toEqual([]);
+  });
+
+  // -- GET /api/stats ------------------------------------------------------
+
+  it("GET /api/stats returns memory stats", async () => {
+    const stats = {
+      totalBeliefs: 42,
+      activeBeliefs: 38,
+      forgottenBeliefs: 4,
+      totalEpisodes: 100,
+      averageConfidence: 0.75,
+    };
+    vi.mocked(memoryStats).mockReturnValue(stats);
+
+    const res = await app.inject({ method: "GET", url: "/api/stats" });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.totalBeliefs).toBe(42);
+    expect(body.activeBeliefs).toBe(38);
+    expect(memoryStats).toHaveBeenCalledWith(serverCtx.ctx.storage);
+  });
+
+  // -- POST /api/remember --------------------------------------------------
+
+  it("POST /api/remember stores observation and returns result", async () => {
+    const rememberResult = {
+      episode: { id: "ep_001", content: "test observation" },
+      beliefs: [MOCK_BELIEF],
+    };
+    vi.mocked(remember).mockResolvedValue(rememberResult);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/remember",
+      payload: { text: "test observation" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.episode.id).toBe("ep_001");
+    expect(body.beliefs).toHaveLength(1);
+    expect(remember).toHaveBeenCalledWith(
+      serverCtx.ctx.storage,
+      serverCtx.ctx.llm,
+      "test observation",
+      serverCtx.ctx.logger,
+    );
+  });
+
+  it("POST /api/remember without text returns 400", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/remember",
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.payload);
+    expect(body.error).toBe("text is required");
+    expect(remember).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/remember with null body returns 400", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/remember",
+      headers: { "content-type": "application/json" },
+      payload: "null",
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  // -- POST /api/forget/:id ------------------------------------------------
+
+  it("POST /api/forget/:id calls forgetBelief and returns ok", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/forget/belief_abc123",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.ok).toBe(true);
+    expect(forgetBelief).toHaveBeenCalledWith(serverCtx.ctx.storage, "belief_abc123");
+  });
+});
+
+// ==========================================================================
+// Agent Routes
+// ==========================================================================
+
+describe("agent routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    setupDefaultAIMocks();
+    app = Fastify();
+    // Fastify needs an error hook to gracefully handle streaming response errors in inject mode
+    app.addHook("onError", (_req, _reply, _error, done) => { done(); });
+    serverCtx = createMockServerCtx();
+    registerAgentRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  // -- GET /api/agents -----------------------------------------------------
+
+  it("GET /api/agents returns agent list", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/agents" });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toHaveLength(1);
+    expect(body[0]).toEqual({
+      name: "assistant",
+      displayName: "Test Assistant",
+      description: "A test assistant for unit tests",
+      capabilities: ["general", "memory"],
+    });
+  });
+
+  it("GET /api/agents with multiple agents returns all", async () => {
+    serverCtx.agents.push({
+      name: "coder",
+      version: "0.1.0",
+      migrations: [],
+      commands: () => [],
+      agent: {
+        displayName: "Code Agent",
+        description: "Writes code",
+        systemPrompt: "You write code.",
+        capabilities: ["coding"],
+      },
+    });
+
+    // Re-create app with updated context
+    await app.close();
+    app = Fastify();
+    registerAgentRoutes(app, serverCtx);
+    await app.ready();
+
+    const res = await app.inject({ method: "GET", url: "/api/agents" });
+    const body = JSON.parse(res.payload);
+    expect(body).toHaveLength(2);
+    expect(body[1].name).toBe("coder");
+    expect(body[1].capabilities).toEqual(["coding"]);
+  });
+
+  // -- POST /api/chat ------------------------------------------------------
+
+  it("POST /api/chat returns stream response", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "Hello, how are you?" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockCreateUIMessageStream).toHaveBeenCalled();
+    expect(mockStreamText).toHaveBeenCalled();
+  });
+
+  it("POST /api/chat auto-creates thread and returns X-Thread-Id", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "Hello from new thread" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const headerId = res.headers["x-thread-id"] as string | undefined;
+    expect(headerId).toBeDefined();
+    expect(headerId).toMatch(/^thread-/);
+
+    const threadsRes = await app.inject({ method: "GET", url: "/api/threads" });
+    const threads = JSON.parse(threadsRes.payload) as Array<{ id: string }>;
+    expect(threads.some((t) => t.id === headerId)).toBe(true);
+  });
+
+  it("POST /api/chat calls createTools on agent", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "test message" },
+    });
+
+    const createTools = serverCtx.agents[0].agent.createTools;
+    expect(createTools).toHaveBeenCalled();
+  });
+
+  it("POST /api/chat passes tools from agent to streamText", async () => {
+    const mockTools = { memory_recall: { description: "Recall memory", parameters: {} } };
+    vi.mocked(serverCtx.agents[0].agent.createTools!).mockReturnValue(mockTools as any);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "What do I like?" },
+    });
+
+    expect(mockStreamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: mockTools,
+        toolChoice: "auto",
+      }),
+    );
+  });
+
+  it("POST /api/chat without message returns 400", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.payload);
+    expect(body.error).toBe("message is required");
+  });
+
+  it("POST /api/chat handles LLM error gracefully", async () => {
+    mockStreamText.mockImplementation(() => {
+      throw new Error("LLM timeout");
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "test" },
+    });
+
+    // Stream is still returned (200) — error is handled via onError callback
+    expect(res.statusCode).toBe(200);
+    expect(mockCreateUIMessageStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onError: expect.any(Function),
+      }),
+    );
+  });
+
+  it("POST /api/chat selects agent by name", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "hi", agent: "assistant" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockStreamText).toHaveBeenCalled();
+  });
+
+  it("POST /api/chat returns 404 for unknown agent", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "hi", agent: "nonexistent" },
+    });
+
+    expect(res.statusCode).toBe(404);
+    const body = JSON.parse(res.payload);
+    expect(body.error).toBe("Agent not found");
+  });
+
+  it("POST /api/chat works when createTools returns undefined", async () => {
+    vi.mocked(serverCtx.agents[0].agent.createTools!).mockReturnValue(undefined as any);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "test" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockStreamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: undefined,
+        toolChoice: undefined,
+      }),
+    );
+  });
+
+  // -- Thread persistence --------------------------------------------------
+
+  it("POST /api/chat uses pre-created thread", async () => {
+    // Create thread first via POST /api/threads
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Test Thread" },
+    });
+    const thread = JSON.parse(createRes.payload);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "Hello", sessionId: thread.id },
+    });
+
+    // Should have called streamText
+    expect(mockStreamText).toHaveBeenCalled();
+  });
+
+  it("POST /api/chat persists messages to thread_messages", async () => {
+    // Pre-create thread
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Persist Test" },
+    });
+    const thread = JSON.parse(createRes.payload);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "Hello", sessionId: thread.id },
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/threads/${thread.id}/messages`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toHaveLength(2); // user + assistant
+    expect(body[0].role).toBe("user");
+    expect(body[0].content).toBe("Hello");
+    expect(body[1].role).toBe("assistant");
+    expect(body[1].content).toBe("Hello from AI");
+  });
+
+  // -- GET /api/threads ----------------------------------------------------
+
+  it("GET /api/threads returns persisted threads", async () => {
+    // Create a thread first via POST /api/threads
+    await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Thread List Test" },
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/threads" });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.length).toBeGreaterThan(0);
+  });
+
+  // -- POST /api/threads ---------------------------------------------------
+
+  it("POST /api/threads creates new thread in storage", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Test Thread" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.title).toBe("Test Thread");
+    expect(body.id).toMatch(/^thread-/);
+    expect(body.messageCount).toBe(0);
+  });
+
+  // -- DELETE /api/threads/:id ---------------------------------------------
+
+  it("DELETE /api/threads/:id removes thread from storage", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Delete Me" },
+    });
+    const thread = JSON.parse(createRes.payload);
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/threads/${thread.id}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual({ ok: true });
+    const threadsRes = await app.inject({ method: "GET", url: "/api/threads" });
+    const threads = JSON.parse(threadsRes.payload) as Array<{ id: string }>;
+    expect(threads.some((t) => t.id === thread.id)).toBe(false);
+  });
+
+  // -- GET /api/chat/history -----------------------------------------------
+
+  it("GET /api/chat/history returns empty array initially", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/chat/history?sessionId=fresh-empty",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toEqual([]);
+  });
+
+  it("GET /api/chat/history returns messages after chat", async () => {
+    // Pre-create thread
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "History Test" },
+    });
+    const thread = JSON.parse(createRes.payload);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "Hello", sessionId: thread.id },
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/chat/history?sessionId=${thread.id}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body).toHaveLength(2); // user + assistant
+    expect(body[0]).toEqual({ role: "user", content: "Hello" });
+    expect(body[1]).toEqual({ role: "assistant", content: "Hello from AI" });
+  });
+
+  it("GET /api/chat/history supports sessionId", async () => {
+    // Pre-create threads
+    const createA = await app.inject({ method: "POST", url: "/api/threads", payload: { title: "A" } });
+    const threadA = JSON.parse(createA.payload);
+    const createB = await app.inject({ method: "POST", url: "/api/threads", payload: { title: "B" } });
+    const threadB = JSON.parse(createB.payload);
+
+    // Chat in session A
+    await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "msg A", sessionId: threadA.id },
+    });
+
+    // Chat in session B
+    await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "msg B", sessionId: threadB.id },
+    });
+
+    // Fetch session A history
+    const resA = await app.inject({
+      method: "GET",
+      url: `/api/chat/history?sessionId=${threadA.id}`,
+    });
+    const bodyA = JSON.parse(resA.payload);
+    expect(bodyA).toHaveLength(2);
+    expect(bodyA[0].content).toBe("msg A");
+
+    // Fetch session B history
+    const resB = await app.inject({
+      method: "GET",
+      url: `/api/chat/history?sessionId=${threadB.id}`,
+    });
+    const bodyB = JSON.parse(resB.payload);
+    expect(bodyB).toHaveLength(2);
+    expect(bodyB[0].content).toBe("msg B");
+  });
+
+  // -- DELETE /api/chat/history --------------------------------------------
+
+  it("DELETE /api/chat/history clears conversation and returns ok", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Clear Test" },
+    });
+    const thread = JSON.parse(createRes.payload);
+    await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "test", sessionId: thread.id },
+    });
+
+    // Clear
+    const delRes = await app.inject({
+      method: "DELETE",
+      url: `/api/chat/history?sessionId=${thread.id}`,
+    });
+    expect(delRes.statusCode).toBe(200);
+    expect(JSON.parse(delRes.payload)).toEqual({ ok: true });
+
+    const historyRes = await app.inject({
+      method: "GET",
+      url: `/api/chat/history?sessionId=${thread.id}`,
+    });
+    const history = JSON.parse(historyRes.payload);
+    expect(history).toEqual([]);
+  });
+
+  it("DELETE /api/chat/history with sessionId deletes only that session", async () => {
+    const createA = await app.inject({ method: "POST", url: "/api/threads", payload: { title: "A" } });
+    const threadA = JSON.parse(createA.payload);
+    const createB = await app.inject({ method: "POST", url: "/api/threads", payload: { title: "B" } });
+    const threadB = JSON.parse(createB.payload);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "msg A", sessionId: threadA.id },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "msg B", sessionId: threadB.id },
+    });
+
+    await app.inject({
+      method: "DELETE",
+      url: `/api/chat/history?sessionId=${threadA.id}`,
+    });
+
+    const historyA = await app.inject({
+      method: "GET",
+      url: `/api/chat/history?sessionId=${threadA.id}`,
+    });
+    const historyB = await app.inject({
+      method: "GET",
+      url: `/api/chat/history?sessionId=${threadB.id}`,
+    });
+
+    expect(JSON.parse(historyA.payload)).toEqual([]);
+    expect(JSON.parse(historyB.payload)).toHaveLength(2);
+  });
+});
+
+// ==========================================================================
+// Config Routes
+// ==========================================================================
+
+describe("config routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = Fastify();
+    serverCtx = createMockServerCtx();
+    registerConfigRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("GET /api/config returns config with provider, model, baseUrl", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/config" });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.llm.provider).toBe("ollama");
+    expect(body.llm.model).toBe("llama3.2");
+    expect(body.llm.baseUrl).toBe("http://127.0.0.1:11434");
+  });
+
+  it("GET /api/config includes dataDir", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/config" });
+
+    const body = JSON.parse(res.payload);
+    expect(body.dataDir).toBe("/tmp/test");
+  });
+
+  it("GET /api/config omits fallbackMode", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/config" });
+
+    const body = JSON.parse(res.payload);
+    expect(body.llm.fallbackMode).toBeUndefined();
+  });
+
+  it("GET /api/config omits apiKey", async () => {
+    // Add an apiKey to config to ensure it's stripped
+    (serverCtx.ctx.config.llm as any).apiKey = "sk-secret-key-12345";
+
+    // Re-create app with updated context
+    await app.close();
+    app = Fastify();
+    registerConfigRoutes(app, serverCtx);
+    await app.ready();
+
+    const res = await app.inject({ method: "GET", url: "/api/config" });
+
+    const body = JSON.parse(res.payload);
+    expect(body.llm.apiKey).toBeUndefined();
+    expect(body.llm.provider).toBe("ollama"); // other fields still present
+  });
+
+  it("GET /api/config includes logLevel", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/config" });
+
+    const body = JSON.parse(res.payload);
+    expect(body.logLevel).toBe("silent");
+  });
+});
