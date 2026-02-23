@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createStorage } from "../src/storage.js";
 import { memoryMigrations } from "../src/memory/memory.js";
-import { knowledgeMigrations, chunkContent, learnFromContent, knowledgeSearch, hasSource, listSources, forgetSource } from "../src/knowledge.js";
+import { knowledgeMigrations, chunkContent, learnFromContent, knowledgeSearch, hasSource, listSources, forgetSource, stripChunkHeader, reindexSource, reindexAllSources } from "../src/knowledge.js";
 import type { LLMClient, Storage } from "../src/types.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -226,5 +226,87 @@ describe("forgetSource", () => {
 
   it("returns false for non-existent source", () => {
     expect(forgetSource(storage, "nonexistent")).toBe(false);
+  });
+});
+
+describe("stripChunkHeader", () => {
+  it("strips contextual header from chunk content", () => {
+    const content = "# React Hooks Guide\nSource: example.com\n\nReact hooks let you use state.";
+    expect(stripChunkHeader(content)).toBe("React hooks let you use state.");
+  });
+
+  it("returns content unchanged if no header present", () => {
+    const content = "Just plain content without a header.";
+    expect(stripChunkHeader(content)).toBe(content);
+  });
+});
+
+describe("reindexSource", () => {
+  let storage: Storage;
+  let dir: string;
+  let llm: LLMClient;
+
+  beforeEach(() => {
+    const t = createTestStorage();
+    storage = t.storage;
+    dir = t.dir;
+    llm = createMockLLM();
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("re-indexes a source with fresh contextual headers and embeddings", async () => {
+    const result = await learnFromContent(storage, llm, "https://example.com/reindex", "Reindex Test", "First paragraph.\n\nSecond paragraph.");
+    const originalChunks = storage.query<{ id: string }>("SELECT id FROM knowledge_chunks WHERE source_id = ?", [result.source.id]);
+
+    const newCount = await reindexSource(storage, llm, result.source.id);
+    expect(newCount).toBeGreaterThan(0);
+
+    const newChunks = storage.query<{ id: string; content: string }>("SELECT id, content FROM knowledge_chunks WHERE source_id = ?", [result.source.id]);
+    // Old chunk IDs should be gone (replaced)
+    for (const old of originalChunks) {
+      expect(newChunks.find((c) => c.id === old.id)).toBeUndefined();
+    }
+    // New chunks should have contextual headers
+    expect(newChunks[0]!.content).toContain("# Reindex Test");
+    expect(newChunks[0]!.content).toContain("Source: example.com");
+  });
+
+  it("throws for non-existent source", async () => {
+    await expect(reindexSource(storage, llm, "nonexistent")).rejects.toThrow("Source not found");
+  });
+});
+
+describe("reindexAllSources", () => {
+  let storage: Storage;
+  let dir: string;
+  let llm: LLMClient;
+
+  beforeEach(() => {
+    const t = createTestStorage();
+    storage = t.storage;
+    dir = t.dir;
+    llm = createMockLLM();
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("re-indexes all sources and returns count", async () => {
+    await learnFromContent(storage, llm, "https://a.com/1", "A", "Content A paragraph.");
+    await learnFromContent(storage, llm, "https://b.com/2", "B", "Content B paragraph.");
+
+    const count = await reindexAllSources(storage, llm);
+    expect(count).toBe(2);
+  });
+
+  it("returns 0 when no sources exist", async () => {
+    const count = await reindexAllSources(storage, llm);
+    expect(count).toBe(0);
   });
 });
