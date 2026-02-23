@@ -344,7 +344,7 @@ export default function Chat() {
       {/* Thread sidebar */}
       <aside
         className={cn(
-          "flex flex-col border-r border-border bg-background transition-transform duration-200",
+          "flex flex-col overflow-hidden border-r border-border bg-background transition-transform duration-200",
           isMobile
             ? "fixed inset-y-0 left-0 z-[52] w-[80vw] max-w-72"
             : "relative z-30 w-56",
@@ -352,9 +352,9 @@ export default function Chat() {
           !isMobile && !threadSidebarOpen && "hidden",
         )}
       >
-        <div className="flex items-center justify-between px-3 py-3 pl-4">
-          <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Threads
+        <div className="flex items-center justify-between gap-2 px-3 py-3 pl-4">
+          <span className="flex min-w-0 items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="shrink-0">Threads</span>
             <InfoBubble text="Each thread is a separate conversation. Your chat history is preserved when you switch between threads." side="right" />
           </span>
           <Tooltip>
@@ -374,7 +374,7 @@ export default function Chat() {
 
         <Separator />
 
-        <ScrollArea className="flex-1">
+        <div className="flex-1 overflow-y-auto">
           {threadsLoading && (
             <div className="flex flex-col gap-2 p-3">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -489,7 +489,7 @@ export default function Chat() {
                       <Button
                         variant="ghost"
                         size="icon-xs"
-                        className="ml-1 flex shrink-0 text-muted-foreground md:hidden md:group-hover:flex"
+                        className="ml-1 shrink-0 text-muted-foreground"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <MoreHorizontalIcon className="size-3.5" />
@@ -521,14 +521,14 @@ export default function Chat() {
                 )}
               </div>
             ))}
-        </ScrollArea>
+        </div>
       </aside>
 
       {/* Main chat area */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
         <header className="flex items-center justify-between border-b border-border bg-background px-3 py-3 md:px-4">
-          <div className="flex items-center gap-2 md:gap-3">
+          <div className="flex min-w-0 items-center gap-2 md:gap-3">
             {/* Thread sidebar toggle */}
             <Tooltip>
               <TooltipTrigger asChild>
@@ -736,9 +736,9 @@ export default function Chat() {
             isMobile ? "fixed inset-y-0 right-0 z-[52] w-[85vw] max-w-80" : "relative z-30 w-72",
           )}
         >
-          <div className="flex items-center justify-between px-4 py-3">
-            <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Recalled Memories
+          <div className="flex items-center justify-between gap-2 px-4 py-3">
+            <h2 className="flex min-w-0 items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="shrink-0">Recalled Memories</span>
               <InfoBubble text="Memories the agent recalled to answer your message. These come from beliefs stored in pai's memory system." side="left" />
             </h2>
             {isMobile && (

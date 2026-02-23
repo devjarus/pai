@@ -5,7 +5,6 @@ import { getBeliefs, searchMemory, forgetBelief, remember, clearAllMemory } from
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -151,9 +150,9 @@ export default function Memory() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <header className="space-y-4 border-b border-border/40 bg-[#0a0a0a] px-4 py-4 md:px-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h1 className="font-mono text-sm font-semibold text-foreground">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-3">
+              <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
                 Memory Explorer
                 <InfoBubble text="Beliefs are facts, preferences, and insights that pai has learned. They have confidence scores that change over time as evidence reinforces or contradicts them." />
               </h1>
@@ -161,7 +160,7 @@ export default function Memory() {
                 {beliefs.length} belief{beliefs.length !== 1 ? "s" : ""}
               </Badge>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex shrink-0 items-center gap-1.5">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon-xs" onClick={() => setShowExplainer(true)}>
@@ -313,7 +312,7 @@ export default function Memory() {
       {/* Detail sidebar */}
       {selectedBelief && (
         <aside className="fixed inset-y-0 right-0 z-[52] w-[85vw] max-w-80 overflow-hidden border-l border-border/40 bg-[#0a0a0a] md:relative md:z-auto md:w-80 md:max-w-none">
-          <ScrollArea className="h-full">
+          <div className="h-full overflow-y-auto">
             <div className="p-5">
               <Card className="gap-4 border-border/50 bg-card/30 py-4">
                 <CardHeader className="flex-row items-center justify-between px-4 py-0">
@@ -398,7 +397,7 @@ export default function Memory() {
                 </CardContent>
               </Card>
             </div>
-          </ScrollArea>
+          </div>
         </aside>
       )}
 

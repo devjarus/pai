@@ -245,9 +245,9 @@ export default function Knowledge() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <header className="space-y-4 border-b border-border/40 bg-[#0a0a0a] px-4 py-4 md:px-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h1 className="font-mono text-sm font-semibold text-foreground">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-3">
+              <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
                 Knowledge Base
               </h1>
               <Badge variant="secondary" className="font-mono text-[10px]">
@@ -441,10 +441,10 @@ export default function Knowledge() {
 
       {/* Detail sidebar */}
       {selectedSource && (
-        <aside className="fixed inset-y-0 right-0 z-[52] w-[85vw] max-w-96 border-l border-border/40 bg-[#0a0a0a] md:relative md:z-auto md:w-96 md:max-w-none">
-          <ScrollArea className="h-full">
+        <aside className="fixed inset-y-0 right-0 z-[52] w-[85vw] max-w-96 overflow-hidden border-l border-border/40 bg-[#0a0a0a] md:relative md:z-auto md:w-96 md:max-w-none">
+          <div className="h-full overflow-y-auto">
             <div className="p-5">
-              <Card className="gap-4 overflow-hidden border-border/50 bg-card/30 py-4">
+              <Card className="gap-4 border-border/50 bg-card/30 py-4">
                 <CardHeader className="flex-row items-center justify-between px-4 py-0">
                   <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Source Detail
@@ -462,7 +462,7 @@ export default function Knowledge() {
                   </Button>
                 </CardHeader>
 
-                <CardContent className="min-w-0 overflow-hidden space-y-4 px-4 py-0">
+                <CardContent className="space-y-4 px-4 py-0">
                   {/* Title */}
                   <p className="text-sm font-medium leading-relaxed text-foreground/90">
                     {selectedSource.title || "Untitled"}
@@ -476,7 +476,7 @@ export default function Knowledge() {
                     className="flex min-w-0 items-center gap-1.5 text-xs text-primary/80 transition-colors hover:text-primary"
                   >
                     <ExternalLinkIcon className="size-3 shrink-0" />
-                    <span className="truncate">{selectedSource.url}</span>
+                    <span className="break-all">{selectedSource.url}</span>
                   </a>
 
                   <Separator className="opacity-30" />
@@ -579,7 +579,7 @@ export default function Knowledge() {
                 </CardContent>
               </Card>
             </div>
-          </ScrollArea>
+          </div>
         </aside>
       )}
 
