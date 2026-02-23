@@ -266,7 +266,7 @@ export function createAgentTools(ctx: AgentContext) {
             content: r.chunk.content.slice(0, 1000),
             source: r.source.title,
             url: r.source.url,
-            relevance: Math.round(r.score * 100) + "%",
+            relevance: r.score,
           }));
         } catch (err) {
           return `Knowledge search failed: ${err instanceof Error ? err.message : "unknown error"}`;

@@ -338,7 +338,7 @@ export async function knowledgeSearch(
       if (!chunk.embedding) continue;
       const embedding = Array.isArray(chunk.embedding) ? chunk.embedding : JSON.parse(chunk.embedding as unknown as string) as number[];
       const sim = cosineSimilarity(queryEmbedding, embedding);
-      if (sim >= 0.35) {
+      if (sim >= 0.4) {
         scored.push({ chunk: { ...chunk, embedding }, score: sim });
       }
     }
@@ -354,7 +354,7 @@ export async function knowledgeSearch(
     for (const row of rows) {
       const embedding = JSON.parse(row.embedding) as number[];
       const sim = cosineSimilarity(queryEmbedding, embedding);
-      if (sim >= 0.35) {
+      if (sim >= 0.4) {
         scored.push({ chunk: { ...row, embedding }, score: sim });
       }
     }
