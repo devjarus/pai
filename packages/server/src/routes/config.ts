@@ -128,7 +128,7 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     const home = homedir();
     const targetPath = dirPath ? resolve(dirPath) : home;
 
-    // Block directory traversal outside home (use separator to avoid prefix collision: /Users/suraj vs /Users/suraj-other)
+    // Block directory traversal outside home (use separator to avoid prefix collision: /Users/alex vs /Users/alex-other)
     if (targetPath !== home && !targetPath.startsWith(home + "/")) {
       return reply.status(403).send({ error: "Cannot browse outside home directory" });
     }

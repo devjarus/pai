@@ -9,7 +9,6 @@ import {
 } from "@personal-ai/core";
 import { generateText, stepCountIs } from "ai";
 import type { LanguageModel } from "ai";
-import { webSearch, formatSearchResults, needsWebSearch } from "@personal-ai/plugin-assistant/web-search";
 
 const MAX_MESSAGES_PER_THREAD = 500;
 
@@ -59,7 +58,7 @@ export function withThreadLock<T>(threadId: string, fn: () => Promise<T>): Promi
  */
 export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipelineResult> {
   return withThreadLock(opts.threadId, async () => {
-  const { ctx, agentPlugin, threadId, message, sender, onPreflight, onToolCall } = opts;
+  const { ctx, agentPlugin, threadId, message, sender, onToolCall } = opts;
 
   // Load conversation history from SQLite (normalized messages)
   const historyRows = listMessages(ctx.storage, threadId, { limit: 20 });
@@ -95,21 +94,6 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
       systemPrompt += `\n\nYou are talking to ${name}${tag} — this is your owner. When they say "my" or "I", it refers to them. Memories tagged "owner" are about this person.`;
     } else {
       systemPrompt += `\n\nYou are talking to ${name}${tag} — this is NOT your owner. When they say "my" or "I", it refers to ${name}, not the owner. Memories about ${name} may exist. Do not confuse ${name}'s preferences with the owner's preferences.`;
-    }
-  }
-
-  // Preflight: inject web search results when the message likely needs current information
-  if (needsWebSearch(message)) {
-    onPreflight?.("🔍 Searching the web...");
-    try {
-      const searchResults = await webSearch(message, 5);
-      if (searchResults.length > 0) {
-        const formatted = formatSearchResults(searchResults);
-        systemPrompt += `\n\n## Web Search Results (auto-searched)\n${formatted}\n\nUse these search results to answer the user's question. Cite sources when appropriate.`;
-        ctx.logger.debug("Telegram web search preflight", { resultCount: searchResults.length });
-      }
-    } catch (err) {
-      ctx.logger.debug("Telegram web search preflight failed", { error: err instanceof Error ? err.message : String(err) });
     }
   }
 

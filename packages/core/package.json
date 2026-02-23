@@ -29,7 +29,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.45",
     "@ai-sdk/openai": "^3.0.29",
-    "ai": "^6.0.86",
+    "ai": "^6.0.0",
     "ai-sdk-ollama": "^3.7.0",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.4.0",

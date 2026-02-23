@@ -4,7 +4,7 @@ This file provides guidance to coding agents (Codex, Claude Code) when working w
 
 ## Project Overview
 
-Personal agent platform with persistent AI memory. Includes CLI (`pai`), MCP server, REST API server, Web UI, and agent plugins — all backed by SQLite and Ollama/OpenAI. Core value: belief lifecycle (create -> reinforce -> contradict/weaken -> decay -> prune -> synthesize) with multi-factor semantic search, evidence-weighted contradiction resolution, and Zettelkasten-style belief linking.
+Personal AI agent platform. Chat via web UI or Telegram, manage tasks, learn from web pages, and build persistent memory — with CLI, MCP server, REST API, and a plugin architecture. Backed by SQLite and Ollama/OpenAI.
 
 ## Architecture
 
@@ -26,24 +26,29 @@ pnpm monorepo with 8 packages under `packages/`:
 
 **Database:** Single SQLite file at `{dataDir}/personal-ai.db`. Each plugin owns its tables; migrations tracked in `_migrations` table. WAL mode, foreign keys enabled.
 
-## Build & Test Commands
+## Build & Run
 
 ```bash
 pnpm install                              # install all dependencies
 pnpm build                                # build all packages (tsc + vite)
-pnpm test                                 # run all 327 tests (vitest)
+pnpm start                                # start server (port 3141)
+pnpm stop                                 # stop server (reads PID file)
+pnpm dev                                  # build + start server
+pnpm dev:ui                               # vite dev server (hot reload, proxies API)
+```
+
+## Test Commands
+
+```bash
+pnpm test                                 # run all tests (vitest)
 pnpm test:watch                           # watch mode
-pnpm --filter @personal-ai/core test      # test single package (includes memory)
-pnpm --filter @personal-ai/plugin-tasks test
-pnpm --filter @personal-ai/plugin-assistant test
+pnpm --filter @personal-ai/core test      # test single package
 pnpm --filter @personal-ai/server test
 pnpm typecheck                            # type-check all packages
 pnpm lint                                 # eslint across all packages
-node packages/cli/dist/index.js --help    # run CLI after build
-node packages/server/dist/index.js        # start web server (port 3141)
-pnpm run test:coverage                   # run tests with v8 coverage
-pnpm run verify                          # typecheck + tests
-pnpm run ci                              # verify + coverage thresholds
+pnpm run test:coverage                    # v8 coverage with thresholds
+pnpm run verify                           # typecheck + tests
+pnpm run ci                               # verify + coverage thresholds
 ```
 
 ## Tech Stack
@@ -90,23 +95,29 @@ To skip hooks in emergencies: `git commit --no-verify` / `git push --no-verify`
 
 Coverage via `@vitest/coverage-v8` with thresholds enforced in `vitest.config.ts`. Run `pnpm run test:coverage` to check. HTML report generated in `coverage/`.
 
-## Design Constraints
+## Design Principles
 
-- TypeScript only — no Python, Docker, or separate processes
-- SQLite only — no Postgres, Redis, or external vector DBs (embeddings stored as JSON in SQLite)
-- Every plugin must be optional — core + any single plugin = working system
+- **KISS** — prefer the simplest solution that works. Avoid premature abstraction.
+- **SOLID** — single responsibility per module, depend on interfaces not implementations, keep plugins independently deployable.
+- **TDD** — write tests alongside implementation. All new features and bug fixes should include tests. Run `pnpm test` before committing.
 
-## UI Conventions
+## Conventions
 
-- **Tool card requirement:** When adding a new agent tool (via `createTools()` in any plugin), always create a corresponding tool card component in `packages/ui/src/components/tools/` and register it in the dispatcher (`index.tsx`). Follow the state machine pattern: `input-available` (loading), `output-available` (success), `output-error` (failure). Use existing cards as reference — polymorphic cards (like `ToolTaskAction`, `ToolKnowledgeAction`) group related tools into one component via a `toolName` prop.
+- **Tool cards:** When adding a new agent tool (via `createTools()` in any plugin), create a corresponding tool card component in `packages/ui/src/components/tools/` and register it in the dispatcher (`index.tsx`). Follow the state machine pattern: `input-available` (loading), `output-available` (success), `output-error` (failure). Polymorphic cards (like `ToolTaskAction`, `ToolKnowledgeAction`) group related tools via a `toolName` prop.
 
-- **pai memory updates:** After completing significant project changes (new features, architecture changes, major refactors), update pai memory with `pai memory remember "<what changed and why>"` so future sessions have context.
+- **Changelog:** Update `CHANGELOG.md` when making user-facing changes. Follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format with sections: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`. Add entries under `[Unreleased]`; move them to a versioned heading (`[x.y.z] - YYYY-MM-DD`) at release time. Use [Semantic Versioning](https://semver.org/): MAJOR for breaking changes, MINOR for new features, PATCH for bug fixes.
 
-- **Changelog maintenance:** Update `CHANGELOG.md` when making user-facing changes. Follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format with sections: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`. Add entries under `[Unreleased]`; move them to a versioned heading (`[x.y.z] - YYYY-MM-DD`) at release time. Use [Semantic Versioning](https://semver.org/): MAJOR for breaking changes, MINOR for new features, PATCH for bug fixes. Each entry should be a concise, user-facing description — not commit messages or implementation details.
+- **pai memory:** After completing significant project changes, run `pnpm pai memory remember "<what changed and why>"` so future sessions have context.
 
-## CLI as Agent Tools
+## CLI
 
-The `pai` CLI commands can be called directly from any coding agent (Claude Code, Codex) via bash. After `pnpm build`, run with `node packages/cli/dist/index.js` or alias as `pai`.
+After `pnpm build`, use `pnpm pai <command>`. To get `pai` directly on your PATH:
+
+```bash
+pnpm -C packages/cli link --global    # one-time setup, then use `pai` directly
+```
+
+All examples below use `pai` for brevity — substitute `pnpm pai` if not globally linked.
 
 ### Memory — Store and retrieve personal knowledge
 
@@ -208,11 +219,6 @@ pai health    # check LLM provider connectivity
 
 pai exposes an MCP (Model Context Protocol) server for native integration with Claude Code, Cursor, Windsurf, and any MCP-compatible agent. This is the primary integration point for coding agents.
 
-**Start the server:**
-```bash
-node packages/cli/dist/mcp.js    # stdio transport
-```
-
 **Configure in Claude Code** (`~/.claude/claude_desktop_config.json`):
 ```json
 {
@@ -229,11 +235,9 @@ node packages/cli/dist/mcp.js    # stdio transport
 
 ## Web UI
 
-Start the server and open the browser:
-
 ```bash
-pnpm build
-node packages/server/dist/index.js    # runs at http://127.0.0.1:3141
+pnpm start                           # http://127.0.0.1:3141
+pnpm stop                            # graceful shutdown via PID file
 ```
 
 Pages:
@@ -304,56 +308,16 @@ pai memory remember "Completed auth middleware using JWT approach"
 
 **All IDs support prefix matching** — use first 8 characters instead of the full nanoid.
 
-## Dogfooding (MANDATORY)
+## Dogfooding
 
-This project builds `pai` — a persistent memory tool for coding agents. You ARE the target user. Use `pai` throughout every session, not just at the end. The CLI is at `node packages/cli/dist/index.js` (build first with `pnpm build`).
-
-### Session Start — recall before doing anything
+This project builds `pai`. If you have Ollama running, use the CLI during development to test the product and preserve project context across sessions:
 
 ```bash
-pai memory recall "<topic you're about to work on>"
-pai task list
+pai memory recall "<topic>"       # before starting work
+pai memory remember "<decision>"  # after design decisions
+pai task list                     # check open work
+pai task ai-suggest               # choose what to work on
 ```
-
-Apply retrieved beliefs to your approach. If a belief says "User prefers X over Y", follow it.
-
-### During Work — store decisions as they happen
-
-**When the user makes a design decision or rejects an approach**, store it immediately:
-
-```bash
-pai memory remember "<decision and rationale>"
-```
-
-Don't wait until the end. Decisions made mid-conversation are the most valuable beliefs — they capture the "why" that code can't.
-
-**When you discover something about the codebase**, store it:
-
-```bash
-pai memory remember "<what you learned>"
-```
-
-### When Deciding What To Work On
-
-```bash
-pai task ai-suggest
-```
-
-### After Completing Work
-
-```bash
-pai memory remember "<what was done and key outcomes>"
-pai task done <id>
-pai task add "<new tasks discovered>" --priority <low|medium|high>
-```
-
-### Per-Session Checklist
-
-- [ ] `memory recall` before starting work
-- [ ] `memory remember` after every design decision or rejection
-- [ ] `memory remember` when discovering codebase facts
-- [ ] `task ai-suggest` when choosing what to work on
-- [ ] `memory remember` + `task done` after completing work
 
 ## Telegram Bot
 

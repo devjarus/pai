@@ -1,23 +1,20 @@
 # pai — Personal AI with Persistent Memory
 
-Personal agent platform with persistent memory. Chat through a web UI or Telegram, recall beliefs from past conversations, search the web, and manage tasks — all backed by a single SQLite file on your machine.
+Personal AI agent platform. Chat via web UI or Telegram, learn from web pages, manage tasks, search the web, and extend with plugins — all running locally on your machine.
 
-**What makes pai different:** Beliefs aren't just stored — they're reinforced when repeated, invalidated when contradicted, decay when stale, and consolidate into higher-order patterns. Multi-person aware: memories are tagged with who they're about.
+**What makes pai different:** A full agent system with persistent memory, knowledge base, and multi-channel access. Memory evolves over time — beliefs are reinforced, contradicted, decayed, and synthesized. Multi-person aware.
 
 ## Features
 
-- **Belief lifecycle** — create → reinforce → contradict → decay → prune → synthesize
-- **Unified retrieval** — single `retrieveContext()` call searches beliefs + knowledge with one embedding
-- **Semantic search** — multi-factor ranking (cosine similarity + importance + recency) with FTS5 fallback
-- **Contradiction detection** — evidence-weighted resolution (TMS-inspired)
-- **Conversation consolidation** — every 5 turns, summaries become searchable episodes
-- **Web UI** — chat with streaming, memory explorer, settings, timeline
+- **Web UI** — streaming chat with tool cards, memory explorer, knowledge browser, settings, timeline
 - **Telegram bot** — same agent pipeline, multi-user aware (owner vs. others)
+- **Knowledge base** — learn from web pages, FTS5 prefilter + cosine re-ranking
+- **Persistent memory** — beliefs with lifecycle (reinforce, contradict, decay, synthesize), semantic search
 - **Web search** — Brave Search for current information, no API key required
-- **Task management** — tasks + goals with AI prioritization using memory context
-- **Knowledge base** — learn from web pages, FTS5 prefilter + cosine re-ranking, knowledge-memory bridge
+- **Task management** — tasks + goals with AI prioritization
 - **MCP server** — 19 tools for Claude Code, Cursor, Windsurf integration
 - **CLI** — `pai` commands with `--json` output and prefix-matched IDs
+- **Plugin architecture** — extend with custom agents, tools, and commands
 
 ## Prerequisites
 
@@ -33,14 +30,13 @@ cd pai
 pnpm install
 pnpm build
 
-# Start the web UI + API server
-node packages/server/dist/index.js
-# Open http://127.0.0.1:3141
+pnpm start                # start server → http://127.0.0.1:3141
+pnpm stop                 # stop server
 ```
 
 ## Web UI
 
-Start the server and open `http://127.0.0.1:3141`:
+Open `http://127.0.0.1:3141` after starting the server:
 
 | Page | Description |
 |------|-------------|
@@ -61,8 +57,7 @@ export PAI_TELEGRAM_TOKEN=<your-token>
 # Option 1: standalone
 node packages/plugin-telegram/dist/index.js
 
-# Option 2: via server (enable in Settings UI)
-node packages/server/dist/index.js
+# Option 2: via server (enable Telegram in Settings UI, then pnpm start)
 ```
 
 Commands: `/start`, `/help`, `/clear`, `/tasks`, `/memories` — or just send any message.
@@ -88,9 +83,15 @@ Native integration with Claude Code, Cursor, Windsurf, and any MCP-compatible ag
 
 ## CLI
 
+Use `pnpm pai <command>` or link globally for direct access:
+
+```bash
+pnpm -C packages/cli link --global    # one-time setup, then use `pai` directly
+```
+
 ```bash
 # Memory
-pai memory remember "Suraj prefers Zustand over Redux"
+pai memory remember "Alex prefers Zustand over Redux"
 pai memory recall "state management preference"
 pai memory beliefs
 pai memory forget <id-or-prefix>
@@ -165,7 +166,7 @@ packages/
   ui/                 React + Vite + Tailwind + shadcn/ui
 ```
 
-Single SQLite file at `~/.personal-ai/data/personal-ai.db`. WAL mode, foreign keys. Normalized thread messages with sequence-ordered rows.
+Data stored at `~/.personal-ai/data/`. SQLite with WAL mode for the default storage backend.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for C4 diagrams, dataflows, and full data model.
 

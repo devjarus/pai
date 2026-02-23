@@ -711,14 +711,14 @@ describe("Embeddings", () => {
 
   describe("findContradictions", () => {
     it("should detect contradicting belief pairs via LLM", async () => {
-      const b1 = createBelief(storage, { statement: "Monica's favorite color is blue", confidence: 0.8, type: "factual" });
-      const b2 = createBelief(storage, { statement: "Monica's favorite color is lavender", confidence: 0.7, type: "factual" });
+      const b1 = createBelief(storage, { statement: "Bob's favorite color is blue", confidence: 0.8, type: "factual" });
+      const b2 = createBelief(storage, { statement: "Bob's favorite color is lavender", confidence: 0.7, type: "factual" });
       storeEmbedding(storage, b1.id, [0.9, 0.4, 0.0]);
       storeEmbedding(storage, b2.id, [0.3, 0.9, 0.2]);
 
       const mockLlm = {
         chat: vi.fn().mockResolvedValue({
-          text: "1. CONTRADICTION: Both claim different favorite colors for Monica.",
+          text: "1. CONTRADICTION: Both claim different favorite colors for Bob.",
         }),
       } as unknown as LLMClient;
 
@@ -746,8 +746,8 @@ describe("Embeddings", () => {
     });
 
     it("should return empty array when LLM says no contradiction", async () => {
-      const b1 = createBelief(storage, { statement: "Monica likes painting", confidence: 0.8, type: "factual" });
-      const b2 = createBelief(storage, { statement: "Monica likes drawing", confidence: 0.7, type: "factual" });
+      const b1 = createBelief(storage, { statement: "Bob likes painting", confidence: 0.8, type: "factual" });
+      const b2 = createBelief(storage, { statement: "Bob likes drawing", confidence: 0.7, type: "factual" });
       storeEmbedding(storage, b1.id, [0.9, 0.4, 0.0]);
       storeEmbedding(storage, b2.id, [0.3, 0.9, 0.2]);
 

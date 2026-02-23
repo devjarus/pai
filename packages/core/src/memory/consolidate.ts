@@ -8,7 +8,7 @@ const CONSOLIDATION_PROMPT = `You are a memory consolidation engine. Given a con
 Rules:
 - Focus on WHAT was discussed and decided, not greetings or filler
 - Include names and specific details (technologies, places, preferences)
-- Write in third person: "The user discussed..." or "Suraj decided..."
+- Write in third person: "The user discussed..." or "Alex decided..."
 - If the conversation is trivial small talk with nothing worth remembering, reply with exactly "NONE"
 
 Summary:`;

@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "API server for pai — serves REST API + Web UI",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devjarus/pai.git",
+    "directory": "packages/server"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

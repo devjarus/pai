@@ -17,7 +17,7 @@ export async function extractBeliefs(
         'Classify the fact type as one of: "factual" (objective truth), "preference" (user likes/dislikes), ' +
         '"procedural" (how to do something), "architectural" (system design decision). ' +
         'Rate importance 1-10: 1-3 trivial/transient, 4-6 useful context, 7-9 core preference/decision, 10 critical constraint. ' +
-        'Identify the subject: who is this fact ABOUT? Use their name (e.g., "Monica", "Suraj") or "owner" if about the AI owner. ' +
+        'Identify the subject: who is this fact ABOUT? Use their name (e.g., "Alex", "Bob") or "owner" if about the AI owner. ' +
         'Reply with JSON only: {"fact":"...","factType":"...","importance":N,"insight":"...","subject":"..."} or {"fact":"...","factType":"...","importance":N,"insight":null,"subject":"owner"}. ' +
         'Keep each under 20 words.',
     },

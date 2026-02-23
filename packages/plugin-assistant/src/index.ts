@@ -21,7 +21,7 @@ IMPORTANT — You MUST use your tools. You have tools available — use them pro
 - **knowledge_status**: Check progress of background crawl jobs and see which pages failed.
 
 Memory is multi-person aware:
-- Memories are tagged with WHO they are about (owner, Monica, etc.)
+- Memories are tagged with WHO they are about (owner, Alex, Bob, etc.)
 - When someone says "my preference", it refers to THEM specifically, not the owner
 - When recalling, pay attention to the [about: X] tags to know whose facts you're seeing
 - Never mix up one person's preferences with another's
@@ -115,7 +115,7 @@ export const assistantPlugin: AgentPlugin = {
       const extractionPrompt = `Analyze the user message below. The message is from ${senderName}. Extract ONLY personal facts, preferences, decisions, or important information about SPECIFIC PEOPLE worth remembering for future conversations.
 
 Rules:
-- Extract facts and attribute them to the correct person (e.g., "${senderName} prefers X" or "Monica likes Y")
+- Extract facts and attribute them to the correct person (e.g., "${senderName} prefers X" or "Bob likes Y")
 - If ${senderName} mentions a fact about someone else (e.g., "my wife likes pizza"), attribute it to that person, not ${senderName}
 - If ${senderName} states something about themselves, attribute it to ${senderName}
 - Ignore greetings, questions, commands, or requests for information

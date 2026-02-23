@@ -39,7 +39,7 @@
                 └────────────────────────┘       └─────────────┘
 ```
 
-**Design principles:** Memory-first. Local-first (single SQLite file). TypeScript only. Plugin architecture. Unified retrieval (beliefs + knowledge with one embedding call).
+**Design principles:** KISS. SOLID. TDD. Plugin architecture. Unified retrieval (beliefs + knowledge with one embedding call).
 
 ---
 
@@ -74,9 +74,6 @@ POST /api/chat { id, messages: [{ role, parts }], sessionId, agent }
     │     Thread exists? → return it
     │     Missing? → createThread() → reply.header("X-Thread-Id", newId)
     │
-    ├── needsWebSearch(message)?
-    │     → Brave Search → inject results into system prompt
-    │
     └── withThreadLock(threadId, async () => {
           │
           ├── listMessages(threadId, { limit: 20 })    ← load history
@@ -85,7 +82,6 @@ POST /api/chat { id, messages: [{ role, parts }], sessionId, agent }
           │     agent.systemPrompt
           │     + current date/time
           │     + identity ("You are talking to your owner via web UI")
-          │     + web search results (if any)
           │
           ├── streamText({ model, system, messages, tools, stopWhen: stepCountIs(5) })
           │     │
@@ -172,7 +168,7 @@ episode_embeddings                 (float[] as JSON, for semantic episode search
 | `stability` | 1.0-5.0, increases +0.1 per retrieval (SM-2 inspired). Meta-beliefs start at 3.0 |
 | `importance` | 1-10 integer, weights retrieval ranking |
 | `status` | `active`, `invalidated`, `forgotten`, `pruned` |
-| `subject` | Who the belief is about: `owner`, `monica`, `suraj`, `general` |
+| `subject` | Who the belief is about: `owner`, `alex`, `bob`, `general` |
 
 ### Belief Lifecycle
 
@@ -191,7 +187,7 @@ create (confidence 0.6)
 ### remember() — Writing Memories
 
 ```
-Input: "Suraj prefers Zustand over Redux"
+Input: "Alex prefers Zustand over Redux"
     │
     ├── createEpisode → INSERT INTO episodes
     │     + llm.embed(text) → storeEpisodeEmbedding    (parallel)
@@ -224,7 +220,7 @@ Input: "Suraj prefers Zustand over Redux"
 The `memory_recall` tool calls `retrieveContext()` — a unified retrieval API that searches beliefs AND knowledge with a single embedding call:
 
 ```
-Query: "What does Suraj like?"
+Query: "What does Alex like?"
     │
     ├── llm.embed(query) → queryEmbedding  ← ONE call, shared across beliefs + knowledge
     │
@@ -424,12 +420,13 @@ Tasks (status/priority/due date) + Goals. `ai-suggest` feeds tasks + memory to L
 
 ## Web UI
 
-React SPA — Chat, Memory Explorer, Settings, Timeline.
+React SPA — Chat, Memory Explorer, Knowledge, Settings, Timeline.
 
 | Page | Key features |
 |------|-------------|
 | **Chat** | AI SDK `useChat` + `DefaultChatTransport`, thread sidebar, tool cards, responsive mobile |
 | **Memory** | Browse/search beliefs, type filter tabs, detail sidebar, clear all |
+| **Knowledge** | Browse sources, view chunks, search knowledge base, learn from URLs, crawl sub-pages |
 | **Settings** | LLM provider/model/key, data directory browser, Telegram config |
 | **Timeline** | Chronological episodes + belief changes |
 

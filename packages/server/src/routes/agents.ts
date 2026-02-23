@@ -18,7 +18,6 @@ import {
 import { streamText, generateText, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, tool } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
-import { webSearch, formatSearchResults, needsWebSearch } from "@personal-ai/plugin-assistant/web-search";
 
 export { threadMigrations };
 
@@ -164,19 +163,6 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
     let systemPrompt = agentPlugin.agent.systemPrompt +
       `\n\nCurrent date and time: ${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}, ${now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}. Use this for time-sensitive queries.` +
       `\n\nYou are talking to your owner via the web UI. When they say "my" or "I", it refers to the owner. Memories tagged "owner" are about this person. Do not confuse the owner with other people mentioned in memories.`;
-    // Preflight: inject web search results when the message likely needs current information
-    if (needsWebSearch(message)) {
-      try {
-        const searchResults = await webSearch(message, 5);
-        if (searchResults.length > 0) {
-          const formatted = formatSearchResults(searchResults);
-          systemPrompt += `\n\n## Web Search Results (auto-searched)\n${formatted}\n\nUse these search results to answer the user's question. Cite sources when appropriate.`;
-        }
-      } catch {
-        // Web search failed — continue without
-      }
-    }
-
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         await withThreadLock(sid, async () => {

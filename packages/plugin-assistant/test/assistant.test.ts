@@ -142,7 +142,7 @@ describe("afterResponse", () => {
     const { remember: mockRemember } = await import("@personal-ai/core");
     const mockChat = vi.fn()
       // First call: extraction
-      .mockResolvedValueOnce({ text: "Suraj prefers Vitest over Jest" })
+      .mockResolvedValueOnce({ text: "Alex prefers Vitest over Jest" })
       // Second call: validation — confirmed
       .mockResolvedValueOnce({ text: "CONFIRMED" });
 
@@ -158,7 +158,7 @@ describe("afterResponse", () => {
     expect(mockRemember).toHaveBeenCalledWith(
       ctx.storage,
       ctx.llm,
-      "Suraj prefers Vitest over Jest",
+      "Alex prefers Vitest over Jest",
       ctx.logger,
     );
   });
@@ -168,7 +168,7 @@ describe("afterResponse", () => {
     const mockChat = vi.fn()
       // First call: extraction — returns 5 candidate facts
       .mockResolvedValueOnce({
-        text: "Suraj likes React\nSuraj uses TypeScript\nSuraj prefers pnpm\nSuraj uses Vitest\nSuraj likes Tailwind",
+        text: "Alex likes React\nAlex uses TypeScript\nAlex prefers pnpm\nAlex uses Vitest\nAlex likes Tailwind",
       })
       // Validation calls — all confirmed
       .mockResolvedValueOnce({ text: "CONFIRMED" })
@@ -189,7 +189,7 @@ describe("afterResponse", () => {
 
   it("validation prompt includes assistant response and candidate fact", async () => {
     const mockChat = vi.fn()
-      .mockResolvedValueOnce({ text: "Suraj prefers dark mode" })
+      .mockResolvedValueOnce({ text: "Alex prefers dark mode" })
       .mockResolvedValueOnce({ text: "CONFIRMED" });
 
     const ctx = createMockCtx({
@@ -206,7 +206,7 @@ describe("afterResponse", () => {
     const systemContent = validationMessages.find((m: any) => m.role === "system")?.content ?? "";
     const userContent = validationMessages.find((m: any) => m.role === "user")?.content ?? "";
 
-    expect(systemContent + userContent).toContain("Suraj prefers dark mode");
+    expect(systemContent + userContent).toContain("Alex prefers dark mode");
     expect(systemContent + userContent).toContain(assistantResponse);
   });
 });

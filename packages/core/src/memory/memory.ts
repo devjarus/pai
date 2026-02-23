@@ -975,10 +975,10 @@ export async function backfillSubjects(storage: Storage, llm: LLMClient, logger?
           role: "system",
           content:
             "You identify WHO a belief/fact is about. For each numbered statement, reply with ONLY the person's name " +
-            "(e.g., \"Monica\", \"Suraj\", \"Joshi\") or \"owner\" if it's about the AI's owner generically " +
+            "(e.g., \"Alex\", \"Bob\") or \"owner\" if it's about the AI's owner generically " +
             "(e.g., \"User prefers X\", \"He likes Y\"), or \"general\" if it's about a system, concept, or no specific person. " +
             "Reply with one answer per line in the format: NUMBER. SUBJECT\n" +
-            "Examples:\n1. owner\n2. Monica\n3. general\n4. Suraj",
+            "Examples:\n1. owner\n2. Alex\n3. general\n4. Bob",
         },
         { role: "user", content: numbered },
       ], { temperature: 0 });

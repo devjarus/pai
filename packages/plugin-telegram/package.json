@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Telegram bot plugin — chat with the Personal Assistant via Telegram",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devjarus/pai.git",
+    "directory": "packages/plugin-telegram"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

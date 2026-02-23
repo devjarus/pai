@@ -334,7 +334,6 @@ export function memoryCommands(ctx: PluginContext): Command[] {
 export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, memoryStats, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, backfillSubjects, findContradictions } from "./memory.js";
 export { remember } from "./remember.js";
 export { generateMemoryFile } from "./memory-file.js";
-export { needsMemoryPreflight } from "./preflight.js";
 export { consolidateConversation } from "./consolidate.js";
 
 // Types

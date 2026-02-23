@@ -70,11 +70,11 @@ importers:
         specifier: ^3.0.29
         version: 3.0.29(zod@3.25.76)
       ai:
-        specifier: ^6.0.86
-        version: 6.0.86(zod@3.25.76)
+        specifier: ^6.0.0
+        version: 6.0.94(zod@3.25.76)
       ai-sdk-ollama:
         specifier: ^3.7.0
-        version: 3.7.0(ai@6.0.86(zod@3.25.76))(zod@3.25.76)
+        version: 3.7.0(ai@6.0.94(zod@3.25.76))(zod@3.25.76)
       better-sqlite3:
         specifier: ^11.0.0
         version: 11.10.0
@@ -173,9 +173,6 @@ importers:
         specifier: ^5.0.0
         version: 5.1.6
     devDependencies:
-      '@types/better-sqlite3':
-        specifier: ^7.6.0
-        version: 7.6.13
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.11
@@ -266,7 +263,7 @@ importers:
         specifier: ^3.0.96
         version: 3.0.96(react@19.2.4)(zod@3.25.76)
       ai:
-        specifier: ^6.0.94
+        specifier: ^6.0.0
         version: 6.0.94(zod@3.25.76)
       class-variance-authority:
         specifier: ^0.7.1
@@ -7077,11 +7074,11 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  ai-sdk-ollama@3.7.0(ai@6.0.86(zod@3.25.76))(zod@3.25.76):
+  ai-sdk-ollama@3.7.0(ai@6.0.94(zod@3.25.76))(zod@3.25.76):
     dependencies:
       '@ai-sdk/provider': 3.0.8
       '@ai-sdk/provider-utils': 4.0.15(zod@3.25.76)
-      ai: 6.0.86(zod@3.25.76)
+      ai: 6.0.94(zod@3.25.76)
       jsonrepair: 3.13.2
       ollama: 0.6.3
     transitivePeerDependencies:

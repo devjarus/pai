@@ -142,36 +142,3 @@ export function formatSearchResults(results: SearchResult[]): string {
   return `## Web Search Results\n\n${formatted}`;
 }
 
-/** Keywords/patterns that suggest a query needs web search. */
-const SEARCH_INDICATORS = [
-  /\b(latest|newest|recent|current|today|now|this\s+(week|month|year))\b/i,
-  /\b(news|headline|update|announcement|release)\b/i,
-  /\b202[4-9]\b/, // years 2024-2029
-  /\b(what\s+is|who\s+is|when\s+(did|does|is|was|will))\b/i,
-  /\b(how\s+to|how\s+do)\b/i,
-  /\b(price|cost|weather|stock|score|result)\b/i,
-  /\b(compare|vs\.?|versus|difference\s+between)\b/i,
-  /\b(search|look\s+up|find\s+out|google)\b/i,
-];
-
-/**
- * Heuristic check: does this query likely need web search?
- * Returns true if the message matches common patterns for questions
- * that benefit from up-to-date web information.
- */
-export function needsWebSearch(message: string): boolean {
-  // Very short messages are unlikely to need search
-  if (message.length < 10) return false;
-
-  // Check for explicit search request
-  if (/\bsearch\b|\blook\s*up\b|\bgoogle\b/i.test(message)) return true;
-
-  // Check against indicator patterns — need at least one match
-  // plus the message should be a question or request
-  const hasIndicator = SEARCH_INDICATORS.some((pattern) =>
-    pattern.test(message),
-  );
-  const isQuestion = /\?$/.test(message.trim()) || /^(what|who|when|where|why|how|is|are|was|were|did|does|do|can|could|will|would|should)\b/i.test(message.trim());
-
-  return hasIndicator && isQuestion;
-}
