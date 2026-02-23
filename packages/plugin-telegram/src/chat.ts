@@ -19,6 +19,8 @@ export interface ChatPipelineOptions {
   message: string;
   /** Display name and username of the sender (for multi-user awareness) */
   sender?: { displayName?: string; username?: string };
+  /** Chat type — used to add group-specific context */
+  chatType?: "private" | "group" | "supergroup" | "channel";
   /** Called when a preflight operation starts (memory recall, web search) */
   onPreflight?: (action: string) => void;
   onToolCall?: (toolName: string) => void;
@@ -58,7 +60,8 @@ export function withThreadLock<T>(threadId: string, fn: () => Promise<T>): Promi
  */
 export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipelineResult> {
   return withThreadLock(opts.threadId, async () => {
-  const { ctx, agentPlugin, threadId, message, sender, onToolCall } = opts;
+  const { ctx, agentPlugin, threadId, message, sender, chatType, onToolCall } = opts;
+  const isGroup = chatType === "group" || chatType === "supergroup";
 
   // Load conversation history from SQLite (normalized messages)
   const historyRows = listMessages(ctx.storage, threadId, { limit: 20 });
@@ -97,10 +100,19 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
     }
   }
 
+  if (isGroup) {
+    systemPrompt += `\n\nThis is a group chat. Messages from users are prefixed with [Name (@username)]: to identify the speaker. Address users by name when responding. Do not confuse different users.`;
+  }
+
+  // Label message with sender identity for group chats
+  const labeledMessage = isGroup && sender
+    ? `[${sender.displayName ?? sender.username ?? "Unknown"}${sender.username ? ` (@${sender.username})` : ""}]: ${message}`
+    : message;
+
   // Build messages for LLM
   const messages: ChatMessage[] = [
     ...history.slice(-20),
-    { role: "user", content: message },
+    { role: "user", content: labeledMessage },
   ];
 
   // Track tool calls
@@ -138,7 +150,7 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
 
   // Build persisted messages — include tool call summaries so model retains context
   const toPersist: ThreadMessageInput[] = [
-    { role: "user", content: message },
+    { role: "user", content: labeledMessage },
   ];
 
   // Summarize tool calls and results from intermediate steps

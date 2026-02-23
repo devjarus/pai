@@ -35,6 +35,9 @@ export interface Config {
     token?: string;
     enabled?: boolean;
     ownerUsername?: string;
+    passiveListening?: boolean;
+    reactionCooldownMin?: number;
+    proactiveCooldownMin?: number;
   };
 }
 

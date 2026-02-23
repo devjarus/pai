@@ -4,6 +4,7 @@ import { listBeliefs, getThread } from "@personal-ai/core";
 import { listTasks } from "@personal-ai/plugin-tasks";
 import { runAgentChat, createThread, clearThread as clearThreadMessages } from "./chat.js";
 import { markdownToTelegramHTML, splitMessage } from "./formatter.js";
+import { bufferMessage, passiveProcess } from "./passive.js";
 
 /** Tool name → human-friendly status emoji */
 const TOOL_STATUS: Record<string, string> = {
@@ -147,7 +148,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
   });
 
   // Shared chat handler for private messages, groups, and channels
-  async function handleChat(chatId: number, text: string, sender: { username?: string; displayName?: string } | undefined, reply: typeof bot.api.sendMessage) {
+  async function handleChat(chatId: number, text: string, sender: { username?: string; displayName?: string } | undefined, reply: typeof bot.api.sendMessage, chatType?: "private" | "group" | "supergroup" | "channel") {
     ctx.logger.debug("Telegram handleChat", { chatId });
     const threadId = getOrCreateThread(ctx, chatId, sender?.username);
 
@@ -161,6 +162,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         threadId,
         message: text,
         sender,
+        chatType,
         onPreflight: (action) => {
           bot.api.editMessageText(chatId, placeholder.message_id, action)
             .catch(() => { /* ignore edit failures */ });
@@ -216,7 +218,23 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       const botUsername = tgCtx.me.username;
       const isMentioned = tgCtx.message.text.includes(`@${botUsername}`);
       const isReply = tgCtx.message.reply_to_message?.from?.id === tgCtx.me.id;
-      if (!isMentioned && !isReply) return;
+      const senderName = tgCtx.from
+        ? [tgCtx.from.first_name, tgCtx.from.last_name].filter(Boolean).join(" ") || tgCtx.from.username || "Unknown"
+        : "Unknown";
+
+      if (!isMentioned && !isReply) {
+        // Always buffer (free)
+        bufferMessage(tgCtx.chat.id, tgCtx.message.text, senderName);
+        // Passive processing (fire-and-forget, don't block)
+        passiveProcess(ctx, agentPlugin, tgCtx.chat.id, tgCtx.message, bot.api)
+          .catch((err) => ctx.logger.debug("Passive processing failed", { error: String(err) }));
+        return;
+      }
+
+      // Acknowledge mention/reply with eyes reaction
+      tgCtx.api.setMessageReaction(tgCtx.chat.id, tgCtx.message.message_id, [
+        { type: "emoji", emoji: "\uD83D\uDC40" },
+      ]).catch(() => {});
 
       // Strip the @mention from the message
       const text = tgCtx.message.text.replace(`@${botUsername}`, "").trim();
@@ -225,7 +243,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         username: tgCtx.from.username,
         displayName: [tgCtx.from.first_name, tgCtx.from.last_name].filter(Boolean).join(" ") || undefined,
       } : undefined;
-      await handleChat(tgCtx.chat.id, text, sender, bot.api.sendMessage.bind(bot.api));
+      await handleChat(tgCtx.chat.id, text, sender, bot.api.sendMessage.bind(bot.api), chatType);
       return;
     }
 
@@ -234,7 +252,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       username: tgCtx.from.username,
       displayName: [tgCtx.from.first_name, tgCtx.from.last_name].filter(Boolean).join(" ") || undefined,
     } : undefined;
-    await handleChat(tgCtx.chat.id, tgCtx.message.text, sender, bot.api.sendMessage.bind(bot.api));
+    await handleChat(tgCtx.chat.id, tgCtx.message.text, sender, bot.api.sendMessage.bind(bot.api), "private");
   });
 
   // Channel posts — respond to all text posts (bot must be channel admin)
