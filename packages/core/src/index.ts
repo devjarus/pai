@@ -24,7 +24,7 @@ export {
 export type { ThreadRow, ThreadMessageRow, ThreadMessageInput, EnsureThreadOptions, ListMessagesOptions, AppendMessagesOptions } from "./threads.js";
 
 // Knowledge
-export { knowledgeMigrations, chunkContent, hasSource, listSources, getSourceChunks, learnFromContent, knowledgeSearch, searchKnowledgeFTS, forgetSource } from "./knowledge.js";
+export { knowledgeMigrations, chunkContent, hasSource, listSources, getSourceChunks, learnFromContent, knowledgeSearch, searchKnowledgeFTS, forgetSource, stripChunkHeader, reindexSource, reindexAllSources } from "./knowledge.js";
 export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult } from "./knowledge.js";
 
 // Memory

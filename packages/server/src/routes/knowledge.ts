@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
-import { learnFromContent, knowledgeSearch, listSources, getSourceChunks, forgetSource } from "@personal-ai/core";
+import { learnFromContent, knowledgeSearch, listSources, getSourceChunks, forgetSource, reindexSource, reindexAllSources } from "@personal-ai/core";
 import { fetchPageAsMarkdown, discoverSubPages } from "@personal-ai/plugin-assistant/page-fetch";
 import { activeCrawls, runCrawlInBackground } from "@personal-ai/plugin-assistant/tools";
 
@@ -143,6 +143,30 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
       content: c.content,
       chunkIndex: c.chunk_index,
     }));
+  });
+
+  // Re-index all sources with contextual chunk headers
+  app.post("/api/knowledge/reindex", async (_request, reply) => {
+    try {
+      const count = await reindexAllSources(ctx.storage, ctx.llm);
+      return { ok: true, reindexed: count };
+    } catch (err) {
+      return reply.status(500).send({ error: err instanceof Error ? err.message : "Failed to re-index" });
+    }
+  });
+
+  // Re-index a single source
+  app.post<{ Params: { id: string } }>("/api/knowledge/sources/:id/reindex", async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const chunks = await reindexSource(ctx.storage, ctx.llm, id);
+      return { ok: true, chunks };
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("Source not found")) {
+        return reply.status(404).send({ error: "Source not found" });
+      }
+      return reply.status(500).send({ error: err instanceof Error ? err.message : "Failed to re-index source" });
+    }
   });
 
   // Delete a learned source

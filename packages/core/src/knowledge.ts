@@ -169,19 +169,23 @@ export async function learnFromContent(
   }
 
   const chunks = chunkContent(markdown);
+  const domain = new URL(normalizedUrl).hostname;
+  const contextualChunks = chunks.map((chunk) =>
+    `# ${title}\nSource: ${domain}\n\n${chunk}`
+  );
   const sourceId = nanoid();
   const now = new Date().toISOString();
 
   // Store source
   storage.run(
     "INSERT INTO knowledge_sources (id, url, title, fetched_at, chunk_count, tags) VALUES (?, ?, ?, ?, ?, ?)",
-    [sourceId, normalizedUrl, title, now, chunks.length, options?.tags ?? null],
+    [sourceId, normalizedUrl, title, now, contextualChunks.length, options?.tags ?? null],
   );
 
   // Embed and store chunks
   let stored = 0;
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i]!;
+  for (let i = 0; i < contextualChunks.length; i++) {
+    const chunk = contextualChunks[i]!;
     const chunkId = nanoid();
 
     let embedding: number[] | null = null;
@@ -298,6 +302,7 @@ export async function knowledgeSearch(
 
   // Phase 1b: Source-level matching — find sources by title/tags and add their chunks
   const matchingSources = findMatchingSources(storage, query);
+  const matchingSourceIds = new Set(matchingSources.map((s) => s.id));
   for (const source of matchingSources) {
     const chunks = storage.query<KnowledgeChunk & { embedding: string | null }>(
       "SELECT * FROM knowledge_chunks WHERE source_id = ?", [source.id],
@@ -332,13 +337,18 @@ export async function knowledgeSearch(
   // Phase 3: Score candidates by cosine similarity
   let scored: Array<{ chunk: KnowledgeChunk; score: number }> = [];
 
+  const COSINE_THRESHOLD = 0.5;
+  // Chunks from sources matched by title/tags get a score boost
+  const SOURCE_MATCH_BOOST = 0.15;
+
   if (ftsIds.size > 0) {
     // Score only FTS candidates
     for (const chunk of ftsCandidates) {
       if (!chunk.embedding) continue;
       const embedding = Array.isArray(chunk.embedding) ? chunk.embedding : JSON.parse(chunk.embedding as unknown as string) as number[];
-      const sim = cosineSimilarity(queryEmbedding, embedding);
-      if (sim >= 0.4) {
+      let sim = cosineSimilarity(queryEmbedding, embedding);
+      if (matchingSourceIds.has(chunk.source_id)) sim += SOURCE_MATCH_BOOST;
+      if (sim >= COSINE_THRESHOLD) {
         scored.push({ chunk: { ...chunk, embedding }, score: sim });
       }
     }
@@ -353,14 +363,31 @@ export async function knowledgeSearch(
 
     for (const row of rows) {
       const embedding = JSON.parse(row.embedding) as number[];
-      const sim = cosineSimilarity(queryEmbedding, embedding);
-      if (sim >= 0.4) {
+      let sim = cosineSimilarity(queryEmbedding, embedding);
+      if (matchingSourceIds.has(row.source_id)) sim += SOURCE_MATCH_BOOST;
+      if (sim >= COSINE_THRESHOLD) {
         scored.push({ chunk: { ...row, embedding }, score: sim });
       }
     }
   }
 
   scored.sort((a, b) => b.score - a.score);
+
+  // Source diversity: cap chunks per source only when results span 3+ sources
+  // (if few sources match, user likely wants depth from those sources)
+  const uniqueSources = new Set(scored.map((s) => s.chunk.source_id));
+  if (uniqueSources.size >= 3) {
+    const perSource: Record<string, number> = {};
+    const diverse: typeof scored = [];
+    for (const item of scored) {
+      const sid = item.chunk.source_id;
+      perSource[sid] = (perSource[sid] ?? 0) + 1;
+      if (perSource[sid] <= 2) diverse.push(item);
+      if (diverse.length >= limit) break;
+    }
+    return attachSources(storage, diverse);
+  }
+
   return attachSources(storage, scored.slice(0, limit));
 }
 
@@ -383,6 +410,85 @@ export function forgetSource(storage: Storage, sourceId: string): boolean {
   storage.run("DELETE FROM knowledge_chunks WHERE source_id = ?", [sourceId]);
   storage.run("DELETE FROM knowledge_sources WHERE id = ?", [sourceId]);
   return true;
+}
+
+// ---- Re-indexing ----
+
+/** Strip contextual header (# title\nSource: domain\n\n) from chunk content */
+export function stripChunkHeader(content: string): string {
+  return content.replace(/^# .+\nSource: .+\n\n/, "");
+}
+
+/**
+ * Re-index a single source: strip old headers, re-chunk, prepend fresh headers, re-embed.
+ * Returns number of new chunks stored.
+ */
+export async function reindexSource(
+  storage: Storage, llm: LLMClient, sourceId: string,
+): Promise<number> {
+  const source = storage.query<KnowledgeSource>(
+    "SELECT * FROM knowledge_sources WHERE id = ?", [sourceId],
+  )[0];
+  if (!source) throw new Error(`Source not found: ${sourceId}`);
+
+  // Get existing chunks ordered by index
+  const oldChunks = storage.query<KnowledgeChunk>(
+    "SELECT * FROM knowledge_chunks WHERE source_id = ? ORDER BY chunk_index",
+    [sourceId],
+  );
+
+  // Strip headers and reconstruct markdown
+  const markdown = oldChunks.map((c) => stripChunkHeader(c.content)).join("\n\n");
+
+  // Re-chunk and prepend contextual headers
+  const chunks = chunkContent(markdown);
+  const domain = new URL(source.url).hostname;
+  const title = source.title ?? "Untitled";
+  const contextualChunks = chunks.map((chunk) =>
+    `# ${title}\nSource: ${domain}\n\n${chunk}`
+  );
+
+  // Delete old chunks
+  storage.run("DELETE FROM knowledge_chunks WHERE source_id = ?", [sourceId]);
+
+  // Insert new chunks with fresh embeddings
+  const now = new Date().toISOString();
+  for (let i = 0; i < contextualChunks.length; i++) {
+    const chunk = contextualChunks[i]!;
+    const chunkId = nanoid();
+    let embedding: number[] | null = null;
+    try {
+      const result = await llm.embed(chunk);
+      embedding = result.embedding;
+    } catch {
+      // Continue without embedding
+    }
+    storage.run(
+      "INSERT INTO knowledge_chunks (id, source_id, content, chunk_index, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [chunkId, sourceId, chunk, i, embedding ? JSON.stringify(embedding) : null, now],
+    );
+  }
+
+  // Update chunk count
+  storage.run("UPDATE knowledge_sources SET chunk_count = ? WHERE id = ?", [contextualChunks.length, sourceId]);
+
+  return contextualChunks.length;
+}
+
+/**
+ * Re-index all sources with contextual chunk headers.
+ * Returns total number of sources re-indexed.
+ */
+export async function reindexAllSources(
+  storage: Storage, llm: LLMClient,
+): Promise<number> {
+  const sources = listSources(storage);
+  let count = 0;
+  for (const source of sources) {
+    await reindexSource(storage, llm, source.id);
+    count++;
+  }
+  return count;
 }
 
 // ---- Helpers ----

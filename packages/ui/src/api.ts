@@ -152,6 +152,14 @@ export function getSourceChunks(id: string): Promise<Array<{ id: string; content
   return request<Array<{ id: string; content: string; chunkIndex: number }>>(`/knowledge/sources/${id}/chunks`);
 }
 
+export function reindexKnowledge(): Promise<{ ok: boolean; reindexed: number }> {
+  return request("/knowledge/reindex", { method: "POST", body: "{}" });
+}
+
+export function reindexKnowledgeSource(id: string): Promise<{ ok: boolean; chunks: number }> {
+  return request(`/knowledge/sources/${id}/reindex`, { method: "POST", body: "{}" });
+}
+
 export function deleteKnowledgeSource(id: string): Promise<{ ok: boolean }> {
   return request(`/knowledge/sources/${id}`, { method: "DELETE" });
 }

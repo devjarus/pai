@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
-import { getKnowledgeSources, searchKnowledge, learnFromUrl, deleteKnowledgeSource, updateKnowledgeSource, getCrawlStatus, getSourceChunks, crawlSubPages } from "../api";
+import { getKnowledgeSources, searchKnowledge, learnFromUrl, deleteKnowledgeSource, updateKnowledgeSource, getCrawlStatus, getSourceChunks, crawlSubPages, reindexKnowledge } from "../api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   Trash2Icon, ExternalLinkIcon, SearchIcon, PlusIcon, AlertTriangleIcon,
   RefreshCwIcon, LoaderIcon, EyeIcon, GlobeIcon, TagIcon, CheckIcon,
+  ChevronRightIcon,
 } from "lucide-react";
 import type { KnowledgeSource, KnowledgeSearchResult, CrawlJob } from "../types";
 
@@ -45,9 +46,12 @@ export default function Knowledge() {
   // Actions
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCrawling, setIsCrawling] = useState(false);
+  const [isReindexing, setIsReindexing] = useState(false);
   // Tags editing
   const [editingTags, setEditingTags] = useState(false);
   const [tagsInput, setTagsInput] = useState("");
+  // Domain group expansion
+  const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set());
 
   useEffect(() => { document.title = "Knowledge Base - pai"; }, []);
 
@@ -224,6 +228,19 @@ export default function Knowledge() {
     }
   }, [fetchSources]);
 
+  const handleReindex = useCallback(async () => {
+    setIsReindexing(true);
+    try {
+      const result = await reindexKnowledge();
+      toast.success(`Re-indexed ${result.reindexed} source${result.reindexed !== 1 ? "s" : ""} with contextual headers`);
+      await fetchSources();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to re-index");
+    } finally {
+      setIsReindexing(false);
+    }
+  }, [fetchSources]);
+
   const handleDelete = useCallback(async (source: KnowledgeSource) => {
     try {
       await deleteKnowledgeSource(source.id);
@@ -235,6 +252,31 @@ export default function Knowledge() {
       toast.error(err instanceof Error ? err.message : "Failed to remove source");
     }
   }, [fetchSources, selectedSource]);
+
+  // Group sources by domain — domains with 3+ sources get collapsed
+  const groupedSources = (() => {
+    const byDomain: Record<string, KnowledgeSource[]> = {};
+    for (const s of sources) {
+      try { const d = new URL(s.url).hostname; (byDomain[d] ??= []).push(s); } catch { (byDomain["other"] ??= []).push(s); }
+    }
+    const groups: Array<{ domain: string; sources: KnowledgeSource[]; collapsed: boolean }> = [];
+    for (const [domain, domainSources] of Object.entries(byDomain)) {
+      groups.push({ domain, sources: domainSources, collapsed: domainSources.length >= 3 });
+    }
+    // Sort: ungrouped (single/dual) first, then grouped by source count desc
+    return groups.sort((a, b) => {
+      if (a.collapsed !== b.collapsed) return a.collapsed ? 1 : -1;
+      return b.sources.length - a.sources.length;
+    });
+  })();
+
+  const toggleDomain = (domain: string) => {
+    setExpandedDomains((prev) => {
+      const next = new Set(prev);
+      if (next.has(domain)) next.delete(domain); else next.add(domain);
+      return next;
+    });
+  };
 
   const isSearchMode = searchQuery.trim().length > 0;
   const runningJobs = crawlJobs.filter((j) => j.status === "running");
@@ -254,14 +296,24 @@ export default function Knowledge() {
                 {sources.length} source{sources.length !== 1 ? "s" : ""}
               </Badge>
             </div>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-xs" onClick={() => setShowLearnDialog(true)}>
-                  <PlusIcon className="size-4 text-muted-foreground" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Learn from URL</TooltipContent>
-            </Tooltip>
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-xs" onClick={handleReindex} disabled={isReindexing || sources.length === 0}>
+                    <RefreshCwIcon className={`size-4 text-muted-foreground ${isReindexing ? "animate-spin" : ""}`} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{isReindexing ? "Re-indexing..." : "Re-index all sources"}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-xs" onClick={() => setShowLearnDialog(true)}>
+                    <PlusIcon className="size-4 text-muted-foreground" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Learn from URL</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
 
           {/* Search */}
@@ -399,32 +451,48 @@ export default function Knowledge() {
                 <p className="mt-1 text-xs">Use the + button to learn from a web page.</p>
               </div>
             ) : (
-              <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                {sources.map((s) => (
-                  <Card
-                    key={s.id}
-                    className="cursor-pointer border-border/50 bg-card/50 transition-colors hover:border-border/80 hover:bg-card/70"
-                    onClick={() => setSelectedSource(s)}
-                  >
-                    <CardContent className="p-4">
-                      <div className="mb-2 flex items-start justify-between gap-2">
-                        <h3 className="text-sm font-medium leading-tight text-foreground/90 line-clamp-2">
-                          {s.title || "Untitled"}
-                        </h3>
-                        <Badge variant="secondary" className="shrink-0 font-mono text-[10px]">
-                          {s.chunks} chunk{s.chunks !== 1 ? "s" : ""}
+              <div className="space-y-6">
+                {groupedSources.map(({ domain, sources: domainSources, collapsed }) => {
+                  if (!collapsed) {
+                    // Ungrouped — render cards directly
+                    return (
+                      <div key={domain} className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                        {domainSources.map((s) => (
+                          <SourceCard key={s.id} source={s} onClick={setSelectedSource} />
+                        ))}
+                      </div>
+                    );
+                  }
+                  // Grouped domain — collapsible
+                  const isExpanded = expandedDomains.has(domain);
+                  const totalChunks = domainSources.reduce((sum, s) => sum + s.chunks, 0);
+                  return (
+                    <div key={domain}>
+                      <button
+                        type="button"
+                        onClick={() => toggleDomain(domain)}
+                        className="mb-3 flex w-full items-center gap-2 rounded-lg border border-border/50 bg-card/30 px-4 py-2.5 text-left transition-colors hover:bg-card/50"
+                      >
+                        <ChevronRightIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                        <GlobeIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/80">{domain}</span>
+                        <Badge variant="secondary" className="font-mono text-[10px]">
+                          {domainSources.length} page{domainSources.length !== 1 ? "s" : ""}
                         </Badge>
-                      </div>
-                      <p className="mb-3 truncate text-xs text-muted-foreground">
-                        {s.url}
-                      </p>
-                      <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
-                        <span>{formatDate(s.learnedAt)}</span>
-                        <span className="font-mono">{s.id.slice(0, 8)}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                        <Badge variant="secondary" className="font-mono text-[10px]">
+                          {totalChunks} chunk{totalChunks !== 1 ? "s" : ""}
+                        </Badge>
+                      </button>
+                      {isExpanded && (
+                        <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                          {domainSources.map((s) => (
+                            <SourceCard key={s.id} source={s} onClick={setSelectedSource} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -703,6 +771,33 @@ export default function Knowledge() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function SourceCard({ source: s, onClick }: { source: KnowledgeSource; onClick: (s: KnowledgeSource) => void }) {
+  return (
+    <Card
+      className="cursor-pointer border-border/50 bg-card/50 transition-colors hover:border-border/80 hover:bg-card/70"
+      onClick={() => onClick(s)}
+    >
+      <CardContent className="p-4">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <h3 className="text-sm font-medium leading-tight text-foreground/90 line-clamp-2">
+            {s.title || "Untitled"}
+          </h3>
+          <Badge variant="secondary" className="shrink-0 font-mono text-[10px]">
+            {s.chunks} chunk{s.chunks !== 1 ? "s" : ""}
+          </Badge>
+        </div>
+        <p className="mb-3 truncate text-xs text-muted-foreground">
+          {s.url}
+        </p>
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
+          <span>{formatDate(s.learnedAt)}</span>
+          <span className="font-mono">{s.id.slice(0, 8)}</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
