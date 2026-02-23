@@ -1,8 +1,23 @@
-# pai — Persistent AI Memory
+# pai — Personal AI with Persistent Memory
 
-Local-first memory layer for coding agents. Belief lifecycle, semantic search, contradiction detection, and task management — all in a single SQLite file on your machine.
+Personal agent platform with persistent memory. Chat through a web UI or Telegram, recall beliefs from past conversations, search the web, and manage tasks — all backed by a single SQLite file on your machine.
 
-**What makes pai different:** Beliefs aren't just stored — they're reinforced when repeated, invalidated when contradicted, and decay when stale. Your agent's memory gets smarter over time.
+**What makes pai different:** Beliefs aren't just stored — they're reinforced when repeated, invalidated when contradicted, decay when stale, and consolidate into higher-order patterns. Multi-person aware: memories are tagged with who they're about.
+
+## Features
+
+- **Belief lifecycle** — create → reinforce → contradict → decay → prune → synthesize
+- **Unified retrieval** — single `retrieveContext()` call searches beliefs + knowledge with one embedding
+- **Semantic search** — multi-factor ranking (cosine similarity + importance + recency) with FTS5 fallback
+- **Contradiction detection** — evidence-weighted resolution (TMS-inspired)
+- **Conversation consolidation** — every 5 turns, summaries become searchable episodes
+- **Web UI** — chat with streaming, memory explorer, settings, timeline
+- **Telegram bot** — same agent pipeline, multi-user aware (owner vs. others)
+- **Web search** — Brave Search for current information, no API key required
+- **Task management** — tasks + goals with AI prioritization using memory context
+- **Knowledge base** — learn from web pages, FTS5 prefilter + cosine re-ranking, knowledge-memory bridge
+- **MCP server** — 19 tools for Claude Code, Cursor, Windsurf integration
+- **CLI** — `pai` commands with `--json` output and prefix-matched IDs
 
 ## Prerequisites
 
@@ -10,20 +25,54 @@ Local-first memory layer for coding agents. Belief lifecycle, semantic search, c
 - [pnpm](https://pnpm.io/) 9+
 - [Ollama](https://ollama.ai/) running locally (or an OpenAI-compatible API)
 
-## Install
+## Quick Start
 
 ```bash
 git clone https://github.com/devjarus/pai.git
 cd pai
 pnpm install
 pnpm build
+
+# Start the web UI + API server
+node packages/server/dist/index.js
+# Open http://127.0.0.1:3141
 ```
 
-## MCP Server (for coding agents)
+## Web UI
 
-pai exposes an MCP server for native integration with Claude Code, Cursor, Windsurf, and any MCP-compatible agent.
+Start the server and open `http://127.0.0.1:3141`:
 
-**Configure in Claude Code** (`~/.claude/claude_desktop_config.json`):
+| Page | Description |
+|------|-------------|
+| **Chat** | Streaming chat with tool cards (memory, search, tasks). Thread sidebar. Responsive mobile. |
+| **Memory** | Browse beliefs by type/status, semantic search, detail view with confidence/stability. |
+| **Knowledge** | Browse learned sources, view chunks, search knowledge base, learn from URLs. |
+| **Settings** | LLM provider, model, API key, data directory, Telegram bot config. |
+| **Timeline** | Chronological episodes and belief changes. |
+
+## Telegram Bot
+
+Chat with the same assistant via Telegram — multi-user aware.
+
+```bash
+# Set token from @BotFather
+export PAI_TELEGRAM_TOKEN=<your-token>
+
+# Option 1: standalone
+node packages/plugin-telegram/dist/index.js
+
+# Option 2: via server (enable in Settings UI)
+node packages/server/dist/index.js
+```
+
+Commands: `/start`, `/help`, `/clear`, `/tasks`, `/memories` — or just send any message.
+
+The bot knows who's talking (owner vs. family/friends) and attributes memories to the correct person.
+
+## MCP Server
+
+Native integration with Claude Code, Cursor, Windsurf, and any MCP-compatible agent.
+
 ```json
 {
   "mcpServers": {
@@ -35,21 +84,21 @@ pai exposes an MCP server for native integration with Claude Code, Cursor, Winds
 }
 ```
 
-**14 MCP tools:** `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `memory-stats`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`, `goal-list`, `goal-add`, `goal-done`
+**19 tools:** `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `memory-stats`, `memory-synthesize`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`, `goal-list`, `goal-add`, `goal-done`, `knowledge-learn`, `knowledge-search`, `knowledge-sources`, `knowledge-forget`
 
-## CLI Usage
+## CLI
 
 ```bash
-# Memory — belief lifecycle with semantic dedup
-pai memory remember "I prefer TypeScript over JavaScript"
-pai memory recall "language preference"
+# Memory
+pai memory remember "Suraj prefers Zustand over Redux"
+pai memory recall "state management preference"
 pai memory beliefs
-pai memory context "coding preferences"
 pai memory forget <id-or-prefix>
-pai memory reflect                    # find duplicates and stale beliefs
-pai memory stats                      # memory health summary
-pai memory export backup.json         # export for backup
-pai memory import backup.json         # import (skips duplicates)
+pai memory reflect                    # find duplicates + stale beliefs
+pai memory synthesize                 # generate meta-beliefs from clusters
+pai memory stats
+pai memory export backup.json
+pai memory import backup.json
 
 # Tasks
 pai task add "Ship v0.1" --priority high --due 2026-03-01
@@ -62,58 +111,95 @@ pai goal add "Launch v1"
 pai goal list
 pai goal done <id-or-prefix>
 
-# All commands support --json for structured output
+# Knowledge
+pai knowledge learn "https://react.dev/learn"
+pai knowledge search "React state management"
+pai knowledge list
+pai knowledge forget <id-or-prefix>
+
+# All commands support --json and prefix-matched IDs
 pai --json memory recall "topic"
 ```
-
-> All IDs support prefix matching — use first 8 characters instead of the full ID.
 
 ## How Memory Works
 
 ```
-observe → extract fact + insight → embed → compare to existing beliefs
-  ├── similarity > 0.85  → reinforce (boost confidence, reset decay)
-  ├── similarity 0.7-0.85 → LLM contradiction check → invalidate or create new
-  └── similarity < 0.7   → create new belief with embedding
+User says something
+    │
+    ├── afterResponse: LLM extracts facts → validates → remember()
+    │
+    └── remember():
+          create episode → embed
+          extract belief (type + importance + subject) → embed
+            │
+            ├── similarity > 0.85  → reinforce (boost confidence)
+            ├── similarity 0.7-0.85 → contradiction check:
+            │     weak evidence → invalidate old, create new
+            │     strong evidence (≥3 episodes) → weaken old, both coexist
+            └── similarity < 0.7   → create new + link to neighbors
+
+Every 5 turns:
+    → LLM summarizes conversation → searchable episode
+
+Recall (unified retrieval):
+    → single embedding call
+    → beliefs: semantic search (50% cosine + 20% importance + 10% recency)
+    → knowledge: FTS5 prefilter → cosine re-rank
+    → graph traversal on belief_links
+    → FTS5 fallback for both
 ```
 
-Beliefs decay with a 30-day half-life. Stale beliefs fade; reinforced beliefs stay strong. The `reflect` command finds duplicates and `prune` removes low-confidence beliefs.
-
-## Configuration
-
-Set via environment variables or `.env` file.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PAI_DATA_DIR` | `~/.personal-ai` | SQLite database location |
-| `PAI_LLM_PROVIDER` | `ollama` | `ollama` or `openai` |
-| `PAI_LLM_MODEL` | `llama3.2` | Chat model name |
-| `PAI_LLM_EMBED_MODEL` | `nomic-embed-text` | Embedding model name |
-| `PAI_LLM_BASE_URL` | `http://127.0.0.1:11434` | Provider URL |
-| `PAI_LLM_API_KEY` | | API key (required for Ollama Cloud and OpenAI) |
-| `PAI_LOG_LEVEL` | `silent` | Stderr log level: `silent`, `error`, `warn`, `info`, `debug` |
-| `PAI_PLUGINS` | `memory,tasks` | Comma-separated active plugins |
+Beliefs decay with a 30-day half-life (adjustable via stability). Frequently accessed beliefs decay slower (SM-2 inspired). The `reflect` command finds duplicates and `prune` removes low-confidence beliefs.
 
 ## Architecture
 
-pnpm monorepo with 4 packages: `core`, `cli`, `plugin-memory`, `plugin-tasks`. SQLite + FTS5 for storage, embeddings for semantic search, Vercel AI SDK for LLM integration.
+```
+packages/
+  core/               Config, Storage, LLM Client, Logger, Memory, Knowledge, Threads
+  cli/                Commander.js CLI + MCP server (19 tools)
+  plugin-assistant/   Personal Assistant agent (tools, system prompt, afterResponse)
+  plugin-curator/     Memory Curator agent (health analysis, dedup, contradiction resolution)
+  plugin-tasks/       Tasks + Goals with AI prioritization
+  plugin-telegram/    Telegram bot (grammY, standalone or server-managed)
+  server/             Fastify API (REST + SSE streaming + static UI)
+  ui/                 React + Vite + Tailwind + shadcn/ui
+```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
+Single SQLite file at `~/.personal-ai/data/personal-ai.db`. WAL mode, foreign keys. Normalized thread messages with sequence-ordered rows.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for C4 diagrams, dataflows, and full data model.
+
+## Configuration
+
+Environment variables or `~/.personal-ai/config.json` (editable via Settings UI).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PAI_DATA_DIR` | `~/.personal-ai/data` | Database location |
+| `PAI_LLM_PROVIDER` | `ollama` | `ollama` or `openai` |
+| `PAI_LLM_MODEL` | `llama3.2` | Chat model |
+| `PAI_LLM_EMBED_MODEL` | `nomic-embed-text` | Embedding model |
+| `PAI_LLM_BASE_URL` | `http://127.0.0.1:11434` | Provider URL |
+| `PAI_LLM_API_KEY` | | API key (Ollama Cloud / OpenAI) |
+| `PAI_TELEGRAM_TOKEN` | | Telegram bot token from @BotFather |
+| `PAI_LOG_LEVEL` | `silent` | `silent`, `error`, `warn`, `info`, `debug` |
 
 ## Development
 
 ```bash
-pnpm test                # run all tests (vitest)
+pnpm test                # 327 tests (vitest)
 pnpm test:watch          # watch mode
-pnpm test:coverage       # coverage report with thresholds
+pnpm test:coverage       # v8 coverage with thresholds
 pnpm typecheck           # type-check all packages
 pnpm lint                # eslint
 pnpm run ci              # typecheck + tests + coverage
 ```
 
-**Git hooks** (via Husky):
-- `pre-commit` — lint-staged runs ESLint on staged `.ts` files
-- `pre-push` — runs `pnpm run ci` (typecheck + tests + coverage)
+**Git hooks** (Husky): pre-commit runs lint-staged, pre-push runs full CI.
+
+## Tech Stack
+
+TypeScript strict · Node.js 20+ · pnpm · better-sqlite3 + FTS5 · Vercel AI SDK · Fastify · React + Vite + Tailwind + shadcn/ui · grammY · Commander.js · Vitest · Zod · nanoid
 
 ## License
 
