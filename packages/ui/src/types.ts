@@ -49,6 +49,7 @@ export interface KnowledgeSource {
   url: string;
   chunks: number;
   learnedAt: string;
+  tags: string | null;
 }
 
 export interface KnowledgeSearchResult {

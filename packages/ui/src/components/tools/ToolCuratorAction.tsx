@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { WrenchIcon, BrainIcon, CheckIcon, AlertCircleIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { WrenchIcon, BrainIcon, CheckIcon, AlertCircleIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { CollapsibleToolCard } from "./CollapsibleToolCard";
 import { cn } from "@/lib/utils";
 
 interface BeliefItem {
@@ -40,8 +40,6 @@ function parseBeliefs(output: unknown): BeliefItem[] {
 }
 
 export function ToolCuratorAction({ state, toolName, input, output }: ToolCuratorActionProps) {
-  const [expanded, setExpanded] = useState(false);
-  const COLLAPSED_LIMIT = 5;
   const inputObj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
 
   if (state === "input-available") {
@@ -110,63 +108,36 @@ export function ToolCuratorAction({ state, toolName, input, output }: ToolCurato
       );
     }
 
-    const visible = expanded ? beliefs : beliefs.slice(0, COLLAPSED_LIMIT);
-    const hasMore = beliefs.length > COLLAPSED_LIMIT;
-
     return (
-      <Card className="gap-0 rounded-lg border-border/50 py-0 shadow-none">
-        <CardContent className="px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="text-xs font-medium text-foreground">
-              {beliefs.length} belief{beliefs.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-col gap-1">
-            {visible.map((belief) => (
-              <div
-                key={belief.id}
-                className="flex items-start gap-2 rounded-md bg-muted/30 px-2 py-1.5"
-              >
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "mt-0.5 h-4 shrink-0 px-1 text-[9px] font-medium",
-                    TYPE_STYLES[belief.type] ?? "bg-muted text-muted-foreground border-border",
-                  )}
-                >
-                  {belief.type}
-                </Badge>
-                <span className="flex-1 text-xs leading-relaxed text-foreground">
-                  {belief.statement}
-                </span>
-                <span className="shrink-0 text-[10px] text-muted-foreground/60">
-                  {Math.round(belief.confidence * 100)}%
-                </span>
-              </div>
-            ))}
-          </div>
-          {hasMore && (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="mt-1.5 flex items-center gap-1 text-[10px] text-primary hover:underline"
+      <CollapsibleToolCard
+        icon={<BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+        label={<>{beliefs.length} belief{beliefs.length !== 1 ? "s" : ""}</>}
+      >
+        <div className="flex flex-col gap-1">
+          {beliefs.map((belief) => (
+            <div
+              key={belief.id}
+              className="flex items-start gap-2 rounded-md bg-muted/30 px-2 py-1.5"
             >
-              {expanded ? (
-                <>
-                  <ChevronUpIcon className="size-3" />
-                  Show less
-                </>
-              ) : (
-                <>
-                  <ChevronDownIcon className="size-3" />
-                  Show {beliefs.length - COLLAPSED_LIMIT} more
-                </>
-              )}
-            </button>
-          )}
-        </CardContent>
-      </Card>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "mt-0.5 h-4 shrink-0 px-1 text-[9px] font-medium",
+                  TYPE_STYLES[belief.type] ?? "bg-muted text-muted-foreground border-border",
+                )}
+              >
+                {belief.type}
+              </Badge>
+              <span className="flex-1 text-xs leading-relaxed text-foreground">
+                {belief.statement}
+              </span>
+              <span className="shrink-0 text-[10px] text-muted-foreground/60">
+                {Math.round(belief.confidence * 100)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </CollapsibleToolCard>
     );
   }
 

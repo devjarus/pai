@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
-import { getKnowledgeSources, searchKnowledge, learnFromUrl, deleteKnowledgeSource, getCrawlStatus, getSourceChunks, crawlSubPages } from "../api";
+import { getKnowledgeSources, searchKnowledge, learnFromUrl, deleteKnowledgeSource, updateKnowledgeSource, getCrawlStatus, getSourceChunks, crawlSubPages } from "../api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Trash2Icon, ExternalLinkIcon, SearchIcon, PlusIcon, AlertTriangleIcon,
-  RefreshCwIcon, LoaderIcon, EyeIcon, GlobeIcon,
+  RefreshCwIcon, LoaderIcon, EyeIcon, GlobeIcon, TagIcon, CheckIcon,
 } from "lucide-react";
 import type { KnowledgeSource, KnowledgeSearchResult, CrawlJob } from "../types";
 
@@ -45,6 +45,9 @@ export default function Knowledge() {
   // Actions
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCrawling, setIsCrawling] = useState(false);
+  // Tags editing
+  const [editingTags, setEditingTags] = useState(false);
+  const [tagsInput, setTagsInput] = useState("");
 
   useEffect(() => { document.title = "Knowledge Base - pai"; }, []);
 
@@ -188,6 +191,19 @@ export default function Knowledge() {
       setIsCrawling(false);
     }
   }, []);
+
+  const handleSaveTags = useCallback(async (source: KnowledgeSource) => {
+    const newTags = tagsInput.trim() || null;
+    try {
+      await updateKnowledgeSource(source.id, { tags: newTags });
+      setSelectedSource({ ...source, tags: newTags });
+      setSources((prev) => prev.map((s) => s.id === source.id ? { ...s, tags: newTags } : s));
+      setEditingTags(false);
+      toast.success("Tags updated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update tags");
+    }
+  }, [tagsInput]);
 
   const handleRetryUrl = useCallback(async (url: string) => {
     setRetryingUrl(url);
@@ -425,7 +441,7 @@ export default function Knowledge() {
 
       {/* Detail sidebar */}
       {selectedSource && (
-        <aside className="fixed inset-y-0 right-0 z-[52] w-[85vw] max-w-80 overflow-hidden border-l border-border/40 bg-[#0a0a0a] md:relative md:z-auto md:w-80 md:max-w-none">
+        <aside className="fixed inset-y-0 right-0 z-[52] w-[85vw] max-w-96 border-l border-border/40 bg-[#0a0a0a] md:relative md:z-auto md:w-96 md:max-w-none">
           <ScrollArea className="h-full">
             <div className="p-5">
               <Card className="gap-4 overflow-hidden border-border/50 bg-card/30 py-4">
@@ -446,7 +462,7 @@ export default function Knowledge() {
                   </Button>
                 </CardHeader>
 
-                <CardContent className="min-w-0 space-y-4 px-4 py-0">
+                <CardContent className="min-w-0 overflow-hidden space-y-4 px-4 py-0">
                   {/* Title */}
                   <p className="text-sm font-medium leading-relaxed text-foreground/90">
                     {selectedSource.title || "Untitled"}
@@ -483,6 +499,38 @@ export default function Knowledge() {
                   <div className="min-w-0">
                     <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">ID</span>
                     <span className="block break-all font-mono text-xs text-muted-foreground">{selectedSource.id}</span>
+                  </div>
+
+                  <Separator className="opacity-30" />
+
+                  {/* Tags */}
+                  <div className="min-w-0">
+                    <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Tags</span>
+                    {editingTags ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={tagsInput}
+                          onChange={(e) => setTagsInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleSaveTags(selectedSource); if (e.key === "Escape") setEditingTags(false); }}
+                          placeholder="e.g. Monica article, cooking"
+                          className="min-w-0 flex-1 rounded border border-border/50 bg-background/50 px-2 py-1 text-xs text-foreground outline-none focus:border-primary/50"
+                          autoFocus
+                        />
+                        <Button variant="ghost" size="icon-xs" onClick={() => handleSaveTags(selectedSource)}>
+                          <CheckIcon className="size-3.5 text-green-500" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => { setTagsInput(selectedSource.tags ?? ""); setEditingTags(true); }}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <TagIcon className="size-3 shrink-0" />
+                        <span>{selectedSource.tags || "Add tags..."}</span>
+                      </button>
+                    )}
                   </div>
 
                   <Separator className="opacity-30" />

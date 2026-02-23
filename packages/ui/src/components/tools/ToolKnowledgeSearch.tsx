@@ -1,5 +1,6 @@
 import { BookOpenIcon, AlertCircleIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { CollapsibleToolCard } from "./CollapsibleToolCard";
 
 interface ChunkResult {
   content: string;
@@ -70,19 +71,14 @@ export function ToolKnowledgeSearch({ state, input, output }: ToolKnowledgeSearc
       }
 
       return (
-        <Card className="gap-0 rounded-lg border-border/50 py-0 shadow-none">
-          <CardContent className="px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <BookOpenIcon className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="text-xs font-medium text-foreground">
-                Knowledge results{input?.query ? ` for "${input.query}"` : ""}
-              </span>
-            </div>
-            <p className="mt-1.5 line-clamp-4 text-xs leading-relaxed text-muted-foreground">
-              {output.slice(0, 500)}
-            </p>
-          </CardContent>
-        </Card>
+        <CollapsibleToolCard
+          icon={<BookOpenIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+          label={<>Knowledge results{input?.query ? ` for "${input.query}"` : ""}</>}
+        >
+          <p className="line-clamp-4 text-xs leading-relaxed text-muted-foreground">
+            {output.slice(0, 500)}
+          </p>
+        </CollapsibleToolCard>
       );
     }
 
@@ -100,40 +96,35 @@ export function ToolKnowledgeSearch({ state, input, output }: ToolKnowledgeSearc
     }
 
     return (
-      <Card className="gap-0 rounded-lg border-border/50 py-0 shadow-none">
-        <CardContent className="px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <BookOpenIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="text-xs font-medium text-foreground">
-              {chunks.length} result{chunks.length !== 1 ? "s" : ""}{input?.query ? ` for "${input.query}"` : ""}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-col gap-1.5">
-            {chunks.slice(0, 5).map((chunk, i) => (
-              <div key={i} className="rounded-md bg-muted/30 px-2 py-1.5">
-                {chunk.source && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-foreground">{chunk.source}</span>
-                    {chunk.relevance != null && (
-                      <span className="text-[10px] text-muted-foreground/60">
-                        {Math.round(chunk.relevance * 100)}%
-                      </span>
-                    )}
-                  </div>
-                )}
-                <p className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
-                  {chunk.content}
-                </p>
-                {chunk.url && (
-                  <span className="mt-0.5 block text-[10px] text-muted-foreground/60">
-                    {chunk.url.replace(/^https?:\/\//, "").split("/")[0]}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <CollapsibleToolCard
+        icon={<BookOpenIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+        label={<>{chunks.length} result{chunks.length !== 1 ? "s" : ""}{input?.query ? ` for "${input.query}"` : ""}</>}
+      >
+        <div className="flex flex-col gap-1.5">
+          {chunks.slice(0, 5).map((chunk, i) => (
+            <div key={i} className="rounded-md bg-muted/30 px-2 py-1.5">
+              {chunk.source && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-foreground">{chunk.source}</span>
+                  {chunk.relevance != null && (
+                    <span className="text-[10px] text-muted-foreground/60">
+                      {Math.round(chunk.relevance * 100)}%
+                    </span>
+                  )}
+                </div>
+              )}
+              <p className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
+                {chunk.content}
+              </p>
+              {chunk.url && (
+                <span className="mt-0.5 block text-[10px] text-muted-foreground/60">
+                  {chunk.url.replace(/^https?:\/\//, "").split("/")[0]}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </CollapsibleToolCard>
     );
   }
 

@@ -42,6 +42,10 @@ export const knowledgeMigrations: Migration[] = [
       INSERT INTO knowledge_chunks_fts(rowid, content) SELECT rowid, content FROM knowledge_chunks;
     `,
   },
+  {
+    version: 3,
+    up: `ALTER TABLE knowledge_sources ADD COLUMN tags TEXT;`,
+  },
 ];
 
 // ---- Types ----
@@ -52,6 +56,7 @@ export interface KnowledgeSource {
   title: string | null;
   fetched_at: string;
   chunk_count: number;
+  tags: string | null;
 }
 
 export interface KnowledgeChunk {
@@ -149,7 +154,7 @@ export async function learnFromContent(
   url: string,
   title: string,
   markdown: string,
-  options?: { force?: boolean },
+  options?: { force?: boolean; tags?: string },
 ): Promise<{ source: KnowledgeSource; chunksStored: number; skipped: boolean }> {
   const normalizedUrl = normalizeUrl(url);
 
@@ -169,8 +174,8 @@ export async function learnFromContent(
 
   // Store source
   storage.run(
-    "INSERT INTO knowledge_sources (id, url, title, fetched_at, chunk_count) VALUES (?, ?, ?, ?, ?)",
-    [sourceId, normalizedUrl, title, now, chunks.length],
+    "INSERT INTO knowledge_sources (id, url, title, fetched_at, chunk_count, tags) VALUES (?, ?, ?, ?, ?, ?)",
+    [sourceId, normalizedUrl, title, now, chunks.length, options?.tags ?? null],
   );
 
   // Embed and store chunks
@@ -260,6 +265,25 @@ function attachSources(
     }));
 }
 
+/** Find sources whose title or tags match the query */
+function findMatchingSources(storage: Storage, query: string): KnowledgeSource[] {
+  const words = query
+    .replace(/[^\w\s]/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((w) => !STOP_WORDS.has(w.toLowerCase()));
+  if (words.length === 0) return [];
+
+  const conditions = words.map(() => "(LOWER(title) LIKE ? OR LOWER(tags) LIKE ?)").join(" OR ");
+  const params = words.flatMap((w) => {
+    const pattern = `%${w.toLowerCase()}%`;
+    return [pattern, pattern];
+  });
+  return storage.query<KnowledgeSource>(
+    `SELECT * FROM knowledge_sources WHERE ${conditions}`, params,
+  );
+}
+
 /** Semantic search over knowledge chunks with FTS prefilter */
 export async function knowledgeSearch(
   storage: Storage,
@@ -271,6 +295,23 @@ export async function knowledgeSearch(
   // Phase 1: FTS prefilter — get candidate chunk IDs
   const ftsCandidates = searchKnowledgeFTS(storage, query, limit * 10);
   const ftsIds = new Set(ftsCandidates.map((c) => c.id));
+
+  // Phase 1b: Source-level matching — find sources by title/tags and add their chunks
+  const matchingSources = findMatchingSources(storage, query);
+  for (const source of matchingSources) {
+    const chunks = storage.query<KnowledgeChunk & { embedding: string | null }>(
+      "SELECT * FROM knowledge_chunks WHERE source_id = ?", [source.id],
+    ).map((row) => ({
+      ...row,
+      embedding: row.embedding ? JSON.parse(row.embedding) as number[] : null,
+    }));
+    for (const chunk of chunks) {
+      if (!ftsIds.has(chunk.id)) {
+        ftsCandidates.push(chunk);
+        ftsIds.add(chunk.id);
+      }
+    }
+  }
 
   // Phase 2: Embed query (skip if pre-computed)
   let queryEmbedding = options?.queryEmbedding;
@@ -297,7 +338,7 @@ export async function knowledgeSearch(
       if (!chunk.embedding) continue;
       const embedding = Array.isArray(chunk.embedding) ? chunk.embedding : JSON.parse(chunk.embedding as unknown as string) as number[];
       const sim = cosineSimilarity(queryEmbedding, embedding);
-      if (sim >= 0.2) {
+      if (sim >= 0.35) {
         scored.push({ chunk: { ...chunk, embedding }, score: sim });
       }
     }
@@ -313,7 +354,7 @@ export async function knowledgeSearch(
     for (const row of rows) {
       const embedding = JSON.parse(row.embedding) as number[];
       const sim = cosineSimilarity(queryEmbedding, embedding);
-      if (sim >= 0.2) {
+      if (sim >= 0.35) {
         scored.push({ chunk: { ...row, embedding }, score: sim });
       }
     }

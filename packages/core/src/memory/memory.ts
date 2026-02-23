@@ -1257,7 +1257,7 @@ export async function retrieveContext(
   }
 
   // --- Knowledge ---
-  if (options?.llm) {
+  if (options?.llm && knowledgeLimit > 0) {
     try {
       const kResults = await knowledgeSearch(storage, options.llm, query, knowledgeLimit, { queryEmbedding });
       knowledge = kResults.map((r: KnowledgeSearchResult) => ({

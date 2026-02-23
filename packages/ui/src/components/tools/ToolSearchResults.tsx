@@ -1,5 +1,6 @@
 import { GlobeIcon, AlertCircleIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { CollapsibleToolCard } from "./CollapsibleToolCard";
 import { cn } from "@/lib/utils";
 
 interface ToolSearchResultsProps {
@@ -146,38 +147,33 @@ export function ToolSearchResults({ state, input, output }: ToolSearchResultsPro
     }
 
     return (
-      <Card className="my-2 gap-0 rounded-lg border-border/50 py-0 shadow-none">
-        <CardContent className="px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <GlobeIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="text-xs font-medium text-foreground">
-              Web results{input?.query ? ` for "${input.query}"` : ""}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-col gap-1.5">
-            {results.slice(0, 5).map((r, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "rounded-md bg-muted/30 px-2 py-1.5",
-                )}
-              >
-                <div className="text-xs font-medium text-foreground">{r.title}</div>
-                {r.snippet && (
-                  <p className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
-                    {r.snippet}
-                  </p>
-                )}
-                {r.domain && (
-                  <span className="mt-0.5 block text-[10px] text-muted-foreground/60">
-                    {r.domain}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <CollapsibleToolCard
+        icon={<GlobeIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+        label={<>Web results{input?.query ? ` for "${input.query}"` : ""} ({results.length})</>}
+      >
+        <div className="flex flex-col gap-1.5">
+          {results.slice(0, 5).map((r, i) => (
+            <div
+              key={i}
+              className={cn(
+                "rounded-md bg-muted/30 px-2 py-1.5",
+              )}
+            >
+              <div className="text-xs font-medium text-foreground">{r.title}</div>
+              {r.snippet && (
+                <p className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
+                  {r.snippet}
+                </p>
+              )}
+              {r.domain && (
+                <span className="mt-0.5 block text-[10px] text-muted-foreground/60">
+                  {r.domain}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </CollapsibleToolCard>
     );
   }
 

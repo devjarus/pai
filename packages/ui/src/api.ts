@@ -156,6 +156,10 @@ export function deleteKnowledgeSource(id: string): Promise<{ ok: boolean }> {
   return request(`/knowledge/sources/${id}`, { method: "DELETE" });
 }
 
+export function updateKnowledgeSource(id: string, data: { tags: string | null }): Promise<{ ok: boolean }> {
+  return request(`/knowledge/sources/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } });
+}
+
 // ---- Config ----
 
 export function getConfig(): Promise<ConfigInfo> {

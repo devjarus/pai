@@ -67,12 +67,12 @@ export async function runCrawlInBackground(storage: Storage, llm: LLMClient, roo
 export function createAgentTools(ctx: AgentContext) {
   return {
     memory_recall: tool({
-      description: "Search your memory and knowledge base for beliefs, preferences, learned pages, and past observations relevant to a query. Use this before answering questions about the user's history, preferences, or past decisions.",
+      description: "Search your memory for beliefs, preferences, and past observations relevant to a query. This searches ONLY memory (beliefs + episodes), not the knowledge base. Use knowledge_search separately for learned web pages.",
       inputSchema: z.object({
-        query: z.string().describe("What to look up in memory and knowledge"),
+        query: z.string().describe("What to look up in memory"),
       }),
       execute: async ({ query }) => {
-        const result = await retrieveContext(ctx.storage, query, { llm: ctx.llm });
+        const result = await retrieveContext(ctx.storage, query, { llm: ctx.llm, knowledgeLimit: 0 });
 
         // Supplement with direct text search for short/name queries that embeddings miss
         const ftsResults = searchBeliefs(ctx.storage, query, 5);
@@ -89,7 +89,7 @@ export function createAgentTools(ctx: AgentContext) {
           }
         }
 
-        return result.formatted || "No relevant memories or knowledge found.";
+        return result.formatted || "No relevant memories found.";
       },
     }),
 
@@ -215,18 +215,19 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     learn_from_url: tool({
-      description: "Learn from a web page — fetch it, extract content, and store in the knowledge base. Use when the user shares a URL and wants you to learn from it. Set crawl=true to also discover and learn from sub-pages (for doc sites) — crawling runs in the background.",
+      description: "Learn from a web page — fetch it, extract content, and store in the knowledge base. Use when the user shares a URL and wants you to learn from it. Set crawl=true to also discover and learn from sub-pages (for doc sites) — crawling runs in the background. Use label to tag the source (e.g. person's name, topic, category).",
       inputSchema: z.object({
         url: z.string().url().describe("The URL to learn from"),
         crawl: z.boolean().default(false).describe("If true, discover and learn from sub-pages in the background (for doc sites)"),
+        label: z.string().optional().describe("A label or tag for this source (e.g. 'Monica article', 'React docs', 'cooking recipe'). Helps find it later."),
       }),
-      execute: async ({ url, crawl }) => {
+      execute: async ({ url, crawl, label }) => {
         try {
           // Learn from the main page synchronously (fast enough)
           const page = await fetchPageAsMarkdown(url);
           if (!page) return "Could not extract content from that URL. The page may require JavaScript or is not an article.";
 
-          const mainResult = await learnFromContent(ctx.storage, ctx.llm, url, page.title, page.markdown);
+          const mainResult = await learnFromContent(ctx.storage, ctx.llm, url, page.title, page.markdown, { tags: label });
           const mainMsg = mainResult.skipped
             ? `Already learned from "${mainResult.source.title}".`
             : `Learned from "${mainResult.source.title}" — ${mainResult.chunksStored} chunks.`;
@@ -283,6 +284,7 @@ export function createAgentTools(ctx: AgentContext) {
           id: s.id.slice(0, 8),
           title: s.title,
           url: s.url,
+          ...(s.tags ? { tags: s.tags } : {}),
           chunks: s.chunk_count,
           learnedAt: s.fetched_at,
         }));

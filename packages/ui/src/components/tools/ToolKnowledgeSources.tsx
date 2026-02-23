@@ -1,5 +1,6 @@
 import { LibraryIcon, AlertCircleIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { CollapsibleToolCard } from "./CollapsibleToolCard";
 
 interface SourceItem {
   id: string;
@@ -73,17 +74,14 @@ export function ToolKnowledgeSources({ state, output }: ToolKnowledgeSourcesProp
       }
 
       return (
-        <Card className="gap-0 rounded-lg border-border/50 py-0 shadow-none">
-          <CardContent className="px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <LibraryIcon className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="text-xs font-medium text-foreground">Knowledge sources</span>
-            </div>
-            <p className="mt-1.5 line-clamp-4 text-xs leading-relaxed text-muted-foreground">
-              {output.slice(0, 500)}
-            </p>
-          </CardContent>
-        </Card>
+        <CollapsibleToolCard
+          icon={<LibraryIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+          label="Knowledge sources"
+        >
+          <p className="line-clamp-4 text-xs leading-relaxed text-muted-foreground">
+            {output.slice(0, 500)}
+          </p>
+        </CollapsibleToolCard>
       );
     }
 
@@ -101,41 +99,31 @@ export function ToolKnowledgeSources({ state, output }: ToolKnowledgeSourcesProp
     }
 
     return (
-      <Card className="gap-0 rounded-lg border-border/50 py-0 shadow-none">
-        <CardContent className="px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <LibraryIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="text-xs font-medium text-foreground">
-              {sources.length} source{sources.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-col gap-1">
-            {sources.slice(0, 8).map((source) => (
-              <div
-                key={source.id}
-                className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1.5"
-              >
-                <span className="flex-1 truncate text-xs text-foreground">
-                  {source.title || getDomain(source.url)}
-                </span>
-                {source.chunks != null && (
-                  <span className="shrink-0 text-[10px] text-muted-foreground/60">
-                    {source.chunks} chunk{source.chunks !== 1 ? "s" : ""}
-                  </span>
-                )}
-                <span className="shrink-0 text-[10px] text-muted-foreground/60">
-                  {getDomain(source.url)}
-                </span>
-              </div>
-            ))}
-            {sources.length > 8 && (
-              <span className="mt-1 text-[10px] text-muted-foreground">
-                +{sources.length - 8} more
+      <CollapsibleToolCard
+        icon={<LibraryIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+        label={<>{sources.length} source{sources.length !== 1 ? "s" : ""}</>}
+      >
+        <div className="flex flex-col gap-1">
+          {sources.map((source) => (
+            <div
+              key={source.id}
+              className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1.5"
+            >
+              <span className="flex-1 truncate text-xs text-foreground">
+                {source.title || getDomain(source.url)}
               </span>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+              {source.chunks != null && (
+                <span className="shrink-0 text-[10px] text-muted-foreground/60">
+                  {source.chunks} chunk{source.chunks !== 1 ? "s" : ""}
+                </span>
+              )}
+              <span className="shrink-0 text-[10px] text-muted-foreground/60">
+                {getDomain(source.url)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CollapsibleToolCard>
     );
   }
 

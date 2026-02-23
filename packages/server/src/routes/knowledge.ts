@@ -13,7 +13,19 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
       url: s.url,
       chunks: s.chunk_count,
       learnedAt: s.fetched_at,
+      tags: s.tags ?? null,
     }));
+  });
+
+  // Update source tags
+  app.patch<{ Params: { id: string }; Body: { tags: string | null } }>("/api/knowledge/sources/:id", async (request, reply) => {
+    const { id } = request.params;
+    const { tags } = request.body;
+    const sources = listSources(ctx.storage);
+    const source = sources.find((s) => s.id === id);
+    if (!source) return reply.status(404).send({ error: "Source not found" });
+    ctx.storage.run("UPDATE knowledge_sources SET tags = ? WHERE id = ?", [tags ?? null, id]);
+    return { ok: true };
   });
 
   // Search knowledge base
