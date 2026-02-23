@@ -8,6 +8,13 @@ vi.mock("ai", () => ({
   stepCountIs: vi.fn().mockReturnValue({ type: "step-count" }),
 }));
 
+vi.mock("@huggingface/transformers", () => ({
+  pipeline: vi.fn().mockResolvedValue(
+    vi.fn().mockResolvedValue({ data: new Float32Array(384).fill(0.1) }),
+  ),
+  env: {},
+}));
+
 import { generateText, embed as aiEmbed } from "ai";
 const mockGenerateText = vi.mocked(generateText);
 const mockEmbed = vi.mocked(aiEmbed);
