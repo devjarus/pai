@@ -100,6 +100,5 @@ EXPOSE 3141
 COPY --chown=pai:pai docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
-USER pai
-
+# Entrypoint runs as root to fix volume permissions, then drops to pai
 CMD ["/app/docker-entrypoint.sh"]
