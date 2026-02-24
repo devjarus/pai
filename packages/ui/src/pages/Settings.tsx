@@ -230,7 +230,6 @@ export default function Settings() {
                     </label>
                     <select
                       value={provider}
-                      disabled={envOverrides.includes("provider")}
                       onChange={(e) => {
                         const p = e.target.value;
                         setProvider(p);
@@ -249,8 +248,8 @@ export default function Settings() {
                       <option value="google">Google AI</option>
                     </select>
                   </div>
-                  <EditableRow label="Model" value={model} onChange={setModel} placeholder={PROVIDER_PRESETS[provider]?.model ?? "model name"} disabled={envOverrides.includes("model")} envLabel={envOverrides.includes("model")} />
-                  <EditableRow label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder={PROVIDER_PRESETS[provider]?.baseUrl ?? "http://127.0.0.1:11434"} disabled={envOverrides.includes("baseUrl")} envLabel={envOverrides.includes("baseUrl")} />
+                  <EditableRow label="Model" value={model} onChange={setModel} placeholder={PROVIDER_PRESETS[provider]?.model ?? "model name"} envLabel={envOverrides.includes("model")} />
+                  <EditableRow label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder={PROVIDER_PRESETS[provider]?.baseUrl ?? "http://127.0.0.1:11434"} envLabel={envOverrides.includes("baseUrl")} />
                   {/* Embedding provider selector */}
                   <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
                     <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
@@ -260,7 +259,6 @@ export default function Settings() {
                     </label>
                     <select
                       value={embedProvider}
-                      disabled={envOverrides.includes("embedProvider")}
                       onChange={(e) => setEmbedProvider(e.target.value)}
                       className="rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -272,9 +270,9 @@ export default function Settings() {
                     </select>
                   </div>
                   {embedProvider !== "local" && (
-                    <EditableRow label="Embed Model" value={embedModel} onChange={setEmbedModel} placeholder="e.g. nomic-embed-text" disabled={envOverrides.includes("embedModel")} envLabel={envOverrides.includes("embedModel")} />
+                    <EditableRow label="Embed Model" value={embedModel} onChange={setEmbedModel} placeholder="e.g. nomic-embed-text" envLabel={envOverrides.includes("embedModel")} />
                   )}
-                  <EditableRow label="API Key" value={apiKey} onChange={setApiKey} placeholder="Enter new key (leave empty to keep current)" type="password" disabled={envOverrides.includes("apiKey")} envLabel={envOverrides.includes("apiKey")} />
+                  <EditableRow label="API Key" value={apiKey} onChange={setApiKey} placeholder="Enter new key (leave empty to keep current)" type="password" envLabel={envOverrides.includes("apiKey")} />
 
                   <Separator className="opacity-30" />
 
@@ -290,16 +288,14 @@ export default function Settings() {
                         type="text"
                         value={dataDir}
                         onChange={(e) => setDataDir(e.target.value)}
-                        disabled={envOverrides.includes("dataDir")}
                         placeholder="~/.personal-ai/data"
-                        className="w-full max-w-[220px] rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="w-full max-w-[220px] rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
                       />
                       <Button
                         variant="outline"
                         size="sm"
                         className="h-7 shrink-0 text-xs"
                         onClick={() => openBrowser()}
-                        disabled={envOverrides.includes("dataDir")}
                       >
                         <FolderOpenIcon className="mr-1 size-3.5" />
                         Browse
@@ -636,7 +632,6 @@ function EditableRow({
   onChange,
   placeholder,
   type = "text",
-  disabled,
   envLabel,
 }: {
   label: string;
@@ -644,7 +639,6 @@ function EditableRow({
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
-  disabled?: boolean;
   envLabel?: boolean;
 }) {
   return (
@@ -658,8 +652,7 @@ function EditableRow({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        disabled={disabled}
-        className="w-full max-w-xs rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full max-w-xs rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
       />
     </div>
   );

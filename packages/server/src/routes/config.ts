@@ -138,6 +138,16 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     // Reinitialize storage, LLM, and config from the new settings
     serverCtx.reinitialize();
 
+    // Apply user's explicit changes on top of the reloaded config.
+    // loadConfig() prefers env vars, but the user explicitly chose new values
+    // via the Settings UI — honour those for the running session.
+    if (Object.keys(llmUpdate).length > 0) {
+      Object.assign(serverCtx.ctx.config.llm, llmUpdate);
+    }
+    if (body.dataDir) {
+      (serverCtx.ctx.config as unknown as Record<string, unknown>).dataDir = body.dataDir;
+    }
+
     return sanitizeConfig(serverCtx.ctx.config as never);
   });
 
