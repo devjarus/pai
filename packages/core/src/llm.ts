@@ -261,8 +261,9 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMC
       if (provider === "google") {
         // Google AI: list models endpoint to verify connectivity + API key
         const url = baseUrl.replace(/\/+$/, "") + "/models";
-        const separator = url.includes("?") ? "&" : "?";
-        const res = await fetch(`${url}${separator}key=${apiKey ?? ""}`);
+        const res = await fetch(url, {
+          headers: { "x-goog-api-key": apiKey ?? "" },
+        });
         return { ok: res.ok, provider: "google" };
       }
       // openai (default)

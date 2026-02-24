@@ -15,9 +15,36 @@ export interface PageContent {
 }
 
 /**
+ * SSRF protection: block private/internal IPs and non-HTTP(S) schemes.
+ */
+function isAllowedUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    if (!["http:", "https:"].includes(parsed.protocol)) return false;
+    const host = parsed.hostname.toLowerCase();
+    // Block loopback
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") return false;
+    // Block private RFC1918 ranges
+    if (/^10\./.test(host)) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+    if (/^192\.168\./.test(host)) return false;
+    // Block link-local
+    if (/^169\.254\./.test(host)) return false;
+    // Block cloud metadata endpoints
+    if (host === "metadata.google.internal") return false;
+    // Block IPv6 private/link-local
+    if (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fetch raw HTML from a URL.
  */
 async function fetchHTML(url: string): Promise<{ html: string; finalUrl: string } | null> {
+  if (!isAllowedUrl(url)) return null;
   // Use a realistic browser User-Agent to avoid bot detection
   const response = await fetch(url, {
     headers: {
@@ -89,6 +116,7 @@ async function fetchViaJinaReader(url: string): Promise<PageContent | null> {
  * Falls back to Jina Reader API for JS-rendered pages.
  */
 export async function fetchPageAsMarkdown(url: string): Promise<PageContent | null> {
+  if (!isAllowedUrl(url)) return null;
   const result = await fetchHTML(url);
   if (!result) {
     // fetchHTML failed entirely — try Jina Reader as last resort
@@ -127,6 +155,7 @@ export async function fetchPageAsMarkdown(url: string): Promise<PageContent | nu
  * 2. All same-domain doc-like links (fallback for sites with different URL structures)
  */
 export async function discoverSubPages(url: string): Promise<string[]> {
+  if (!isAllowedUrl(url)) return [];
   const result = await fetchHTML(url);
   if (!result) return [];
 
@@ -137,10 +166,12 @@ export async function discoverSubPages(url: string): Promise<string[]> {
 
   const subPathLinks = new Set<string>();
   const allInternalLinks = new Set<string>();
+  const MAX_LINKS = 500;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anchors = (document as any).querySelectorAll("a[href]");
   for (const a of anchors) {
+    if (allInternalLinks.size >= MAX_LINKS) break;
     const href = a.getAttribute("href");
     if (!href) continue;
 

@@ -90,7 +90,9 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
       const row = getThread(ctx.storage, request.params.id);
       if (!row) return reply.status(404).send({ error: "Thread not found" });
 
-      ctx.storage.run("UPDATE threads SET title = ? WHERE id = ?", [request.body.title, request.params.id]);
+      const title = (request.body.title ?? "").trim().replace(/<[^>]*>/g, "").slice(0, 255);
+      if (!title) return reply.status(400).send({ error: "title is required" });
+      ctx.storage.run("UPDATE threads SET title = ? WHERE id = ?", [title, request.params.id]);
       const updated = getThread(ctx.storage, request.params.id);
       if (!updated) return reply.status(404).send({ error: "Thread not found" });
       return mapThread(updated);
@@ -103,9 +105,11 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
     async (request, reply) => {
       const thread = getThread(ctx.storage, request.params.id);
       if (!thread) return reply.status(404).send({ error: "Thread not found" });
-      const limit = request.query.limit ? parseInt(request.query.limit, 10) : undefined;
+      const MAX_LIMIT = 100;
+      const parsed = request.query.limit ? parseInt(request.query.limit, 10) : 50;
+      const limit = Number.isFinite(parsed) ? Math.min(parsed, MAX_LIMIT) : 50;
       const rows = listMessages(ctx.storage, request.params.id, {
-        limit: Number.isFinite(limit) ? limit : undefined,
+        limit,
         before: request.query.before,
       });
       return rows.map(mapMessage);
@@ -250,7 +254,6 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
               onError: ({ error }) => {
                 ctx.logger.error("streamText error (multi-step)", {
                   error: error instanceof Error ? error.message : String(error),
-                  stack: error instanceof Error ? error.stack : undefined,
                 });
                 finish();
               },
@@ -341,9 +344,11 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
       onError: (error) => {
         ctx.logger.error("Chat stream error", {
           error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
         });
-        return error instanceof Error ? error.message : "Chat failed";
+        // Don't leak internal error details to the client
+        const msg = error instanceof Error ? error.message : String(error);
+        const isInternal = /at\s|node_modules|SQL|database|SQLITE/i.test(msg);
+        return isInternal ? "An internal error occurred" : msg;
       },
     });
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { WifiOffIcon } from "lucide-react";
+import { getAuthToken } from "../api";
 
 const PING_INTERVAL = 10_000;
 
@@ -12,9 +13,13 @@ export function OfflineBanner() {
 
     const ping = async () => {
       try {
-        const res = await fetch("/api/stats", {
+        const token = getAuthToken();
+        const headers: Record<string, string> = {};
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        const res = await fetch("/api/health", {
           method: "GET",
           cache: "no-store",
+          headers,
           signal: AbortSignal.timeout(5000),
         });
         if (mountedRef.current) setOffline(!res.ok);

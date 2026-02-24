@@ -96,6 +96,7 @@ export interface ConfigInfo {
     username?: string;
     error?: string;
   };
+  envOverrides?: string[];
 }
 
 export interface TimelineEvent {

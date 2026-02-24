@@ -1,10 +1,47 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
 import type { Config } from "./types.js";
 
 const DEFAULT_HOME = join(homedir(), ".personal-ai");
 const DEFAULT_DATA_DIR = join(DEFAULT_HOME, "data");
+const ENC_PREFIX = "enc:";
+
+// Derive a machine-local encryption key from hostname + home directory
+// This isn't meant to protect against a determined attacker with user-level access —
+// it prevents casual exposure (e.g., accidentally sharing config.json, or backup tools indexing it)
+function deriveKey(): Buffer {
+  const material = `pai:${homedir()}:${process.env.USER ?? "default"}`;
+  return createHash("sha256").update(material).digest();
+}
+
+function encryptSecret(plaintext: string): string {
+  if (!plaintext) return plaintext;
+  const key = deriveKey();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ENC_PREFIX + Buffer.concat([iv, tag, encrypted]).toString("base64");
+}
+
+function decryptSecret(stored: string): string {
+  if (!stored || !stored.startsWith(ENC_PREFIX)) return stored;
+  try {
+    const key = deriveKey();
+    const data = Buffer.from(stored.slice(ENC_PREFIX.length), "base64");
+    const iv = data.subarray(0, 12);
+    const tag = data.subarray(12, 28);
+    const encrypted = data.subarray(28);
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+  } catch {
+    // If decryption fails (e.g., migrated from another machine), return as-is
+    return stored.startsWith(ENC_PREFIX) ? "" : stored;
+  }
+}
 
 export function findGitRoot(from: string): string | null {
   let dir = resolve(from);
@@ -25,7 +62,22 @@ export function loadConfigFile(homeDir?: string): Partial<Config> {
   if (!existsSync(configPath)) return {};
   try {
     const raw = readFileSync(configPath, "utf-8");
-    return JSON.parse(raw) as Partial<Config>;
+    const parsed = JSON.parse(raw) as Partial<Config>;
+
+    // Decrypt sensitive fields
+    const llm = parsed.llm as Record<string, unknown> | undefined;
+    if (llm?.apiKey && typeof llm.apiKey === "string") {
+      (llm as Record<string, unknown>).apiKey = decryptSecret(llm.apiKey as string);
+    }
+    const telegram = parsed.telegram as Record<string, unknown> | undefined;
+    if (telegram?.token && typeof telegram.token === "string") {
+      (telegram as Record<string, unknown>).token = decryptSecret(telegram.token as string);
+    }
+    if (parsed.authToken && typeof parsed.authToken === "string") {
+      parsed.authToken = decryptSecret(parsed.authToken);
+    }
+
+    return parsed;
   } catch {
     return {};
   }
@@ -34,7 +86,26 @@ export function loadConfigFile(homeDir?: string): Partial<Config> {
 export function writeConfig(homeDir: string, config: Partial<Config>): void {
   mkdirSync(homeDir, { recursive: true });
   const configPath = join(homeDir, "config.json");
-  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+
+  // Deep clone to avoid mutating the original config object
+  const toWrite = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
+
+  // Encrypt sensitive fields before writing to disk
+  const llm = toWrite.llm as Record<string, unknown> | undefined;
+  if (llm?.apiKey && typeof llm.apiKey === "string" && !llm.apiKey.startsWith(ENC_PREFIX)) {
+    llm.apiKey = encryptSecret(llm.apiKey);
+  }
+  const telegram = toWrite.telegram as Record<string, unknown> | undefined;
+  if (telegram?.token && typeof telegram.token === "string" && !telegram.token.startsWith(ENC_PREFIX)) {
+    telegram.token = encryptSecret(telegram.token);
+  }
+  if (toWrite.authToken && typeof toWrite.authToken === "string" && !toWrite.authToken.startsWith(ENC_PREFIX)) {
+    toWrite.authToken = encryptSecret(toWrite.authToken as string);
+  }
+
+  writeFileSync(configPath, JSON.stringify(toWrite, null, 2) + "\n", "utf-8");
+  // Restrict file permissions: owner read/write only (0600)
+  try { chmodSync(configPath, 0o600); } catch { /* Windows doesn't support chmod — ignore */ }
 }
 
 export function resolveDataDir(

@@ -14,9 +14,13 @@ services:
       - PAI_LLM_BASE_URL=${PAI_LLM_BASE_URL:-http://ollama:11434}
       - PAI_LLM_MODEL=${PAI_LLM_MODEL:-}
       - PAI_LLM_API_KEY=${PAI_LLM_API_KEY:-}
+      - PAI_AUTH_TOKEN=${PAI_AUTH_TOKEN:-}
+      - PAI_CORS_ORIGIN=${PAI_CORS_ORIGIN:-}
+      - PAI_TELEGRAM_TOKEN=${PAI_TELEGRAM_TOKEN:-}
+      - PAI_PUBLIC=${PAI_PUBLIC:-}
       - NODE_ENV=production
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3141/api/config || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3141/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

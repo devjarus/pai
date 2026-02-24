@@ -124,6 +124,8 @@ fi
 
 # Save Docker env vars for container restarts
 # (After first run, use the Settings page at http://localhost:3141 to change config)
+touch "$INSTALL_DIR/.env"
+chmod 600 "$INSTALL_DIR/.env"
 cat > "$INSTALL_DIR/.env" <<EOF
 PAI_HOST_DATA_DIR=$DATA_DIR
 PAI_LLM_PROVIDER=${PROVIDER:-ollama}

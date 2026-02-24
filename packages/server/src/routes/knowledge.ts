@@ -50,6 +50,15 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
   app.post<{ Body: { url: string; crawl?: boolean; force?: boolean } }>("/api/knowledge/learn", async (request, reply) => {
     const { url, crawl, force } = request.body;
     if (!url) return reply.status(400).send({ error: "URL is required" });
+    if (url.length > 2048) return reply.status(400).send({ error: "URL too long (max 2,048 characters)" });
+    try {
+      const parsed = new URL(url);
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        return reply.status(400).send({ error: "URL must use http or https" });
+      }
+    } catch {
+      return reply.status(400).send({ error: "Invalid URL format" });
+    }
 
     try {
       const page = await fetchPageAsMarkdown(url);

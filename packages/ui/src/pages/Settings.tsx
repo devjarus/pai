@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { getConfig, getStats, updateConfig, browseDir } from "../api";
+import { getConfig, getStats, updateConfig, browseDir, getAuthToken, setAuthToken, clearAuthToken } from "../api";
 import type { BrowseResult } from "../api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
-import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon } from "lucide-react";
+import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon, ShieldIcon } from "lucide-react";
 import type { ConfigInfo, MemoryStats } from "../types";
 
 const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedModel: string }> = {
@@ -41,6 +41,13 @@ export default function Settings() {
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramEnabled, setTelegramEnabled] = useState(false);
 
+  // Access token (stored in localStorage for public deployments)
+  const [accessToken, setAccessToken] = useState("");
+  const [hasAccessToken, setHasAccessToken] = useState(() => !!getAuthToken());
+
+  // Env overrides (fields controlled by env vars on the server)
+  const [envOverrides, setEnvOverrides] = useState<string[]>([]);
+
   // Directory browser
   const [browseOpen, setBrowseOpen] = useState(false);
   const [browseData, setBrowseData] = useState<BrowseResult | null>(null);
@@ -63,6 +70,7 @@ export default function Settings() {
         setEmbedProvider(c.llm.embedProvider ?? "auto");
         setDataDir(c.dataDir);
         setTelegramEnabled(c.telegram?.enabled ?? false);
+        setEnvOverrides(c.envOverrides ?? []);
       }
       setLoading(false);
     });
@@ -216,9 +224,13 @@ export default function Settings() {
                 <>
                   {/* Provider selector with auto-fill presets */}
                   <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
-                    <label className="shrink-0 text-xs text-muted-foreground">Provider</label>
+                    <label className="shrink-0 text-xs text-muted-foreground">
+                      Provider
+                      {envOverrides.includes("provider") && <span className="ml-1 text-[10px] text-amber-400">(set by env)</span>}
+                    </label>
                     <select
                       value={provider}
+                      disabled={envOverrides.includes("provider")}
                       onChange={(e) => {
                         const p = e.target.value;
                         setProvider(p);
@@ -229,7 +241,7 @@ export default function Settings() {
                           setEmbedModel(preset.embedModel);
                         }
                       }}
-                      className="rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+                      className="rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <option value="ollama">Ollama</option>
                       <option value="openai">OpenAI</option>
@@ -237,18 +249,20 @@ export default function Settings() {
                       <option value="google">Google AI</option>
                     </select>
                   </div>
-                  <EditableRow label="Model" value={model} onChange={setModel} placeholder={PROVIDER_PRESETS[provider]?.model ?? "model name"} />
-                  <EditableRow label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder={PROVIDER_PRESETS[provider]?.baseUrl ?? "http://127.0.0.1:11434"} />
+                  <EditableRow label="Model" value={model} onChange={setModel} placeholder={PROVIDER_PRESETS[provider]?.model ?? "model name"} disabled={envOverrides.includes("model")} envLabel={envOverrides.includes("model")} />
+                  <EditableRow label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder={PROVIDER_PRESETS[provider]?.baseUrl ?? "http://127.0.0.1:11434"} disabled={envOverrides.includes("baseUrl")} envLabel={envOverrides.includes("baseUrl")} />
                   {/* Embedding provider selector */}
                   <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
                     <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                       Embed Provider
+                      {envOverrides.includes("embedProvider") && <span className="ml-1 text-[10px] text-amber-400">(set by env)</span>}
                       <InfoBubble text="How embeddings are computed for semantic search. Auto tries your LLM provider first, falls back to local. Local uses a built-in model (~23MB download, no API needed)." side="right" />
                     </label>
                     <select
                       value={embedProvider}
+                      disabled={envOverrides.includes("embedProvider")}
                       onChange={(e) => setEmbedProvider(e.target.value)}
-                      className="rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+                      className="rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <option value="auto">Auto (provider → local fallback)</option>
                       <option value="ollama">Ollama</option>
@@ -258,9 +272,9 @@ export default function Settings() {
                     </select>
                   </div>
                   {embedProvider !== "local" && (
-                    <EditableRow label="Embed Model" value={embedModel} onChange={setEmbedModel} placeholder="e.g. nomic-embed-text" />
+                    <EditableRow label="Embed Model" value={embedModel} onChange={setEmbedModel} placeholder="e.g. nomic-embed-text" disabled={envOverrides.includes("embedModel")} envLabel={envOverrides.includes("embedModel")} />
                   )}
-                  <EditableRow label="API Key" value={apiKey} onChange={setApiKey} placeholder="Enter new key (leave empty to keep current)" type="password" />
+                  <EditableRow label="API Key" value={apiKey} onChange={setApiKey} placeholder="Enter new key (leave empty to keep current)" type="password" disabled={envOverrides.includes("apiKey")} envLabel={envOverrides.includes("apiKey")} />
 
                   <Separator className="opacity-30" />
 
@@ -268,6 +282,7 @@ export default function Settings() {
                   <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
                     <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                       Data Directory
+                      {envOverrides.includes("dataDir") && <span className="ml-1 text-[10px] text-amber-400">(set by env)</span>}
                       <InfoBubble text="Where pai stores its database, logs, and memory. Default: ~/.personal-ai/data/" side="right" />
                     </label>
                     <div className="flex items-center gap-2">
@@ -275,14 +290,16 @@ export default function Settings() {
                         type="text"
                         value={dataDir}
                         onChange={(e) => setDataDir(e.target.value)}
+                        disabled={envOverrides.includes("dataDir")}
                         placeholder="~/.personal-ai/data"
-                        className="w-full max-w-[220px] rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+                        className="w-full max-w-[220px] rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
                       />
                       <Button
                         variant="outline"
                         size="sm"
                         className="h-7 shrink-0 text-xs"
                         onClick={() => openBrowser()}
+                        disabled={envOverrides.includes("dataDir")}
                       >
                         <FolderOpenIcon className="mr-1 size-3.5" />
                         Browse
@@ -412,6 +429,72 @@ export default function Settings() {
             </CardContent>
           </Card>
         )}
+
+        {/* Access Token (for public deployments) */}
+        <Card className="gap-0 overflow-hidden border-border/50 bg-card/50 py-0">
+          <CardHeader className="px-5 py-4">
+            <CardTitle className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <ShieldIcon className="size-3.5" />
+              Access Token
+              <InfoBubble text="Required for public deployments (e.g. Railway). Enter the PAI_AUTH_TOKEN configured on your server. Stored locally in your browser." side="right" />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-0 px-0 py-0">
+            <div className="flex items-center justify-between border-t border-border/30 px-5 py-3">
+              <span className="text-xs text-muted-foreground">Status</span>
+              <span className="flex items-center gap-2 font-mono text-sm">
+                {hasAccessToken ? (
+                  <>
+                    <span className="size-2 rounded-full bg-green-500" />
+                    <span className="text-green-500">Set</span>
+                  </>
+                ) : (
+                  <span className="text-foreground/70">Not set</span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
+              <label className="shrink-0 text-xs text-muted-foreground">Token</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  placeholder={hasAccessToken ? "Token saved (enter new to replace)" : "Enter your access token"}
+                  className="w-full max-w-[220px] rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+                />
+                <Button
+                  size="sm"
+                  className="h-7 shrink-0 text-xs"
+                  disabled={!accessToken}
+                  onClick={() => {
+                    setAuthToken(accessToken);
+                    setAccessToken("");
+                    setHasAccessToken(true);
+                    toast.success("Access token saved");
+                  }}
+                >
+                  Save
+                </Button>
+                {hasAccessToken && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 shrink-0 text-xs text-destructive hover:text-destructive"
+                    onClick={() => {
+                      clearAuthToken();
+                      setAccessToken("");
+                      setHasAccessToken(false);
+                      toast.success("Access token cleared");
+                    }}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Memory Health */}
         {stats ? (
@@ -553,22 +636,30 @@ function EditableRow({
   onChange,
   placeholder,
   type = "text",
+  disabled,
+  envLabel,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
+  disabled?: boolean;
+  envLabel?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
-      <label className="shrink-0 text-xs text-muted-foreground">{label}</label>
+      <label className="shrink-0 text-xs text-muted-foreground">
+        {label}
+        {envLabel && <span className="ml-1 text-[10px] text-amber-400">(set by env)</span>}
+      </label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full max-w-xs rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+        disabled={disabled}
+        className="w-full max-w-xs rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
       />
     </div>
   );

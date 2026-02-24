@@ -58,6 +58,7 @@ export function registerMemoryRoutes(app: FastifyInstance, { ctx }: ServerContex
   app.post<{ Body: { text: string } }>("/api/remember", async (request, reply) => {
     const { text } = request.body ?? {};
     if (!text) return reply.status(400).send({ error: "text is required" });
+    if (text.length > 10_000) return reply.status(400).send({ error: "Text too long (max 10,000 characters)" });
     const result = await remember(ctx.storage, ctx.llm, text, ctx.logger);
     return result;
   });

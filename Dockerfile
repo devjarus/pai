@@ -1,11 +1,11 @@
 # ---- Stage 1: Build ----
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@9.15.3 --activate
 
-# better-sqlite3 needs build tools on alpine
-RUN apk add --no-cache python3 make g++
+# better-sqlite3 and onnxruntime-node need build tools
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -34,10 +34,10 @@ RUN pnpm prune --prod
 
 
 # ---- Stage 2: Runtime ----
-FROM node:20-alpine AS runtime
+FROM node:20-slim AS runtime
 
-# better-sqlite3 needs libstdc++ at runtime
-RUN apk add --no-cache libstdc++
+# better-sqlite3 needs libstdc++; onnxruntime-node needs glibc (not available on Alpine)
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -82,11 +82,16 @@ COPY --from=builder /app/packages/plugin-telegram/dist packages/plugin-telegram/
 COPY --from=builder /app/packages/plugin-telegram/package.json packages/plugin-telegram/
 COPY --from=builder /app/packages/plugin-telegram/node_modules packages/plugin-telegram/node_modules
 
-# Create data volume mount point
+# Create data directory (Railway volume mounts here at runtime)
 RUN mkdir -p /data
 
 EXPOSE 3141
 
-VOLUME ["/data"]
+# Note: Do not use VOLUME or HEALTHCHECK directives — Railway bans them.
+# Railway manages volumes and healthchecks via railway.toml / dashboard.
+# For local Docker, use: docker run -v pai-data:/data ...
 
-CMD ["node", "packages/server/dist/index.js"]
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+CMD ["/app/docker-entrypoint.sh"]

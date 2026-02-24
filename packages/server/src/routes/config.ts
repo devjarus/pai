@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync, lstatSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { FastifyInstance } from "fastify";
@@ -23,6 +23,24 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
   };
 }
 
+const ENV_OVERRIDE_MAP: Record<string, string> = {
+  PAI_LLM_PROVIDER: "provider",
+  PAI_LLM_MODEL: "model",
+  PAI_LLM_BASE_URL: "baseUrl",
+  PAI_LLM_API_KEY: "apiKey",
+  PAI_LLM_EMBED_MODEL: "embedModel",
+  PAI_LLM_EMBED_PROVIDER: "embedProvider",
+  PAI_DATA_DIR: "dataDir",
+};
+
+function getEnvOverrides(): string[] {
+  const overrides: string[] = [];
+  for (const [envVar, field] of Object.entries(ENV_OVERRIDE_MAP)) {
+    if (process.env[envVar]) overrides.push(field);
+  }
+  return overrides;
+}
+
 export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerContext): void {
   const { ctx } = serverCtx;
   app.get("/api/config", async () => ({
@@ -33,6 +51,7 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       username: serverCtx.telegramStatus.username,
       error: serverCtx.telegramStatus.error,
     },
+    envOverrides: getEnvOverrides(),
   }));
 
   app.put("/api/config", async (request, reply) => {
@@ -138,7 +157,16 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
         .filter((name) => {
           if (name.startsWith(".") && name !== ".personal-ai") return false;
           try {
-            return statSync(join(targetPath, name)).isDirectory();
+            const fullPath = join(targetPath, name);
+            // Use lstat to not follow symlinks, preventing symlink traversal attacks
+            const stat = lstatSync(fullPath);
+            if (stat.isSymbolicLink()) {
+              // Resolve symlink and verify it stays within home directory
+              const real = realpathSync(fullPath);
+              if (real !== home && !real.startsWith(home + "/")) return false;
+              return statSync(fullPath).isDirectory();
+            }
+            return stat.isDirectory();
           } catch {
             return false;
           }

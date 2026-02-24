@@ -32,6 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic database backup (`backupDatabase()` with WAL checkpoint) before running pending migrations.
 - Docker Compose uses profiles — Ollama is in the `local` profile and only starts with `--profile local`.
 
+### Security
+
+- **Security headers** — `@fastify/helmet` adds CSP, X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy.
+- **Rate limiting** — `@fastify/rate-limit` enforces 100 req/min global, 20/min for chat, 10/min for knowledge learning, 30/min for remember.
+- **Enforced authentication** — Server refuses to start in public mode without `PAI_AUTH_TOKEN` (previously just warned).
+- **Timing-safe token comparison** — Auth tokens compared with `crypto.timingSafeEqual` to prevent timing attacks.
+- **Trust proxy** — Fastify `trustProxy` enabled on PaaS (Railway/Render) for correct client IP in rate limiting.
+- **Input validation** — Max text length on `/api/remember` (10KB), URL validation and max length on `/api/knowledge/learn` (2KB).
+- **CORS for cloud domains** — Auto-allows Railway domains (`*.up.railway.app`), custom domain via `PAI_CORS_ORIGIN`.
+- **Docker non-root user** — Container runs as `node` user instead of root.
+- **Healthcheck fix** — Docker healthcheck uses `/api/health` (public endpoint) instead of `/api/config` (requires auth).
+- **Request logging** — All API requests logged with method, path, status, IP, and response time.
+- **Railway support** — `railway.toml` for one-click Railway deployment with health check and Dockerfile builder.
+
 ## [0.2.0] - 2026-02-22
 
 ### Added

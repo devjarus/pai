@@ -321,9 +321,12 @@ describe("LLMClient", () => {
     const result = await client.health();
     expect(result.ok).toBe(true);
     expect(result.provider).toBe("google");
-    // Verify it calls the models endpoint with API key as query param
+    // Verify it calls the models endpoint with API key in header (not query string)
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/models?key=AIza-test"),
+      expect.stringContaining("/models"),
+      expect.objectContaining({
+        headers: expect.objectContaining({ "x-goog-api-key": "AIza-test" }),
+      }),
     );
   });
 
