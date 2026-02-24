@@ -122,7 +122,8 @@ else
   echo -e "${GREEN}✓${NC} docker-compose.yml already exists"
 fi
 
-# Save env config for future restarts
+# Save Docker env vars for container restarts
+# (After first run, use the Settings page at http://localhost:3141 to change config)
 cat > "$INSTALL_DIR/.env" <<EOF
 PAI_HOST_DATA_DIR=$DATA_DIR
 PAI_LLM_PROVIDER=${PROVIDER:-ollama}
@@ -130,7 +131,7 @@ PAI_LLM_BASE_URL=${BASE_URL:-http://ollama:11434}
 PAI_LLM_MODEL=${MODEL:-}
 PAI_LLM_API_KEY=${API_KEY:-}
 EOF
-echo -e "${GREEN}✓${NC} Config saved to $INSTALL_DIR/.env"
+echo -e "${GREEN}✓${NC} Docker env saved to $INSTALL_DIR/.env"
 
 echo ""
 echo "Starting Personal AI..."

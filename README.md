@@ -24,6 +24,8 @@ curl -fsSL https://raw.githubusercontent.com/devjarus/personal-ai/main/install.s
 
 The installer checks for Docker, asks whether you want local (Ollama) or cloud (OpenAI/Anthropic/Google) LLM, and starts everything. Open **http://localhost:3141**.
 
+> **Full setup guide:** See [docs/SETUP.md](docs/SETUP.md) for detailed instructions — Docker, from source, Ollama Cloud, OpenAI, Anthropic, Google AI, Telegram bot, and usage walkthrough.
+
 Or run manually:
 
 ```bash
