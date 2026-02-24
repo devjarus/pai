@@ -246,7 +246,9 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMC
   async function health(): Promise<{ ok: boolean; provider: string }> {
     try {
       if (provider === "ollama") {
-        const res = await fetch(`${baseUrl}/api/tags`);
+        const headers: Record<string, string> = {};
+        if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+        const res = await fetch(`${baseUrl}/api/tags`, { headers });
         return { ok: res.ok, provider: "ollama" };
       }
       if (provider === "anthropic") {
