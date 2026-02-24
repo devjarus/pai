@@ -265,6 +265,8 @@ export default function Chat() {
       const controller = new AbortController();
       switchAbortRef.current = controller;
 
+      // Clear messages immediately so user doesn't see stale chat from previous thread
+      setChatMessages([]);
       setActiveThreadId(threadId);
       activeThreadIdRef.current = threadId;
       // Close thread sidebar on mobile after selecting
@@ -282,7 +284,22 @@ export default function Chat() {
           })),
         );
       } catch {
-        if (!controller.signal.aborted) setChatMessages([]);
+        // Retry once — transient network errors are the most common cause
+        if (controller.signal.aborted) return;
+        try {
+          const history = await getChatHistory(threadId);
+          if (controller.signal.aborted) return;
+          setChatMessages(
+            history.map((m, i) => ({
+              id: `hist-${i}`,
+              role: m.role as "user" | "assistant",
+              parts: [{ type: "text" as const, text: m.content }],
+              createdAt: new Date(),
+            })),
+          );
+        } catch {
+          if (!controller.signal.aborted) setChatMessages([]);
+        }
       }
     },
     [activeThreadId, isStreaming, isMobile, setChatMessages],
