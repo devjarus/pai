@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { OfflineBanner } from "./OfflineBanner";
 
 const navItems = [
   { to: "/chat", label: "Chat", icon: IconChat },
@@ -86,8 +87,11 @@ export default function Layout() {
       </nav>
 
       {/* Main content — add left padding on mobile to clear hamburger */}
-      <main className="flex-1 overflow-hidden bg-[#0f0f0f] pl-11 md:pl-0">
-        <Outlet />
+      <main className="flex flex-1 flex-col overflow-hidden bg-[#0f0f0f] pl-11 md:pl-0">
+        <OfflineBanner />
+        <div className="flex-1 overflow-hidden">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

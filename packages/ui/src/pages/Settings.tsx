@@ -14,6 +14,13 @@ import { InfoBubble } from "../components/InfoBubble";
 import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon } from "lucide-react";
 import type { ConfigInfo, MemoryStats } from "../types";
 
+const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedModel: string }> = {
+  ollama: { baseUrl: "http://localhost:11434", model: "llama3.2", embedModel: "nomic-embed-text" },
+  openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o", embedModel: "text-embedding-3-small" },
+  anthropic: { baseUrl: "https://api.anthropic.com", model: "claude-sonnet-4-20250514", embedModel: "" },
+  google: { baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.0-flash", embedModel: "text-embedding-004" },
+};
+
 export default function Settings() {
   const [config, setConfig] = useState<ConfigInfo | null>(null);
   const [stats, setStats] = useState<MemoryStats | null>(null);
@@ -207,9 +214,31 @@ export default function Settings() {
             <CardContent className="space-y-0 px-0 py-0">
               {editing ? (
                 <>
-                  <EditableRow label="Provider" value={provider} onChange={setProvider} placeholder="ollama, openai, or anthropic" />
-                  <EditableRow label="Model" value={model} onChange={setModel} placeholder="e.g. llama3.2, gpt-4o, claude-sonnet-4-20250514" />
-                  <EditableRow label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder="http://127.0.0.1:11434" />
+                  {/* Provider selector with auto-fill presets */}
+                  <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
+                    <label className="shrink-0 text-xs text-muted-foreground">Provider</label>
+                    <select
+                      value={provider}
+                      onChange={(e) => {
+                        const p = e.target.value;
+                        setProvider(p);
+                        const preset = PROVIDER_PRESETS[p];
+                        if (preset) {
+                          setBaseUrl(preset.baseUrl);
+                          setModel(preset.model);
+                          setEmbedModel(preset.embedModel);
+                        }
+                      }}
+                      className="rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+                    >
+                      <option value="ollama">Ollama</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic</option>
+                      <option value="google">Google AI</option>
+                    </select>
+                  </div>
+                  <EditableRow label="Model" value={model} onChange={setModel} placeholder={PROVIDER_PRESETS[provider]?.model ?? "model name"} />
+                  <EditableRow label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder={PROVIDER_PRESETS[provider]?.baseUrl ?? "http://127.0.0.1:11434"} />
                   {/* Embedding provider selector */}
                   <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
                     <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
@@ -224,6 +253,7 @@ export default function Settings() {
                       <option value="auto">Auto (provider → local fallback)</option>
                       <option value="ollama">Ollama</option>
                       <option value="openai">OpenAI</option>
+                      <option value="google">Google AI</option>
                       <option value="local">Local (all-MiniLM-L6-v2)</option>
                     </select>
                   </div>

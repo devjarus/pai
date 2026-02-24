@@ -1,0 +1,38 @@
+# Dependencies (reinstalled in container)
+node_modules
+
+# Git
+.git
+.gitignore
+.worktrees
+
+# Docker files
+Dockerfile
+docker-compose.yml
+
+# Build artifacts & coverage
+coverage
+*.tsbuildinfo
+
+# Logs
+*.log
+
+# Environment & secrets
+.env
+.env.*
+
+# IDE & OS
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Husky hooks (not needed in container)
+.husky
+
+# Claude/agent config
+.claude
+
+# Documentation (not needed in image)
+docs

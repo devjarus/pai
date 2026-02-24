@@ -19,12 +19,12 @@ export interface Config {
   dataDir: string;
   logLevel: LogLevel;
   llm: {
-    provider: "ollama" | "openai" | "anthropic";
+    provider: "ollama" | "openai" | "anthropic" | "google";
     model: string;
     baseUrl: string;
     apiKey?: string;
     embedModel?: string;
-    embedProvider?: "auto" | "ollama" | "openai" | "local";
+    embedProvider?: "auto" | "ollama" | "openai" | "google" | "local";
     /** @deprecated Not used — embedding fallback handled by embedProvider: "auto" */
     fallbackMode?: "local-first" | "strict";
   };
@@ -48,6 +48,8 @@ export interface Migration {
 
 export interface Storage {
   db: Database;
+  /** Absolute path to the SQLite database file */
+  dbPath: string;
   migrate(pluginName: string, migrations: Migration[]): void;
   query<T>(sql: string, params?: unknown[]): T[];
   run(sql: string, params?: unknown[]): RunResult;

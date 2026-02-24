@@ -24,6 +24,7 @@
     "start": "node packages/server/dist/index.js",
     "stop": "kill $(head -1 ~/.personal-ai/server.pid) 2>/dev/null && echo 'Server stopped' || echo 'Server not running'",
     "dev": "pnpm build && node packages/server/dist/index.js",
+    "bench:recall": "npx tsx packages/core/test/bench/recall-benchmark.ts",
     "dev:ui": "pnpm --filter @personal-ai/ui dev",
     "prepare": "husky"
   },

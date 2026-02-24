@@ -138,7 +138,10 @@ export default function Timeline() {
                 <line x1="12" y1="20" x2="12" y2="4" />
                 <polyline points="6 10 12 4 18 10" />
               </svg>
-              No beliefs to display.
+              <div className="text-center">
+                <p>No beliefs to display yet.</p>
+                <p className="mt-1 text-xs">Beliefs will appear here chronologically as you chat and build your memory.</p>
+              </div>
             </div>
           ) : (
             <div className="mx-auto max-w-2xl space-y-8">

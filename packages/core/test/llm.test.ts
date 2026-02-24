@@ -273,4 +273,119 @@ describe("LLMClient", () => {
     // Remote mock should NOT have been called (no OpenAI fallback with Anthropic key)
     expect(mockEmbed).not.toHaveBeenCalled();
   });
+
+  // --- Google provider tests ---
+
+  it("should construct with google config", () => {
+    const client = createLLMClient({
+      provider: "google",
+      model: "gemini-2.0-flash",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      apiKey: "AIza-test",
+    });
+    expect(client).toBeDefined();
+    expect(client.chat).toBeTypeOf("function");
+    expect(client.health).toBeTypeOf("function");
+    expect(client.embed).toBeTypeOf("function");
+  });
+
+  it("chat should return text and usage via google provider", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "Google says hi",
+      usage: { inputTokens: 15, outputTokens: 7 },
+    } as any);
+
+    const client = createLLMClient({
+      provider: "google",
+      model: "gemini-2.0-flash",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      apiKey: "AIza-test",
+    });
+
+    const result = await client.chat([{ role: "user", content: "Hi" }]);
+    expect(result.text).toBe("Google says hi");
+    expect(result.usage.inputTokens).toBe(15);
+    expect(result.usage.outputTokens).toBe(7);
+    expect(result.usage.totalTokens).toBe(22);
+  });
+
+  it("health should return ok for google", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    globalThis.fetch = mockFetch;
+    const client = createLLMClient({
+      provider: "google",
+      model: "gemini-2.0-flash",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      apiKey: "AIza-test",
+    });
+    const result = await client.health();
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe("google");
+    // Verify it calls the models endpoint with API key as query param
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/models?key=AIza-test"),
+    );
+  });
+
+  it("embed should return embedding vector via google provider", async () => {
+    mockEmbed.mockResolvedValue({
+      embedding: [0.7, 0.8, 0.9],
+      value: "test",
+      usage: { tokens: 5 },
+    } as any);
+
+    const client = createLLMClient({
+      provider: "google",
+      model: "gemini-2.0-flash",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      apiKey: "AIza-test",
+    });
+
+    const result = await client.embed("test text");
+    expect(result.embedding).toEqual([0.7, 0.8, 0.9]);
+    expect(mockEmbed).toHaveBeenCalledOnce();
+  });
+
+  // --- Error handling tests ---
+
+  it("chat should throw human-readable error for invalid API key", async () => {
+    mockGenerateText.mockRejectedValue(new Error("Invalid API key provided"));
+
+    const client = createLLMClient({
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "sk-bad",
+    });
+
+    await expect(client.chat([{ role: "user", content: "Hi" }]))
+      .rejects.toThrow("Invalid API key for openai");
+  });
+
+  it("chat should throw human-readable error for unreachable endpoint", async () => {
+    mockGenerateText.mockRejectedValue(new Error("fetch failed: ECONNREFUSED"));
+
+    const client = createLLMClient({
+      provider: "ollama",
+      model: "llama3.2",
+      baseUrl: "http://127.0.0.1:11434",
+    });
+
+    await expect(client.chat([{ role: "user", content: "Hi" }]))
+      .rejects.toThrow("Cannot reach ollama");
+  });
+
+  it("chat should throw human-readable error for model not found", async () => {
+    mockGenerateText.mockRejectedValue(new Error("Model not found: nonexistent-model"));
+
+    const client = createLLMClient({
+      provider: "openai",
+      model: "nonexistent-model",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "sk-test",
+    });
+
+    await expect(client.chat([{ role: "user", content: "Hi" }]))
+      .rejects.toThrow("Model not found for openai");
+  });
 });

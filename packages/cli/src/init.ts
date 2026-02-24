@@ -23,6 +23,11 @@ const PROVIDER_DEFAULTS: Record<Provider, { model: string; baseUrl: string; embe
     baseUrl: "https://api.anthropic.com",
     embedModel: "text-embedding-3-small",
   },
+  google: {
+    model: "gemini-2.0-flash",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    embedModel: "text-embedding-004",
+  },
 };
 
 function ask(rl: ReturnType<typeof createInterface>, question: string): Promise<string> {
@@ -41,8 +46,8 @@ export function createInitCommand(): Command {
         console.log("\n  pai init — Configure your persistent AI memory\n");
 
         // 1. Provider
-        const providerInput = await ask(rl, `  LLM provider (ollama/openai/anthropic) [ollama]: `);
-        const provider: Provider = (["ollama", "openai", "anthropic"].includes(providerInput) ? providerInput : "ollama") as Provider;
+        const providerInput = await ask(rl, `  LLM provider (ollama/openai/anthropic/google) [ollama]: `);
+        const provider: Provider = (["ollama", "openai", "anthropic", "google"].includes(providerInput) ? providerInput : "ollama") as Provider;
         const defaults = PROVIDER_DEFAULTS[provider];
 
         // 2. Model

@@ -45,6 +45,35 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { InfoBubble } from "../components/InfoBubble";
 
+/** Tiny inline badge showing token usage for a message. */
+function TokenBadge({ message }: { message: { metadata?: unknown } }) {
+  // AI SDK v6 populates message.metadata from message-metadata stream chunks.
+  // The metadata may contain usage info from the streamText finish event.
+  const meta = message.metadata as Record<string, unknown> | undefined;
+  if (!meta) return null;
+
+  // Try common locations for usage data
+  const usage = (meta.usage ?? meta.totalUsage ?? meta) as {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  } | undefined;
+
+  const inputTokens = usage?.inputTokens;
+  const outputTokens = usage?.outputTokens;
+  const totalTokens = usage?.totalTokens ?? ((inputTokens ?? 0) + (outputTokens ?? 0));
+
+  if (!totalTokens || totalTokens === 0) return null;
+
+  return (
+    <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/60">
+      {inputTokens != null && outputTokens != null
+        ? `${inputTokens} in / ${outputTokens} out`
+        : `${totalTokens} tokens`}
+    </span>
+  );
+}
+
 /** Detect if viewport is below md breakpoint */
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(
@@ -661,6 +690,12 @@ export default function Chat() {
                     content={textContent}
                     isStreaming={isLastAssistant}
                   />
+                )}
+                {/* Token usage badge for completed assistant messages */}
+                {message.role === "assistant" && !isLastAssistant && (
+                  <div className="mx-auto max-w-3xl px-5">
+                    <TokenBadge message={message} />
+                  </div>
                 )}
               </div>
             );

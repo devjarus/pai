@@ -1,8 +1,23 @@
 import Database from "better-sqlite3";
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync } from "node:fs";
 import type { Storage, Migration, Logger } from "./types.js";
 import { createLogger } from "./logger.js";
+
+/**
+ * Create a backup of the database file.
+ * Checkpoints WAL to ensure the backup is self-contained.
+ * Returns the path to the backup file.
+ */
+export function backupDatabase(storage: Storage): string {
+  const dbPath = storage.dbPath;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = `${dbPath}-backup-${timestamp}.db`;
+  // Checkpoint WAL so the main db file has all data
+  storage.db.pragma("wal_checkpoint(TRUNCATE)");
+  copyFileSync(dbPath, backupPath);
+  return backupPath;
+}
 
 export function createStorage(dataDir: string, logger?: Logger): Storage {
   const log = logger ?? createLogger();
@@ -24,6 +39,7 @@ export function createStorage(dataDir: string, logger?: Logger): Storage {
 
   return {
     db,
+    dbPath,
 
     migrate(pluginName: string, migrations: Migration[]): void {
       const applied = db
@@ -31,14 +47,28 @@ export function createStorage(dataDir: string, logger?: Logger): Storage {
         .all(pluginName) as Array<{ version: number }>;
       const appliedVersions = new Set(applied.map((r) => r.version));
 
-      for (const m of migrations) {
-        if (appliedVersions.has(m.version)) continue;
+      // Determine pending migrations
+      const pending = migrations.filter((m) => !appliedVersions.has(m.version));
+      if (pending.length === 0) return;
+
+      // Backup before running any migrations
+      const backupPath = backupDatabase({ dbPath, db } as Storage);
+      log.info("Database backed up before migration", { backupPath });
+
+      for (const m of pending) {
         log.info("Applying migration", { plugin: pluginName, version: m.version });
-        db.exec(m.up);
-        db.prepare("INSERT INTO _migrations (plugin, version) VALUES (?, ?)").run(
-          pluginName,
-          m.version,
-        );
+        try {
+          db.exec("BEGIN");
+          db.exec(m.up);
+          db.prepare("INSERT INTO _migrations (plugin, version) VALUES (?, ?)").run(
+            pluginName,
+            m.version,
+          );
+          db.exec("COMMIT");
+        } catch (err) {
+          db.exec("ROLLBACK");
+          throw err;
+        }
       }
     },
 

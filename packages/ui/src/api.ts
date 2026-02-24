@@ -13,19 +13,75 @@ import type {
 
 const BASE = "/api";
 
+/**
+ * Translates raw API/network errors into human-readable messages.
+ * Matches against known error patterns and HTTP status codes.
+ */
+function humanizeError(status: number, body: string): string {
+  // Check for known error strings in the response body
+  if (body.includes("SQLITE_CANTOPEN")) {
+    return "Couldn't load your data. Check the data directory in Settings.";
+  }
+  if (body.includes("SQLITE_BUSY") || body.includes("SQLITE_LOCKED")) {
+    return "Database is busy. Please try again in a moment.";
+  }
+  if (body.includes("ECONNREFUSED")) {
+    return "Server is not running. Start it with: pnpm start";
+  }
+  if (body.includes("ENOTFOUND") || body.includes("EAI_AGAIN")) {
+    return "Could not reach the external service. Check your network connection.";
+  }
+
+  // HTTP status code mapping
+  switch (status) {
+    case 401:
+    case 403:
+      return "Authentication failed. Check your API key in Settings.";
+    case 404:
+      return "The requested resource was not found.";
+    case 408:
+    case 504:
+      return "Request timed out. The server may be overloaded.";
+    case 429:
+      return "Too many requests. Please wait a moment and try again.";
+    case 500:
+    case 502:
+    case 503:
+      return "Server error. Please try again or check the server logs.";
+    default:
+      // Return a cleaned-up version of the raw error
+      return body.length > 200 ? `Server error (${status})` : `Error: ${body}`;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { ...init?.headers as Record<string, string> };
   // Only set Content-Type for requests with a body to avoid Fastify empty JSON body errors
   if (init?.body) {
     headers["Content-Type"] = headers["Content-Type"] ?? "application/json";
   }
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers,
-  });
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers,
+    });
+  } catch (err) {
+    // Network-level errors (server down, no connection, etc.)
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("Failed to fetch") || message.includes("NetworkError") || message.includes("ECONNREFUSED")) {
+      throw new Error("Unable to reach the server. Is it running?");
+    }
+    if (message.includes("AbortError") || message.includes("aborted")) {
+      throw new Error("Request was cancelled.");
+    }
+    throw new Error("Unable to reach the server.");
+  }
+
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`API ${res.status}: ${body}`);
+    throw new Error(humanizeError(res.status, body));
   }
   return res.json() as Promise<T>;
 }

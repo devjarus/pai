@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate, Link } from "react-router-dom";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import Layout from "./components/Layout";
 import Chat from "./pages/Chat";
 import Memory from "./pages/Memory";
@@ -25,16 +26,18 @@ function NotFound() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<Navigate to="/chat" replace />} />
-        <Route path="/chat" element={<Chat />} />
-        <Route path="/memory" element={<Memory />} />
-        <Route path="/timeline" element={<Timeline />} />
-        <Route path="/knowledge" element={<Knowledge />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="*" element={<NotFound />} />
-      </Route>
-    </Routes>
+    <ErrorBoundary>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route path="/chat" element={<Chat />} />
+          <Route path="/memory" element={<Memory />} />
+          <Route path="/timeline" element={<Timeline />} />
+          <Route path="/knowledge" element={<Knowledge />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<NotFound />} />
+        </Route>
+      </Routes>
+    </ErrorBoundary>
   );
 }

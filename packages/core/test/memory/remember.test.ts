@@ -271,8 +271,8 @@ describe("remember with contradictions", () => {
         .mockResolvedValueOnce({ text: '{"fact":"Python is great for data science","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
         // Second remember: extractBeliefs
         .mockResolvedValueOnce({ text: '{"fact":"Python is popular for web development","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
-        // Second remember: checkContradiction returns "NONE"
-        .mockResolvedValueOnce({ text: "NONE", usage: { inputTokens: 20, outputTokens: 1 } }),
+        // Second remember: classifyRelationship returns "INDEPENDENT"
+        .mockResolvedValueOnce({ text: "INDEPENDENT", usage: { inputTokens: 20, outputTokens: 1 } }),
       embed: vi.fn()
         .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })  // first episode embedding
         .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })  // first belief
@@ -299,13 +299,13 @@ describe("remember with contradictions", () => {
         .mockResolvedValueOnce({ text: '{"fact":"SQLite is slow for large datasets","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
         // Second remember: extractBeliefs
         .mockResolvedValueOnce({ text: '{"fact":"SQLite is not slow for large datasets","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
-        // Second remember: checkContradiction returns "1"
-        .mockResolvedValueOnce({ text: "1", usage: { inputTokens: 20, outputTokens: 1 } }),
+        // Second remember: classifyRelationship returns "CONTRADICTION"
+        .mockResolvedValueOnce({ text: "CONTRADICTION", usage: { inputTokens: 20, outputTokens: 1 } }),
       embed: vi.fn()
         .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })  // first episode embedding
         .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })  // first belief
         .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })  // second episode embedding
-        .mockResolvedValueOnce({ embedding: [0.7, 0.7, 0.0] }),  // second belief — similarity ~0.7 (contradiction range)
+        .mockResolvedValueOnce({ embedding: [0.7, 0.7, 0.0] }),  // second belief — similarity ~0.7 (grey zone)
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
@@ -338,8 +338,8 @@ describe("remember with contradictions", () => {
         .mockResolvedValueOnce({ text: '{"fact":"TypeScript strict mode is essential","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
         // Contradiction remember: extractBeliefs
         .mockResolvedValueOnce({ text: '{"fact":"TypeScript strict mode is not essential","insight":null}', usage: { inputTokens: 10, outputTokens: 8 } })
-        // Contradiction remember: checkContradiction returns "1"
-        .mockResolvedValueOnce({ text: "1", usage: { inputTokens: 20, outputTokens: 1 } }),
+        // Contradiction remember: classifyRelationship returns "CONTRADICTION"
+        .mockResolvedValueOnce({ text: "CONTRADICTION", usage: { inputTokens: 20, outputTokens: 1 } }),
       embed: vi.fn()
         .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })  // first episode embedding
         .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })  // first belief embedding

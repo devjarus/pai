@@ -127,7 +127,7 @@ describe("Belief Lifecycle", () => {
       chatResponses: [
         { text: '{"fact":"SQLite is slow for large datasets","insight":null}' },
         { text: '{"fact":"SQLite handles large datasets well","insight":null}' },
-        { text: "1" }, // contradiction detected — points to belief #1
+        { text: "CONTRADICTION" }, // classifyRelationship detects contradiction
       ],
       embedResponses: [
         { embedding: [0.5, 0.5, 0.0] }, // episode 1
@@ -164,7 +164,7 @@ describe("Belief Lifecycle", () => {
       chatResponses: [
         { text: '{"fact":"Vitest is fast","insight":null}' },
         { text: '{"fact":"ESLint catches style issues","insight":null}' },
-        { text: "NONE" }, // no contradiction
+        { text: "INDEPENDENT" }, // classifyRelationship: different topics, compatible
       ],
       embedResponses: [
         { embedding: [0.5, 0.5, 0.0] }, // episode 1
@@ -402,7 +402,7 @@ describe("Belief Lifecycle", () => {
         { text: '{"fact":"Project uses Zod for validation","insight":null}' },
         // 3rd remember: contradicting fact + contradiction check
         { text: '{"fact":"Project uses Joi for validation","insight":null}' },
-        { text: "1" }, // contradicts belief #1 (Zod)
+        { text: "CONTRADICTION" }, // classifyRelationship: contradicts Zod belief
       ],
       embedResponses: [
         { embedding: [0.5, 0.5, 0.0] }, // episode 1

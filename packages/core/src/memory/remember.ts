@@ -79,15 +79,62 @@ export async function checkContradiction(
   const answer = result.text.trim();
   logger?.debug("Contradiction check result", { answer, beliefCount: existingBeliefs.length });
 
-  if (answer === "NONE") return null;
+  // Normalize NONE with trailing punctuation (e.g. "NONE.", "NONE!")
+  if (/^NONE\W*$/i.test(answer)) return null;
 
-  const index = parseInt(answer, 10) - 1;
+  // Extract the first number from the response (handles "1", "1.", "1. explanation...")
+  const numMatch = answer.match(/^(\d+)/);
+  if (!numMatch) {
+    logger?.warn("LLM returned invalid contradiction response", { answer, validRange: `1-${existingBeliefs.length}` });
+    return null;
+  }
+  const index = parseInt(numMatch[1]!, 10) - 1;
   if (index >= 0 && index < existingBeliefs.length) {
     logger?.info("Contradiction detected", { contradictedId: existingBeliefs[index]!.id, answer });
     return existingBeliefs[index]!.id;
   }
   logger?.warn("LLM returned invalid contradiction index", { answer, validRange: `1-${existingBeliefs.length}` });
   return null;
+}
+
+/**
+ * Classify the relationship between a new statement and an existing belief.
+ * Used in the grey zone (0.70-0.85 similarity) to distinguish between:
+ * - REINFORCEMENT: same meaning (paraphrase, intensity change, specificity increase)
+ * - CONTRADICTION: mutually exclusive (cannot both be true)
+ * - INDEPENDENT: related topic but compatible (different scopes, additive detail)
+ */
+export async function classifyRelationship(
+  llm: LLMClient,
+  newStatement: string,
+  existingStatement: string,
+  logger?: Logger,
+): Promise<"REINFORCEMENT" | "CONTRADICTION" | "INDEPENDENT"> {
+  const result = await llm.chat([
+    {
+      role: "system",
+      content:
+        "You classify the relationship between two beliefs. Reply with EXACTLY one word:\n" +
+        "- REINFORCEMENT: They express the same core meaning. One is a paraphrase, synonym, " +
+        "intensity change (likes→loves), or more specific version (Linux→Ubuntu) of the other.\n" +
+        "- CONTRADICTION: They CANNOT both be true at the same time. One directly negates " +
+        "or replaces the other (favorite X is A → favorite X is B, enjoys X → avoids X).\n" +
+        "- INDEPENDENT: They are about related topics but can coexist. Different scopes, " +
+        "contexts, or additive detail (works at Acme → senior engineer at Acme).\n\n" +
+        "Reply with ONLY: REINFORCEMENT, CONTRADICTION, or INDEPENDENT. No other text.",
+    },
+    {
+      role: "user",
+      content: `Existing belief: "${existingStatement}"\nNew belief: "${newStatement}"\n\nClassify: REINFORCEMENT, CONTRADICTION, or INDEPENDENT?`,
+    },
+  ], { temperature: 0 });
+
+  const answer = result.text.trim().toUpperCase();
+  logger?.debug("Relationship classification", { answer, newStatement, existingStatement });
+
+  if (answer.startsWith("REINFORCEMENT")) return "REINFORCEMENT";
+  if (answer.startsWith("CONTRADICTION")) return "CONTRADICTION";
+  return "INDEPENDENT";
 }
 
 async function processNewBelief(
@@ -144,42 +191,44 @@ async function processNewBelief(
   }
 
   if (similar.length > 0 && similar[0]!.similarity > 0.7) {
-    // High-medium similarity — check contradiction (0.7-0.85 range)
-    const beliefs = similar.map((s) => ({
-      id: s.beliefId,
-      statement: s.statement,
-      confidence: s.confidence,
-      status: "active",
-      type: "",
-      created_at: "",
-      updated_at: "",
-      superseded_by: null,
-      supersedes: null,
-      importance: 5,
-      last_accessed: null,
-      access_count: 0,
-      stability: 1.0,
-      subject: subject ?? "owner",
-    }));
-    const contradictedId = await checkContradiction(llm, statement, beliefs, logger);
+    // Grey zone (0.70-0.85): classify relationship before deciding action
+    const topMatch = similar[0]!;
+    const relationship = await classifyRelationship(llm, statement, topMatch.statement, logger);
 
-    if (contradictedId) {
+    if (relationship === "REINFORCEMENT") {
+      // Paraphrase, intensity change, or specificity increase — reinforce existing belief
+      reinforceBelief(storage, topMatch.beliefId);
+      linkBeliefToEpisode(storage, topMatch.beliefId, episodeId);
+      logBeliefChange(storage, {
+        beliefId: topMatch.beliefId,
+        changeType: "reinforced",
+        detail: `Grey-zone reinforcement (${topMatch.similarity.toFixed(2)}): "${statement}"`,
+        episodeId,
+      });
+      logger?.info("Belief reinforced via grey-zone classification", { beliefId: topMatch.beliefId, similarity: topMatch.similarity });
+      return { beliefId: topMatch.beliefId, isReinforcement: true };
+    }
+
+    if (relationship === "CONTRADICTION") {
+      const contradictedId = topMatch.beliefId;
       const supportCount = countSupportingEpisodes(storage, contradictedId);
 
       if (supportCount >= 3) {
-        // Strong evidence — weaken but don't invalidate (TMS-inspired evidence weighing)
+        // Strong evidence — weaken proportionally (TMS-inspired evidence weighing)
+        const drop = Math.min(0.2, 1 / (supportCount + 1));
         storage.run(
-          "UPDATE beliefs SET confidence = MAX(0.1, confidence - 0.2), updated_at = datetime('now') WHERE id = ?",
-          [contradictedId],
+          "UPDATE beliefs SET confidence = MAX(0.1, confidence - ?), updated_at = datetime('now') WHERE id = ?",
+          [drop, contradictedId],
         );
         logBeliefChange(storage, {
           beliefId: contradictedId,
           changeType: "weakened",
-          detail: `Contradicted by "${statement}" but retained (${supportCount} supporting episodes)`,
+          detail: `Contradicted by "${statement}" but retained (${supportCount} supporting episodes, -${drop.toFixed(2)})`,
           episodeId,
         });
-        // Still create the new belief — both coexist until evidence resolves
-        const belief = createBelief(storage, { statement, confidence: 0.6, type, importance, subject });
+        // New belief confidence reflects relative evidence strength
+        const newConfidence = Math.min(0.6, 1 / (supportCount + 1) + 0.4);
+        const belief = createBelief(storage, { statement, confidence: newConfidence, type, importance, subject });
         storeEmbedding(storage, belief.id, embedding);
         linkBeliefToEpisode(storage, belief.id, episodeId);
         logBeliefChange(storage, {
@@ -190,12 +239,12 @@ async function processNewBelief(
         });
         linkSupersession(storage, contradictedId, belief.id);
         logger?.info("Belief weakened but retained due to strong evidence", {
-          oldBeliefId: contradictedId, newBeliefId: belief.id, supportCount,
+          oldBeliefId: contradictedId, newBeliefId: belief.id, supportCount, drop,
         });
         return { beliefId: belief.id, isReinforcement: false };
       }
 
-      // Weak evidence — invalidate as before
+      // Weak evidence — invalidate
       storage.run("UPDATE beliefs SET status = 'invalidated', updated_at = datetime('now') WHERE id = ?", [contradictedId]);
       logBeliefChange(storage, {
         beliefId: contradictedId,
@@ -216,6 +265,8 @@ async function processNewBelief(
       logger?.info("Belief contradicted and replaced", { oldBeliefId: contradictedId, newBeliefId: belief.id });
       return { beliefId: belief.id, isReinforcement: false };
     }
+
+    // INDEPENDENT: fall through to create new belief (related but compatible)
   }
 
   // No match or low similarity — create new

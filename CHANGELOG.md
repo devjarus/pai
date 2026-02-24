@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Google AI provider** — Added Google Gemini support via `@ai-sdk/google`. Supports chat, embeddings (text-embedding-004), and health checks.
+- **Provider presets in Settings** — Selecting a provider in the UI auto-fills base URL, model, and embed model with sensible defaults for Ollama, OpenAI, Anthropic, and Google AI.
+- **Token usage display** — Chat messages now show a subtle token badge (input/output tokens) at the bottom of completed assistant messages.
+
+### Changed
+
+- LLM client now returns human-readable error messages for common failures: invalid API key, unreachable endpoint, model not found, rate limiting, and quota issues.
+- Embedding provider selection now supports Google AI (`text-embedding-004`) in addition to Ollama and OpenAI.
+
 ## [0.2.0] - 2026-02-22
 
 ### Added

@@ -3,7 +3,7 @@ export type {
   PluginContext, Command, Plugin, AgentPlugin, AgentContext, Logger, LogLevel, LogFileOptions,
 } from "./types.js";
 export { loadConfig, loadConfigFile, writeConfig, findGitRoot } from "./config.js";
-export { createStorage } from "./storage.js";
+export { createStorage, backupDatabase } from "./storage.js";
 export { createLLMClient } from "./llm.js";
 export { createLogger } from "./logger.js";
 

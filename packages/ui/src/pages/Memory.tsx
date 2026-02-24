@@ -283,7 +283,14 @@ export default function Memory() {
                   <circle cx="12" cy="12" r="10" />
                   <path d="M12 6v6l4 2" />
                 </svg>
-                {searchInput ? "No beliefs match your search." : "No beliefs found. Start remembering."}
+                {searchInput ? (
+                  "No beliefs match your search."
+                ) : (
+                  <div className="text-center">
+                    <p>No memories yet.</p>
+                    <p className="mt-1 text-xs">Start chatting to build your memory, or type something above to remember.</p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">

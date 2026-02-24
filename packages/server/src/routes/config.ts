@@ -48,7 +48,7 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       telegramEnabled?: boolean;
     };
 
-    const validProviders = new Set(["ollama", "openai", "anthropic"]);
+    const validProviders = new Set(["ollama", "openai", "anthropic", "google"]);
 
     // Validate provider
     if (body.provider && !validProviders.has(body.provider)) {
