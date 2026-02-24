@@ -33,15 +33,21 @@ The fastest way to get started. Requires only [Docker](https://docs.docker.com/g
 ### One-click install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/devjarus/personal-ai/main/install.sh | bash
+# Review the script before running (recommended):
+curl -fsSL https://raw.githubusercontent.com/devjarus/pai/main/install.sh -o install.sh
+less install.sh        # inspect it
+bash install.sh        # then run it
+
+# Or run directly (trusts the remote script):
+curl -fsSL https://raw.githubusercontent.com/devjarus/pai/main/install.sh | bash
 ```
 
 The script will:
-1. Check that Docker and Docker Compose are available
-2. Ask if you want **local** (Ollama) or **cloud** (OpenAI/Anthropic/Google) LLM
-3. If cloud: prompt for provider choice and API key
-4. Download `docker-compose.yml` to `~/.personal-ai/`
-5. Pull and start the containers
+1. Ask if you want **Docker** or **from-source** installation
+2. Check prerequisites (Docker or Node.js + pnpm)
+3. Ask if you want **local** (Ollama) or **cloud** (OpenAI/Anthropic/Google) LLM
+4. If cloud: prompt for provider choice and API key
+5. Clone the repo and start the server
 
 Your LLM provider config is passed as Docker environment variables on first run. After startup, you can change everything from the **Settings** page — changes are saved to `~/.personal-ai/config.json` and take effect immediately.
 
@@ -121,7 +127,7 @@ In the Railway service settings, add these variables:
 
 ### Step 4: Deploy
 
-Railway auto-deploys on push. The `railway.toml` in the repo configures the build and health check automatically.
+Railway auto-deploys on push. The `railway.toml` in the repo configures the build and health check (`/api/health`) automatically.
 
 ### Step 5: Access your instance
 
@@ -131,7 +137,7 @@ Railway auto-deploys on push. The `railway.toml` in the repo configures the buil
    ```bash
    curl -H "Authorization: Bearer YOUR_TOKEN" https://your-app.up.railway.app/api/stats
    ```
-4. The web UI served at the root URL includes the token in requests automatically when you set it in the browser
+4. The web UI served at the root URL includes the token in requests automatically when you set it in the browser. **Note:** The token is stored in the browser's `localStorage` — clear it after use on shared or public machines.
 
 ### Security notes
 
@@ -139,7 +145,7 @@ Railway auto-deploys on push. The `railway.toml` in the repo configures the buil
 - The server adds security headers (helmet): CSP, HSTS, X-Frame-Options, etc.
 - Rate limiting is enforced: 100 req/min global, 20 req/min for chat, 10 req/min for knowledge learning
 - Authentication uses timing-safe comparison to prevent timing attacks
-- The Docker container runs as a non-root user
+- The Docker container runs as a non-root user (`pai`, UID 1001)
 
 ---
 

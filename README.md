@@ -16,13 +16,15 @@ Personal AI agent platform. Chat via web UI or Telegram, learn from web pages, m
 - **CLI** — `pai` commands with `--json` output and prefix-matched IDs
 - **Plugin architecture** — extend with custom agents, tools, and commands
 
-## Quick Start — Docker (recommended)
+## Quick Start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/devjarus/personal-ai/main/install.sh | bash
+# Download and review, then run:
+curl -fsSL https://raw.githubusercontent.com/devjarus/pai/main/install.sh -o install.sh
+bash install.sh
 ```
 
-The installer checks for Docker, asks whether you want local (Ollama) or cloud (OpenAI/Anthropic/Google) LLM, and starts everything. Open **http://localhost:3141**.
+The installer asks Docker or from-source, then local (Ollama) or cloud (OpenAI/Anthropic/Google) LLM, and starts everything. Open **http://localhost:3141**.
 
 > **Full setup guide:** See [docs/SETUP.md](docs/SETUP.md) for detailed instructions — Docker, from source, Ollama Cloud, OpenAI, Anthropic, Google AI, Telegram bot, and usage walkthrough.
 

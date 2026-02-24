@@ -82,8 +82,14 @@ COPY --from=builder /app/packages/plugin-telegram/dist packages/plugin-telegram/
 COPY --from=builder /app/packages/plugin-telegram/package.json packages/plugin-telegram/
 COPY --from=builder /app/packages/plugin-telegram/node_modules packages/plugin-telegram/node_modules
 
+# Create non-root user for runtime security
+RUN groupadd --gid 1001 pai && useradd --uid 1001 --gid pai --shell /bin/false pai
+
 # Create data directory (Railway volume mounts here at runtime)
-RUN mkdir -p /data
+RUN mkdir -p /data && chown pai:pai /data
+
+# Ensure app files are owned by the non-root user
+RUN chown -R pai:pai /app
 
 EXPOSE 3141
 
@@ -91,7 +97,9 @@ EXPOSE 3141
 # Railway manages volumes and healthchecks via railway.toml / dashboard.
 # For local Docker, use: docker run -v pai-data:/data ...
 
-COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY --chown=pai:pai docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
+
+USER pai
 
 CMD ["/app/docker-entrypoint.sh"]

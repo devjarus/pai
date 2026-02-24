@@ -56,15 +56,18 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       }
 
       // Auth passed (or not required) — check if onboarding is needed
-      try {
-        const stats = await getStats();
-        if (cancelled) return;
-        if (stats.beliefs.total === 0) {
-          setState("onboarding");
-          return;
+      // Skip check if user already completed/skipped onboarding this session
+      if (!localStorage.getItem("pai_onboarded")) {
+        try {
+          const stats = await getStats();
+          if (cancelled) return;
+          if (stats.beliefs.total === 0) {
+            setState("onboarding");
+            return;
+          }
+        } catch {
+          // If stats fail, skip onboarding check and proceed
         }
-      } catch {
-        // If stats fail, skip onboarding check and proceed
       }
 
       if (cancelled) return;

@@ -260,13 +260,15 @@ export async function createServer(options?: { port?: number; host?: string; pub
   });
 
   // PaaS sets PORT env var — bind to 0.0.0.0 to accept traffic from the load balancer
+  // PAI_HOST allows explicit host override (e.g., Docker containers need 0.0.0.0)
   const port = options?.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : 3141);
-  const host = options?.host ?? (isPaaS ? "0.0.0.0" : "127.0.0.1");
+  const host = options?.host ?? process.env.PAI_HOST ?? (isPaaS ? "0.0.0.0" : "127.0.0.1");
+  const hostExplicit = !!(options?.host || process.env.PAI_HOST);
   const isPublic = options?.public ?? (process.env.PAI_PUBLIC ? true : isPaaS);
   const isNonLocal = host !== "127.0.0.1" && host !== "localhost" && host !== "::1";
 
-  // Guard: refuse non-localhost binding without --public (PaaS auto-enables public mode)
-  if (isNonLocal && !isPublic) {
+  // Guard: refuse non-localhost binding without --public or explicit PAI_HOST (Docker)
+  if (isNonLocal && !isPublic && !hostExplicit) {
     console.error(
       `Error: Binding to ${host} exposes your data without authentication.\n` +
       `Use --public flag or set PAI_PUBLIC=1 to confirm.`,

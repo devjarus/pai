@@ -10,32 +10,46 @@ export default function Onboarding() {
   const [work, setWork] = useState("");
   const [preferences, setPreferences] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setError("");
 
-    try {
-      const promises: Promise<unknown>[] = [];
-      if (name.trim()) {
-        promises.push(remember(`My name is ${name.trim()}`));
-      }
-      if (work.trim()) {
-        promises.push(remember(`I work on ${work.trim()}`));
-      }
-      if (preferences.trim()) {
-        promises.push(remember(preferences.trim()));
-      }
-      await Promise.all(promises);
-    } catch {
-      // Continue to chat even if remember fails — not critical
+    const promises: Promise<unknown>[] = [];
+    if (name.trim()) {
+      promises.push(remember(`My name is ${name.trim()}`));
+    }
+    if (work.trim()) {
+      promises.push(remember(`I work on ${work.trim()}`));
+    }
+    if (preferences.trim()) {
+      promises.push(remember(preferences.trim()));
     }
 
-    navigate("/chat", { replace: true });
+    if (promises.length === 0) {
+      localStorage.setItem("pai_onboarded", "1");
+      navigate("/chat", { replace: true });
+      return;
+    }
+
+    try {
+      await Promise.all(promises);
+      localStorage.setItem("pai_onboarded", "1");
+      navigate("/chat", { replace: true });
+    } catch {
+      setSaving(false);
+      setError(
+        "Could not save — your LLM provider may not be configured yet. " +
+        "You can skip for now and set it up in Settings."
+      );
+    }
   };
 
   const handleSkip = () => {
+    localStorage.setItem("pai_onboarded", "1");
     navigate("/chat", { replace: true });
   };
 
@@ -92,6 +106,11 @@ export default function Onboarding() {
                 className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
               />
             </div>
+            {error && (
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {error}
+              </p>
+            )}
             <Button type="submit" className="w-full" disabled={saving}>
               {saving ? "Saving..." : "Get Started"}
             </Button>

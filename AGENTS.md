@@ -47,7 +47,7 @@ docker compose up -d
 docker compose --profile local up -d
 
 # One-click install (interactive — asks for provider choice)
-curl -fsSL https://raw.githubusercontent.com/devjarus/personal-ai/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/devjarus/pai/main/install.sh | bash
 ```
 
 The `docker-compose.yml` uses Docker Compose profiles: Ollama is in the `local` profile so it only starts when requested. LLM configuration is passed via environment variables (`PAI_LLM_PROVIDER`, `PAI_LLM_BASE_URL`, `PAI_LLM_MODEL`, `PAI_LLM_API_KEY`) or configured in the Settings UI after startup.

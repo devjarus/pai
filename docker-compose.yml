@@ -7,8 +7,9 @@ services:
     ports:
       - "3141:3141"
     volumes:
-      - pai-data:/data
+      - ${PAI_HOST_DATA_DIR:-~/.personal-ai/data}:/data
     environment:
+      - PAI_HOST=0.0.0.0
       - PAI_DATA_DIR=/data
       - PAI_LLM_PROVIDER=${PAI_LLM_PROVIDER:-ollama}
       - PAI_LLM_BASE_URL=${PAI_LLM_BASE_URL:-http://ollama:11434}
@@ -20,7 +21,7 @@ services:
       - PAI_PUBLIC=${PAI_PUBLIC:-}
       - NODE_ENV=production
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3141/api/health || exit 1"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3141/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -53,10 +54,4 @@ services:
     #           capabilities: [gpu]
 
 volumes:
-  pai-data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PAI_HOST_DATA_DIR:-~/.personal-ai/data}
   ollama-models:
