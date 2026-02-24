@@ -33,10 +33,10 @@
        └─────────────────────┼───────────────────────┘
                              ▼
                 ┌────────────────────────┐
-                │   SQLite (WAL mode)    │       ┌─────────────┐
-                │  ~/.personal-ai/data/  │       │ Ollama /    │
-                │   personal-ai.db       │       │ OpenAI API  │
-                └────────────────────────┘       └─────────────┘
+                │   SQLite (WAL mode)    │       ┌──────────────────┐
+                │  ~/.personal-ai/data/  │       │ Ollama / OpenAI  │
+                │   personal-ai.db       │       │ Anthropic/Google │
+                └────────────────────────┘       └──────────────────┘
 ```
 
 **Design principles:** KISS. SOLID. TDD. Plugin architecture. Unified retrieval (beliefs + knowledge with one embedding call).
@@ -47,7 +47,7 @@
 
 ```
 packages/
-  core/               Config, Storage, LLM Client, Logger, Memory, Knowledge, Threads, Plugin interfaces
+  core/               Config, Storage (auto-backup + transaction-wrapped migrations), LLM Client (humanizeError), Logger, Memory (classifyRelationship), Knowledge, Threads, Plugin interfaces
   cli/                Commander.js CLI + MCP server (stdio, 19 tools) + `pai init`
   plugin-tasks/       Tasks + Goals with AI prioritization
   plugin-assistant/   Personal Assistant agent — system prompt, AI SDK tools, afterResponse hook
@@ -205,10 +205,11 @@ Input: "Alex prefers Zustand over Redux"
           ├── > 0.85 similarity → REINFORCE existing belief
           │     confidence += 0.1, link to episode
           │
-          ├── 0.7-0.85 → CHECK CONTRADICTION (LLM call)
-          │     ├── contradiction + ≥3 episodes → WEAKEN old (-0.2), create new, both coexist
-          │     ├── contradiction + <3 episodes → INVALIDATE old, create replacement
-          │     └── no contradiction → fall through to CREATE
+          ├── 0.7-0.85 → CLASSIFY RELATIONSHIP (LLM call → classifyRelationship())
+          │     ├── REINFORCEMENT → boost existing belief (same as >0.85)
+          │     ├── CONTRADICTION + ≥3 episodes → WEAKEN old (proportional: -min(0.2, 1/(count+1))), both coexist
+          │     ├── CONTRADICTION + <3 episodes → INVALIDATE old, create replacement
+          │     └── INDEPENDENT → fall through to CREATE
           │
           ├── 0.4-0.7 → CREATE new + link to neighbors (Zettelkasten, up to 3 links)
           │
@@ -424,11 +425,13 @@ React SPA — Chat, Memory Explorer, Knowledge, Settings, Timeline.
 
 | Page | Key features |
 |------|-------------|
-| **Chat** | AI SDK `useChat` + `DefaultChatTransport`, thread sidebar, tool cards, responsive mobile |
-| **Memory** | Browse/search beliefs, type filter tabs, detail sidebar, clear all |
+| **Chat** | AI SDK `useChat` + `DefaultChatTransport`, thread sidebar, tool cards, responsive mobile, token usage badge |
+| **Memory** | Browse/search beliefs, type filter tabs, detail sidebar, clear all, empty state |
 | **Knowledge** | Browse sources, view chunks, search knowledge base, learn from URLs, crawl sub-pages |
-| **Settings** | LLM provider/model/key, data directory browser, Telegram config |
-| **Timeline** | Chronological episodes + belief changes |
+| **Settings** | LLM provider dropdown with auto-populated presets (Ollama/OpenAI/Anthropic/Google), model/key, data directory browser, Telegram config |
+| **Timeline** | Chronological episodes + belief changes, empty state |
+
+**Global error handling:** `ErrorBoundary` (catches React errors, refresh + copy details) and `OfflineBanner` (10s ping, amber banner, auto-dismiss on reconnect).
 
 ---
 
@@ -484,7 +487,7 @@ goals              (id, title, description, status, created_at)
 | Packages | pnpm workspaces |
 | Database | better-sqlite3 + FTS5 (single file, WAL mode) |
 | Embeddings | JSON in SQLite, cosine similarity in JS |
-| LLM | Vercel AI SDK (ai, @ai-sdk/openai, ai-sdk-ollama) |
+| LLM | Vercel AI SDK (ai, @ai-sdk/openai, @ai-sdk/google, ai-sdk-ollama) |
 | API Server | Fastify + CORS + static serving |
 | Frontend | React + Vite + Tailwind CSS + shadcn/ui |
 | Telegram | grammY |
@@ -493,3 +496,33 @@ goals              (id, title, description, status, created_at)
 | Testing | Vitest + v8 coverage |
 | Validation | Zod |
 | IDs | nanoid |
+| Container | Docker (multi-stage Alpine build) |
+
+---
+
+## Docker Deployment
+
+```
+┌─────────────────────────────────────────┐
+│              Host Machine               │
+│                                         │
+│  ┌──────────────┐   ┌───────────────┐   │
+│  │  pai         │   │  ollama       │   │
+│  │  :3141       │──▶│  :11434       │   │
+│  │  /data vol   │   │  /models vol  │   │
+│  └──────────────┘   └───────────────┘   │
+│        │              (profile: local)   │
+│        ▼                                │
+│  ~/.personal-ai/data/                   │
+└─────────────────────────────────────────┘
+```
+
+**Multi-stage Dockerfile:** Builder (Node 20 Alpine + pnpm + build tools) → Runtime (Alpine + dist + prod deps only). Target <400MB.
+
+**docker-compose.yml:** Two services with Docker Compose profiles:
+- `pai` — always starts, configurable via env vars (`PAI_LLM_PROVIDER`, `PAI_LLM_BASE_URL`, `PAI_LLM_API_KEY`)
+- `ollama` — `profiles: [local]`, only starts with `--profile local`
+
+**install.sh:** Interactive installer — checks Docker, asks local vs cloud, configures provider, saves `.env`, starts containers.
+
+**CI:** `.github/workflows/docker.yml` builds and pushes to GHCR on `v*` tag push.

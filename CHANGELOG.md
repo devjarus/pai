@@ -9,14 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Google AI provider** — Added Google Gemini support via `@ai-sdk/google`. Supports chat, embeddings (text-embedding-004), and health checks.
-- **Provider presets in Settings** — Selecting a provider in the UI auto-fills base URL, model, and embed model with sensible defaults for Ollama, OpenAI, Anthropic, and Google AI.
-- **Token usage display** — Chat messages now show a subtle token badge (input/output tokens) at the bottom of completed assistant messages.
+- **Google AI provider** — Google Gemini support via `@ai-sdk/google`. Supports chat, embeddings (text-embedding-004), and health checks.
+- **Provider presets in Settings** — Selecting a provider auto-fills base URL, model, and embed model with sensible defaults for Ollama, OpenAI, Anthropic, and Google AI.
+- **Token usage display** — Chat messages show a subtle token badge (input/output tokens) on completed assistant messages.
+- **Docker support** — Multi-stage Dockerfile (Node 20 Alpine, <400MB), docker-compose.yml with optional Ollama sidecar via profiles, and `install.sh` interactive installer for Mac/Linux.
+- **Docker publish CI** — GitHub Actions workflow builds and pushes images to GHCR on `v*` tag push.
+- **Grey zone relationship classifier** — `classifyRelationship()` replaces binary contradiction detection in the 0.70–0.85 similarity band with 3-way classification: REINFORCEMENT, CONTRADICTION, or INDEPENDENT.
+- **Proportional evidence weighing** — Well-supported beliefs (3+ episodes) are weakened proportionally instead of invalidated on contradiction.
+- **ErrorBoundary** — React error boundary with refresh and copy-error-details buttons.
+- **OfflineBanner** — Detects server unreachability (10s ping), shows amber banner, auto-dismisses on reconnect.
+- **Empty states** — Improved empty states for Memory Explorer and Timeline pages with guidance text.
+- **Memory lifecycle documentation** — `docs/MEMORY-LIFECYCLE.md` with mermaid diagrams, all thresholds, decay formula, and retrieval scoring.
+- **Recall benchmark** — `packages/core/test/bench/recall-benchmark.ts` seeds 500 beliefs, runs 100 queries, reports p50/p95/p99 latencies.
+- **Contradiction edge case tests** — 24 test cases covering grey zone scenarios, evidence weighing, band boundaries, and prompt parsing.
 
 ### Changed
 
-- LLM client now returns human-readable error messages for common failures: invalid API key, unreachable endpoint, model not found, rate limiting, and quota issues.
+- LLM client returns human-readable error messages (`humanizeError()`) for common failures: invalid API key, unreachable endpoint, model not found, rate limiting, and quota issues.
+- Client-side API errors are also humanized (SQLITE errors, HTTP status codes, network failures).
 - Embedding provider selection now supports Google AI (`text-embedding-004`) in addition to Ollama and OpenAI.
+- Database migrations are now transaction-wrapped (BEGIN/COMMIT/ROLLBACK per migration).
+- Automatic database backup (`backupDatabase()` with WAL checkpoint) before running pending migrations.
+- Docker Compose uses profiles — Ollama is in the `local` profile and only starts with `--profile local`.
 
 ## [0.2.0] - 2026-02-22
 

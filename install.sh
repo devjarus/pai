@@ -38,6 +38,63 @@ echo -e "${GREEN}✓${NC} Docker is running"
 echo -e "${GREEN}✓${NC} Docker Compose is available"
 echo ""
 
+# Choose LLM mode
+echo "How do you want to run your LLM?"
+echo ""
+echo "  1) Local with Ollama (default, private, no API key needed)"
+echo "  2) Cloud provider (OpenAI, Anthropic, Google, etc.)"
+echo ""
+read -rp "Choose [1/2]: " LLM_CHOICE
+LLM_CHOICE="${LLM_CHOICE:-1}"
+
+COMPOSE_PROFILES=""
+EXTRA_ENV=""
+
+if [ "$LLM_CHOICE" = "2" ]; then
+  echo ""
+  echo "Which provider?"
+  echo "  1) OpenAI"
+  echo "  2) Anthropic"
+  echo "  3) Google AI"
+  echo "  4) Other (OpenAI-compatible)"
+  echo ""
+  read -rp "Choose [1/2/3/4]: " PROVIDER_CHOICE
+
+  case "$PROVIDER_CHOICE" in
+    1)
+      PROVIDER="openai"
+      BASE_URL="https://api.openai.com/v1"
+      MODEL="gpt-4o"
+      ;;
+    2)
+      PROVIDER="anthropic"
+      BASE_URL="https://api.anthropic.com"
+      MODEL="claude-sonnet-4-20250514"
+      ;;
+    3)
+      PROVIDER="google"
+      BASE_URL="https://generativelanguage.googleapis.com/v1beta"
+      MODEL="gemini-2.0-flash"
+      ;;
+    *)
+      PROVIDER="openai"
+      read -rp "Base URL: " BASE_URL
+      read -rp "Model name: " MODEL
+      ;;
+  esac
+
+  read -rp "API key: " API_KEY
+  echo ""
+
+  EXTRA_ENV="PAI_LLM_PROVIDER=$PROVIDER PAI_LLM_BASE_URL=$BASE_URL PAI_LLM_MODEL=$MODEL PAI_LLM_API_KEY=$API_KEY"
+  echo -e "${GREEN}✓${NC} Using $PROVIDER ($MODEL)"
+else
+  COMPOSE_PROFILES="--profile local"
+  echo -e "${GREEN}✓${NC} Using local Ollama"
+fi
+
+echo ""
+
 # Set up data directory
 DATA_DIR="${PAI_DATA_DIR:-$HOME/.personal-ai/data}"
 mkdir -p "$DATA_DIR"
@@ -65,14 +122,24 @@ else
   echo -e "${GREEN}✓${NC} docker-compose.yml already exists"
 fi
 
+# Save env config for future restarts
+cat > "$INSTALL_DIR/.env" <<EOF
+PAI_HOST_DATA_DIR=$DATA_DIR
+PAI_LLM_PROVIDER=${PROVIDER:-ollama}
+PAI_LLM_BASE_URL=${BASE_URL:-http://ollama:11434}
+PAI_LLM_MODEL=${MODEL:-}
+PAI_LLM_API_KEY=${API_KEY:-}
+EOF
+echo -e "${GREEN}✓${NC} Config saved to $INSTALL_DIR/.env"
+
 echo ""
 echo "Starting Personal AI..."
 echo ""
 
 # Pull and start
 cd "$INSTALL_DIR"
-PAI_DATA_DIR="$DATA_DIR" docker compose pull
-PAI_DATA_DIR="$DATA_DIR" docker compose up -d
+docker compose $COMPOSE_PROFILES pull
+docker compose $COMPOSE_PROFILES up -d
 
 echo ""
 echo -e "${GREEN}════════════════════════════════════════${NC}"

@@ -4,20 +4,20 @@ This file provides guidance to coding agents (Codex, Claude Code) when working w
 
 ## Project Overview
 
-Personal AI agent platform. Chat via web UI or Telegram, manage tasks, learn from web pages, and build persistent memory — with CLI, MCP server, REST API, and a plugin architecture. Backed by SQLite and Ollama/OpenAI.
+Personal AI agent platform. Chat via web UI or Telegram, manage tasks, learn from web pages, and build persistent memory — with CLI, MCP server, REST API, and a plugin architecture. Backed by SQLite and Ollama/OpenAI/Anthropic/Google AI.
 
 ## Architecture
 
 pnpm monorepo with 8 packages under `packages/`:
 
-- **`core`** — Config (env vars + config.json via `loadConfig`), Storage (better-sqlite3 with migration tracking), LLM Client (Ollama-first, OpenAI fallback, embedding support), Logger (NDJSON to stderr + file), Plugin/Command/AgentPlugin interfaces, **Memory** (episodes, beliefs, embeddings, semantic search, contradiction detection, context packing, unified retrieval), **Knowledge** (web page chunks, FTS5 prefilter + cosine re-ranking). Memory is always available — it's the product, not a plugin.
+- **`core`** — Config (env vars + config.json via `loadConfig`), Storage (better-sqlite3 with migration tracking, transaction-wrapped migrations, automatic pre-migration backups via `backupDatabase()`), LLM Client (multi-provider: Ollama, OpenAI, Anthropic, Google — with `humanizeError()` for friendly error messages), Logger (NDJSON to stderr + file), Plugin/Command/AgentPlugin interfaces, **Memory** (episodes, beliefs, embeddings, semantic search, `classifyRelationship()` for 3-way grey zone contradiction detection, proportional evidence weighing, context packing, unified retrieval), **Knowledge** (web page chunks, FTS5 prefilter + cosine re-ranking). Memory is always available — it's the product, not a plugin.
 - **`cli`** — Commander.js entrypoint that registers memory commands unconditionally, loads optional plugins, runs migrations, and wires commands as `pai <group> <command>`. Includes `pai init` for interactive project setup.
 - **`plugin-tasks`** — Tasks (with priority/status/due dates) + Goals. `ai-suggest` feeds tasks+memory to LLM for prioritization.
 - **`plugin-assistant`** — Personal Assistant agent plugin with persistent memory, Brave web search, knowledge base, and task management. Implements `AgentPlugin` with `createTools()` (AI SDK tool definitions for memory, knowledge, search, tasks) and `afterResponse` (extracts learnings into memory). Uses `retrieveContext()` for unified belief + knowledge retrieval.
 - **`plugin-curator`** — Memory Curator agent plugin. Analyzes memory health (duplicates, stale beliefs, contradictions) and fixes issues with user approval. Tools: `curate_memory`, `fix_issues`, `list_beliefs`.
 - **`plugin-telegram`** — Telegram bot interface. Uses grammY to connect to Telegram, reuses the same agent chat pipeline (memory, tools, web search) as the web UI. Runs standalone without the Fastify server. Thread persistence via `telegram_threads` mapping table.
 - **`server`** — Fastify API server. Serves REST endpoints for memory, agents, chat (SSE streaming), config, and threads. Also serves the static UI build. Has `reinitialize()` for hot-swapping data directories. Default port: 3141.
-- **`ui`** — React + Vite + Tailwind CSS + shadcn/ui SPA. Pages: Chat (SSE streaming, markdown rendering), Memory Explorer (type tooltips, explainer, clear all), Knowledge (browse sources, view chunks, search), Settings (editable config, directory browser), Timeline.
+- **`ui`** — React + Vite + Tailwind CSS + shadcn/ui SPA. Pages: Chat (SSE streaming, markdown rendering, token usage badge), Memory Explorer (type tooltips, explainer, clear all), Knowledge (browse sources, view chunks, search), Settings (editable config, directory browser, provider presets auto-fill), Timeline. Global error handling via `ErrorBoundary` and `OfflineBanner` (auto-reconnect detection).
 
 **Plugin contract:** Two interfaces:
 
@@ -36,6 +36,23 @@ pnpm stop                                 # stop server (reads PID file)
 pnpm dev                                  # build + start server
 pnpm dev:ui                               # vite dev server (hot reload, proxies API)
 ```
+
+## Docker
+
+```bash
+# Cloud provider only (no Ollama)
+docker compose up -d
+
+# With local Ollama sidecar
+docker compose --profile local up -d
+
+# One-click install (interactive — asks for provider choice)
+curl -fsSL https://raw.githubusercontent.com/devjarus/personal-ai/main/install.sh | bash
+```
+
+The `docker-compose.yml` uses Docker Compose profiles: Ollama is in the `local` profile so it only starts when requested. LLM configuration is passed via environment variables (`PAI_LLM_PROVIDER`, `PAI_LLM_BASE_URL`, `PAI_LLM_MODEL`, `PAI_LLM_API_KEY`) or configured in the Settings UI after startup.
+
+GitHub Actions (`.github/workflows/docker.yml`) builds and pushes Docker images to GHCR on `v*` tag push.
 
 ## Test Commands
 
@@ -58,8 +75,8 @@ pnpm run ci                               # verify + coverage thresholds
 - better-sqlite3 + FTS5 (no external DB servers)
 - Commander.js for CLI, Zod for validation, nanoid for IDs
 - Vitest for testing
-- Vercel AI SDK (ai, @ai-sdk/react, @ai-sdk/openai, ai-sdk-ollama) for LLM integration, streaming, and tool-calling
-- Ollama (local LLM, default) / OpenAI-compatible API (fallback)
+- Vercel AI SDK (ai, @ai-sdk/react, @ai-sdk/openai, @ai-sdk/google, ai-sdk-ollama) for LLM integration, streaming, and tool-calling
+- Ollama (local LLM, default) / OpenAI / Anthropic / Google AI (cloud providers)
 - Fastify for API server
 - React + Vite + Tailwind CSS + shadcn/ui for web UI
 - react-markdown + remark-gfm for chat rendering
@@ -241,11 +258,15 @@ pnpm stop                            # graceful shutdown via PID file
 ```
 
 Pages:
-- **Chat** — Talk to the Personal Assistant agent. AI SDK streaming with tool cards, markdown rendering, memory-aware responses with web search. Thread sidebar with SQLite persistence. Responsive mobile design.
-- **Memory Explorer** — Browse beliefs by type/status, semantic search, see belief details with confidence/stability/importance metrics. Info tooltips on all types. Clear all memory.
+- **Chat** — Talk to the Personal Assistant agent. AI SDK streaming with tool cards, markdown rendering, memory-aware responses with web search. Thread sidebar with SQLite persistence. Responsive mobile design. Token usage badge on completed messages.
+- **Memory Explorer** — Browse beliefs by type/status, semantic search, see belief details with confidence/stability/importance metrics. Info tooltips on all types. Clear all memory. Empty state with guidance.
 - **Knowledge** — Browse learned sources, view chunks full-screen, search knowledge base, learn from URLs, re-learn/crawl sub-pages.
-- **Settings** — Edit LLM provider, model, base URL, API key, embed model. Browse filesystem to change data directory.
-- **Timeline** — Chronological view of belief events.
+- **Settings** — Edit LLM provider (select dropdown with auto-populated presets for Ollama, OpenAI, Anthropic, Google AI), model, base URL, API key, embed model. Browse filesystem to change data directory.
+- **Timeline** — Chronological view of belief events. Empty state with guidance.
+
+Global error handling:
+- **ErrorBoundary** — Catches React render errors. Shows friendly message with "Refresh" and "Copy error details" buttons.
+- **OfflineBanner** — Pings `/api/stats` every 10s. Shows amber warning when server is unreachable. Auto-dismisses on reconnect.
 
 API endpoints:
 ```

@@ -10,12 +10,11 @@ services:
       - pai-data:/data
     environment:
       - PAI_DATA_DIR=/data
-      - PAI_LLM_BASE_URL=http://ollama:11434
-      - PAI_LLM_PROVIDER=ollama
+      - PAI_LLM_PROVIDER=${PAI_LLM_PROVIDER:-ollama}
+      - PAI_LLM_BASE_URL=${PAI_LLM_BASE_URL:-http://ollama:11434}
+      - PAI_LLM_MODEL=${PAI_LLM_MODEL:-}
+      - PAI_LLM_API_KEY=${PAI_LLM_API_KEY:-}
       - NODE_ENV=production
-    depends_on:
-      ollama:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3141/api/config || exit 1"]
       interval: 30s
@@ -27,6 +26,8 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: personal-ai-ollama
+    profiles:
+      - local
     ports:
       - "11434:11434"
     volumes:

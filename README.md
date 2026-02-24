@@ -16,13 +16,30 @@ Personal AI agent platform. Chat via web UI or Telegram, learn from web pages, m
 - **CLI** — `pai` commands with `--json` output and prefix-matched IDs
 - **Plugin architecture** — extend with custom agents, tools, and commands
 
-## Prerequisites
+## Quick Start — Docker (recommended)
 
-- [Node.js](https://nodejs.org/) 20+
-- [pnpm](https://pnpm.io/) 9+
-- [Ollama](https://ollama.ai/) running locally (or an OpenAI-compatible API)
+```bash
+curl -fsSL https://raw.githubusercontent.com/devjarus/personal-ai/main/install.sh | bash
+```
 
-## Quick Start
+The installer checks for Docker, asks whether you want local (Ollama) or cloud (OpenAI/Anthropic/Google) LLM, and starts everything. Open **http://localhost:3141**.
+
+Or run manually:
+
+```bash
+# With local Ollama sidecar
+docker compose --profile local up -d
+
+# Cloud only (no Ollama) — configure provider in Settings UI
+docker compose up -d
+
+# Or pass provider directly
+PAI_LLM_PROVIDER=openai PAI_LLM_API_KEY=sk-... docker compose up -d
+```
+
+## Quick Start — From Source
+
+**Prerequisites:** Node.js 20+, pnpm 9+, [Ollama](https://ollama.ai/) or a cloud API key
 
 ```bash
 git clone https://github.com/devjarus/pai.git
@@ -177,7 +194,7 @@ Environment variables or `~/.personal-ai/config.json` (editable via Settings UI)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PAI_DATA_DIR` | `~/.personal-ai/data` | Database location |
-| `PAI_LLM_PROVIDER` | `ollama` | `ollama` or `openai` |
+| `PAI_LLM_PROVIDER` | `ollama` | `ollama`, `openai`, `anthropic`, or `google` |
 | `PAI_LLM_MODEL` | `llama3.2` | Chat model |
 | `PAI_LLM_EMBED_MODEL` | `nomic-embed-text` | Embedding model |
 | `PAI_LLM_BASE_URL` | `http://127.0.0.1:11434` | Provider URL |
@@ -188,7 +205,7 @@ Environment variables or `~/.personal-ai/config.json` (editable via Settings UI)
 ## Development
 
 ```bash
-pnpm test                # 327 tests (vitest)
+pnpm test                # 331 tests (vitest)
 pnpm test:watch          # watch mode
 pnpm test:coverage       # v8 coverage with thresholds
 pnpm typecheck           # type-check all packages
@@ -200,7 +217,7 @@ pnpm run ci              # typecheck + tests + coverage
 
 ## Tech Stack
 
-TypeScript strict · Node.js 20+ · pnpm · better-sqlite3 + FTS5 · Vercel AI SDK · Fastify · React + Vite + Tailwind + shadcn/ui · grammY · Commander.js · Vitest · Zod · nanoid
+TypeScript strict · Node.js 20+ · pnpm · better-sqlite3 + FTS5 · Vercel AI SDK (@ai-sdk/openai, @ai-sdk/google, ai-sdk-ollama) · Fastify · React + Vite + Tailwind + shadcn/ui · grammY · Commander.js · Vitest · Zod · nanoid · Docker
 
 ## License
 
