@@ -215,4 +215,29 @@ describe("loadConfig with config file merging", () => {
     const config = loadConfig({ PAI_HOME: dir });
     expect(config.dataDir).toBe("/custom/data/path");
   });
+
+  it("should include telegram config when PAI_TELEGRAM_TOKEN is set", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pai-test-"));
+    dirs.push(dir);
+    const config = loadConfig({ PAI_HOME: dir, PAI_TELEGRAM_TOKEN: "123:ABC" });
+    expect(config.telegram).toBeDefined();
+    expect(config.telegram!.token).toBe("123:ABC");
+  });
+
+  it("should include telegram ownerUsername from config file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pai-test-"));
+    dirs.push(dir);
+    const fileConfig = { telegram: { ownerUsername: "testuser", enabled: true } };
+    writeFileSync(join(dir, "config.json"), JSON.stringify(fileConfig));
+    const config = loadConfig({ PAI_HOME: dir, PAI_TELEGRAM_TOKEN: "123:ABC" });
+    expect(config.telegram!.ownerUsername).toBe("testuser");
+    expect(config.telegram!.enabled).toBe(true);
+  });
+
+  it("should omit telegram section when no telegram env or config", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pai-test-"));
+    dirs.push(dir);
+    const config = loadConfig({ PAI_HOME: dir });
+    expect(config.telegram).toBeUndefined();
+  });
 });
