@@ -173,18 +173,6 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
           const historyRows = listMessages(ctx.storage, sid, { limit: 20 });
           const history: ChatMessage[] = [];
           for (const row of historyRows) {
-            // Reconstruct tool context from parts_json on assistant messages
-            if (row.role === "assistant" && row.parts_json) {
-              try {
-                const parts = JSON.parse(row.parts_json) as { toolCalls?: string[] };
-                if (parts.toolCalls?.length) {
-                  history.push({
-                    role: "system",
-                    content: `[Internal context — tool calls performed]\n${parts.toolCalls.join("\n")}`,
-                  });
-                }
-              } catch { /* ignore malformed parts_json */ }
-            }
             history.push({ role: row.role, content: row.content });
           }
 
@@ -250,7 +238,7 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               tools: tools as any,
               toolChoice: tools ? "auto" : undefined,
-              stopWhen: tools ? stepCountIs(5) : undefined,
+              stopWhen: tools ? stepCountIs(3) : undefined,
               onError: ({ error }) => {
                 ctx.logger.error("streamText error (multi-step)", {
                   error: error instanceof Error ? error.message : String(error),

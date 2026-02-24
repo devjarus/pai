@@ -3,10 +3,15 @@ import { WifiOffIcon } from "lucide-react";
 import { getAuthToken } from "../api";
 
 const PING_INTERVAL = 10_000;
+const PING_TIMEOUT = 15_000;
+// Require consecutive failures before showing offline banner to avoid
+// false positives from transient network hiccups or slow cloud starts.
+const FAILURES_BEFORE_OFFLINE = 2;
 
 export function OfflineBanner() {
   const [offline, setOffline] = useState(false);
   const mountedRef = useRef(true);
+  const failCountRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -20,11 +25,22 @@ export function OfflineBanner() {
           method: "GET",
           cache: "no-store",
           headers,
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(PING_TIMEOUT),
         });
-        if (mountedRef.current) setOffline(!res.ok);
+        if (mountedRef.current) {
+          if (res.ok) {
+            failCountRef.current = 0;
+            setOffline(false);
+          } else {
+            failCountRef.current++;
+            if (failCountRef.current >= FAILURES_BEFORE_OFFLINE) setOffline(true);
+          }
+        }
       } catch {
-        if (mountedRef.current) setOffline(true);
+        if (mountedRef.current) {
+          failCountRef.current++;
+          if (failCountRef.current >= FAILURES_BEFORE_OFFLINE) setOffline(true);
+        }
       }
     };
 

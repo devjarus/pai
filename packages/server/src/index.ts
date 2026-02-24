@@ -53,6 +53,31 @@ export async function createServer(options?: { port?: number; host?: string; pub
 
   const llm = createLLMClient(config.llm, logger);
 
+  // Detect PaaS without persistent volume — warn loudly so operators notice
+  if (process.env.PORT) {
+    const fs = await import("node:fs");
+    const sentinelPath = `${config.dataDir}/.pai-volume-check`;
+    const hasSentinel = fs.existsSync(sentinelPath);
+    if (!hasSentinel) {
+      // First boot or ephemeral filesystem — write sentinel
+      try {
+        fs.writeFileSync(sentinelPath, new Date().toISOString());
+      } catch { /* read-only or permission issue */ }
+      logger.warn(
+        "First boot detected on PaaS. If threads/data disappear after restarts, " +
+        "ensure a persistent volume is mounted at the data directory. " +
+        "On Railway: Settings → Volumes → mount path /data",
+      );
+      console.warn(
+        "⚠️  PAI: No persistent volume detected at " + config.dataDir + ". " +
+        "Data will be LOST on container restart. " +
+        "Mount a volume at /data (Railway: Settings → Volumes).",
+      );
+    } else {
+      logger.info("Persistent volume detected — data will survive restarts");
+    }
+  }
+
   storage.migrate("memory", memoryMigrations);
   storage.migrate("tasks", taskMigrations);
   storage.migrate("threads", threadMigrations);
