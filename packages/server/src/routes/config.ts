@@ -18,6 +18,7 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
       baseUrl: llm.baseUrl,
       embedModel: llm.embedModel,
       embedProvider: llm.embedProvider ?? "auto",
+      hasApiKey: !!llm.apiKey,
     },
     telegram: {
       enabled: telegram?.enabled ?? false,

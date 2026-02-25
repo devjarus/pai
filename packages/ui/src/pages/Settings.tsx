@@ -268,7 +268,7 @@ export default function Settings() {
                   {embedProvider !== "local" && (
                     <EditableRow label="Embed Model" value={embedModel} onChange={setEmbedModel} placeholder="e.g. nomic-embed-text" envLabel={envOverrides.includes("embedModel")} />
                   )}
-                  <EditableRow label="API Key" value={apiKey} onChange={setApiKey} placeholder="Enter new key (leave empty to keep current)" type="password" envLabel={envOverrides.includes("apiKey")} />
+                  <EditableRow label="API Key" value={apiKey} onChange={setApiKey} placeholder={config?.llm.hasApiKey ? "Key saved — enter new to replace" : "Enter API key"} type="password" envLabel={envOverrides.includes("apiKey")} />
 
                   <Separator className="opacity-30" />
 

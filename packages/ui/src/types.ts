@@ -87,6 +87,7 @@ export interface ConfigInfo {
     baseUrl?: string;
     embedModel?: string;
     embedProvider?: string;
+    hasApiKey?: boolean;
     fallbackMode?: string;
   };
   telegram?: {
