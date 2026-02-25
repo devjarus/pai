@@ -9,7 +9,7 @@ import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import jwt from "jsonwebtoken";
-import { loadConfig, createStorage, createLLMClient, createLogger, memoryMigrations, threadMigrations, knowledgeMigrations, authMigrations, hasOwner, getJwtSecret } from "@personal-ai/core";
+import { loadConfig, createStorage, createLLMClient, createLogger, memoryMigrations, threadMigrations, knowledgeMigrations, authMigrations, hasOwner, getJwtSecret, resetOwnerPassword } from "@personal-ai/core";
 import { taskMigrations } from "@personal-ai/plugin-tasks";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
@@ -89,6 +89,21 @@ export async function createServer(options?: { port?: number; host?: string }) {
   storage.migrate("telegram", telegramMigrations);
   storage.migrate("knowledge", knowledgeMigrations);
   storage.migrate("auth", authMigrations);
+
+  // Password reset via environment variable
+  const resetPassword = process.env.PAI_RESET_PASSWORD;
+  if (resetPassword) {
+    try {
+      const didReset = resetOwnerPassword(storage, resetPassword);
+      if (didReset) {
+        console.log("✅ Password has been reset. Remove the PAI_RESET_PASSWORD environment variable and restart.");
+      } else {
+        console.log("⚠️  PAI_RESET_PASSWORD is set but no owner account exists. Ignoring.");
+      }
+    } catch (err) {
+      console.error("❌ Password reset failed:", err instanceof Error ? err.message : err);
+    }
+  }
 
   const ctx: PluginContext = { config, storage, llm, logger };
   const agents: AgentPlugin[] = [assistantPlugin, curatorPlugin];
@@ -348,6 +363,10 @@ export async function createServer(options?: { port?: number; host?: string }) {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: "1 minute" } };
     } else if (path === "/api/remember") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: "1 minute" } };
+    } else if (path === "/api/auth/login") {
+      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 5, timeWindow: "1 minute" } };
+    } else if (path === "/api/auth/refresh") {
+      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: "1 minute" } };
     }
   });
 

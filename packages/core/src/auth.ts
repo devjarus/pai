@@ -74,6 +74,14 @@ export async function verifyOwnerPassword(
   return compareSync(password, rows[0]!.password);
 }
 
+export function resetOwnerPassword(storage: Storage, newPassword: string): boolean {
+  if (!hasOwner(storage)) return false;
+  if (newPassword.length < 8) throw new Error("Password must be at least 8 characters");
+  const hashed = hashSync(newPassword, 12);
+  storage.run("UPDATE owner SET password = ?", [hashed]);
+  return true;
+}
+
 export function getJwtSecret(storage: Storage, envSecret?: string): string {
   if (envSecret) return envSecret;
   const rows = storage.query<{ value: string }>(

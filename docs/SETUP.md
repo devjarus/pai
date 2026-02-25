@@ -131,12 +131,57 @@ Railway auto-deploys on push. The `railway.toml` in the repo configures the buil
 1. Railway assigns a URL like `https://pai-production-xxxx.up.railway.app`
 2. Or add a custom domain in Railway settings
 
+### Step 6: Create your account
+
+On first visit, pai shows a **Setup Wizard** — enter your name, email, and password to create the owner account. This is the only account for the instance. Subsequent visits show the login page.
+
 ### Security notes
 
 - All traffic is encrypted via Railway's HTTPS termination
+- Owner authentication with bcrypt-hashed passwords and JWT tokens in httpOnly cookies
 - The server adds security headers (helmet): CSP, HSTS, X-Frame-Options, etc.
-- Rate limiting is enforced: 100 req/min global, 20 req/min for chat, 10 req/min for knowledge learning
+- Rate limiting is enforced: 100 req/min global, 20 req/min for chat, 5 req/min for login
 - The Docker container runs as a non-root user (`pai`, UID 1001)
+
+---
+
+## Authentication
+
+pai uses email + password authentication. Each instance has a single owner.
+
+### First boot
+
+On first visit (no owner in database), pai shows a setup wizard. Enter your name, email, and password to create the owner account. You're automatically logged in.
+
+### Login
+
+On subsequent visits, enter your email and password. Sessions last 7 days before requiring re-login.
+
+### Localhost bypass
+
+When running locally (`127.0.0.1` / `localhost`), authentication is **not required**. This is by design — local access is trusted for development, CLI, and MCP use.
+
+Auth is enforced when the server binds to `0.0.0.0` (Docker, Railway, any cloud deployment).
+
+### Forgot password
+
+If you forget your password:
+
+1. Set the environment variable `PAI_RESET_PASSWORD=yournewpassword`
+2. Restart the server
+3. Log in with your new password
+4. **Remove** the `PAI_RESET_PASSWORD` variable
+
+**On Railway:** Settings → Variables → add `PAI_RESET_PASSWORD` → redeploy → remove the variable after login.
+
+**On Docker:** Add `- PAI_RESET_PASSWORD=yournewpassword` to the environment section in `docker-compose.yml`, restart (`docker compose up -d`), then remove the line.
+
+### Environment variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `PAI_JWT_SECRET` | Custom JWT signing secret. Auto-generated and stored in the database if not set. | No |
+| `PAI_RESET_PASSWORD` | Set to reset the owner password on next boot. Remove after use. | No |
 
 ---
 
@@ -525,6 +570,21 @@ lsof -i :3141
 pnpm stop
 # or
 kill $(lsof -t -i :3141)
+```
+
+### Forgot owner password
+
+Set the env var and restart:
+
+```bash
+# Docker
+# Add PAI_RESET_PASSWORD=yournewpassword to docker-compose.yml environment, then:
+docker compose up -d
+# Remove the variable after logging in
+
+# Railway
+# Settings → Variables → add PAI_RESET_PASSWORD=yournewpassword → redeploy
+# Remove the variable after logging in
 ```
 
 ### Reset everything

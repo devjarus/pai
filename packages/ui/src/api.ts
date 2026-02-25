@@ -59,22 +59,30 @@ function humanizeError(status: number, body: string): string {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+let isRefreshing: Promise<boolean> | null = null;
+
+async function doRefresh(): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+      credentials: "include",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   const headers: Record<string, string> = { ...init?.headers as Record<string, string> };
-  // Only set Content-Type for requests with a body to avoid Fastify empty JSON body errors
   if (init?.body) {
     headers["Content-Type"] = headers["Content-Type"] ?? "application/json";
   }
-
-  let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, {
-      ...init,
-      headers,
-      credentials: "include",
-    });
+    return await fetch(`${BASE}${path}`, { ...init, headers, credentials: "include" });
   } catch (err) {
-    // Network-level errors (server down, no connection, etc.)
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("Failed to fetch") || message.includes("NetworkError") || message.includes("ECONNREFUSED")) {
       throw new Error("Unable to reach the server. Is it running?");
@@ -83,6 +91,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       throw new Error("Request was cancelled.");
     }
     throw new Error("Unable to reach the server.");
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res = await rawFetch(path, init);
+
+  // On 401, try refreshing the access token once and retry
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    // Coalesce concurrent refresh attempts into one
+    if (!isRefreshing) {
+      isRefreshing = doRefresh().finally(() => { isRefreshing = null; });
+    }
+    const refreshed = await isRefreshing;
+    if (refreshed) {
+      res = await rawFetch(path, init);
+    }
   }
 
   if (!res.ok) {
@@ -124,7 +148,7 @@ export async function logout(): Promise<void> {
   await request("/auth/logout", { method: "POST", body: "{}" });
 }
 
-export async function refreshToken(): Promise<{ ok: boolean; accessToken: string }> {
+export async function refreshToken(): Promise<{ ok: boolean }> {
   return request("/auth/refresh", { method: "POST", body: "{}" });
 }
 

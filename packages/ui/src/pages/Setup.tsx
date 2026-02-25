@@ -21,8 +21,8 @@ export default function Setup() {
     e.preventDefault();
     setError("");
 
-    if (!email.trim() || !password) {
-      setError("Email and password are required.");
+    if (!name.trim() || !email.trim() || !password) {
+      setError("Name, email, and password are required.");
       return;
     }
     if (password.length < 8) {
@@ -36,7 +36,7 @@ export default function Setup() {
 
     setSaving(true);
     try {
-      await setupOwner({ email: email.trim(), password, name: name.trim() || undefined });
+      await setupOwner({ email: email.trim(), password, name: name.trim() });
       await refresh();
       navigate("/chat", { replace: true });
     } catch (err) {
@@ -62,8 +62,8 @@ export default function Setup() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Name (optional)</label>
-              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="What should I call you?"
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="What should I call you?" required
                 className="w-full rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25" />
             </div>
             <div>

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Owner-only auth** — Email + password authentication with bcrypt hashing, JWT access tokens (15min) in httpOnly cookies, refresh tokens (7d), and setup wizard on first boot. Replaces the old shared `PAI_AUTH_TOKEN` system. Auth is enforced on cloud/Docker deployments (`0.0.0.0`) and bypassed on localhost (`127.0.0.1`).
+- **Password reset via env var** — Set `PAI_RESET_PASSWORD=newpassword` and restart to reset the owner password. Login page shows "Forgot password?" with step-by-step instructions.
 - **Tasks page** — Dedicated Tasks tab in the web UI with two sub-tabs: Tasks and Goals. Full CRUD (add, edit, delete, complete, reopen) with priority badges, due date tracking, goal linking, and progress bars. REST API endpoints for `/api/tasks` and `/api/goals`.
 - **Google AI provider** — Google Gemini support via `@ai-sdk/google`. Supports chat, embeddings (text-embedding-004), and health checks.
 - **Provider presets in Settings** — Selecting a provider auto-fills base URL, model, and embed model with sensible defaults for Ollama, OpenAI, Anthropic, and Google AI.
@@ -41,14 +43,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Owner-only auth with JWT** — bcrypt password hashing (cost 12), HMAC-SHA256 signed JWTs, httpOnly/Secure/SameSite=Lax cookies. Setup endpoint locked after first owner is created.
+- **Token leak prevention** — JWT access tokens are only set as httpOnly cookies, never returned in API response bodies.
+- **Auto-refresh on 401** — Client fetch wrapper transparently refreshes expired access tokens and retries the request. Concurrent refresh attempts are coalesced.
+- **Auth rate limiting** — Login endpoint limited to 5 req/min per IP, refresh to 10 req/min, preventing brute-force attacks.
+- **Localhost auth bypass** — Auth enforced only when binding to `0.0.0.0` (cloud/Docker). Local development on `127.0.0.1` requires no authentication.
+- **CSRF protection** — JSON content-type required on all state-changing requests, preventing form-based CSRF.
 - **Security headers** — `@fastify/helmet` adds CSP, X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy.
 - **Rate limiting** — `@fastify/rate-limit` enforces 100 req/min global, 20/min for chat, 10/min for knowledge learning, 30/min for remember.
-- **Timing-safe token comparison** — Sensitive comparisons use `crypto.timingSafeEqual` to prevent timing attacks.
 - **Trust proxy** — Fastify `trustProxy` enabled on PaaS (Railway/Render) for correct client IP in rate limiting.
 - **Input validation** — Max text length on `/api/remember` (10KB), URL validation and max length on `/api/knowledge/learn` (2KB).
 - **CORS for cloud domains** — Auto-allows Railway domains (`*.up.railway.app`), custom domain via `PAI_CORS_ORIGIN`.
 - **Docker non-root user** — Container runs as `node` user instead of root.
-- **Healthcheck fix** — Docker healthcheck uses `/api/health` (public endpoint) instead of `/api/config` (requires auth).
 - **Request logging** — All API requests logged with method, path, status, IP, and response time.
 - **Railway support** — `railway.toml` for one-click Railway deployment with health check and Dockerfile builder.
 

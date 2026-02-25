@@ -14,6 +14,7 @@ import {
   deleteThread,
   withThreadLock,
   getThread,
+  getOwner,
 } from "@personal-ai/core";
 import { streamText, generateText, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, tool } from "ai";
 import type { LanguageModel } from "ai";
@@ -164,9 +165,11 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
 
     // Inject current date/time so the LLM knows the current moment
     const now = new Date();
+    const owner = getOwner(ctx.storage);
+    const ownerName = owner?.name || owner?.email?.split("@")[0] || "the owner";
     let systemPrompt = agentPlugin.agent.systemPrompt +
       `\n\nCurrent date and time: ${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}, ${now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}. Use this for time-sensitive queries.` +
-      `\n\nYou are talking to your owner via the web UI. When they say "my" or "I", it refers to the owner. Memories tagged "owner" are about this person. Do not confuse the owner with other people mentioned in memories.`;
+      `\n\nYour owner's name is ${ownerName}. You are talking to them via the web UI. When they say "my" or "I", it refers to ${ownerName}. Memories tagged "owner" are about this person. Do not confuse ${ownerName} with other people mentioned in memories.`;
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         await withThreadLock(sid, async () => {

@@ -51,9 +51,10 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
   const isProd = !!process.env.PORT;
 
   app.get("/api/auth/status", async (request) => {
-    // On localhost, auth is not enforced — always report authenticated
+    // On localhost, auth is not enforced — but still require setup for owner identity
     if (!serverCtx.authEnabled) {
-      return { setup: false, authenticated: true };
+      const needsSetup = !hasOwner(serverCtx.ctx.storage);
+      return { setup: needsSetup, authenticated: !needsSetup };
     }
 
     const needsSetup = !hasOwner(serverCtx.ctx.storage);
@@ -74,8 +75,8 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
       return reply.status(400).send({ error: "Owner already exists" });
     }
     const body = request.body as { email?: string; password?: string; name?: string };
-    if (!body.email || !body.password) {
-      return reply.status(400).send({ error: "Email and password are required" });
+    if (!body.name?.trim() || !body.email || !body.password) {
+      return reply.status(400).send({ error: "Name, email, and password are required" });
     }
     if (body.password.length < 8) {
       return reply.status(400).send({ error: "Password must be at least 8 characters" });
@@ -90,7 +91,7 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
     const secret = getJwtSecret(serverCtx.ctx.storage, process.env.PAI_JWT_SECRET);
     const { accessToken, refreshToken } = signTokens({ sub: owner.id, email: owner.email }, secret);
     setCookies(reply, accessToken, refreshToken, isProd);
-    return { ok: true, owner: { id: owner.id, email: owner.email, name: owner.name }, accessToken };
+    return { ok: true, owner: { id: owner.id, email: owner.email, name: owner.name } };
   });
 
   app.post("/api/auth/login", async (request, reply) => {
@@ -112,7 +113,7 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
     const secret = getJwtSecret(serverCtx.ctx.storage, process.env.PAI_JWT_SECRET);
     const { accessToken, refreshToken } = signTokens({ sub: owner.id, email: owner.email }, secret);
     setCookies(reply, accessToken, refreshToken, isProd);
-    return { ok: true, owner: { id: owner.id, email: owner.email, name: owner.name }, accessToken };
+    return { ok: true, owner: { id: owner.id, email: owner.email, name: owner.name } };
   });
 
   app.post("/api/auth/refresh", async (request, reply) => {
@@ -129,7 +130,7 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
       }
       const { accessToken, refreshToken } = signTokens({ sub: decoded.sub, email: decoded.email }, secret);
       setCookies(reply, accessToken, refreshToken, isProd);
-      return { ok: true, accessToken };
+      return { ok: true };
     } catch {
       return reply.status(401).send({ error: "Invalid or expired refresh token" });
     }
@@ -142,6 +143,12 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
   });
 
   app.get("/api/auth/me", async (request, reply) => {
+    // Localhost bypass — return owner if exists, or a placeholder
+    if (!serverCtx.authEnabled) {
+      const owner = getOwner(serverCtx.ctx.storage);
+      return { owner: owner ? { id: owner.id, email: owner.email, name: owner.name } : { id: "local", email: "local@localhost", name: "Local User" } };
+    }
+
     const secret = getJwtSecret(serverCtx.ctx.storage, process.env.PAI_JWT_SECRET);
     const token = extractToken(request);
     if (!token) return reply.status(401).send({ error: "Not authenticated" });

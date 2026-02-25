@@ -159,5 +159,4 @@ export interface AuthOwner {
 export interface LoginResponse {
   ok: boolean;
   owner: AuthOwner;
-  accessToken: string;
 }

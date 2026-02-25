@@ -1405,7 +1405,8 @@ describe("Auth routes", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
-    expect(res.json().accessToken).toBeDefined();
+    expect(res.json().accessToken).toBeUndefined();
+    expect(res.cookies.find((c: { name: string }) => c.name === "pai_access")).toBeDefined();
   });
 
   it("POST /api/auth/setup fails if owner already exists", async () => {
@@ -1423,7 +1424,7 @@ describe("Auth routes", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/auth/setup",
-      payload: { email: "test@example.com", password: "short" },
+      payload: { name: "Test", email: "test@example.com", password: "short" },
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toContain("8 characters");
@@ -1439,7 +1440,8 @@ describe("Auth routes", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
-    expect(res.json().accessToken).toBeDefined();
+    expect(res.json().accessToken).toBeUndefined();
+    expect(res.cookies.find((c: { name: string }) => c.name === "pai_access")).toBeDefined();
   });
 
   it("POST /api/auth/login rejects invalid credentials", async () => {
@@ -1505,7 +1507,8 @@ describe("Auth routes", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
-    expect(res.json().accessToken).toBeDefined();
+    expect(res.json().accessToken).toBeUndefined();
+    expect(res.cookies.find((c: { name: string }) => c.name === "pai_access")).toBeDefined();
   });
 
   it("POST /api/auth/refresh rejects token without refresh type", async () => {

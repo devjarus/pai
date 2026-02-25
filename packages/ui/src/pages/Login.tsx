@@ -12,6 +12,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
   const navigate = useNavigate();
   const { refresh } = useAuth();
 
@@ -64,6 +65,23 @@ export default function Login() {
               {checking ? "Signing in..." : "Sign In"}
             </Button>
           </form>
+          <div className="mt-3 text-center">
+            <button type="button" onClick={() => setShowForgot(!showForgot)} className="text-xs text-muted-foreground/70 hover:text-muted-foreground transition-colors">
+              Forgot password?
+            </button>
+          </div>
+          {showForgot && (
+            <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-2">
+              <p className="font-medium">To reset your password:</p>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>Set the environment variable <code className="rounded bg-background px-1 py-0.5 font-mono text-foreground/80">PAI_RESET_PASSWORD=yournewpassword</code></li>
+                <li>Restart the server</li>
+                <li>Log in with your new password</li>
+                <li>Remove the <code className="rounded bg-background px-1 py-0.5 font-mono text-foreground/80">PAI_RESET_PASSWORD</code> variable</li>
+              </ol>
+              <p className="text-muted-foreground/60">On Railway: Settings &rarr; Variables &rarr; add the variable &rarr; redeploy &rarr; remove it after login.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
