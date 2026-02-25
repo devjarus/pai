@@ -164,9 +164,25 @@ export default function Chat() {
     sendMessage,
     stop,
     status,
+    error: chatError,
     setMessages: setChatMessages,
   } = useChat({
     transport: chatTransport,
+    onError: (error) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      // Humanize common LLM connection errors
+      if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("ECONNREFUSED")) {
+        toast.error("Could not reach the AI provider. Check your LLM settings.");
+      } else if (msg.includes("401") || msg.includes("API key")) {
+        toast.error("Invalid API key. Check your LLM provider settings.");
+      } else if (msg.includes("model") && msg.includes("not found")) {
+        toast.error("Model not found. Check your model name in Settings.");
+      } else if (msg.includes("timeout") || msg.includes("ETIMEDOUT")) {
+        toast.error("Request timed out. The AI provider may be slow or unreachable.");
+      } else {
+        toast.error(msg.length > 200 ? "Failed to get a response. Check Settings." : msg);
+      }
+    },
   });
 
   const isStreaming = status === "streaming" || status === "submitted";
@@ -722,6 +738,14 @@ export default function Chat() {
           {/* Show thinking indicator when submitted but no assistant message yet */}
           {status === "submitted" && (chatMessages.length === 0 || chatMessages[chatMessages.length - 1].role !== "assistant") && (
             <ChatMessage role="assistant" content="" isStreaming />
+          )}
+          {/* Show inline error when chat fails */}
+          {chatError && status !== "streaming" && status !== "submitted" && (
+            <div className="mx-auto max-w-3xl px-5 py-2">
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                Failed to get a response. Check your LLM provider settings or try again.
+              </div>
+            </div>
           )}
         </div>
 
