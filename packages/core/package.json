@@ -32,6 +32,7 @@
     "@ai-sdk/openai": "^3.0.29",
     "ai": "^6.0.0",
     "ai-sdk-ollama": "^3.7.0",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.4.0",
     "nanoid": "^5.0.0",
@@ -41,6 +42,7 @@
     "@huggingface/transformers": "^3.4.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0",

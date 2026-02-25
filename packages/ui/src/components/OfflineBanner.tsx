@@ -1,11 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { WifiOffIcon } from "lucide-react";
-import { getAuthToken } from "../api";
 
 const PING_INTERVAL = 10_000;
 const PING_TIMEOUT = 15_000;
-// Require consecutive failures before showing offline banner to avoid
-// false positives from transient network hiccups or slow cloud starts.
 const FAILURES_BEFORE_OFFLINE = 2;
 
 export function OfflineBanner() {
@@ -18,13 +15,10 @@ export function OfflineBanner() {
 
     const ping = async () => {
       try {
-        const token = getAuthToken();
-        const headers: Record<string, string> = {};
-        if (token) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch("/api/health", {
           method: "GET",
           cache: "no-store",
-          headers,
+          credentials: "include",
           signal: AbortSignal.timeout(PING_TIMEOUT),
         });
         if (mountedRef.current) {
@@ -44,9 +38,7 @@ export function OfflineBanner() {
       }
     };
 
-    // Don't ping immediately on mount — the app loads fine if we're here
     const interval = setInterval(ping, PING_INTERVAL);
-
     return () => {
       mountedRef.current = false;
       clearInterval(interval);

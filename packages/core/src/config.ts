@@ -73,10 +73,6 @@ export function loadConfigFile(homeDir?: string): Partial<Config> {
     if (telegram?.token && typeof telegram.token === "string") {
       (telegram as Record<string, unknown>).token = decryptSecret(telegram.token as string);
     }
-    if (parsed.authToken && typeof parsed.authToken === "string") {
-      parsed.authToken = decryptSecret(parsed.authToken);
-    }
-
     return parsed;
   } catch {
     return {};
@@ -99,10 +95,6 @@ export function writeConfig(homeDir: string, config: Partial<Config>): void {
   if (telegram?.token && typeof telegram.token === "string" && !telegram.token.startsWith(ENC_PREFIX)) {
     telegram.token = encryptSecret(telegram.token);
   }
-  if (toWrite.authToken && typeof toWrite.authToken === "string" && !toWrite.authToken.startsWith(ENC_PREFIX)) {
-    toWrite.authToken = encryptSecret(toWrite.authToken as string);
-  }
-
   writeFileSync(configPath, JSON.stringify(toWrite, null, 2) + "\n", "utf-8");
   // Restrict file permissions: owner read/write only (0600)
   try { chmodSync(configPath, 0o600); } catch { /* Windows doesn't support chmod — ignore */ }
@@ -144,7 +136,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     logLevel: (env["PAI_LOG_LEVEL"] as Config["logLevel"]) ?? (fileConfig.logLevel as Config["logLevel"]) ?? "silent",
     plugins: env["PAI_PLUGINS"]?.split(",").map((s) => s.trim()) ?? fileConfig.plugins ?? ["memory", "tasks"],
     webSearchEnabled: env["PAI_WEB_SEARCH"] === "false" ? false : (fileConfig.webSearchEnabled ?? true),
-    authToken: env["PAI_AUTH_TOKEN"] ?? fileConfig.authToken,
   };
 
   // Only add telegram section if any value is set

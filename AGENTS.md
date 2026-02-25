@@ -86,7 +86,7 @@ pnpm run ci                               # verify + coverage thresholds
 
 Config comes from two sources, merged with this priority: env vars > config.json > defaults.
 
-**Environment variables** (for dev/CLI): `PAI_DATA_DIR`, `PAI_LLM_PROVIDER`, `PAI_LLM_MODEL`, `PAI_LLM_EMBED_MODEL`, `PAI_LLM_BASE_URL`, `PAI_LLM_API_KEY`, `PAI_PLUGINS`, `PAI_LOG_LEVEL`, `PAI_TELEGRAM_TOKEN`, `PAI_WEB_SEARCH` (set to `false` to disable), `PAI_AUTH_TOKEN`, `PAI_PUBLIC`.
+**Environment variables** (for dev/CLI): `PAI_DATA_DIR`, `PAI_LLM_PROVIDER`, `PAI_LLM_MODEL`, `PAI_LLM_EMBED_MODEL`, `PAI_LLM_BASE_URL`, `PAI_LLM_API_KEY`, `PAI_PLUGINS`, `PAI_LOG_LEVEL`, `PAI_TELEGRAM_TOKEN`, `PAI_WEB_SEARCH` (set to `false` to disable).
 
 **Config file** (for server/UI): `~/.personal-ai/config.json`. Editable through the web UI Settings page. Data directory defaults to `~/.personal-ai/data/`.
 

@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import cookie from "@fastify/cookie";
 import { registerMemoryRoutes } from "../src/routes/memory.js";
 import { registerAgentRoutes, threadMigrations } from "../src/routes/agents.js";
 import { registerConfigRoutes } from "../src/routes/config.js";
 import { registerTaskRoutes } from "../src/routes/tasks.js";
+import { registerAuthRoutes } from "../src/routes/auth.js";
 import type { ServerContext } from "../src/index.js";
+import jwt from "jsonwebtoken";
 
 // ---------------------------------------------------------------------------
 // Mock @personal-ai/core — isolate route handlers from real storage/LLM
@@ -34,8 +37,23 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     memoryStats: vi.fn(),
     remember: vi.fn(),
     getMemoryContext: vi.fn().mockResolvedValue(""),
+    hasOwner: (...args: unknown[]) => mockHasOwner(...args),
+    createOwner: (...args: unknown[]) => mockCreateOwner(...args),
+    getOwner: (...args: unknown[]) => mockGetOwner(...args),
+    verifyOwnerPassword: (...args: unknown[]) => mockVerifyOwnerPassword(...args),
+    getJwtSecret: (...args: unknown[]) => mockGetJwtSecret(...args),
+    authMigrations: [],
   };
 });
+
+// ---------------------------------------------------------------------------
+// Auth mock functions
+// ---------------------------------------------------------------------------
+const mockHasOwner = vi.fn();
+const mockCreateOwner = vi.fn();
+const mockGetOwner = vi.fn();
+const mockVerifyOwnerPassword = vi.fn();
+const mockGetJwtSecret = vi.fn().mockReturnValue("test-secret-key-for-jwt-testing-1234567890");
 
 // ---------------------------------------------------------------------------
 // Mock @personal-ai/plugin-tasks — isolate task route handlers
@@ -368,6 +386,7 @@ function createMockServerCtx(): ServerContext {
     telegramStatus: { running: false },
     startTelegramBot: vi.fn(),
     stopTelegramBot: vi.fn(),
+    authEnabled: true,
   };
 }
 
@@ -1332,5 +1351,227 @@ describe("task routes", () => {
     mockDeleteGoal.mockReturnValue(undefined);
     const res = await app.inject({ method: "DELETE", url: "/api/goals/g1" });
     expect(res.statusCode).toBe(200);
+  });
+});
+
+// ==========================================================================
+// Auth Routes
+// ==========================================================================
+
+describe("Auth routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockHasOwner.mockReset();
+    mockCreateOwner.mockReset();
+    mockGetOwner.mockReset();
+    mockVerifyOwnerPassword.mockReset();
+    mockGetJwtSecret.mockReset().mockReturnValue("test-secret-key-for-jwt-testing-1234567890");
+
+    app = Fastify();
+    serverCtx = createMockServerCtx();
+    await app.register(cookie);
+    registerAuthRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("GET /api/auth/status returns setup:true when no owner", async () => {
+    mockHasOwner.mockReturnValue(false);
+    const res = await app.inject({ method: "GET", url: "/api/auth/status" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ setup: true, authenticated: false });
+  });
+
+  it("GET /api/auth/status returns setup:false when owner exists", async () => {
+    mockHasOwner.mockReturnValue(true);
+    const res = await app.inject({ method: "GET", url: "/api/auth/status" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ setup: false });
+  });
+
+  it("POST /api/auth/setup creates owner and returns tokens", async () => {
+    mockHasOwner.mockReturnValue(false);
+    mockCreateOwner.mockResolvedValue({ id: "owner-1", email: "test@example.com", name: "Test" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { email: "test@example.com", password: "securepassword", name: "Test" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(res.json().accessToken).toBeDefined();
+  });
+
+  it("POST /api/auth/setup fails if owner already exists", async () => {
+    mockHasOwner.mockReturnValue(true);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { email: "test@example.com", password: "securepassword" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("POST /api/auth/setup fails with short password", async () => {
+    mockHasOwner.mockReturnValue(false);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { email: "test@example.com", password: "short" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("8 characters");
+  });
+
+  it("POST /api/auth/login returns tokens for valid credentials", async () => {
+    mockVerifyOwnerPassword.mockResolvedValue(true);
+    mockGetOwner.mockReturnValue({ id: "owner-1", email: "test@example.com", name: "Test" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "test@example.com", password: "correctpassword" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(res.json().accessToken).toBeDefined();
+  });
+
+  it("POST /api/auth/login rejects invalid credentials", async () => {
+    mockVerifyOwnerPassword.mockResolvedValue(false);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "test@example.com", password: "wrongpassword" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("POST /api/auth/logout clears cookies", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/auth/logout", payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+  });
+
+  const TEST_SECRET = "test-secret-key-for-jwt-testing-1234567890";
+
+  it("POST /api/auth/setup with missing fields returns 400", async () => {
+    mockHasOwner.mockReturnValue(false);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { email: "test@example.com" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("required");
+  });
+
+  it("POST /api/auth/login with missing fields returns 400", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "test@example.com" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("required");
+  });
+
+  it("POST /api/auth/refresh without cookie returns 401", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: {},
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toContain("No refresh token");
+  });
+
+  it("POST /api/auth/refresh with valid refresh token returns new tokens", async () => {
+    const refreshToken = jwt.sign(
+      { sub: "owner-1", email: "test@example.com", type: "refresh" },
+      TEST_SECRET,
+      { expiresIn: "7d" },
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      cookies: { pai_refresh: refreshToken },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(res.json().accessToken).toBeDefined();
+  });
+
+  it("POST /api/auth/refresh rejects token without refresh type", async () => {
+    const badToken = jwt.sign(
+      { sub: "owner-1", email: "test@example.com" },
+      TEST_SECRET,
+      { expiresIn: "7d" },
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      cookies: { pai_refresh: badToken },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toContain("Invalid token type");
+  });
+
+  it("GET /api/auth/me without token returns 401", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/auth/me",
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toContain("Not authenticated");
+  });
+
+  it("GET /api/auth/me with valid token returns owner", async () => {
+    const accessToken = jwt.sign(
+      { sub: "owner-1", email: "test@example.com" },
+      TEST_SECRET,
+      { expiresIn: "15m" },
+    );
+    mockGetOwner.mockReturnValue({ id: "owner-1", email: "test@example.com", name: "Test" });
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/auth/me",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().owner).toMatchObject({ id: "owner-1", email: "test@example.com", name: "Test" });
+  });
+
+  it("GET /api/auth/me with mismatched owner returns 401", async () => {
+    const accessToken = jwt.sign(
+      { sub: "owner-999", email: "other@example.com" },
+      TEST_SECRET,
+      { expiresIn: "15m" },
+    );
+    mockGetOwner.mockReturnValue({ id: "owner-1", email: "test@example.com", name: "Test" });
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/auth/me",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("POST /api/auth/login returns 401 when getOwner returns null", async () => {
+    mockVerifyOwnerPassword.mockResolvedValue(true);
+    mockGetOwner.mockReturnValue(null);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "test@example.com", password: "correctpassword" },
+    });
+    expect(res.statusCode).toBe(401);
   });
 });

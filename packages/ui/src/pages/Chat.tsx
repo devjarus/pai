@@ -25,7 +25,6 @@ import {
   createThread,
   deleteThread,
   renameThread,
-  getAuthToken,
 } from "../api";
 import type { Agent, Thread } from "../types";
 import { cn } from "@/lib/utils";
@@ -140,13 +139,8 @@ export default function Chat() {
           sessionId: activeThreadIdRef.current,
         }),
         fetch: async (input, init) => {
-          // Inject auth token for public deployments
-          const token = getAuthToken();
-          if (token) {
-            const headers = new Headers(init?.headers);
-            headers.set("Authorization", `Bearer ${token}`);
-            init = { ...init, headers };
-          }
+          // Send cookies for auth
+          init = { ...init, credentials: "include" };
           const res = await globalThis.fetch(input, init);
           const newThreadId = res.headers.get("x-thread-id");
           if (newThreadId) {

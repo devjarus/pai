@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
@@ -7,13 +8,14 @@ import { join, dirname } from "node:path";
 import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { timingSafeEqual } from "node:crypto";
-import { loadConfig, createStorage, createLLMClient, createLogger, memoryMigrations, threadMigrations, knowledgeMigrations } from "@personal-ai/core";
+import jwt from "jsonwebtoken";
+import { loadConfig, createStorage, createLLMClient, createLogger, memoryMigrations, threadMigrations, knowledgeMigrations, authMigrations, hasOwner, getJwtSecret } from "@personal-ai/core";
 import { taskMigrations } from "@personal-ai/plugin-tasks";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
 import { telegramMigrations, createBot } from "@personal-ai/plugin-telegram";
+import { registerAuthRoutes, extractToken } from "./routes/auth.js";
 import { registerMemoryRoutes } from "./routes/memory.js";
 import { registerAgentRoutes } from "./routes/agents.js";
 import { registerConfigRoutes } from "./routes/config.js";
@@ -30,9 +32,11 @@ export interface ServerContext {
   telegramStatus: { running: boolean; username?: string; error?: string };
   startTelegramBot(): void;
   stopTelegramBot(): void;
+  /** Whether JWT auth is enforced (false on localhost) */
+  authEnabled: boolean;
 }
 
-export async function createServer(options?: { port?: number; host?: string; public?: boolean }) {
+export async function createServer(options?: { port?: number; host?: string }) {
   const config = loadConfig();
   const logger = createLogger(config.logLevel, { dir: config.dataDir });
 
@@ -84,6 +88,7 @@ export async function createServer(options?: { port?: number; host?: string; pub
   storage.migrate("threads", threadMigrations);
   storage.migrate("telegram", telegramMigrations);
   storage.migrate("knowledge", knowledgeMigrations);
+  storage.migrate("auth", authMigrations);
 
   const ctx: PluginContext = { config, storage, llm, logger };
   const agents: AgentPlugin[] = [assistantPlugin, curatorPlugin];
@@ -148,6 +153,7 @@ export async function createServer(options?: { port?: number; host?: string; pub
     newStorage.migrate("threads", threadMigrations);
     newStorage.migrate("telegram", telegramMigrations);
     newStorage.migrate("knowledge", knowledgeMigrations);
+    newStorage.migrate("auth", authMigrations);
 
     // Update ctx in place so all routes see the new connections
     Object.assign(ctx, {
@@ -173,6 +179,10 @@ export async function createServer(options?: { port?: number; host?: string; pub
   // Detect PaaS environment (Railway, Render, etc.) via PORT env var
   const isPaaS = !!process.env.PORT;
 
+  // Compute host early so we can decide whether to enable JWT auth
+  const host = options?.host ?? process.env.PAI_HOST ?? (isPaaS ? "0.0.0.0" : "127.0.0.1");
+  const isLocal = host === "127.0.0.1" || host === "localhost" || host === "::1";
+
   const app = Fastify({
     logger: false,
     bodyLimit: 1_048_576,
@@ -196,6 +206,9 @@ export async function createServer(options?: { port?: number; host?: string; pub
     },
     crossOriginEmbedderPolicy: false,  // Allow loading cross-origin images in chat
   });
+
+  // --- Cookies ---
+  await app.register(cookie);
 
   // --- Rate Limiting ---
   await app.register(rateLimit, {
@@ -226,6 +239,7 @@ export async function createServer(options?: { port?: number; host?: string; pub
     }
   }
   await app.register(cors, {
+    credentials: true,
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
       if (isAllowedOrigin(origin)) return cb(null, true);
@@ -250,6 +264,7 @@ export async function createServer(options?: { port?: number; host?: string; pub
     telegramStatus,
     startTelegramBot,
     stopTelegramBot,
+    authEnabled: !isLocal,
   };
 
   // Health endpoint (auth-exempt, cached to prevent DoS via external calls)
@@ -269,6 +284,7 @@ export async function createServer(options?: { port?: number; host?: string; pub
     }
   });
 
+  registerAuthRoutes(app, serverCtx);
   registerMemoryRoutes(app, serverCtx);
   registerAgentRoutes(app, serverCtx);
   registerConfigRoutes(app, serverCtx);
@@ -289,63 +305,26 @@ export async function createServer(options?: { port?: number; host?: string; pub
   // PaaS sets PORT env var — bind to 0.0.0.0 to accept traffic from the load balancer
   // PAI_HOST allows explicit host override (e.g., Docker containers need 0.0.0.0)
   const port = options?.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : 3141);
-  const host = options?.host ?? process.env.PAI_HOST ?? (isPaaS ? "0.0.0.0" : "127.0.0.1");
-  const hostExplicit = !!(options?.host || process.env.PAI_HOST);
-  const isPublic = options?.public ?? (process.env.PAI_PUBLIC ? true : isPaaS);
-  const isNonLocal = host !== "127.0.0.1" && host !== "localhost" && host !== "::1";
 
-  // Guard: refuse non-localhost binding without --public or explicit PAI_HOST (Docker)
-  if (isNonLocal && !isPublic && !hostExplicit) {
-    console.error(
-      `Error: Binding to ${host} exposes your data without authentication.\n` +
-      `Use --public flag or set PAI_PUBLIC=1 to confirm.`,
-    );
-    process.exit(1);
-  }
-
-  // Auth token for public mode
-  const authToken = process.env.PAI_AUTH_TOKEN ?? ctx.config.authToken;
-
-  // HARD GATE: refuse to start in public mode without auth token
-  if (isPublic && isNonLocal && !authToken) {
-    console.error(
-      "Error: PAI_AUTH_TOKEN is required when running in public mode.\n" +
-      "Set PAI_AUTH_TOKEN environment variable with a strong random token (32+ characters).",
-    );
-    process.exit(1);
-  }
-
-  if (isPublic && isNonLocal) {
-    console.log(`Server running in public mode on ${host}:${port} (authentication enabled)`);
-  }
-
-  // --- Timing-safe token comparison (constant-time, no length leak) ---
-  function tokenMatches(provided: string | undefined): boolean {
-    if (!authToken || !provided) return false;
-    const a = Buffer.from(provided);
-    const b = Buffer.from(authToken);
-    // timingSafeEqual throws if lengths differ — catch to avoid length leak
-    try {
-      return timingSafeEqual(a, b);
-    } catch {
-      return false;
-    }
-  }
-
-  // Register auth hook when running in public mode with a token
-  if (isPublic && authToken) {
+  // --- JWT Authentication (only when not on localhost) ---
+  if (!isLocal) {
     app.addHook("onRequest", async (request, reply) => {
-      // Skip auth for static files and non-API routes
       if (!request.url.startsWith("/api/")) return;
-      // Skip health endpoint (used by load balancers / Railway)
       if (request.url === "/api/health") return;
+      if (request.url.startsWith("/api/auth/")) return;
 
-      const bearer = request.headers.authorization?.replace(/^Bearer\s+/i, "");
-      const headerToken = request.headers["x-pai-token"] as string | undefined;
-      const token = bearer ?? headerToken;
+      // If no owner set up yet, allow all requests (setup mode)
+      if (!hasOwner(ctx.storage)) return;
 
-      if (!tokenMatches(token)) {
-        return reply.status(401).send({ error: "Unauthorized" });
+      const secret = getJwtSecret(ctx.storage, process.env.PAI_JWT_SECRET);
+      const token = extractToken(request);
+      if (!token) {
+        return reply.status(401).send({ error: "Authentication required" });
+      }
+      try {
+        jwt.verify(token, secret);
+      } catch {
+        return reply.status(401).send({ error: "Invalid or expired token" });
       }
     });
   }
@@ -385,7 +364,7 @@ export async function createServer(options?: { port?: number; host?: string; pub
   });
 
   await app.listen({ port, host });
-  console.log(`pai server running at http://${host}:${port}${isPublic ? " (public mode)" : ""}`);
+  console.log(`pai server running at http://${host}:${port}`);
 
   // Auto-start Telegram bot if enabled in config
   if (config.telegram?.enabled && config.telegram?.token) {
@@ -413,16 +392,14 @@ export async function createServer(options?: { port?: number; host?: string; pub
 }
 
 // Direct execution — parse CLI args
-function parseArgs(): { port?: number; host?: string; public?: boolean } {
+function parseArgs(): { port?: number; host?: string } {
   const args = process.argv.slice(2);
-  const opts: { port?: number; host?: string; public?: boolean } = {};
+  const opts: { port?: number; host?: string } = {};
   for (let i = 0; i < args.length; i++) {
     if ((args[i] === "--port" || args[i] === "-p") && args[i + 1]) {
       opts.port = parseInt(args[++i]!, 10);
     } else if ((args[i] === "--host" || args[i] === "-H") && args[i + 1]) {
       opts.host = args[++i];
-    } else if (args[i] === "--public") {
-      opts.public = true;
     }
   }
   return opts;

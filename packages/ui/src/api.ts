@@ -11,24 +11,12 @@ import type {
   CrawlJob,
   Task,
   Goal,
+  AuthStatus,
+  AuthOwner,
+  LoginResponse,
 } from "./types";
 
 const BASE = "/api";
-
-// Auth token management for public deployments (Railway, etc.)
-const AUTH_TOKEN_KEY = "pai_auth_token";
-
-export function getAuthToken(): string | null {
-  return localStorage.getItem(AUTH_TOKEN_KEY);
-}
-
-export function setAuthToken(token: string): void {
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
-}
-
-export function clearAuthToken(): void {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-}
 
 /**
  * Translates raw API/network errors into human-readable messages.
@@ -77,17 +65,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.body) {
     headers["Content-Type"] = headers["Content-Type"] ?? "application/json";
   }
-  // Inject auth token for public deployments
-  const token = getAuthToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
 
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
       ...init,
       headers,
+      credentials: "include",
     });
   } catch (err) {
     // Network-level errors (server down, no connection, etc.)
@@ -108,31 +92,44 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// ---- Auth helpers ----
+// ---- Auth ----
 
-/** Returns true if the server requires authentication (public mode with PAI_AUTH_TOKEN). */
-export async function checkAuthRequired(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE}/health`, { method: "GET", cache: "no-store", signal: AbortSignal.timeout(5000) });
-    return res.status === 401;
-  } catch {
-    return false; // Network error — not an auth issue
-  }
+export async function getAuthStatus(): Promise<AuthStatus> {
+  const res = await fetch(`/api/auth/status`, {
+    credentials: "include",
+    signal: AbortSignal.timeout(5000),
+  });
+  return res.json();
 }
 
-/** Returns true if the given token is accepted by the server. */
-export async function verifyToken(token: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE}/health`, {
-      method: "GET",
-      cache: "no-store",
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(5000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+export async function setupOwner(input: {
+  email: string;
+  password: string;
+  name?: string;
+}): Promise<LoginResponse> {
+  return request<LoginResponse>("/auth/setup", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  return request<LoginResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function logout(): Promise<void> {
+  await request("/auth/logout", { method: "POST", body: "{}" });
+}
+
+export async function refreshToken(): Promise<{ ok: boolean; accessToken: string }> {
+  return request("/auth/refresh", { method: "POST", body: "{}" });
+}
+
+export async function getMe(): Promise<{ owner: AuthOwner }> {
+  return request<{ owner: AuthOwner }>("/auth/me");
 }
 
 // ---- Beliefs ----

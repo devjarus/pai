@@ -31,3 +31,7 @@ export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult } from "./k
 export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, memoryStats, memoryCommands, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, generateMemoryFile, backfillSubjects, consolidateConversation, findContradictions } from "./memory/index.js";
 export { remember } from "./memory/index.js";
 export type { Belief, Episode, BeliefChange, MemoryStats, MemoryExport, MemoryExportV1, MemoryExportV2, SimilarBelief, ReflectionResult, UnifiedRetrievalResult, ConsolidationResult } from "./memory/index.js";
+
+// Auth
+export { authMigrations, createOwner, getOwner, getOwnerByEmail, verifyOwnerPassword, hasOwner, getJwtSecret } from "./auth.js";
+export type { Owner } from "./auth.js";

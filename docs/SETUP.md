@@ -115,15 +115,12 @@ In the Railway service settings, add these variables:
 
 | Variable | Value | Required |
 |----------|-------|----------|
-| `PAI_AUTH_TOKEN` | A strong random token (32+ chars) | Yes |
 | `PAI_LLM_PROVIDER` | `openai`, `anthropic`, or `google` | Yes |
 | `PAI_LLM_API_KEY` | Your provider API key | Yes |
 | `PAI_LLM_MODEL` | e.g. `gpt-4o`, `claude-sonnet-4-20250514` | Recommended |
 | `PAI_DATA_DIR` | `/data` | Yes |
 | `PAI_CORS_ORIGIN` | Your custom domain (e.g. `https://pai.example.com`) | If using custom domain |
 | `PAI_TELEGRAM_TOKEN` | Telegram bot token | Optional |
-
-> **Important:** `PAI_AUTH_TOKEN` is required. The server will refuse to start without it when exposed publicly. Generate one with: `openssl rand -hex 32`
 
 ### Step 4: Deploy
 
@@ -133,18 +130,12 @@ Railway auto-deploys on push. The `railway.toml` in the repo configures the buil
 
 1. Railway assigns a URL like `https://pai-production-xxxx.up.railway.app`
 2. Or add a custom domain in Railway settings
-3. All API requests require the auth token as a Bearer token:
-   ```bash
-   curl -H "Authorization: Bearer YOUR_TOKEN" https://your-app.up.railway.app/api/stats
-   ```
-4. The web UI served at the root URL includes the token in requests automatically when you set it in the browser. **Note:** The token is stored in the browser's `localStorage` — clear it after use on shared or public machines.
 
 ### Security notes
 
 - All traffic is encrypted via Railway's HTTPS termination
 - The server adds security headers (helmet): CSP, HSTS, X-Frame-Options, etc.
 - Rate limiting is enforced: 100 req/min global, 20 req/min for chat, 10 req/min for knowledge learning
-- Authentication uses timing-safe comparison to prevent timing attacks
 - The Docker container runs as a non-root user (`pai`, UID 1001)
 
 ---

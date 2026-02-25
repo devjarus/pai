@@ -30,7 +30,6 @@ export interface Config {
   };
   plugins: string[];
   webSearchEnabled?: boolean;
-  authToken?: string;
   telegram?: {
     token?: string;
     enabled?: boolean;

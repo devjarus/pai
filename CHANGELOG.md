@@ -43,8 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Security headers** — `@fastify/helmet` adds CSP, X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy.
 - **Rate limiting** — `@fastify/rate-limit` enforces 100 req/min global, 20/min for chat, 10/min for knowledge learning, 30/min for remember.
-- **Enforced authentication** — Server refuses to start in public mode without `PAI_AUTH_TOKEN` (previously just warned).
-- **Timing-safe token comparison** — Auth tokens compared with `crypto.timingSafeEqual` to prevent timing attacks.
+- **Timing-safe token comparison** — Sensitive comparisons use `crypto.timingSafeEqual` to prevent timing attacks.
 - **Trust proxy** — Fastify `trustProxy` enabled on PaaS (Railway/Render) for correct client IP in rate limiting.
 - **Input validation** — Max text length on `/api/remember` (10KB), URL validation and max length on `/api/knowledge/learn` (2KB).
 - **CORS for cloud domains** — Auto-allows Railway domains (`*.up.railway.app`), custom domain via `PAI_CORS_ORIGIN`.
@@ -66,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tool card components** — Rich UI cards for all 15 assistant tools and 3 curator tools: memory (recall, remember, beliefs, forget), tasks (list, add, done), web search, knowledge (search, sources, learn, forget, status), and curator (curate, fix, list beliefs).
 - **CLI improvements** — `pai init` for interactive project setup, knowledge commands (`learn`, `search`, `list`, `forget`), MCP server with 19 tools.
 - **Memory improvements** — Subject-aware recall with insight deprioritization, conversation consolidation, memory file import/export, preflight validation to prevent hallucination storage.
-- **Security hardening** — Path traversal protection, restricted default host binding, auth token support, public mode guard, PII logging prevention.
+- **Security hardening** — Path traversal protection, restricted default host binding, PII logging prevention.
 
 ### Changed
 

@@ -144,3 +144,20 @@ export interface Goal {
   status: string;
   created_at: string;
 }
+
+export interface AuthStatus {
+  setup: boolean;
+  authenticated: boolean;
+}
+
+export interface AuthOwner {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
+export interface LoginResponse {
+  ok: boolean;
+  owner: AuthOwner;
+  accessToken: string;
+}

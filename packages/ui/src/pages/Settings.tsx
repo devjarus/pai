@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { getConfig, getStats, updateConfig, browseDir, getAuthToken, setAuthToken, clearAuthToken } from "../api";
+import { getConfig, getStats, updateConfig, browseDir } from "../api";
 import type { BrowseResult } from "../api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
-import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon, ShieldIcon } from "lucide-react";
+import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon } from "lucide-react";
 import type { ConfigInfo, MemoryStats } from "../types";
 
 const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedModel: string }> = {
@@ -40,10 +40,6 @@ export default function Settings() {
   // Telegram settings
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramEnabled, setTelegramEnabled] = useState(false);
-
-  // Access token (stored in localStorage for public deployments)
-  const [accessToken, setAccessToken] = useState("");
-  const [hasAccessToken, setHasAccessToken] = useState(() => !!getAuthToken());
 
   // Env overrides (fields controlled by env vars on the server)
   const [envOverrides, setEnvOverrides] = useState<string[]>([]);
@@ -425,72 +421,6 @@ export default function Settings() {
             </CardContent>
           </Card>
         )}
-
-        {/* Access Token (for public deployments) */}
-        <Card className="gap-0 overflow-hidden border-border/50 bg-card/50 py-0">
-          <CardHeader className="px-5 py-4">
-            <CardTitle className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              <ShieldIcon className="size-3.5" />
-              Access Token
-              <InfoBubble text="Required for public deployments (e.g. Railway). Enter the PAI_AUTH_TOKEN configured on your server. Stored locally in your browser." side="right" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-0 px-0 py-0">
-            <div className="flex items-center justify-between border-t border-border/30 px-5 py-3">
-              <span className="text-xs text-muted-foreground">Status</span>
-              <span className="flex items-center gap-2 font-mono text-sm">
-                {hasAccessToken ? (
-                  <>
-                    <span className="size-2 rounded-full bg-green-500" />
-                    <span className="text-green-500">Set</span>
-                  </>
-                ) : (
-                  <span className="text-foreground/70">Not set</span>
-                )}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
-              <label className="shrink-0 text-xs text-muted-foreground">Token</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="password"
-                  value={accessToken}
-                  onChange={(e) => setAccessToken(e.target.value)}
-                  placeholder={hasAccessToken ? "Token saved (enter new to replace)" : "Enter your access token"}
-                  className="w-full max-w-[220px] rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-                />
-                <Button
-                  size="sm"
-                  className="h-7 shrink-0 text-xs"
-                  disabled={!accessToken}
-                  onClick={() => {
-                    setAuthToken(accessToken);
-                    setAccessToken("");
-                    setHasAccessToken(true);
-                    toast.success("Access token saved");
-                  }}
-                >
-                  Save
-                </Button>
-                {hasAccessToken && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 shrink-0 text-xs text-destructive hover:text-destructive"
-                    onClick={() => {
-                      clearAuthToken();
-                      setAccessToken("");
-                      setHasAccessToken(false);
-                      toast.success("Access token cleared");
-                    }}
-                  >
-                    Clear
-                  </Button>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Memory Health */}
         {stats ? (

@@ -1,29 +1,33 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { setAuthToken, verifyToken } from "../api";
+import { login } from "../api";
+import { useAuth } from "../context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { LockKeyholeIcon } from "lucide-react";
+import { LockKeyholeIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 
 export default function Login() {
-  const [token, setToken] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
   const navigate = useNavigate();
+  const { refresh } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token.trim()) return;
+    if (!email.trim() || !password) return;
 
     setChecking(true);
     setError("");
 
-    const valid = await verifyToken(token.trim());
-    if (valid) {
-      setAuthToken(token.trim());
+    try {
+      await login(email.trim(), password);
+      await refresh();
       navigate("/chat", { replace: true });
-    } else {
-      setError("Invalid access token. Please try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed.");
     }
     setChecking(false);
   };
@@ -35,30 +39,29 @@ export default function Login() {
           <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-primary/10">
             <LockKeyholeIcon className="size-6 text-primary" />
           </div>
-          <CardTitle className="text-center font-mono text-lg font-semibold">
-            pai
-          </CardTitle>
-          <p className="text-center text-xs text-muted-foreground">
-            Enter your access token to continue
-          </p>
+          <CardTitle className="text-center font-mono text-lg font-semibold">pai</CardTitle>
+          <p className="text-center text-xs text-muted-foreground">Sign in to your personal AI</p>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <input
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="Access token"
-                autoFocus
-                className="w-full rounded-md border border-border/50 bg-background px-3 py-2 font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-              />
-              {error && (
-                <p className="mt-2 text-xs text-red-400">{error}</p>
-              )}
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoFocus
+                className="w-full rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25" />
             </div>
-            <Button type="submit" className="w-full" disabled={checking || !token.trim()}>
-              {checking ? "Verifying..." : "Sign In"}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Password</label>
+              <div className="relative">
+                <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password"
+                  className="w-full rounded-md border border-border/50 bg-background px-3 py-2 pr-9 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground">
+                  {showPassword ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
+                </button>
+              </div>
+            </div>
+            {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+            <Button type="submit" className="w-full" disabled={checking || !email.trim() || !password}>
+              {checking ? "Signing in..." : "Sign In"}
             </Button>
           </form>
         </CardContent>
