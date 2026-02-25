@@ -1,5 +1,8 @@
 # pai — Personal AI with Persistent Memory
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/devjarus/pai)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/devjarus/pai)
+
 Personal AI agent platform. Chat via web UI or Telegram, learn from web pages, manage tasks, search the web, and extend with plugins — all running locally on your machine.
 
 **What makes pai different:** A full agent system with persistent memory, knowledge base, and multi-channel access. Memory evolves over time — beliefs are reinforced, contradicted, decayed, and synthesized. Multi-person aware.
@@ -205,11 +208,13 @@ Environment variables or `~/.personal-ai/config.json` (editable via Settings UI)
 | `PAI_LLM_API_KEY` | | API key (Ollama Cloud / OpenAI) |
 | `PAI_TELEGRAM_TOKEN` | | Telegram bot token from @BotFather |
 | `PAI_LOG_LEVEL` | `silent` | `silent`, `error`, `warn`, `info`, `debug` |
+| `PAI_JWT_SECRET` | _(auto-generated)_ | Custom JWT signing secret |
+| `PAI_RESET_PASSWORD` | | Set to reset owner password on next boot (remove after use) |
 
 ## Development
 
 ```bash
-pnpm test                # 331 tests (vitest)
+pnpm test                # 374 tests (vitest)
 pnpm test:watch          # watch mode
 pnpm test:coverage       # v8 coverage with thresholds
 pnpm typecheck           # type-check all packages
