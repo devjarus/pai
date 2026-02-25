@@ -125,6 +125,16 @@ export function reopenTask(storage: Storage, taskId: string): void {
   storage.run("UPDATE tasks SET status = 'open', completed_at = NULL WHERE id = ?", [task.id]);
 }
 
+export function deleteTask(storage: Storage, taskId: string): void {
+  const rows = storage.query<Pick<Task, "id">>(
+    "SELECT id FROM tasks WHERE id = ? OR id LIKE ? LIMIT 2",
+    [taskId, `${taskId}%`],
+  );
+  if (rows.length === 0) throw new Error(`No task matches "${taskId}".`);
+  if (rows.length > 1 && rows[0]!.id !== taskId) throw new Error(`Task id prefix "${taskId}" is ambiguous.`);
+  storage.run("DELETE FROM tasks WHERE id = ?", [rows[0]!.id]);
+}
+
 export function completeGoal(storage: Storage, goalId: string): void {
   const rows = storage.query<Pick<Goal, "id">>(
     "SELECT id FROM goals WHERE id = ? AND status = 'active' LIMIT 1",
@@ -154,4 +164,15 @@ export function addGoal(storage: Storage, input: { title: string; description?: 
 
 export function listGoals(storage: Storage): Goal[] {
   return storage.query<Goal>("SELECT * FROM goals WHERE status = 'active' ORDER BY created_at DESC");
+}
+
+export function deleteGoal(storage: Storage, goalId: string): void {
+  const rows = storage.query<Pick<Goal, "id">>(
+    "SELECT id FROM goals WHERE id = ? OR id LIKE ? LIMIT 2",
+    [goalId, `${goalId}%`],
+  );
+  if (rows.length === 0) throw new Error(`No goal matches "${goalId}".`);
+  if (rows.length > 1 && rows[0]!.id !== goalId) throw new Error(`Goal id prefix "${goalId}" is ambiguous.`);
+  storage.run("UPDATE tasks SET goal_id = NULL WHERE goal_id = ?", [rows[0]!.id]);
+  storage.run("DELETE FROM goals WHERE id = ?", [rows[0]!.id]);
 }
