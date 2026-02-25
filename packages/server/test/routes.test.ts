@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { registerMemoryRoutes } from "../src/routes/memory.js";
 import { registerAgentRoutes, threadMigrations } from "../src/routes/agents.js";
 import { registerConfigRoutes } from "../src/routes/config.js";
+import { registerTaskRoutes } from "../src/routes/tasks.js";
 import type { ServerContext } from "../src/index.js";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,33 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     getMemoryContext: vi.fn().mockResolvedValue(""),
   };
 });
+
+// ---------------------------------------------------------------------------
+// Mock @personal-ai/plugin-tasks — isolate task route handlers
+// ---------------------------------------------------------------------------
+const mockAddTask = vi.fn();
+const mockListTasks = vi.fn();
+const mockCompleteTask = vi.fn();
+const mockEditTask = vi.fn();
+const mockReopenTask = vi.fn();
+const mockDeleteTask = vi.fn();
+const mockAddGoal = vi.fn();
+const mockListGoals = vi.fn();
+const mockCompleteGoal = vi.fn();
+const mockDeleteGoal = vi.fn();
+
+vi.mock("@personal-ai/plugin-tasks", () => ({
+  addTask: (...args: unknown[]) => mockAddTask(...args),
+  listTasks: (...args: unknown[]) => mockListTasks(...args),
+  completeTask: (...args: unknown[]) => mockCompleteTask(...args),
+  editTask: (...args: unknown[]) => mockEditTask(...args),
+  reopenTask: (...args: unknown[]) => mockReopenTask(...args),
+  deleteTask: (...args: unknown[]) => mockDeleteTask(...args),
+  addGoal: (...args: unknown[]) => mockAddGoal(...args),
+  listGoals: (...args: unknown[]) => mockListGoals(...args),
+  completeGoal: (...args: unknown[]) => mockCompleteGoal(...args),
+  deleteGoal: (...args: unknown[]) => mockDeleteGoal(...args),
+}));
 
 // ---------------------------------------------------------------------------
 // Mock "ai" module — streamText + createUIMessageStream used by chat route
@@ -1157,5 +1185,152 @@ describe("config routes", () => {
 
     const body = JSON.parse(res.payload);
     expect(body.logLevel).toBe("silent");
+  });
+});
+
+// ==========================================================================
+// Task Routes
+// ==========================================================================
+
+describe("task routes", () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    app = Fastify();
+    const serverCtx = createMockServerCtx();
+    registerTaskRoutes(app, serverCtx);
+    await app.ready();
+
+    mockAddTask.mockReset();
+    mockListTasks.mockReset();
+    mockCompleteTask.mockReset();
+    mockEditTask.mockReset();
+    mockReopenTask.mockReset();
+    mockDeleteTask.mockReset();
+    mockAddGoal.mockReset();
+    mockListGoals.mockReset();
+    mockCompleteGoal.mockReset();
+    mockDeleteGoal.mockReset();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("GET /api/tasks returns task list", async () => {
+    const mockTask = { id: "t1", title: "Test", status: "open", priority: "medium", goal_id: null, due_date: null, created_at: "2026-01-01", completed_at: null, description: null };
+    mockListTasks.mockReturnValue([mockTask]);
+
+    const res = await app.inject({ method: "GET", url: "/api/tasks" });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual([mockTask]);
+    expect(mockListTasks).toHaveBeenCalledWith(expect.anything(), "open");
+  });
+
+  it("GET /api/tasks?status=done filters by status", async () => {
+    mockListTasks.mockReturnValue([]);
+    const res = await app.inject({ method: "GET", url: "/api/tasks?status=done" });
+    expect(res.statusCode).toBe(200);
+    expect(mockListTasks).toHaveBeenCalledWith(expect.anything(), "done");
+  });
+
+  it("GET /api/tasks?goalId=g1 filters by goal", async () => {
+    const task1 = { id: "t1", title: "Task 1", status: "open", priority: "medium", goal_id: "g1", due_date: null, created_at: "2026-01-01", completed_at: null, description: null };
+    const task2 = { id: "t2", title: "Task 2", status: "open", priority: "medium", goal_id: "g2", due_date: null, created_at: "2026-01-01", completed_at: null, description: null };
+    mockListTasks.mockReturnValue([task1, task2]);
+
+    const res = await app.inject({ method: "GET", url: "/api/tasks?goalId=g1" });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual([task1]);
+  });
+
+  it("POST /api/tasks creates a task", async () => {
+    const newTask = { id: "t2", title: "New Task", status: "open", priority: "high", goal_id: null, due_date: null, created_at: "2026-01-01", completed_at: null, description: null };
+    mockAddTask.mockReturnValue(newTask);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "New Task", priority: "high" },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(JSON.parse(res.payload)).toEqual(newTask);
+  });
+
+  it("POST /api/tasks returns 400 on error", async () => {
+    mockAddTask.mockImplementation(() => { throw new Error("Title cannot be empty"); });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("PATCH /api/tasks/:id updates a task", async () => {
+    mockEditTask.mockReturnValue(undefined);
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/tasks/t1",
+      payload: { title: "Updated" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mockEditTask).toHaveBeenCalledWith(expect.anything(), "t1", { title: "Updated" });
+  });
+
+  it("POST /api/tasks/:id/done completes a task", async () => {
+    mockCompleteTask.mockReturnValue(undefined);
+    const res = await app.inject({ method: "POST", url: "/api/tasks/t1/done" });
+    expect(res.statusCode).toBe(200);
+    expect(mockCompleteTask).toHaveBeenCalledWith(expect.anything(), "t1");
+  });
+
+  it("POST /api/tasks/:id/reopen reopens a task", async () => {
+    mockReopenTask.mockReturnValue(undefined);
+    const res = await app.inject({ method: "POST", url: "/api/tasks/t1/reopen" });
+    expect(res.statusCode).toBe(200);
+    expect(mockReopenTask).toHaveBeenCalledWith(expect.anything(), "t1");
+  });
+
+  it("DELETE /api/tasks/:id deletes a task", async () => {
+    mockDeleteTask.mockReturnValue(undefined);
+    const res = await app.inject({ method: "DELETE", url: "/api/tasks/t1" });
+    expect(res.statusCode).toBe(200);
+    expect(mockDeleteTask).toHaveBeenCalledWith(expect.anything(), "t1");
+  });
+
+  it("GET /api/goals returns goals", async () => {
+    const mockGoal = { id: "g1", title: "Goal 1", description: null, status: "active", created_at: "2026-01-01" };
+    mockListGoals.mockReturnValue([mockGoal]);
+
+    const res = await app.inject({ method: "GET", url: "/api/goals" });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual([mockGoal]);
+  });
+
+  it("POST /api/goals creates a goal", async () => {
+    const newGoal = { id: "g2", title: "New Goal", description: null, status: "active", created_at: "2026-01-01" };
+    mockAddGoal.mockReturnValue(newGoal);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/goals",
+      payload: { title: "New Goal" },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(JSON.parse(res.payload)).toEqual(newGoal);
+  });
+
+  it("POST /api/goals/:id/done completes a goal", async () => {
+    mockCompleteGoal.mockReturnValue(undefined);
+    const res = await app.inject({ method: "POST", url: "/api/goals/g1/done" });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("DELETE /api/goals/:id deletes a goal", async () => {
+    mockDeleteGoal.mockReturnValue(undefined);
+    const res = await app.inject({ method: "DELETE", url: "/api/goals/g1" });
+    expect(res.statusCode).toBe(200);
   });
 });
