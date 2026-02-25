@@ -18,6 +18,7 @@ import { registerMemoryRoutes } from "./routes/memory.js";
 import { registerAgentRoutes } from "./routes/agents.js";
 import { registerConfigRoutes } from "./routes/config.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
+import { registerTaskRoutes } from "./routes/tasks.js";
 
 export interface ServerContext {
   ctx: PluginContext;
@@ -272,6 +273,7 @@ export async function createServer(options?: { port?: number; host?: string; pub
   registerAgentRoutes(app, serverCtx);
   registerConfigRoutes(app, serverCtx);
   registerKnowledgeRoutes(app, serverCtx);
+  registerTaskRoutes(app, serverCtx);
 
   // SPA fallback — serve index.html for non-API routes
   app.setNotFoundHandler(async (request, reply) => {

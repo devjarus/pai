@@ -9,6 +9,8 @@ import type {
   KnowledgeSource,
   KnowledgeSearchResult,
   CrawlJob,
+  Task,
+  Goal,
 } from "./types";
 
 const BASE = "/api";
@@ -304,4 +306,70 @@ export interface BrowseResult {
 export function browseDir(path?: string): Promise<BrowseResult> {
   const params = path ? `?path=${encodeURIComponent(path)}` : "";
   return request<BrowseResult>(`/browse${params}`);
+}
+
+// ---- Tasks ----
+
+export function getTasks(params?: { status?: string; goalId?: string }): Promise<Task[]> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.goalId) qs.set("goalId", params.goalId);
+  const query = qs.toString();
+  return request<Task[]>(`/tasks${query ? `?${query}` : ""}`);
+}
+
+export function createTask(input: {
+  title: string;
+  description?: string;
+  priority?: string;
+  dueDate?: string;
+  goalId?: string;
+}): Promise<Task> {
+  return request<Task>("/tasks", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateTask(
+  id: string,
+  updates: { title?: string; priority?: string; dueDate?: string },
+): Promise<{ ok: boolean }> {
+  return request(`/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+export function completeTask(id: string): Promise<{ ok: boolean }> {
+  return request(`/tasks/${id}/done`, { method: "POST", body: "{}" });
+}
+
+export function reopenTask(id: string): Promise<{ ok: boolean }> {
+  return request(`/tasks/${id}/reopen`, { method: "POST", body: "{}" });
+}
+
+export function deleteTask(id: string): Promise<{ ok: boolean }> {
+  return request(`/tasks/${id}`, { method: "DELETE" });
+}
+
+// ---- Goals ----
+
+export function getGoals(): Promise<Goal[]> {
+  return request<Goal[]>("/goals");
+}
+
+export function createGoal(input: { title: string; description?: string }): Promise<Goal> {
+  return request<Goal>("/goals", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function completeGoal(id: string): Promise<{ ok: boolean }> {
+  return request(`/goals/${id}/done`, { method: "POST", body: "{}" });
+}
+
+export function deleteGoal(id: string): Promise<{ ok: boolean }> {
+  return request(`/goals/${id}`, { method: "DELETE" });
 }

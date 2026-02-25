@@ -9,6 +9,7 @@ const navItems = [
   { to: "/chat", label: "Chat", icon: IconChat },
   { to: "/memory", label: "Memory", icon: IconMemory },
   { to: "/knowledge", label: "Knowledge", icon: IconKnowledge },
+  { to: "/tasks", label: "Tasks", icon: IconTasks },
   { to: "/timeline", label: "Timeline", icon: IconTimeline },
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
@@ -147,6 +148,15 @@ function IconKnowledge() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  );
+}
+
+function IconTasks() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
     </svg>
   );
 }

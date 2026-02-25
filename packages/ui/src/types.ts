@@ -124,3 +124,23 @@ export interface ThreadMessage {
   createdAt: string;
   sequence: number;
 }
+
+export interface Task {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  goal_id: string | null;
+  due_date: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface Goal {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  created_at: string;
+}

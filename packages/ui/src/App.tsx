@@ -7,6 +7,7 @@ import Memory from "./pages/Memory";
 import Timeline from "./pages/Timeline";
 import Settings from "./pages/Settings";
 import Knowledge from "./pages/Knowledge";
+import Tasks from "./pages/Tasks";
 import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
 import { checkAuthRequired, getAuthToken, verifyToken, getStats } from "./api";
@@ -115,6 +116,7 @@ export default function App() {
           <Route path="/memory" element={<Memory />} />
           <Route path="/timeline" element={<Timeline />} />
           <Route path="/knowledge" element={<Knowledge />} />
+          <Route path="/tasks" element={<Tasks />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<NotFound />} />
         </Route>
