@@ -112,6 +112,14 @@ export function resolveDataDir(
   return DEFAULT_DATA_DIR;
 }
 
+/**
+ * Resolve the config home directory.
+ * Priority: PAI_HOME env var → ~/.personal-ai
+ */
+export function resolveConfigHome(env: Record<string, string | undefined> = process.env): string {
+  return env["PAI_HOME"] ?? DEFAULT_HOME;
+}
+
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
   const fileConfig = loadConfigFile(env["PAI_HOME"]);
   const fileLlm: Partial<Config["llm"]> = fileConfig.llm ?? {};
@@ -123,15 +131,24 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     : env["PAI_TELEGRAM_ENABLED"] === "false" ? false
     : fileTelegram.enabled;
 
+  // On Docker/PaaS: if config.json exists in the data dir (saved via Settings UI),
+  // those values take priority over env vars (user explicitly chose them).
+  // Otherwise (local dev / first boot): env vars > config file (~/.personal-ai) > defaults.
+  const dataDirPath = env["PAI_DATA_DIR"];
+  const dataDirConfig = (dataDirPath && existsSync(join(dataDirPath, "config.json")))
+    ? loadConfigFile(dataDirPath)
+    : null;
+  const savedLlm: Partial<Config["llm"]> = dataDirConfig?.llm ?? {};
+
   const config: Config = {
     dataDir: resolveDataDir(env, fileConfig),
     llm: {
-      provider: (env["PAI_LLM_PROVIDER"] as Config["llm"]["provider"]) ?? (fileLlm.provider as Config["llm"]["provider"]) ?? "ollama",
-      model: env["PAI_LLM_MODEL"] ?? fileLlm.model ?? "llama3.2",
-      embedModel: env["PAI_LLM_EMBED_MODEL"] ?? fileLlm.embedModel,
-      embedProvider: (env["PAI_LLM_EMBED_PROVIDER"] as Config["llm"]["embedProvider"]) ?? fileLlm.embedProvider ?? "auto",
-      baseUrl: env["PAI_LLM_BASE_URL"] ?? fileLlm.baseUrl ?? "http://127.0.0.1:11434",
-      apiKey: env["PAI_LLM_API_KEY"] ?? fileLlm.apiKey,
+      provider: (savedLlm.provider as Config["llm"]["provider"]) ?? (env["PAI_LLM_PROVIDER"] as Config["llm"]["provider"]) ?? (fileLlm.provider as Config["llm"]["provider"]) ?? "ollama",
+      model: savedLlm.model ?? env["PAI_LLM_MODEL"] ?? fileLlm.model ?? "llama3.2",
+      embedModel: savedLlm.embedModel ?? env["PAI_LLM_EMBED_MODEL"] ?? fileLlm.embedModel,
+      embedProvider: (savedLlm.embedProvider as Config["llm"]["embedProvider"]) ?? (env["PAI_LLM_EMBED_PROVIDER"] as Config["llm"]["embedProvider"]) ?? (fileLlm.embedProvider as Config["llm"]["embedProvider"]) ?? "auto",
+      baseUrl: savedLlm.baseUrl ?? env["PAI_LLM_BASE_URL"] ?? fileLlm.baseUrl ?? "http://127.0.0.1:11434",
+      apiKey: savedLlm.apiKey ?? env["PAI_LLM_API_KEY"] ?? fileLlm.apiKey,
     },
     logLevel: (env["PAI_LOG_LEVEL"] as Config["logLevel"]) ?? (fileConfig.logLevel as Config["logLevel"]) ?? "silent",
     plugins: env["PAI_PLUGINS"]?.split(",").map((s) => s.trim()) ?? fileConfig.plugins ?? ["memory", "tasks"],

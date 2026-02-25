@@ -1,9 +1,12 @@
-import { readdirSync, statSync, lstatSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, statSync, lstatSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { FastifyInstance } from "fastify";
 import { writeConfig, loadConfigFile } from "@personal-ai/core";
 import type { ServerContext } from "../index.js";
+
+/** Config file location: data dir (persistent volume) on Docker/PaaS, ~/.personal-ai/ locally */
+const configDir = process.env.PAI_DATA_DIR ?? join(homedir(), ".personal-ai");
 
 function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Record<string, unknown>; [key: string]: unknown }) {
   const { llm, telegram, ...rest } = config;
@@ -34,6 +37,8 @@ const ENV_OVERRIDE_MAP: Record<string, string> = {
 };
 
 function getEnvOverrides(): string[] {
+  // If config.json exists in data dir (user saved via Settings UI), env vars don't override
+  if (existsSync(join(configDir, "config.json"))) return [];
   const overrides: string[] = [];
   for (const [envVar, field] of Object.entries(ENV_OVERRIDE_MAP)) {
     if (process.env[envVar]) overrides.push(field);
@@ -128,12 +133,10 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       update.telegram = telegramUpdate;
     }
 
-    // Config file lives at ~/.personal-ai/config.json
-    // Merge update into existing file config to avoid dropping unrelated sections
-    const homeDir = join(homedir(), ".personal-ai");
-    const existing = loadConfigFile(homeDir);
+    // Write config to persistent location (configDir is module-level)
+    const existing = loadConfigFile(configDir);
     const merged = { ...existing, ...update };
-    writeConfig(homeDir, merged as never);
+    writeConfig(configDir, merged as never);
 
     // Reinitialize storage, LLM, and config from the new settings
     serverCtx.reinitialize();
