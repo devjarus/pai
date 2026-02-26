@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, Link, useNavigate } from "react-router-dom";
+import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Layout from "./components/Layout";
@@ -8,6 +8,7 @@ import Timeline from "./pages/Timeline";
 import Settings from "./pages/Settings";
 import Knowledge from "./pages/Knowledge";
 import Tasks from "./pages/Tasks";
+import Inbox from "./pages/Inbox";
 import Login from "./pages/Login";
 import Setup from "./pages/Setup";
 import Onboarding from "./pages/Onboarding";
@@ -17,8 +18,8 @@ function NotFound() {
     <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
       <div className="font-mono text-6xl font-bold tracking-tighter text-muted-foreground/30">404</div>
       <p className="text-sm text-muted-foreground">Page not found.</p>
-      <Link to="/chat" className="rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90">
-        Back to Chat
+      <Link to="/" className="rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+        Back to Home
       </Link>
     </div>
   );
@@ -58,7 +59,7 @@ export default function App() {
           <Route path="/setup" element={<Setup />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route element={<AuthGate><Layout /></AuthGate>}>
-            <Route path="/" element={<Navigate to="/chat" replace />} />
+            <Route path="/" element={<Inbox />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/memory" element={<Memory />} />
             <Route path="/timeline" element={<Timeline />} />

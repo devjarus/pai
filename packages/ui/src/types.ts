@@ -161,3 +161,28 @@ export interface LoginResponse {
   ok: boolean;
   owner: AuthOwner;
 }
+
+export interface BriefingSection {
+  greeting: string;
+  taskFocus: {
+    summary: string;
+    items: Array<{ id: string; title: string; priority: string; insight: string }>;
+  };
+  memoryInsights: {
+    summary: string;
+    highlights: Array<{ statement: string; type: string; detail: string }>;
+  };
+  suggestions: Array<{
+    title: string;
+    reason: string;
+    action?: string;
+    actionTarget?: string;
+  }>;
+}
+
+export interface Briefing {
+  id: string;
+  generatedAt: string;
+  sections: BriefingSection;
+  status: string;
+}

@@ -14,6 +14,7 @@ import type {
   AuthStatus,
   AuthOwner,
   LoginResponse,
+  Briefing,
 } from "./types";
 
 const BASE = "/api";
@@ -393,4 +394,22 @@ export function completeGoal(id: string): Promise<{ ok: boolean }> {
 
 export function deleteGoal(id: string): Promise<{ ok: boolean }> {
   return request(`/goals/${id}`, { method: "DELETE" });
+}
+
+// ---- Inbox ----
+
+export function getInbox(): Promise<{ briefing: Briefing | null }> {
+  return request<{ briefing: Briefing | null }>("/inbox");
+}
+
+export function refreshInbox(): Promise<{ ok: boolean }> {
+  return request("/inbox/refresh", { method: "POST", body: "{}" });
+}
+
+export function getInboxHistory(): Promise<{ briefings: Array<{ id: string; generatedAt: string }> }> {
+  return request("/inbox/history");
+}
+
+export function getInboxBriefing(id: string): Promise<{ briefing: Briefing }> {
+  return request<{ briefing: Briefing }>(`/inbox/${id}`);
 }
