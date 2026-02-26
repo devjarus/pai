@@ -183,7 +183,18 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
           const historyRows = listMessages(ctx.storage, sid, { limit: 20 });
           const history: ChatMessage[] = [];
           for (const row of historyRows) {
-            history.push({ role: row.role, content: row.content });
+            let content = row.content;
+            // Inject tool call summaries so the LLM has context from previous turns
+            if (row.role === "assistant" && row.parts_json) {
+              try {
+                const parts = JSON.parse(row.parts_json) as { toolCalls?: string[] };
+                if (parts.toolCalls && parts.toolCalls.length > 0) {
+                  const summary = parts.toolCalls.join("\n");
+                  content = `[Previous tool results:\n${summary}]\n\n${content}`;
+                }
+              } catch { /* ignore parse errors */ }
+            }
+            history.push({ role: row.role, content });
           }
 
           const agentCtx: AgentContext = {
