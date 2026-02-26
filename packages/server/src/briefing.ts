@@ -1,6 +1,5 @@
-import { generateObject } from "ai";
+import { generateText } from "ai";
 import type { LanguageModel } from "ai";
-import { z } from "zod";
 import type { Migration, PluginContext } from "@personal-ai/core";
 import { listBeliefs, memoryStats, listSources } from "@personal-ai/core";
 import { listTasks, listGoals } from "@personal-ai/plugin-tasks";
@@ -104,35 +103,6 @@ function pruneOldBriefings(storage: PluginContext["storage"]): void {
   );
 }
 
-// --- Zod Schema for Structured Output ---
-
-const briefingSectionsSchema = z.object({
-  greeting: z.string(),
-  taskFocus: z.object({
-    summary: z.string(),
-    items: z.array(z.object({
-      id: z.string(),
-      title: z.string(),
-      priority: z.string(),
-      insight: z.string(),
-    })),
-  }),
-  memoryInsights: z.object({
-    summary: z.string(),
-    highlights: z.array(z.object({
-      statement: z.string(),
-      type: z.string(),
-      detail: z.string(),
-    })),
-  }),
-  suggestions: z.array(z.object({
-    title: z.string(),
-    reason: z.string(),
-    action: z.string().optional(),
-    actionTarget: z.string().optional(),
-  })),
-});
-
 // --- Generation ---
 
 export async function generateBriefing(ctx: PluginContext): Promise<Briefing | null> {
@@ -150,11 +120,16 @@ export async function generateBriefing(ctx: PluginContext): Promise<Briefing | n
   const sources = listSources(ctx.storage).slice(0, 10);
 
   const now = new Date();
-  const ownerRow = ctx.storage.query<{ name: string | null }>(
-    "SELECT name FROM owner LIMIT 1",
-    [],
-  );
-  const ownerName = ownerRow[0]?.name || "there";
+  let ownerName = "there";
+  try {
+    const ownerRow = ctx.storage.query<{ name: string | null }>(
+      "SELECT name FROM owner LIMIT 1",
+      [],
+    );
+    ownerName = ownerRow[0]?.name || "there";
+  } catch {
+    // owner table may not exist yet
+  }
 
   const rawContext = {
     ownerName,
@@ -199,7 +174,15 @@ Guidelines:
 - taskFocus.items: Pick the most important tasks (max 5). For each, provide a brief insight about why it matters or what to prioritize.
 - memoryInsights.highlights: Pick the most interesting recent beliefs (max 3). Note anything noteworthy — new learnings, high confidence items, or rarely accessed beliefs that might be worth revisiting.
 - suggestions: Provide 2-3 actionable recommendations. These could be: review stale beliefs, tackle a specific task, learn about a topic related to existing knowledge, or consolidate related memories.
-- Keep everything concise. Each insight/suggestion should be 1-2 sentences max.`;
+- Keep everything concise. Each insight/suggestion should be 1-2 sentences max.
+
+Respond ONLY with a valid JSON object matching this exact shape (no markdown, no explanation):
+{
+  "greeting": "string",
+  "taskFocus": { "summary": "string", "items": [{ "id": "string", "title": "string", "priority": "string", "insight": "string" }] },
+  "memoryInsights": { "summary": "string", "highlights": [{ "statement": "string", "type": "string", "detail": "string" }] },
+  "suggestions": [{ "title": "string", "reason": "string", "action": "recall|task|learn (optional)", "actionTarget": "string (optional)" }]
+}`;
 
   const id = crypto.randomUUID();
   ctx.storage.run(
@@ -208,14 +191,20 @@ Guidelines:
   );
 
   try {
-    const result = await generateObject({
+    const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
-      schema: briefingSectionsSchema,
       prompt,
       maxRetries: 1,
     });
 
-    const sections = JSON.stringify(result.object);
+    // Extract JSON from the response (handle possible markdown code fences)
+    let jsonText = result.text.trim();
+    const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch?.[1]) jsonText = fenceMatch[1].trim();
+
+    const parsed = JSON.parse(jsonText) as BriefingSection;
+
+    const sections = JSON.stringify(parsed);
     ctx.storage.run(
       "UPDATE briefings SET sections = ?, status = 'ready' WHERE id = ?",
       [sections, id],
@@ -226,10 +215,11 @@ Guidelines:
     return {
       id,
       generatedAt: new Date().toISOString(),
-      sections: result.object,
+      sections: parsed,
       status: "ready",
     };
   } catch (err) {
+    console.error("Briefing generation failed:", err instanceof Error ? err.message : String(err));
     ctx.logger.error("Briefing generation failed", {
       error: err instanceof Error ? err.message : String(err),
     });
