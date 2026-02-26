@@ -253,20 +253,19 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     knowledge_search: tool({
-      description: "Search the knowledge base for information learned from web pages. Use this when the user asks about topics they've asked you to learn about, or when you need information from previously read articles.",
+      description: "Search the knowledge base for information learned from web pages. Use this when the user asks about topics they've asked you to learn about. Call ONCE per question — do NOT call multiple times with different queries. One good search is enough.",
       inputSchema: z.object({
         query: z.string().describe("What to search for in the knowledge base"),
       }),
       execute: async ({ query }) => {
         try {
-          const results = await knowledgeSearch(ctx.storage, ctx.llm, query, 5);
+          const results = await knowledgeSearch(ctx.storage, ctx.llm, query, 3);
           if (results.length === 0) return "[empty] No knowledge matches this query. Answer from conversation context or try web_search.";
 
-          // Return top 5 results with truncated content to avoid overwhelming the context
-          return results.slice(0, 5).map((r) => ({
-            content: r.chunk.content.slice(0, 500),
+          // Return top 3 results with truncated content to keep context small
+          return results.slice(0, 3).map((r) => ({
+            content: r.chunk.content.slice(0, 300),
             source: r.source.title,
-            url: r.source.url,
           }));
         } catch (err) {
           return `Knowledge search failed: ${err instanceof Error ? err.message : "unknown error"}`;

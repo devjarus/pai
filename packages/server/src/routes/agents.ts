@@ -259,7 +259,7 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               tools: tools as any,
               toolChoice: tools ? "auto" : undefined,
-              stopWhen: tools ? stepCountIs(3) : undefined,
+              stopWhen: tools ? stepCountIs(2) : undefined,
               onError: ({ error }) => {
                 ctx.logger.error("streamText error (multi-step)", {
                   error: error instanceof Error ? error.message : String(error),
@@ -286,9 +286,9 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                           if (tc) {
                             const raw = tr?.result ?? tr?.output ?? tr;
                             const resultStr = typeof raw === "string"
-                              ? raw.slice(0, 500)
-                              : JSON.stringify(raw).slice(0, 500);
-                            toolSummaries.push(`[Tool: ${tc.toolName ?? "unknown"}(${JSON.stringify(tc.args ?? {}).slice(0, 100)})] → ${resultStr}`);
+                              ? raw.slice(0, 200)
+                              : JSON.stringify(raw).slice(0, 200);
+                            toolSummaries.push(`[${tc.toolName ?? "tool"}] → ${resultStr}`);
                           }
                         }
                       }
