@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { OfflineBanner } from "./OfflineBanner";
+import { getInbox } from "../api";
 
 const navItems = [
   { to: "/", label: "Inbox", icon: IconInbox },
@@ -15,13 +16,50 @@ const navItems = [
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
 
+const INBOX_SEEN_KEY = "pai-last-seen-briefing-id";
+const INBOX_POLL_MS = 30 * 60 * 1000; // 30 minutes
+
 export default function Layout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [hasNewBriefing, setHasNewBriefing] = useState(false);
   const location = useLocation();
+  const pollRef = useRef<ReturnType<typeof setInterval>>(null);
 
   // Close mobile nav on route change
   useEffect(() => {
     setMobileNavOpen(false);
+  }, [location.pathname]);
+
+  // Check for new briefings (poll every 5 min + on mount)
+  useEffect(() => {
+    const checkBriefing = async () => {
+      try {
+        const data = await getInbox();
+        const latestId = data.briefing?.id ?? null;
+        const seenId = localStorage.getItem(INBOX_SEEN_KEY);
+        setHasNewBriefing(!!latestId && latestId !== seenId);
+      } catch { /* ignore */ }
+    };
+    checkBriefing();
+    pollRef.current = setInterval(checkBriefing, INBOX_POLL_MS);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  // Mark briefing as seen when user visits Inbox
+  useEffect(() => {
+    if (location.pathname === "/") {
+      // Small delay to let the Inbox page fetch and render
+      const timer = setTimeout(async () => {
+        try {
+          const data = await getInbox();
+          if (data.briefing?.id) {
+            localStorage.setItem(INBOX_SEEN_KEY, data.briefing.id);
+            setHasNewBriefing(false);
+          }
+        } catch { /* ignore */ }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
   }, [location.pathname]);
 
   const toggleNav = useCallback(() => setMobileNavOpen((v) => !v), []);
@@ -71,7 +109,7 @@ export default function Layout() {
                   aria-label={item.label}
                   className={({ isActive }) =>
                     cn(
-                      "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+                      "relative flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
                       isActive
                         ? "bg-primary/15 text-primary"
                         : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
@@ -79,6 +117,9 @@ export default function Layout() {
                   }
                 >
                   <item.icon />
+                  {item.to === "/" && hasNewBriefing && (
+                    <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-[#0a0a0a]" />
+                  )}
                 </NavLink>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={8}>

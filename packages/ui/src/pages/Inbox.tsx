@@ -44,6 +44,10 @@ export default function Inbox() {
     try {
       const data = await getInbox();
       setBriefing(data.briefing);
+      // Mark briefing as seen for the nav badge indicator
+      if (data.briefing?.id) {
+        localStorage.setItem("pai-last-seen-briefing-id", data.briefing.id);
+      }
     } catch (err) {
       console.error("Failed to load briefing:", err);
     } finally {
