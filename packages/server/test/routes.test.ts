@@ -7,6 +7,7 @@ import { registerAgentRoutes, threadMigrations } from "../src/routes/agents.js";
 import { registerConfigRoutes } from "../src/routes/config.js";
 import { registerTaskRoutes } from "../src/routes/tasks.js";
 import { registerAuthRoutes } from "../src/routes/auth.js";
+import { registerInboxRoutes } from "../src/routes/inbox.js";
 import type { ServerContext } from "../src/index.js";
 import jwt from "jsonwebtoken";
 
@@ -103,6 +104,22 @@ vi.mock("ai", () => ({
   createUIMessageStreamResponse: ({ stream }: { stream: ReadableStream }) =>
     new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8" } }),
   stepCountIs: (...args: unknown[]) => mockStepCountIs(...args),
+}));
+
+// ---------------------------------------------------------------------------
+// Mock briefing module — isolate inbox route handlers
+// ---------------------------------------------------------------------------
+const mockGetLatestBriefing = vi.fn();
+const mockGetBriefingById = vi.fn();
+const mockListBriefings = vi.fn();
+const mockGenerateBriefing = vi.fn();
+
+vi.mock("../src/briefing.js", () => ({
+  getLatestBriefing: (...args: unknown[]) => mockGetLatestBriefing(...args),
+  getBriefingById: (...args: unknown[]) => mockGetBriefingById(...args),
+  listBriefings: (...args: unknown[]) => mockListBriefings(...args),
+  generateBriefing: (...args: unknown[]) => mockGenerateBriefing(...args),
+  briefingMigrations: [],
 }));
 
 /**
@@ -1787,5 +1804,89 @@ describe("Zod validation errors", () => {
       payload: { title: "Test task", priority: "critical" },
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+// ==========================================================================
+// Inbox Routes
+// ==========================================================================
+
+describe("Inbox routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = Fastify();
+    serverCtx = createMockServerCtx();
+    registerInboxRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("GET /api/inbox returns null when no briefing exists", async () => {
+    mockGetLatestBriefing.mockReturnValue(null);
+    const res = await app.inject({ method: "GET", url: "/api/inbox" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ briefing: null });
+  });
+
+  it("GET /api/inbox returns the latest briefing", async () => {
+    const mockBriefing = {
+      id: "brief_123",
+      generatedAt: "2026-02-25T08:00:00Z",
+      sections: {
+        greeting: "Hello!",
+        taskFocus: { summary: "", items: [] },
+        memoryInsights: { summary: "", highlights: [] },
+        suggestions: [],
+      },
+      status: "ready",
+    };
+    mockGetLatestBriefing.mockReturnValue(mockBriefing);
+    const res = await app.inject({ method: "GET", url: "/api/inbox" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().briefing.id).toBe("brief_123");
+  });
+
+  it("POST /api/inbox/refresh triggers generation", async () => {
+    mockGenerateBriefing.mockResolvedValue(null);
+    const res = await app.inject({ method: "POST", url: "/api/inbox/refresh", payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+  });
+
+  it("GET /api/inbox/history returns list", async () => {
+    mockListBriefings.mockReturnValue([{ id: "b1", generatedAt: "2026-02-25T08:00:00Z" }]);
+    const res = await app.inject({ method: "GET", url: "/api/inbox/history" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().briefings).toHaveLength(1);
+  });
+
+  it("GET /api/inbox/:id returns 404 for missing briefing", async () => {
+    mockGetBriefingById.mockReturnValue(null);
+    const res = await app.inject({ method: "GET", url: "/api/inbox/nonexistent" });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("GET /api/inbox/:id returns briefing by id", async () => {
+    const mockBriefing = {
+      id: "brief_456",
+      generatedAt: "2026-02-25T10:00:00Z",
+      sections: {
+        greeting: "Good morning!",
+        taskFocus: { summary: "Focus on tasks", items: [] },
+        memoryInsights: { summary: "No insights", highlights: [] },
+        suggestions: [],
+      },
+      status: "ready",
+    };
+    mockGetBriefingById.mockReturnValue(mockBriefing);
+    const res = await app.inject({ method: "GET", url: "/api/inbox/brief_456" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().briefing.id).toBe("brief_456");
   });
 });
