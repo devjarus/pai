@@ -66,6 +66,8 @@ export default async function globalSetup() {
       PAI_HOST: "0.0.0.0",
       PORT: String(PAI_PORT),
       PAI_LOG_LEVEL: "silent",
+      // Prevent Telegram bot from starting during E2E tests
+      PAI_TELEGRAM_TOKEN: "",
     },
     stdio: "pipe",
   });

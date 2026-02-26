@@ -153,7 +153,23 @@ export async function createServer(options?: { port?: number; host?: string }) {
     telegramStatus.error = undefined;
   }
 
+  // Track pending storage close timers so we can cancel them on consecutive reinitialize calls
+  let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingCloseStorage: { close(): void } | null = null;
+
   function reinitialize() {
+    // Cancel any pending old-storage close from a previous reinitialize
+    // to prevent closing a connection that's still being referenced
+    if (pendingCloseTimer) {
+      clearTimeout(pendingCloseTimer);
+      // Close the previously-pending storage immediately since we're replacing it again
+      if (pendingCloseStorage) {
+        try { pendingCloseStorage.close(); } catch { /* ignore */ }
+      }
+      pendingCloseTimer = null;
+      pendingCloseStorage = null;
+    }
+
     // Keep reference to old storage so in-flight requests can finish
     const oldStorage = ctx.storage;
 
@@ -179,8 +195,11 @@ export async function createServer(options?: { port?: number; host?: string }) {
     });
 
     // Close old storage after a delay to let in-flight requests drain
-    setTimeout(() => {
+    pendingCloseStorage = oldStorage;
+    pendingCloseTimer = setTimeout(() => {
       try { oldStorage.close(); } catch { /* ignore */ }
+      pendingCloseTimer = null;
+      pendingCloseStorage = null;
     }, 5000);
 
     // Restart or stop Telegram bot based on new config

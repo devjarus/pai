@@ -71,4 +71,49 @@ test.describe("Settings", () => {
       timeout: 5_000,
     });
   });
+
+  test("consecutive config saves do not crash the server", async ({
+    page,
+  }) => {
+    await page.goto("/settings");
+    await expect(page.getByText("Configuration")).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // First save — change model (triggers reinitialize #1)
+    await page.getByRole("button", { name: "Edit" }).click();
+    const modelInput = page.getByPlaceholder("llama3.2").or(
+      page.locator('input[value="new-test-model"]'),
+    );
+    await modelInput.clear();
+    await modelInput.fill("consecutive-test-model");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText(/Configuration saved/i)).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // Second save immediately — change API key (triggers reinitialize #2)
+    await page.getByRole("button", { name: "Edit" }).click();
+    const apiKeyRow = page
+      .locator("div")
+      .filter({ hasText: /^API Key/ })
+      .last();
+    const apiKeyInput = apiKeyRow.locator('input[type="password"]');
+    await apiKeyInput.fill("sk-consecutive-test");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText(/Configuration saved/i)).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // Server should still be alive after two consecutive reinitializes
+    await waitForServer();
+
+    // Verify both changes persisted
+    const config = await page.evaluate(async () => {
+      const res = await fetch("/api/config");
+      return res.json();
+    });
+    expect(config.llm.model).toBe("consecutive-test-model");
+    expect(config.llm.hasApiKey).toBe(true);
+  });
 });
