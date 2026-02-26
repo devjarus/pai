@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import jwt from "jsonwebtoken";
+import { z } from "zod";
 import type { ServerContext } from "../index.js";
+import { validate } from "../validate.js";
 import {
   hasOwner,
   createOwner,
@@ -35,6 +37,17 @@ function setCookies(reply: CookieSetter, accessToken: string, refreshToken: stri
 }
 
 /** Extract JWT from cookie or Authorization header */
+const setupSchema = z.object({
+  name: z.string().min(1, "Name is required").transform((s) => s.trim()),
+  email: z.string().min(1, "Email is required").email("Invalid email format"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+const loginSchema = z.object({
+  email: z.string().min(1, "Email is required"),
+  password: z.string().min(1, "Password is required"),
+});
+
 export function extractToken(request: FastifyRequest): string | null {
   // 1. httpOnly cookie (browser)
   const cookie = request.cookies?.["pai_access"];
@@ -74,13 +87,7 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
     if (hasOwner(serverCtx.ctx.storage)) {
       return reply.status(400).send({ error: "Owner already exists" });
     }
-    const body = request.body as { email?: string; password?: string; name?: string };
-    if (!body.name?.trim() || !body.email || !body.password) {
-      return reply.status(400).send({ error: "Name, email, and password are required" });
-    }
-    if (body.password.length < 8) {
-      return reply.status(400).send({ error: "Password must be at least 8 characters" });
-    }
+    const body = validate(setupSchema, request.body);
 
     const owner = await createOwner(serverCtx.ctx.storage, {
       email: body.email,
@@ -95,10 +102,7 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
   });
 
   app.post("/api/auth/login", async (request, reply) => {
-    const body = request.body as { email?: string; password?: string };
-    if (!body.email || !body.password) {
-      return reply.status(400).send({ error: "Email and password are required" });
-    }
+    const body = validate(loginSchema, request.body);
 
     const valid = await verifyOwnerPassword(serverCtx.ctx.storage, body.email, body.password);
     if (!valid) {

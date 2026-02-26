@@ -398,6 +398,16 @@ function createMockServerCtx(): ServerContext {
   };
 }
 
+/** Mirror the production error handler so thrown Zod validation errors return { error: message }. */
+function addTestErrorHandler(app: FastifyInstance): void {
+  app.setErrorHandler((error: { statusCode?: number; message: string }, _request, reply) => {
+    const statusCode = error.statusCode ?? 500;
+    reply.status(statusCode).send({
+      error: statusCode >= 500 ? "Internal server error" : error.message,
+    });
+  });
+}
+
 // ==========================================================================
 // Memory Routes
 // ==========================================================================
@@ -409,6 +419,7 @@ describe("memory routes", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     app = Fastify();
+    addTestErrorHandler(app);
     serverCtx = createMockServerCtx();
     registerMemoryRoutes(app, serverCtx);
     await app.ready();
@@ -667,7 +678,7 @@ describe("memory routes", () => {
 
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.payload);
-    expect(body.error).toBe("text is required");
+    expect(body.error.toLowerCase()).toContain("required");
     expect(remember).not.toHaveBeenCalled();
   });
 
@@ -1379,6 +1390,7 @@ describe("Auth routes", () => {
     mockGetJwtSecret.mockReset().mockReturnValue("test-secret-key-for-jwt-testing-1234567890");
 
     app = Fastify();
+    addTestErrorHandler(app);
     serverCtx = createMockServerCtx();
     await app.register(cookie);
     registerAuthRoutes(app, serverCtx);
@@ -1478,7 +1490,7 @@ describe("Auth routes", () => {
       payload: { email: "test@example.com" },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toContain("required");
+    expect(res.json().error.toLowerCase()).toContain("required");
   });
 
   it("POST /api/auth/login with missing fields returns 400", async () => {
@@ -1488,7 +1500,7 @@ describe("Auth routes", () => {
       payload: { email: "test@example.com" },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toContain("required");
+    expect(res.json().error.toLowerCase()).toContain("required");
   });
 
   it("POST /api/auth/refresh without cookie returns 401", async () => {
@@ -1599,6 +1611,7 @@ describe("Config routes", () => {
     vi.clearAllMocks();
     mockLoadConfigFile.mockReturnValue({});
     app = Fastify();
+    addTestErrorHandler(app);
     serverCtx = createMockServerCtx();
     registerConfigRoutes(app, serverCtx);
     await app.ready();
@@ -1684,9 +1697,95 @@ describe("Config routes", () => {
 
     expect(res.statusCode).toBe(400);
     const body = res.json();
-    expect(body.error).toMatch(/Invalid provider/);
+    expect(body.error).toMatch(/Invalid enum value/);
     // Should not write config or reinitialize on validation error
     expect(mockWriteConfig).not.toHaveBeenCalled();
     expect(serverCtx.reinitialize).not.toHaveBeenCalled();
+  });
+});
+
+// ==========================================================================
+// Zod Validation Error Tests
+// ==========================================================================
+
+describe("Zod validation errors", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = Fastify();
+    addTestErrorHandler(app);
+    serverCtx = createMockServerCtx();
+    registerMemoryRoutes(app, serverCtx);
+    registerAuthRoutes(app, serverCtx);
+    registerTaskRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("returns 400 for POST /api/remember with empty text", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/remember",
+      payload: { text: "" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error).toBeDefined();
+  });
+
+  it("returns 400 for POST /api/remember with missing text", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/remember",
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 for POST /api/auth/setup with short password", async () => {
+    mockHasOwner.mockReturnValue(false);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { name: "Test", email: "test@example.com", password: "short" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error).toMatch(/8 characters/);
+  });
+
+  it("returns 400 for POST /api/auth/setup with missing fields", async () => {
+    mockHasOwner.mockReturnValue(false);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { email: "test@example.com" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 for POST /api/tasks with missing title", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { description: "no title" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error).toBeDefined();
+  });
+
+  it("returns 400 for POST /api/tasks with invalid priority", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "Test task", priority: "critical" },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });

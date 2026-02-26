@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import type { ServerContext } from "../index.js";
+import { validate } from "../validate.js";
 import {
   listBeliefs,
   searchBeliefs,
@@ -9,6 +11,10 @@ import {
   remember,
 } from "@personal-ai/core";
 import type { Belief } from "@personal-ai/core";
+
+const rememberSchema = z.object({
+  text: z.string().min(1, "text is required").max(10_000, "Text too long (max 10,000 characters)"),
+});
 
 export function registerMemoryRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
   // List beliefs
@@ -55,10 +61,8 @@ export function registerMemoryRoutes(app: FastifyInstance, { ctx }: ServerContex
   });
 
   // Remember
-  app.post<{ Body: { text: string } }>("/api/remember", async (request, reply) => {
-    const { text } = request.body ?? {};
-    if (!text) return reply.status(400).send({ error: "text is required" });
-    if (text.length > 10_000) return reply.status(400).send({ error: "Text too long (max 10,000 characters)" });
+  app.post("/api/remember", async (request) => {
+    const { text } = validate(rememberSchema, request.body);
     const result = await remember(ctx.storage, ctx.llm, text, ctx.logger);
     return result;
   });

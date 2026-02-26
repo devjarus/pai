@@ -157,7 +157,12 @@ export async function createServer(options?: { port?: number; host?: string }) {
   let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingCloseStorage: { close(): void } | null = null;
 
+  let reinitializing = false;
+
   function reinitialize() {
+    if (reinitializing) return;
+    reinitializing = true;
+    try {
     // Cancel any pending old-storage close from a previous reinitialize
     // to prevent closing a connection that's still being referenced
     if (pendingCloseTimer) {
@@ -207,6 +212,9 @@ export async function createServer(options?: { port?: number; host?: string }) {
       startTelegramBot();
     } else {
       stopTelegramBot();
+    }
+    } finally {
+      reinitializing = false;
     }
   }
 
@@ -279,6 +287,29 @@ export async function createServer(options?: { port?: number; host?: string }) {
       if (isAllowedOrigin(origin)) return cb(null, true);
       cb(new Error("CORS origin not allowed"), false);
     },
+  });
+
+  // --- Request ID propagation ---
+  app.addHook("onRequest", async (request, reply) => {
+    reply.header("x-request-id", request.id);
+  });
+
+  // --- Global error handler ---
+  app.setErrorHandler((error: { statusCode?: number; message: string; stack?: string }, request, reply) => {
+    const statusCode = error.statusCode ?? 500;
+    const isProd = !!process.env.PORT;
+    ctx.logger.error("Unhandled error", {
+      requestId: request.id,
+      method: request.method,
+      path: request.url,
+      statusCode,
+      error: error.message,
+      ...(isProd ? {} : { stack: error.stack }),
+    });
+    reply.status(statusCode).send({
+      error: statusCode >= 500 ? "Internal server error" : error.message,
+      requestId: request.id,
+    });
   });
 
   // Serve static UI build if it exists
@@ -393,6 +424,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   app.addHook("onResponse", async (request, reply) => {
     if (!request.url.startsWith("/api/")) return;
     ctx.logger.info("API request", {
+      requestId: request.id,
       method: request.method,
       path: request.url,
       status: reply.statusCode,
@@ -415,10 +447,19 @@ export async function createServer(options?: { port?: number; host?: string }) {
     writeFileSync(pidFile, `${process.pid}\n${port}\n${host}`);
   } catch { /* dir may not exist yet — non-critical */ }
 
-  // Clean shutdown — use ctx.storage (may be reassigned after reinitialize)
+  // Clean shutdown — drain in-flight requests, clean up timers
   const shutdown = async () => {
+    console.log("Shutting down gracefully...");
     try { unlinkSync(pidFile); } catch { /* ignore */ }
     stopTelegramBot();
+    // Cancel any pending storage close from reinitialize
+    if (pendingCloseTimer) {
+      clearTimeout(pendingCloseTimer);
+      if (pendingCloseStorage) {
+        try { pendingCloseStorage.close(); } catch { /* ignore */ }
+      }
+    }
+    // Drain in-flight requests then close
     try { await app.close(); } catch { /* ignore */ }
     try { ctx.storage.close(); } catch { /* ignore */ }
     process.exit(0);

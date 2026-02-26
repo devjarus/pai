@@ -19,10 +19,17 @@ import {
 import { streamText, generateText, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, tool } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
+import { validate } from "../validate.js";
 
 export { threadMigrations };
 
 const MAX_MESSAGES_PER_THREAD = 500;
+const STREAM_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const HEARTBEAT_INTERVAL_MS = 30 * 1000;  // 30 seconds
+
+const renameThreadSchema = z.object({
+  title: z.string().min(1, "title is required").transform((s) => s.trim().replace(/<[^>]*>/g, "").slice(0, 255)),
+});
 
 function autoTitle(message: string): string {
   const trimmed = message.trim();
@@ -91,7 +98,7 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
       const row = getThread(ctx.storage, request.params.id);
       if (!row) return reply.status(404).send({ error: "Thread not found" });
 
-      const title = (request.body.title ?? "").trim().replace(/<[^>]*>/g, "").slice(0, 255);
+      const { title } = validate(renameThreadSchema, request.body);
       if (!title) return reply.status(400).send({ error: "title is required" });
       ctx.storage.run("UPDATE threads SET title = ? WHERE id = ?", [title, request.params.id]);
       const updated = getThread(ctx.storage, request.params.id);
@@ -348,9 +355,25 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
     reply.header("Content-Type", response.headers.get("content-type") ?? "text/event-stream; charset=utf-8");
     try {
       const nodeStream = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
+
+      // SSE heartbeat — keep connection alive and detect dead clients
+      const heartbeat = setInterval(() => {
+        try { reply.raw.write(": ping\n\n"); } catch { clearInterval(heartbeat); }
+      }, HEARTBEAT_INTERVAL_MS);
+
+      // SSE absolute timeout — prevent indefinitely hanging connections
+      const timeout = setTimeout(() => {
+        try { reply.raw.end(); } catch { /* ignore */ }
+      }, STREAM_TIMEOUT_MS);
+
+      // Clean up timers when stream ends
+      nodeStream.on("end", () => { clearInterval(heartbeat); clearTimeout(timeout); });
       nodeStream.on("error", (err) => {
+        clearInterval(heartbeat);
+        clearTimeout(timeout);
         ctx.logger.warn(`Chat stream error: ${err instanceof Error ? err.message : String(err)}`);
       });
+
       return reply.send(nodeStream);
     } catch (err) {
       ctx.logger.warn(`Stream conversion failed: ${err instanceof Error ? err.message : String(err)}`);

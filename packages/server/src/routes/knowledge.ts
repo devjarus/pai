@@ -1,8 +1,27 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import type { ServerContext } from "../index.js";
+import { validate } from "../validate.js";
 import { learnFromContent, knowledgeSearch, listSources, getSourceChunks, forgetSource, reindexSource, reindexAllSources } from "@personal-ai/core";
 import { fetchPageAsMarkdown, discoverSubPages } from "@personal-ai/plugin-assistant/page-fetch";
 import { activeCrawls, runCrawlInBackground } from "@personal-ai/plugin-assistant/tools";
+
+const learnSchema = z.object({
+  url: z
+    .string()
+    .min(1, "URL is required")
+    .max(2048, "URL too long (max 2,048 characters)")
+    .url("Invalid URL format")
+    .refine((u) => {
+      try { return ["http:", "https:"].includes(new URL(u).protocol); } catch { return false; }
+    }, "URL must use http or https"),
+  crawl: z.boolean().optional(),
+  force: z.boolean().optional(),
+});
+
+const patchSourceSchema = z.object({
+  tags: z.string().nullable(),
+});
 
 export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
   // List learned sources
@@ -20,7 +39,7 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
   // Update source tags
   app.patch<{ Params: { id: string }; Body: { tags: string | null } }>("/api/knowledge/sources/:id", async (request, reply) => {
     const { id } = request.params;
-    const { tags } = request.body;
+    const { tags } = validate(patchSourceSchema, request.body);
     const sources = listSources(ctx.storage);
     const source = sources.find((s) => s.id === id);
     if (!source) return reply.status(404).send({ error: "Source not found" });
@@ -48,17 +67,7 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
 
   // Learn from URL (with optional crawl and force re-learn)
   app.post<{ Body: { url: string; crawl?: boolean; force?: boolean } }>("/api/knowledge/learn", async (request, reply) => {
-    const { url, crawl, force } = request.body;
-    if (!url) return reply.status(400).send({ error: "URL is required" });
-    if (url.length > 2048) return reply.status(400).send({ error: "URL too long (max 2,048 characters)" });
-    try {
-      const parsed = new URL(url);
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        return reply.status(400).send({ error: "URL must use http or https" });
-      }
-    } catch {
-      return reply.status(400).send({ error: "Invalid URL format" });
-    }
+    const { url, crawl, force } = validate(learnSchema, request.body);
 
     try {
       const page = await fetchPageAsMarkdown(url);

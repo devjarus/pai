@@ -2,8 +2,10 @@ import { existsSync, readdirSync, statSync, lstatSync, realpathSync } from "node
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { writeConfig, loadConfigFile } from "@personal-ai/core";
 import type { ServerContext } from "../index.js";
+import { validate } from "../validate.js";
 
 /** Config file location: data dir (persistent volume) on Docker/PaaS, ~/.personal-ai/ locally */
 const configDir = process.env.PAI_DATA_DIR ?? join(homedir(), ".personal-ai");
@@ -47,6 +49,27 @@ function getEnvOverrides(): string[] {
   return overrides;
 }
 
+const updateConfigSchema = z.object({
+  provider: z.enum(["ollama", "openai", "anthropic", "google"]).optional(),
+  model: z.string().optional(),
+  baseUrl: z
+    .string()
+    .optional()
+    .refine(
+      (v) => {
+        if (v === undefined || v === "") return true;
+        try { return ["http:", "https:"].includes(new URL(v).protocol); } catch { return false; }
+      },
+      "Base URL must be a valid http or https URL",
+    ),
+  embedModel: z.string().optional(),
+  embedProvider: z.enum(["auto", "ollama", "openai", "local"]).optional(),
+  apiKey: z.string().optional(),
+  dataDir: z.string().optional(),
+  telegramToken: z.string().optional(),
+  telegramEnabled: z.boolean().optional(),
+});
+
 export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerContext): void {
   const { ctx } = serverCtx;
   app.get("/api/config", async () => ({
@@ -61,36 +84,7 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
   }));
 
   app.put("/api/config", async (request, reply) => {
-    const body = request.body as {
-      provider?: string;
-      model?: string;
-      baseUrl?: string;
-      embedModel?: string;
-      embedProvider?: string;
-      apiKey?: string;
-      dataDir?: string;
-      telegramToken?: string;
-      telegramEnabled?: boolean;
-    };
-
-    const validProviders = new Set(["ollama", "openai", "anthropic", "google"]);
-
-    // Validate provider
-    if (body.provider && !validProviders.has(body.provider)) {
-      return reply.status(400).send({ error: `Invalid provider. Must be one of: ${[...validProviders].join(", ")}` });
-    }
-
-    // Validate baseUrl is a valid http/https URL
-    if (body.baseUrl !== undefined && body.baseUrl !== "") {
-      try {
-        const parsed = new URL(body.baseUrl);
-        if (!["http:", "https:"].includes(parsed.protocol)) {
-          return reply.status(400).send({ error: "Base URL must use http or https protocol" });
-        }
-      } catch {
-        return reply.status(400).send({ error: "Base URL is not a valid URL" });
-      }
-    }
+    const body = validate(updateConfigSchema, request.body);
 
     // Validate dataDir stays within home directory
     if (body.dataDir) {
@@ -109,10 +103,6 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     if (body.baseUrl !== undefined) llmUpdate.baseUrl = body.baseUrl;
     if (body.embedModel !== undefined) llmUpdate.embedModel = body.embedModel;
     if (body.embedProvider !== undefined) {
-      const validEmbedProviders = new Set(["auto", "ollama", "openai", "local"]);
-      if (!validEmbedProviders.has(body.embedProvider)) {
-        return reply.status(400).send({ error: `Invalid embed provider. Must be one of: ${[...validEmbedProviders].join(", ")}` });
-      }
       llmUpdate.embedProvider = body.embedProvider;
     }
     if (body.apiKey !== undefined) llmUpdate.apiKey = body.apiKey;
