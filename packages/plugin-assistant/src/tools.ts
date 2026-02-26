@@ -275,7 +275,7 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     knowledge_sources: tool({
-      description: "List all URLs/pages that have been learned and stored in the knowledge base.",
+      description: "List all URLs/pages stored in the knowledge base. Only use this when the user explicitly asks to see their sources — NOT for answering content questions (use knowledge_search for that).",
       inputSchema: z.object({}),
       execute: async () => {
         const sources = listSources(ctx.storage);

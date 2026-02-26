@@ -281,13 +281,17 @@ function findMatchingSources(storage: Storage, query: string, maxSources = 5): K
   // Require at least 2 words to match for broad queries (reduces false positives)
   const minMatches = words.length >= 3 ? 2 : 1;
 
-  // Score sources by how many query words match their title/tags
+  // Score sources by how many query words match their title, tags, or URL
   const allSources = storage.query<KnowledgeSource>("SELECT * FROM knowledge_sources");
   const scored = allSources
     .map((source) => {
       const titleLower = (source.title ?? "").toLowerCase();
       const tagsLower = (source.tags ?? "").toLowerCase();
-      const matchCount = words.filter((w) => titleLower.includes(w.toLowerCase()) || tagsLower.includes(w.toLowerCase())).length;
+      const urlLower = (source.url ?? "").toLowerCase();
+      const matchCount = words.filter((w) => {
+        const wl = w.toLowerCase();
+        return titleLower.includes(wl) || tagsLower.includes(wl) || urlLower.includes(wl);
+      }).length;
       return { source, matchCount };
     })
     .filter((s) => s.matchCount >= minMatches)
