@@ -17,3 +17,5 @@ pai.log.1
 .DS_Store
 *.tgz
 docs/plans/
+test-results/
+playwright-report/
