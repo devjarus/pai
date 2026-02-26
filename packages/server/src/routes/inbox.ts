@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
-import { getLatestBriefing, getBriefingById, listBriefings, generateBriefing } from "../briefing.js";
+import { getLatestBriefing, getBriefingById, listBriefings, generateBriefing, clearAllBriefings } from "../briefing.js";
 
 export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
   app.get("/api/inbox", async () => {
@@ -20,6 +20,12 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext
 
   app.get("/api/inbox/history", async () => {
     return { briefings: listBriefings(ctx.storage) };
+  });
+
+  // Clear all briefings
+  app.post("/api/inbox/clear", async () => {
+    const cleared = clearAllBriefings(ctx.storage);
+    return { ok: true, cleared };
   });
 
   app.get<{ Params: { id: string } }>("/api/inbox/:id", async (request, reply) => {

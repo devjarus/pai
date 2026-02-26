@@ -181,4 +181,4 @@ export const tasksPlugin: Plugin = {
   },
 };
 
-export { taskMigrations, addTask, listTasks, completeTask, editTask, reopenTask, deleteTask, addGoal, listGoals, completeGoal, deleteGoal, type TaskStatusFilter } from "./tasks.js";
+export { taskMigrations, addTask, listTasks, completeTask, editTask, reopenTask, deleteTask, clearAllTasks, addGoal, listGoals, completeGoal, deleteGoal, type TaskStatusFilter } from "./tasks.js";

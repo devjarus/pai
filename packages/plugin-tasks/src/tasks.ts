@@ -125,6 +125,12 @@ export function reopenTask(storage: Storage, taskId: string): void {
   storage.run("UPDATE tasks SET status = 'open', completed_at = NULL WHERE id = ?", [task.id]);
 }
 
+export function clearAllTasks(storage: Storage): number {
+  const count = storage.query<{ cnt: number }>("SELECT COUNT(*) as cnt FROM tasks")[0]?.cnt ?? 0;
+  storage.run("DELETE FROM tasks");
+  return count;
+}
+
 export function deleteTask(storage: Storage, taskId: string): void {
   const rows = storage.query<Pick<Task, "id">>(
     "SELECT id FROM tasks WHERE id = ? OR id LIKE ? LIMIT 2",

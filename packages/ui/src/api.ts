@@ -375,6 +375,10 @@ export function deleteTask(id: string): Promise<{ ok: boolean }> {
   return request(`/tasks/${id}`, { method: "DELETE" });
 }
 
+export function clearAllTasks(): Promise<{ ok: boolean; cleared: number }> {
+  return request("/tasks/clear", { method: "POST", body: "{}" });
+}
+
 // ---- Goals ----
 
 export function getGoals(): Promise<Goal[]> {
@@ -412,4 +416,8 @@ export function getInboxHistory(): Promise<{ briefings: Array<{ id: string; gene
 
 export function getInboxBriefing(id: string): Promise<{ briefing: Briefing }> {
   return request<{ briefing: Briefing }>(`/inbox/${id}`);
+}
+
+export function clearInbox(): Promise<{ ok: boolean; cleared: number }> {
+  return request("/inbox/clear", { method: "POST", body: "{}" });
 }

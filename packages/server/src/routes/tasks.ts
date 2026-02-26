@@ -9,6 +9,7 @@ import {
   editTask,
   reopenTask,
   deleteTask,
+  clearAllTasks,
   addGoal,
   listGoals,
   completeGoal,
@@ -105,6 +106,12 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
     } catch (err) {
       return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
     }
+  });
+
+  // Clear all tasks
+  app.post("/api/tasks/clear", async () => {
+    const cleared = clearAllTasks(ctx.storage);
+    return { ok: true, cleared };
   });
 
   // ---- Goals ----

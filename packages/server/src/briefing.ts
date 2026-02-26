@@ -96,6 +96,12 @@ export function listBriefings(storage: PluginContext["storage"]): Array<{ id: st
   ).map((r) => ({ id: r.id, generatedAt: r.generated_at }));
 }
 
+export function clearAllBriefings(storage: PluginContext["storage"]): number {
+  const count = storage.query<{ cnt: number }>("SELECT COUNT(*) as cnt FROM briefings")[0]?.cnt ?? 0;
+  storage.run("DELETE FROM briefings");
+  return count;
+}
+
 function pruneOldBriefings(storage: PluginContext["storage"]): void {
   storage.run(
     "DELETE FROM briefings WHERE generated_at < datetime('now', '-30 days')",

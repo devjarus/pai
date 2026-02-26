@@ -7,6 +7,7 @@ import {
   completeTask,
   reopenTask,
   deleteTask,
+  clearAllTasks,
   getGoals,
   createGoal,
   completeGoal,
@@ -81,6 +82,7 @@ export default function Tasks() {
   // Delete confirmations
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
   const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null);
+  const [showClearAll, setShowClearAll] = useState(false);
 
   useEffect(() => {
     document.title = "Tasks - pai";
@@ -271,6 +273,17 @@ export default function Tasks() {
     [fetchGoals],
   );
 
+  const handleClearAllTasks = useCallback(async () => {
+    try {
+      const result = await clearAllTasks();
+      toast.success(`Cleared ${result.cleared} task${result.cleared !== 1 ? "s" : ""}`);
+      setShowClearAll(false);
+      await Promise.all([fetchTasks(), fetchAllTasks()]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to clear tasks");
+    }
+  }, [fetchTasks, fetchAllTasks]);
+
   // --- Goal progress helpers ---
 
   const getGoalProgress = (goalId: string) => {
@@ -321,9 +334,16 @@ export default function Tasks() {
                   {tasks.length} task{tasks.length !== 1 ? "s" : ""}
                 </Badge>
               </div>
-              <Button variant="ghost" size="icon-xs" onClick={openAddTask}>
-                <PlusIcon className="size-4 text-muted-foreground" />
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon-xs" onClick={openAddTask}>
+                  <PlusIcon className="size-4 text-muted-foreground" />
+                </Button>
+                {tasks.length > 0 && (
+                  <Button variant="ghost" size="icon-xs" onClick={() => setShowClearAll(true)}>
+                    <Trash2Icon className="size-4 text-muted-foreground" />
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Status filter */}
@@ -738,6 +758,28 @@ export default function Tasks() {
                 onClick={() => deletingGoal && handleDeleteGoal(deletingGoal)}
               >
                 Delete
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear All Tasks Confirmation */}
+      <Dialog open={showClearAll} onOpenChange={setShowClearAll}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Clear All Tasks</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Delete all tasks? This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowClearAll(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" size="sm" onClick={handleClearAllTasks}>
+                Clear All
               </Button>
             </div>
           </div>

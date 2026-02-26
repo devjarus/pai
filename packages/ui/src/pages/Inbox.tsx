@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { getInbox, refreshInbox } from "../api";
+import { getInbox, refreshInbox, clearInbox } from "../api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
   LightbulbIcon,
   ArrowRightIcon,
   SparklesIcon,
+  Trash2Icon,
 } from "lucide-react";
 import type { Briefing } from "../types";
 
@@ -83,6 +84,16 @@ export default function Inbox() {
     }
   };
 
+  const handleClear = async () => {
+    try {
+      const result = await clearInbox();
+      setBriefing(null);
+      toast.success(`Cleared ${result.cleared} briefing${result.cleared !== 1 ? "s" : ""}`);
+    } catch {
+      toast.error("Failed to clear inbox");
+    }
+  };
+
   if (loading) return <InboxSkeleton />;
 
   if (!briefing) {
@@ -123,15 +134,25 @@ export default function Inbox() {
                 Generated {timeAgo(briefing.generatedAt)}
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-            >
-              <RefreshCwIcon className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <RefreshCwIcon className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleClear}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <Trash2Icon className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           <Separator className="mt-4 opacity-30" />
         </div>
