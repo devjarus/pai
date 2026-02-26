@@ -350,20 +350,22 @@ export async function knowledgeSearch(
   // Phase 3: Score candidates by cosine similarity
   let scored: Array<{ chunk: KnowledgeChunk; score: number }> = [];
 
-  const COSINE_THRESHOLD = 0.5;
+  const COSINE_THRESHOLD = 0.3;
   // Chunks from sources matched by title/tags get a score boost
   const SOURCE_MATCH_BOOST = 0.15;
 
   if (ftsIds.size > 0) {
-    // Score only FTS candidates
+    // Score only FTS candidates — FTS already proved text relevance, so use lower threshold
     for (const chunk of ftsCandidates) {
-      if (!chunk.embedding) continue;
+      if (!chunk.embedding) {
+        // No embedding but FTS matched — include with moderate score
+        scored.push({ chunk, score: 0.4 });
+        continue;
+      }
       const embedding = Array.isArray(chunk.embedding) ? chunk.embedding : JSON.parse(chunk.embedding as unknown as string) as number[];
       let sim = cosineSimilarity(queryEmbedding, embedding);
       if (matchingSourceIds.has(chunk.source_id)) sim += SOURCE_MATCH_BOOST;
-      if (sim >= COSINE_THRESHOLD) {
-        scored.push({ chunk: { ...chunk, embedding }, score: sim });
-      }
+      scored.push({ chunk: { ...chunk, embedding }, score: Math.max(sim, 0.35) });
     }
   }
 
