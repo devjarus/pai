@@ -16,8 +16,8 @@ pnpm monorepo with 8 packages under `packages/`:
 - **`plugin-assistant`** — Personal Assistant agent plugin with persistent memory, Brave web search, knowledge base, and task management. Implements `AgentPlugin` with `createTools()` (AI SDK tool definitions for memory, knowledge, search, tasks) and `afterResponse` (extracts learnings into memory). Uses `retrieveContext()` for unified belief + knowledge retrieval.
 - **`plugin-curator`** — Memory Curator agent plugin. Analyzes memory health (duplicates, stale beliefs, contradictions) and fixes issues with user approval. Tools: `curate_memory`, `fix_issues`, `list_beliefs`.
 - **`plugin-telegram`** — Telegram bot interface. Uses grammY to connect to Telegram, reuses the same agent chat pipeline (memory, tools, web search) as the web UI. Runs standalone without the Fastify server. Thread persistence via `telegram_threads` mapping table.
-- **`server`** — Fastify API server. Serves REST endpoints for memory, agents, chat (SSE streaming), config, and threads. Also serves the static UI build. Has `reinitialize()` for hot-swapping data directories. Default port: 3141.
-- **`ui`** — React + Vite + Tailwind CSS + shadcn/ui SPA. Pages: Chat (SSE streaming, markdown rendering, token usage badge), Memory Explorer (type tooltips, explainer, clear all), Knowledge (browse sources, view chunks, search), Settings (editable config, directory browser, provider presets auto-fill), Timeline. Global error handling via `ErrorBoundary` and `OfflineBanner` (auto-reconnect detection).
+- **`server`** — Fastify API server. Serves REST endpoints for memory, agents, chat (SSE streaming), config, threads, inbox, tasks, and goals. Also serves the static UI build. Has `reinitialize()` for hot-swapping data directories. Hardened with global error handler, request ID tracing, Helmet security headers, rate limiting, CORS whitelist, JWT auth (cloud-only), content-type validation, request logging, PaaS detection with storage retry, and graceful shutdown. Background briefing generation on 6-hour timer. Default port: 3141.
+- **`ui`** — React + Vite + Tailwind CSS + shadcn/ui SPA. Pages: Inbox (AI briefing home screen), Chat (SSE streaming, markdown rendering, token usage badge), Memory Explorer (type tooltips, explainer, clear all), Knowledge (browse sources, view chunks, search), Tasks (CRUD with goals, priority badges, clear all), Settings (editable config, directory browser, provider presets auto-fill), Timeline. Global error handling via `ErrorBoundary` and `OfflineBanner` (auto-reconnect detection).
 
 **Plugin contract:** Two interfaces:
 
@@ -66,7 +66,21 @@ pnpm lint                                 # eslint across all packages
 pnpm run test:coverage                    # v8 coverage with thresholds
 pnpm run verify                           # typecheck + tests
 pnpm run ci                               # verify + coverage thresholds
+pnpm e2e                                  # run Playwright E2E tests
+pnpm e2e:ui                               # Playwright UI mode
 ```
+
+### Testing Infrastructure
+
+**Unit tests** (Vitest): Coverage thresholds enforced — 80% statements/functions/lines, 70% branches. Tests live in `packages/*/test/**/*.test.ts`.
+
+**E2E tests** (Playwright): Full browser tests in `tests/e2e/`. Global setup spawns a real PAI server on port 3199 with a mock LLM server (Ollama/OpenAI-compatible on port 11435). Test specs:
+- `01-setup.spec.ts` — Setup wizard / first-boot flow
+- `02-auth.spec.ts` — Authentication tests
+- `03-settings.spec.ts` — Settings page tests
+- `04-chat.spec.ts` — Chat functionality tests
+
+**CI** (GitHub Actions `.github/workflows/ci.yml`): Runs on push to main and PRs. Matrix: Node 20 + 22. Steps: typecheck, unit tests, coverage thresholds, ESLint, security audit (non-blocking). E2E tests run on Node 22 only (to save CI minutes).
 
 ## Tech Stack
 
@@ -74,9 +88,11 @@ pnpm run ci                               # verify + coverage thresholds
 - Node.js 20+, pnpm workspaces
 - better-sqlite3 + FTS5 (no external DB servers)
 - Commander.js for CLI, Zod for validation, nanoid for IDs
-- Vitest for testing
+- Vitest for unit testing, Playwright for E2E testing
 - Vercel AI SDK (ai, @ai-sdk/react, @ai-sdk/openai, @ai-sdk/google, ai-sdk-ollama) for LLM integration, streaming, and tool-calling
 - Ollama (local LLM, default) / OpenAI / Anthropic / Google AI (cloud providers)
+- @fastify/helmet, @fastify/rate-limit for server security
+- bcrypt + jsonwebtoken for auth
 - Fastify for API server
 - React + Vite + Tailwind CSS + shadcn/ui for web UI
 - react-markdown + remark-gfm for chat rendering
@@ -258,9 +274,11 @@ pnpm stop                            # graceful shutdown via PID file
 ```
 
 Pages:
+- **Inbox** (home `/`) — AI-generated daily briefing with 4 sections: greeting, task focus, memory insights, and suggestions. Staggered fade-in animations. Refresh to regenerate, clear all briefings. Cards link to relevant pages (Tasks, Memory, Knowledge). Auto-generates every 6 hours via background timer.
 - **Chat** — Talk to the Personal Assistant agent. AI SDK streaming with tool cards, markdown rendering, memory-aware responses with web search. Thread sidebar with SQLite persistence. Responsive mobile design. Token usage badge on completed messages.
 - **Memory Explorer** — Browse beliefs by type/status, semantic search, see belief details with confidence/stability/importance metrics. Info tooltips on all types. Clear all memory. Empty state with guidance.
 - **Knowledge** — Browse learned sources, view chunks full-screen, search knowledge base, learn from URLs, re-learn/crawl sub-pages.
+- **Tasks** — Two sub-tabs: Tasks and Goals. Full CRUD (add, edit, delete, complete, reopen) with priority badges, due date tracking, goal linking, progress bars. Clear all tasks with confirmation dialog.
 - **Settings** — Edit LLM provider (select dropdown with auto-populated presets for Ollama, OpenAI, Anthropic, Google AI), model, base URL, API key, embed model. Browse filesystem to change data directory.
 - **Timeline** — Chronological view of belief events. Empty state with guidance.
 
@@ -268,27 +286,7 @@ Global error handling:
 - **ErrorBoundary** — Catches React render errors. Shows friendly message with "Refresh" and "Copy error details" buttons.
 - **OfflineBanner** — Pings `/api/stats` every 10s. Shows amber warning when server is unreachable. Auto-dismisses on reconnect.
 
-API endpoints:
-```
-GET    /api/beliefs          List beliefs (filter: status, type)
-GET    /api/beliefs/:id      Belief detail
-GET    /api/search?q=...     Semantic search
-GET    /api/stats            Memory health stats
-POST   /api/remember         Store observation
-POST   /api/forget/:id       Soft-delete belief
-POST   /api/memory/clear     Clear all active beliefs
-GET    /api/agents           List agent plugins
-POST   /api/chat             Chat with agent (SSE streaming)
-GET    /api/chat/history     Conversation history
-DELETE /api/chat/history     Clear conversation
-GET    /api/threads          List threads
-POST   /api/threads          Create thread
-DELETE /api/threads/:id      Delete thread
-PATCH  /api/threads/:id      Rename thread
-GET    /api/config           Current config (no secrets)
-PUT    /api/config           Update config
-GET    /api/browse?path=...  Directory browser
-```
+API route groups: `/api/auth/*` (setup, login, logout, refresh, status), `/api/chat` (SSE streaming), `/api/threads/*` (CRUD + messages), `/api/beliefs/*` + `/api/search` + `/api/remember` + `/api/forget` (memory), `/api/tasks/*` + `/api/goals/*` (task management), `/api/inbox/*` (briefings), `/api/knowledge/*` (sources, search, learn, crawl), `/api/config` + `/api/browse` (settings). Full route details in `docs/ARCHITECTURE.md`.
 
 ### Exit Codes
 

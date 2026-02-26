@@ -49,12 +49,12 @@
 packages/
   core/               Config, Storage (auto-backup + transaction-wrapped migrations), LLM Client (humanizeError), Logger, Memory (classifyRelationship), Knowledge, Threads, Plugin interfaces
   cli/                Commander.js CLI + MCP server (stdio, 19 tools) + `pai init`
-  plugin-tasks/       Tasks + Goals with AI prioritization
+  plugin-tasks/       Tasks + Goals with AI prioritization, clearAllTasks
   plugin-assistant/   Personal Assistant agent — system prompt, AI SDK tools, afterResponse hook
   plugin-curator/     Memory Curator agent — health analysis, dedup, contradiction resolution
   plugin-telegram/    Telegram bot — grammY, standalone entry point, chat pipeline
-  server/             Fastify API — REST + SSE + static UI serving
-  ui/                 React + Vite + Tailwind + shadcn/ui SPA
+  server/             Fastify API — REST + SSE + static UI + auth (JWT) + briefing generation + server hardening
+  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Inbox, Chat, Memory, Knowledge, Tasks, Settings, Timeline)
 ```
 
 ---
@@ -324,14 +324,66 @@ telegram_threads   (chat_id INTEGER PK, thread_id, username, created_at)
 
 ---
 
+## Inbox Briefing System
+
+AI-generated daily briefing as the app's home screen.
+
+### Generation Flow
+
+```
+Background timer (every 6 hours) OR manual refresh (POST /api/inbox/refresh)
+    │
+    ├── Collect context:
+    │     ├── listTasks(storage, "open") → open tasks
+    │     ├── listGoals(storage) → active goals
+    │     ├── memoryStats(storage) → belief counts, types
+    │     ├── listBeliefs(storage, "active") → top 10 recent beliefs
+    │     └── listSources(storage) → knowledge source count
+    │
+    ├── Build prompt with JSON schema instructions
+    │     (uses generateText, NOT generateObject — for broad LLM compatibility)
+    │
+    ├── Parse JSON response (handles markdown fences)
+    │     → BriefingSection { greeting, taskFocus, memoryInsights, suggestions }
+    │
+    └── INSERT INTO briefings (id, sections JSON, raw_context)
+```
+
+### Briefing Sections
+
+| Section | Content |
+|---------|---------|
+| `greeting` | Personalized greeting with context-aware message |
+| `taskFocus` | Top 3 tasks to work on with priority and insight per item |
+| `memoryInsights` | Notable beliefs/patterns with type badges and detail |
+| `suggestions` | Actionable suggestions with action buttons (recall/task/learn) |
+
+### Scheduling
+
+- **Background timer:** `setInterval` every 6 hours from server start
+- **First-boot:** Auto-generates if no briefing exists
+- **Manual:** `POST /api/inbox/refresh` (rate limited 5/min)
+- **No cron:** Simple interval, not time-of-day aware
+
+---
+
 ## API Server
 
-Fastify on port 3141, host 127.0.0.1.
+Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
+
+**Server hardening:** Global error handler (hides stack in prod), request ID tracing (`x-request-id`), Helmet CSP, rate limiting (100/min global, stricter on expensive endpoints), CORS whitelist, JWT auth (cloud-only), content-type validation (CSRF protection), request logging, PaaS detection with storage retry, graceful shutdown.
 
 ### Routes
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/api/health` | Health check (cached 30s) |
+| `POST` | `/api/auth/setup` | Create owner (first boot) |
+| `POST` | `/api/auth/login` | Email + password login |
+| `POST` | `/api/auth/logout` | Clear auth cookies |
+| `POST` | `/api/auth/refresh` | Refresh access token |
+| `GET` | `/api/auth/me` | Current owner info |
+| `GET` | `/api/auth/status` | Auth status |
 | `GET` | `/api/agents` | List agents |
 | `POST` | `/api/chat` | Chat (SSE streaming, AI SDK format) |
 | `GET` | `/api/threads` | List threads |
@@ -348,6 +400,26 @@ Fastify on port 3141, host 127.0.0.1.
 | `POST` | `/api/remember` | Store observation |
 | `POST` | `/api/forget/:id` | Soft-delete belief |
 | `POST` | `/api/memory/clear` | Clear all beliefs |
+| `GET` | `/api/tasks` | List tasks (filter: status, goalId) |
+| `POST` | `/api/tasks` | Create task |
+| `PATCH` | `/api/tasks/:id` | Update task |
+| `POST` | `/api/tasks/:id/done` | Complete task |
+| `POST` | `/api/tasks/:id/reopen` | Reopen task |
+| `DELETE` | `/api/tasks/:id` | Delete task |
+| `POST` | `/api/tasks/clear` | Clear all tasks |
+| `GET` | `/api/goals` | List goals |
+| `POST` | `/api/goals` | Create goal |
+| `POST` | `/api/goals/:id/done` | Complete goal |
+| `DELETE` | `/api/goals/:id` | Delete goal |
+| `GET` | `/api/inbox` | Latest briefing |
+| `POST` | `/api/inbox/refresh` | Generate new briefing (5/min) |
+| `GET` | `/api/inbox/history` | List all briefings |
+| `GET` | `/api/inbox/:id` | Specific briefing |
+| `POST` | `/api/inbox/clear` | Clear all briefings |
+| `GET` | `/api/knowledge/sources` | List knowledge sources |
+| `GET` | `/api/knowledge/search?q=` | Search knowledge base |
+| `POST` | `/api/knowledge/learn` | Learn from URL |
+| `DELETE` | `/api/knowledge/sources/:id` | Delete source |
 | `GET` | `/api/config` | Current config (keys sanitized) |
 | `PUT` | `/api/config` | Update config → reinitialize() |
 | `GET` | `/api/browse?path=` | Directory browser |
@@ -421,13 +493,15 @@ Tasks (status/priority/due date) + Goals. `ai-suggest` feeds tasks + memory to L
 
 ## Web UI
 
-React SPA — Chat, Memory Explorer, Knowledge, Settings, Timeline.
+React SPA — Inbox, Chat, Memory Explorer, Knowledge, Tasks, Settings, Timeline.
 
 | Page | Key features |
 |------|-------------|
+| **Inbox** (`/`) | AI-generated daily briefing (greeting, task focus, memory insights, suggestions). Staggered fade-in animations. Refresh/clear buttons. Cards navigate to Tasks/Memory/Knowledge. |
 | **Chat** | AI SDK `useChat` + `DefaultChatTransport`, thread sidebar, tool cards, responsive mobile, token usage badge |
 | **Memory** | Browse/search beliefs, type filter tabs, detail sidebar, clear all, empty state |
 | **Knowledge** | Browse sources, view chunks, search knowledge base, learn from URLs, crawl sub-pages |
+| **Tasks** | Two sub-tabs (Tasks/Goals), full CRUD, priority badges, due dates, goal linking, progress bars, clear all with confirmation |
 | **Settings** | LLM provider dropdown with auto-populated presets (Ollama/OpenAI/Anthropic/Google), model/key, data directory browser, Telegram config |
 | **Timeline** | Chronological episodes + belief changes, empty state |
 
@@ -474,6 +548,14 @@ telegram_threads   (chat_id INTEGER PK, thread_id, username, created_at)
 -- Tasks — plugin migrations
 tasks              (id, title, description, status, priority, goal_id, due_date, created_at, completed_at)
 goals              (id, title, description, status, created_at)
+
+-- Auth — migrations v1-v2
+auth_owners        (id, email, password_hash, name, created_at, updated_at)
+auth_refresh_tokens (id, owner_id FK, token_hash, expires_at, created_at)
+
+-- Inbox — migration v1
+briefings          (id, generated_at, sections TEXT JSON, raw_context TEXT, status)
+                    INDEX: (generated_at)
 ```
 
 ---
@@ -493,7 +575,8 @@ goals              (id, title, description, status, created_at)
 | Telegram | grammY |
 | CLI | Commander.js |
 | MCP | @modelcontextprotocol/sdk (stdio) |
-| Testing | Vitest + v8 coverage |
+| Testing | Vitest + v8 coverage (unit), Playwright (E2E) |
+| Security | @fastify/helmet, @fastify/rate-limit, bcrypt, jsonwebtoken |
 | Validation | Zod |
 | IDs | nanoid |
 | Container | Docker (multi-stage Alpine build) |
