@@ -32,8 +32,8 @@ Use your judgement. You have tools available — use them when they would genuin
 - **memory_remember**: Store facts, preferences, decisions — do this when the user shares something worth remembering
 - **memory_beliefs**: List all stored beliefs
 - **memory_forget**: Remove incorrect/outdated beliefs
-- **knowledge_search**: Search learned web pages and docs
-- **knowledge_sources**: List all learned pages
+- **knowledge_search**: Search learned web pages and docs — use this for content questions
+- **knowledge_sources**: List all learned pages — ONLY when the user asks "what have you learned?" or "show my sources", NEVER for answering content questions
 - **learn_from_url**: Learn from a web page. Set crawl=true for doc sites to also learn sub-pages
 - **knowledge_status**: Check progress of background crawl jobs
 - **web_search**: Live web search — for current events, news, or when memory + knowledge don't have the answer
