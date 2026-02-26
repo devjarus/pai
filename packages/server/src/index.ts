@@ -21,6 +21,8 @@ import { registerAgentRoutes } from "./routes/agents.js";
 import { registerConfigRoutes } from "./routes/config.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
+import { briefingMigrations, generateBriefing, getLatestBriefing } from "./briefing.js";
+import { registerInboxRoutes } from "./routes/inbox.js";
 
 export interface ServerContext {
   ctx: PluginContext;
@@ -89,6 +91,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   storage.migrate("telegram", telegramMigrations);
   storage.migrate("knowledge", knowledgeMigrations);
   storage.migrate("auth", authMigrations);
+  storage.migrate("inbox", briefingMigrations);
 
   // Password reset via environment variable
   const resetPassword = process.env.PAI_RESET_PASSWORD;
@@ -190,6 +193,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     newStorage.migrate("telegram", telegramMigrations);
     newStorage.migrate("knowledge", knowledgeMigrations);
     newStorage.migrate("auth", authMigrations);
+    newStorage.migrate("inbox", briefingMigrations);
 
     // Update ctx in place so all routes see the new connections
     Object.assign(ctx, {
@@ -355,6 +359,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   registerConfigRoutes(app, serverCtx);
   registerKnowledgeRoutes(app, serverCtx);
   registerTaskRoutes(app, serverCtx);
+  registerInboxRoutes(app, serverCtx);
 
   // SPA fallback — serve index.html for non-API routes
   app.setNotFoundHandler(async (request, reply) => {
@@ -417,6 +422,8 @@ export async function createServer(options?: { port?: number; host?: string }) {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 5, timeWindow: "1 minute" } };
     } else if (path === "/api/auth/refresh") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: "1 minute" } };
+    } else if (path === "/api/inbox/refresh") {
+      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 5, timeWindow: "1 minute" } };
     }
   });
 
@@ -441,6 +448,22 @@ export async function createServer(options?: { port?: number; host?: string }) {
     startTelegramBot();
   }
 
+  // --- Background briefing generation ---
+  const BRIEFING_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  const briefingTimer = setInterval(() => {
+    generateBriefing(ctx).catch((err) => {
+      ctx.logger.warn(`Background briefing failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  }, BRIEFING_INTERVAL_MS);
+
+  // Generate initial briefing if none exists
+  const latest = getLatestBriefing(storage);
+  if (!latest) {
+    generateBriefing(ctx).catch((err) => {
+      ctx.logger.warn(`Initial briefing failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  }
+
   // Write PID file for process management
   const pidFile = join(homedir(), ".personal-ai", "server.pid");
   try {
@@ -452,6 +475,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     console.log("Shutting down gracefully...");
     try { unlinkSync(pidFile); } catch { /* ignore */ }
     stopTelegramBot();
+    clearInterval(briefingTimer);
     // Cancel any pending storage close from reinitialize
     if (pendingCloseTimer) {
       clearTimeout(pendingCloseTimer);
