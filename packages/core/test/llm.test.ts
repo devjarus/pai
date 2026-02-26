@@ -15,8 +15,9 @@ vi.mock("@huggingface/transformers", () => ({
   env: {},
 }));
 
-import { generateText, embed as aiEmbed } from "ai";
+import { generateText, streamText, embed as aiEmbed } from "ai";
 const mockGenerateText = vi.mocked(generateText);
+const mockStreamText = vi.mocked(streamText);
 const mockEmbed = vi.mocked(aiEmbed);
 
 describe("LLMClient", () => {
@@ -390,5 +391,122 @@ describe("LLMClient", () => {
 
     await expect(client.chat([{ role: "user", content: "Hi" }]))
       .rejects.toThrow("Model not found for openai");
+  });
+
+  // --- streamChat tests ---
+
+  function makeClient() {
+    return createLLMClient({
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "sk-test",
+      fallbackMode: "strict",
+    });
+  }
+
+  async function collectEvents(gen: AsyncGenerator<any>) {
+    const events: any[] = [];
+    for await (const e of gen) {
+      events.push(e);
+    }
+    return events;
+  }
+
+  it("streamChat yields text-delta events", async () => {
+    mockStreamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: "text-delta", text: "Hello" };
+        yield { type: "text-delta", text: " world" };
+        yield { type: "finish", totalUsage: { inputTokens: 10, outputTokens: 5 } };
+      })(),
+    } as any);
+
+    const client = makeClient();
+    const events = await collectEvents(client.streamChat([{ role: "user", content: "Hi" }]));
+
+    expect(events[0]).toEqual({ type: "text-delta", content: "Hello" });
+    expect(events[1]).toEqual({ type: "text-delta", content: " world" });
+    // Last event should be done with accumulated text
+    const done = events.find((e: any) => e.type === "done");
+    expect(done).toBeDefined();
+    expect(done.text).toBe("Hello world");
+  });
+
+  it("streamChat yields tool-call and tool-result events", async () => {
+    mockStreamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: "tool-call", toolName: "remember", input: { text: "fact" } };
+        yield { type: "tool-result", toolName: "remember", output: { ok: true } };
+        yield { type: "finish", totalUsage: { inputTokens: 20, outputTokens: 10 } };
+      })(),
+    } as any);
+
+    const client = makeClient();
+    const events = await collectEvents(client.streamChat([{ role: "user", content: "Hi" }]));
+
+    const toolCall = events.find((e: any) => e.type === "tool-call");
+    expect(toolCall).toEqual({ type: "tool-call", toolName: "remember", args: { text: "fact" } });
+
+    const toolResult = events.find((e: any) => e.type === "tool-result");
+    expect(toolResult).toEqual({ type: "tool-result", toolName: "remember", result: { ok: true } });
+  });
+
+  it("streamChat yields error event on stream error", async () => {
+    mockStreamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: "text-delta", text: "partial" };
+        yield { type: "error", error: new Error("fetch failed: ECONNREFUSED") };
+        yield { type: "finish", totalUsage: { inputTokens: 5, outputTokens: 1 } };
+      })(),
+    } as any);
+
+    const client = makeClient();
+    const events = await collectEvents(client.streamChat([{ role: "user", content: "Hi" }]));
+
+    const errorEvent = events.find((e: any) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent.error).toContain("Cannot reach openai");
+  });
+
+  it("streamChat yields done event with accumulated text and usage", async () => {
+    mockStreamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: "text-delta", text: "A" };
+        yield { type: "text-delta", text: "B" };
+        yield { type: "text-delta", text: "C" };
+        yield { type: "finish", totalUsage: { inputTokens: 100, outputTokens: 50 } };
+      })(),
+    } as any);
+
+    const client = makeClient();
+    const events = await collectEvents(client.streamChat([{ role: "user", content: "Hi" }]));
+
+    const done = events[events.length - 1];
+    expect(done.type).toBe("done");
+    expect(done.text).toBe("ABC");
+    expect(done.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+      totalTokens: 150,
+    });
+  });
+
+  it("streamChat handles streamText throwing", async () => {
+    mockStreamText.mockImplementation(() => {
+      throw new Error("Invalid API key provided");
+    });
+
+    const client = makeClient();
+    const events = await collectEvents(client.streamChat([{ role: "user", content: "Hi" }]));
+
+    // Should yield an error event then a done event
+    const errorEvent = events.find((e: any) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent.error).toContain("Invalid API key for openai");
+
+    // Should NOT yield a done event when streamText throws synchronously (returns early)
+    const doneEvent = events.find((e: any) => e.type === "done");
+    expect(doneEvent).toBeUndefined();
   });
 });
