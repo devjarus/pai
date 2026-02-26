@@ -24,6 +24,8 @@ import { validate } from "../validate.js";
 export { threadMigrations };
 
 const MAX_MESSAGES_PER_THREAD = 500;
+const TITLE_GENERATE_AT = 3;   // Generate LLM title after this many user turns
+const TITLE_REFRESH_EVERY = 5; // Re-check title every N user turns after that
 const STREAM_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;  // 30 seconds
 
@@ -35,6 +37,31 @@ function autoTitle(message: string): string {
   const trimmed = message.trim();
   if (trimmed.length <= 50) return trimmed;
   return trimmed.slice(0, 47) + "...";
+}
+
+/** Use LLM to generate a concise thread title from recent messages */
+async function generateThreadTitle(
+  ctx: { storage: import("@personal-ai/core").Storage; llm: import("@personal-ai/core").LLMClient },
+  threadId: string,
+  messages: Array<{ role: string; content: string }>,
+): Promise<void> {
+  try {
+    const recent = messages.slice(-10);
+    const conversation = recent.map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join("\n");
+    const result = await generateText({
+      model: ctx.llm.getModel() as LanguageModel,
+      system: "Generate a short title (max 50 chars) for this conversation. Return ONLY the title, nothing else. No quotes, no prefix.",
+      messages: [{ role: "user", content: conversation }],
+      temperature: 0.3,
+      maxRetries: 1,
+    });
+    const title = result.text.trim().replace(/^["']|["']$/g, "").slice(0, 50);
+    if (title.length >= 3) {
+      ctx.storage.run("UPDATE threads SET title = ? WHERE id = ?", [title, threadId]);
+    }
+  } catch {
+    // Non-critical — keep existing title
+  }
 }
 
 function mapThread(row: ThreadRow) {
@@ -314,17 +341,30 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                     });
                   }
 
-                  // Consolidate conversation every 5 user turns (fire and forget)
+                  // Background tasks based on user turn count (fire and forget)
                   const userTurnRow = ctx.storage.query<{ count: number }>(
                     "SELECT COUNT(*) AS count FROM thread_messages WHERE thread_id = ? AND role = 'user'",
                     [sid],
                   );
                   const userTurnCount = userTurnRow[0]?.count ?? 0;
+
+                  // Consolidate conversation every 5 user turns
                   if (userTurnCount > 0 && userTurnCount % 5 === 0) {
                     const recentTurns = listMessages(ctx.storage, sid, { limit: 10 })
                       .map((row) => ({ role: row.role, content: row.content }));
                     consolidateConversation(ctx.storage, ctx.llm, recentTurns, ctx.logger).catch((err) => {
                       ctx.logger.warn(`Consolidation failed: ${err instanceof Error ? err.message : String(err)}`);
+                    });
+                  }
+
+                  // Generate/refresh thread title via LLM
+                  const shouldTitle = userTurnCount === TITLE_GENERATE_AT
+                    || (userTurnCount > TITLE_GENERATE_AT && (userTurnCount - TITLE_GENERATE_AT) % TITLE_REFRESH_EVERY === 0);
+                  if (shouldTitle) {
+                    const allMessages = listMessages(ctx.storage, sid, { limit: 10 })
+                      .map((row) => ({ role: row.role, content: row.content }));
+                    generateThreadTitle(ctx, sid, allMessages).catch((err) => {
+                      ctx.logger.warn(`Title generation failed: ${err instanceof Error ? err.message : String(err)}`);
                     });
                   }
                 } catch (err) {
