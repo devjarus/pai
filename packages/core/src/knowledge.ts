@@ -270,7 +270,7 @@ function attachSources(
 }
 
 /** Find sources whose title or tags match the query */
-function findMatchingSources(storage: Storage, query: string): KnowledgeSource[] {
+function findMatchingSources(storage: Storage, query: string, maxSources = 5): KnowledgeSource[] {
   const words = query
     .replace(/[^\w\s]/g, "")
     .split(/\s+/)
@@ -278,14 +278,23 @@ function findMatchingSources(storage: Storage, query: string): KnowledgeSource[]
     .filter((w) => !STOP_WORDS.has(w.toLowerCase()));
   if (words.length === 0) return [];
 
-  const conditions = words.map(() => "(LOWER(title) LIKE ? OR LOWER(tags) LIKE ?)").join(" OR ");
-  const params = words.flatMap((w) => {
-    const pattern = `%${w.toLowerCase()}%`;
-    return [pattern, pattern];
-  });
-  return storage.query<KnowledgeSource>(
-    `SELECT * FROM knowledge_sources WHERE ${conditions}`, params,
-  );
+  // Require at least 2 words to match for broad queries (reduces false positives)
+  const minMatches = words.length >= 3 ? 2 : 1;
+
+  // Score sources by how many query words match their title/tags
+  const allSources = storage.query<KnowledgeSource>("SELECT * FROM knowledge_sources");
+  const scored = allSources
+    .map((source) => {
+      const titleLower = (source.title ?? "").toLowerCase();
+      const tagsLower = (source.tags ?? "").toLowerCase();
+      const matchCount = words.filter((w) => titleLower.includes(w.toLowerCase()) || tagsLower.includes(w.toLowerCase())).length;
+      return { source, matchCount };
+    })
+    .filter((s) => s.matchCount >= minMatches)
+    .sort((a, b) => b.matchCount - a.matchCount)
+    .slice(0, maxSources);
+
+  return scored.map((s) => s.source);
 }
 
 /** Semantic search over knowledge chunks with FTS prefilter */

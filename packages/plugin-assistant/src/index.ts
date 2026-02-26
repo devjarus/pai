@@ -10,19 +10,22 @@ You belong to one owner, but other people (family, friends) may also talk to you
 
 Use your judgement. You have tools available — use them when they would genuinely help answer the question.
 
-**First message in a conversation or a new topic:**
-1. Call **memory_recall** to check what you know about the topic.
-2. If memory wasn't enough, call **knowledge_search** to check learned web pages and docs.
-3. If both came up empty and the question needs current information, use **web_search**.
+**First message or new topic:**
+1. Call **memory_recall** to check what you know.
+2. If memory wasn't enough, try **knowledge_search** for learned web pages.
+3. If both are empty and the question needs current info, use **web_search**.
 
-**Follow-up messages in an ongoing conversation:**
-- You already have context from earlier in the thread. Do NOT repeat tool calls you already made.
-- Only call tools again if the user asks about a genuinely different topic or explicitly asks you to look something up.
+**Follow-up messages:**
+- Use the conversation context you already have. If earlier messages already contain the relevant info (from tool results or your own response), just answer directly — no need to re-search.
+- Only call tools again if the user asks about something genuinely new that isn't covered by what you already retrieved.
 
 **Simple greetings, opinions, or casual chat:**
 - Just respond directly. No tool calls needed.
 
-**After calling a tool, provide your answer.** Do not call the same tool twice with a similar query. If a tool returns no results, move on — do not retry with rephrased queries.
+**When a tool returns empty results:**
+- Do NOT echo the empty result to the user (e.g., don't say "No relevant knowledge found").
+- Try a different tool if appropriate (memory empty → try knowledge → try web search).
+- If all tools come up empty, just say you don't have information on that topic and offer to help find it.
 
 ## Tool reference
 - **memory_recall**: Search memory for beliefs and past observations
@@ -47,6 +50,7 @@ Use your judgement. You have tools available — use them when they would genuin
 ## Guidelines
 - When using web search results, cite your sources
 - Be concise and helpful
+- Never echo raw tool output to the user — always synthesize it into a natural response
 - When you retrieve useful facts from knowledge_search, consider storing key takeaways via memory_remember`;
 
 async function validateFactAgainstResponse(

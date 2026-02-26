@@ -89,7 +89,7 @@ export function createAgentTools(ctx: AgentContext) {
           }
         }
 
-        return result.formatted || "No relevant memories found.";
+        return result.formatted || "[empty] No memories match this query. Try knowledge_search or answer from conversation context.";
       },
     }),
 
@@ -155,7 +155,7 @@ export function createAgentTools(ctx: AgentContext) {
         }
         try {
           const results = await webSearch(query, 5);
-          if (results.length === 0) return "Web search returned no results. Try rephrasing the query or answer based on your knowledge.";
+          if (results.length === 0) return "[empty] No web results found. Answer from your existing knowledge and conversation context.";
           return formatSearchResults(results);
         } catch (err) {
           const msg = err instanceof Error ? err.message : "unknown error";
@@ -259,14 +259,14 @@ export function createAgentTools(ctx: AgentContext) {
       }),
       execute: async ({ query }) => {
         try {
-          const results = await knowledgeSearch(ctx.storage, ctx.llm, query);
-          if (results.length === 0) return "No relevant knowledge found. The knowledge base may be empty or the query doesn't match stored content.";
+          const results = await knowledgeSearch(ctx.storage, ctx.llm, query, 5);
+          if (results.length === 0) return "[empty] No knowledge matches this query. Answer from conversation context or try web_search.";
 
-          return results.map((r) => ({
-            content: r.chunk.content.slice(0, 1000),
+          // Return top 5 results with truncated content to avoid overwhelming the context
+          return results.slice(0, 5).map((r) => ({
+            content: r.chunk.content.slice(0, 500),
             source: r.source.title,
             url: r.source.url,
-            relevance: r.score,
           }));
         } catch (err) {
           return `Knowledge search failed: ${err instanceof Error ? err.message : "unknown error"}`;
