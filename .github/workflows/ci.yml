@@ -21,3 +21,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run ci
+      - run: pnpm lint
+      - run: pnpm audit --prod --audit-level=high
+        continue-on-error: true
+
+      # E2E tests — only on Node 22 to save CI minutes
+      - run: pnpm build
+        if: matrix.node-version == 22
+      - run: pnpm exec playwright install --with-deps chromium
+        if: matrix.node-version == 22
+      - run: pnpm e2e
+        if: matrix.node-version == 22

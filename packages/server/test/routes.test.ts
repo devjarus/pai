@@ -43,6 +43,8 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     verifyOwnerPassword: (...args: unknown[]) => mockVerifyOwnerPassword(...args),
     getJwtSecret: (...args: unknown[]) => mockGetJwtSecret(...args),
     authMigrations: [],
+    writeConfig: (...args: unknown[]) => mockWriteConfig(...args),
+    loadConfigFile: (...args: unknown[]) => mockLoadConfigFile(...args),
   };
 });
 
@@ -54,6 +56,12 @@ const mockCreateOwner = vi.fn();
 const mockGetOwner = vi.fn();
 const mockVerifyOwnerPassword = vi.fn();
 const mockGetJwtSecret = vi.fn().mockReturnValue("test-secret-key-for-jwt-testing-1234567890");
+
+// ---------------------------------------------------------------------------
+// Config mock functions
+// ---------------------------------------------------------------------------
+const mockWriteConfig = vi.fn();
+const mockLoadConfigFile = vi.fn().mockReturnValue({});
 
 // ---------------------------------------------------------------------------
 // Mock @personal-ai/plugin-tasks — isolate task route handlers
@@ -1576,5 +1584,109 @@ describe("Auth routes", () => {
       payload: { email: "test@example.com", password: "correctpassword" },
     });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+// ==========================================================================
+// Config Routes
+// ==========================================================================
+
+describe("Config routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockLoadConfigFile.mockReturnValue({});
+    app = Fastify();
+    serverCtx = createMockServerCtx();
+    registerConfigRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  // -- GET /api/config ------------------------------------------------------
+
+  it("GET /api/config returns hasApiKey: false when no key set", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/config" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.llm.hasApiKey).toBe(false);
+    // apiKey should not be exposed in the response
+    expect(body.llm.apiKey).toBeUndefined();
+  });
+
+  // -- PUT /api/config ------------------------------------------------------
+
+  it("PUT /api/config saves model and returns updated config", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { model: "gpt-4o" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.llm.model).toBe("gpt-4o");
+    expect(mockWriteConfig).toHaveBeenCalledTimes(1);
+    expect(serverCtx.reinitialize).toHaveBeenCalledTimes(1);
+  });
+
+  it("PUT /api/config with apiKey then GET shows hasApiKey: true", async () => {
+    // PUT with an API key
+    const putRes = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { apiKey: "sk-test-key-12345" },
+    });
+
+    expect(putRes.statusCode).toBe(200);
+    const putBody = putRes.json();
+    expect(putBody.llm.hasApiKey).toBe(true);
+
+    // GET should also reflect hasApiKey: true (since reinitialize was called
+    // and the config was mutated via Object.assign)
+    const getRes = await app.inject({ method: "GET", url: "/api/config" });
+    expect(getRes.statusCode).toBe(200);
+    const getBody = getRes.json();
+    expect(getBody.llm.hasApiKey).toBe(true);
+  });
+
+  it("PUT /api/config without apiKey preserves existing key", async () => {
+    // Set up the server context with an existing API key
+    (serverCtx.ctx.config.llm as Record<string, unknown>).apiKey = "sk-existing-key";
+
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { model: "gpt-4o-mini" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // The writeConfig call should have merged with existing config including the key
+    const writeCall = mockWriteConfig.mock.calls[0];
+    const writtenConfig = writeCall[1] as Record<string, unknown>;
+    const writtenLlm = writtenConfig.llm as Record<string, unknown>;
+    expect(writtenLlm.apiKey).toBe("sk-existing-key");
+    expect(writtenLlm.model).toBe("gpt-4o-mini");
+  });
+
+  it("PUT /api/config rejects invalid provider", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { provider: "invalid-provider" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error).toMatch(/Invalid provider/);
+    // Should not write config or reinitialize on validation error
+    expect(mockWriteConfig).not.toHaveBeenCalled();
+    expect(serverCtx.reinitialize).not.toHaveBeenCalled();
   });
 });
