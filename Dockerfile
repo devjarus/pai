@@ -19,6 +19,7 @@ COPY packages/plugin-assistant/package.json packages/plugin-assistant/tsconfig.j
 COPY packages/plugin-curator/package.json packages/plugin-curator/tsconfig.json packages/plugin-curator/
 COPY packages/plugin-tasks/package.json packages/plugin-tasks/tsconfig.json packages/plugin-tasks/
 COPY packages/plugin-telegram/package.json packages/plugin-telegram/tsconfig.json packages/plugin-telegram/
+COPY packages/plugin-research/package.json packages/plugin-research/tsconfig.json packages/plugin-research/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
@@ -81,6 +82,10 @@ COPY --from=builder /app/packages/plugin-tasks/node_modules packages/plugin-task
 COPY --from=builder /app/packages/plugin-telegram/dist packages/plugin-telegram/dist
 COPY --from=builder /app/packages/plugin-telegram/package.json packages/plugin-telegram/
 COPY --from=builder /app/packages/plugin-telegram/node_modules packages/plugin-telegram/node_modules
+
+COPY --from=builder /app/packages/plugin-research/dist packages/plugin-research/dist
+COPY --from=builder /app/packages/plugin-research/package.json packages/plugin-research/
+COPY --from=builder /app/packages/plugin-research/node_modules packages/plugin-research/node_modules
 
 # Create non-root user for runtime security
 RUN groupadd --gid 1001 pai && useradd --uid 1001 --gid pai --shell /bin/false pai
