@@ -282,7 +282,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
 
   // --- Rate Limiting ---
   await app.register(rateLimit, {
-    max: 100,
+    max: 300,
     timeWindow: "1 minute",
     // Use real IP behind proxy, fall back to remote address
     keyGenerator: (request) => request.ip,
@@ -362,7 +362,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
 
   // Health endpoint (auth-exempt, cached to prevent DoS via external calls)
   let cachedHealth: { ok: boolean; provider: string; ts: number } | null = null;
-  app.get("/api/health", { config: { rateLimit: { max: 12, timeWindow: "1 minute" } } }, async () => {
+  app.get("/api/health", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async () => {
     const now = Date.now();
     if (cachedHealth && now - cachedHealth.ts < 30_000) {
       return { ok: cachedHealth.ok, provider: cachedHealth.provider };
@@ -473,7 +473,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     } else if (path === "/api/remember") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: "1 minute" } };
     } else if (path === "/api/auth/login") {
-      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: "1 minute" } };
+      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 20, timeWindow: "1 minute" } };
     } else if (path === "/api/auth/refresh") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: "1 minute" } };
     } else if (path === "/api/inbox/refresh") {
