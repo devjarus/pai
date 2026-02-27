@@ -24,6 +24,10 @@ import { registerTaskRoutes } from "./routes/tasks.js";
 import { researchMigrations } from "@personal-ai/plugin-research";
 import { briefingMigrations, generateBriefing, getLatestBriefing, type BriefingSection } from "./briefing.js";
 import { learningMigrations, runBackgroundLearning } from "./learning.js";
+import { scheduleMigrations, getDueSchedules, markScheduleRun, listSchedules, createSchedule, deleteSchedule, pauseSchedule, resumeSchedule } from "@personal-ai/plugin-schedules";
+import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
+import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
+import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { registerInboxRoutes } from "./routes/inbox.js";
 import { registerJobRoutes } from "./routes/jobs.js";
 
@@ -97,6 +101,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   storage.migrate("inbox", briefingMigrations);
   storage.migrate("research", researchMigrations);
   storage.migrate("learning", learningMigrations);
+  storage.migrate("schedules", scheduleMigrations);
 
   // Password reset via environment variable
   const resetPassword = process.env.PAI_RESET_PASSWORD;
@@ -205,6 +210,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     newStorage.migrate("inbox", briefingMigrations);
     newStorage.migrate("research", researchMigrations);
     newStorage.migrate("learning", learningMigrations);
+    newStorage.migrate("schedules", scheduleMigrations);
 
     // Update ctx in place so all routes see the new connections
     Object.assign(ctx, {
@@ -373,6 +379,35 @@ export async function createServer(options?: { port?: number; host?: string }) {
   registerInboxRoutes(app, serverCtx);
   registerJobRoutes(app, serverCtx);
 
+  // --- Schedule REST endpoints ---
+  app.get("/api/schedules", async () => {
+    return listSchedules(ctx.storage);
+  });
+  app.post("/api/schedules", async (request) => {
+    const body = request.body as { label?: string; goal?: string; intervalHours?: number; startAt?: string };
+    if (!body.label || !body.goal) {
+      return { error: "label and goal are required" };
+    }
+    return createSchedule(ctx.storage, {
+      label: body.label,
+      goal: body.goal,
+      intervalHours: body.intervalHours,
+      startAt: body.startAt,
+    });
+  });
+  app.delete("/api/schedules/:id", async (request) => {
+    const { id } = request.params as { id: string };
+    const ok = deleteSchedule(ctx.storage, id);
+    return { ok };
+  });
+  app.patch("/api/schedules/:id", async (request) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { action?: string };
+    if (body.action === "pause") return { ok: pauseSchedule(ctx.storage, id) };
+    if (body.action === "resume") return { ok: resumeSchedule(ctx.storage, id) };
+    return { error: "action must be 'pause' or 'resume'" };
+  });
+
   // SPA fallback — serve index.html for non-API routes
   app.setNotFoundHandler(async (request, reply) => {
     if (!request.url.startsWith("/api/")) {
@@ -464,25 +499,28 @@ export async function createServer(options?: { port?: number; host?: string }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type TgBot = { api: { sendMessage(chatId: number, text: string, opts?: Record<string, unknown>): Promise<any> } };
 
+  async function sendToTelegramChat(chatId: number, html: string): Promise<void> {
+    if (!telegramBot || !telegramStatus.running) return;
+    const parts = splitMessage(html);
+    try {
+      for (const part of parts) {
+        await (telegramBot as TgBot).api.sendMessage(chatId, part, { parse_mode: "HTML" });
+      }
+    } catch (err) {
+      ctx.logger.warn("Failed to send Telegram message", {
+        chatId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   async function sendToAllTelegramChats(html: string): Promise<void> {
     if (!telegramBot || !telegramStatus.running) return;
     const chatRows = ctx.storage.query<{ chat_id: number }>(
       "SELECT chat_id FROM telegram_threads",
     );
-    if (chatRows.length === 0) return;
-
-    const parts = splitMessage(html);
     for (const row of chatRows) {
-      try {
-        for (const part of parts) {
-          await (telegramBot as TgBot).api.sendMessage(row.chat_id, part, { parse_mode: "HTML" });
-        }
-      } catch (err) {
-        ctx.logger.warn("Failed to send Telegram message", {
-          chatId: row.chat_id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      await sendToTelegramChat(row.chat_id, html);
     }
   }
 
@@ -500,6 +538,27 @@ export async function createServer(options?: { port?: number; host?: string }) {
     ).map((r) => r.id),
   );
 
+  function findChatIdForResearchBriefing(briefingId: string): number | null {
+    // Briefing IDs follow pattern "research-{jobId}"
+    const jobId = briefingId.replace(/^research-/, "");
+    if (jobId === briefingId) return null; // Not a research briefing ID
+    try {
+      const jobRow = ctx.storage.query<{ thread_id: string | null }>(
+        "SELECT thread_id FROM research_jobs WHERE id = ?",
+        [jobId],
+      );
+      const threadId = jobRow[0]?.thread_id;
+      if (!threadId) return null;
+      const chatRow = ctx.storage.query<{ chat_id: number }>(
+        "SELECT chat_id FROM telegram_threads WHERE thread_id = ?",
+        [threadId],
+      );
+      return chatRow[0]?.chat_id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async function checkAndPushResearch(): Promise<void> {
     if (!telegramBot || !telegramStatus.running) return;
     try {
@@ -513,10 +572,15 @@ export async function createServer(options?: { port?: number; host?: string }) {
           const parsed = JSON.parse(row.sections) as { goal?: string; report?: string };
           if (!parsed.report) continue;
           const title = parsed.goal ?? "Research Report";
-          // Send full report — splitMessage handles Telegram's 4096 char limit
           const html = `\uD83D\uDD2C <b>Research Complete: ${escapeHTMLForTelegram(title)}</b>\n\n${markdownToTelegramHTML(parsed.report)}`;
-          await sendToAllTelegramChats(html);
-          ctx.logger.info("Research report pushed to Telegram", { briefingId: row.id });
+          // Send to the originating Telegram chat, not all chats
+          const chatId = findChatIdForResearchBriefing(row.id);
+          if (chatId) {
+            await sendToTelegramChat(chatId, html);
+            ctx.logger.info("Research report pushed to Telegram", { briefingId: row.id, chatId });
+          } else {
+            ctx.logger.info("Research report ready (no originating Telegram chat)", { briefingId: row.id });
+          }
         } catch { /* skip malformed entries */ }
       }
     } catch { /* ignore query errors during startup */ }
@@ -548,6 +612,43 @@ export async function createServer(options?: { port?: number; host?: string }) {
     checkAndPushResearch().catch(() => {});
   }, RESEARCH_CHECK_INTERVAL_MS);
 
+  // --- Scheduled job runner (check every 60s for due schedules) ---
+  async function runDueSchedules(): Promise<void> {
+    try {
+      const due = getDueSchedules(ctx.storage);
+      for (const schedule of due) {
+        ctx.logger.info("Running scheduled job", { id: schedule.id, label: schedule.label });
+        markScheduleRun(ctx.storage, schedule.id);
+
+        if (schedule.type === "research") {
+          const jobId = createResearchJob(ctx.storage, {
+            goal: schedule.goal,
+            threadId: schedule.threadId,
+          });
+          runResearchInBackground(
+            {
+              storage: ctx.storage,
+              llm: ctx.llm,
+              logger: ctx.logger,
+              webSearch,
+              formatSearchResults,
+              fetchPage: fetchPageAsMarkdown,
+            },
+            jobId,
+          ).catch((err) => {
+            ctx.logger.error(`Scheduled research failed: ${err instanceof Error ? err.message : String(err)}`);
+          });
+        }
+      }
+    } catch (err) {
+      ctx.logger.warn(`Schedule runner error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  const SCHEDULE_CHECK_INTERVAL_MS = 60 * 1000;
+  const scheduleCheckTimer = setInterval(() => {
+    runDueSchedules().catch(() => {});
+  }, SCHEDULE_CHECK_INTERVAL_MS);
+
   // --- Background learning worker ---
   const LEARNING_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
   const LEARNING_INITIAL_DELAY_MS = 5 * 60 * 1000; // 5 minutes
@@ -577,6 +678,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     stopTelegramBot();
     clearInterval(briefingTimer);
     clearInterval(researchCheckTimer);
+    clearInterval(scheduleCheckTimer);
     clearTimeout(learningInitTimer);
     clearInterval(learningTimer);
     // Cancel any pending storage close from reinitialize

@@ -21,6 +21,8 @@ export interface ChatPipelineOptions {
   sender?: { displayName?: string; username?: string };
   /** Chat type — used to add group-specific context */
   chatType?: "private" | "group" | "supergroup" | "channel";
+  /** Telegram chat ID — attached to agent context for schedule tools */
+  chatId?: number;
   /** Called when a preflight operation starts (memory recall, web search) */
   onPreflight?: (action: string) => void;
   onToolCall?: (toolName: string) => void;
@@ -60,7 +62,7 @@ export function withThreadLock<T>(threadId: string, fn: () => Promise<T>): Promi
  */
 export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipelineResult> {
   return withThreadLock(opts.threadId, async () => {
-  const { ctx, agentPlugin, threadId, message, sender, chatType, onToolCall } = opts;
+  const { ctx, agentPlugin, threadId, message, sender, chatType, chatId, onToolCall } = opts;
   const isGroup = chatType === "group" || chatType === "supergroup";
 
   // Load conversation history from SQLite (normalized messages)
@@ -77,6 +79,12 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
     conversationHistory: [...history],
     sender,
   };
+
+  // Attach thread ID and chat ID for tools that need them (research, schedules)
+  (agentCtx as unknown as Record<string, unknown>).threadId = threadId;
+  if (chatId !== undefined) {
+    (agentCtx as unknown as Record<string, unknown>).chatId = chatId;
+  }
 
   // Build tools from agent plugin
   const tools = agentPlugin.agent.createTools?.(agentCtx);

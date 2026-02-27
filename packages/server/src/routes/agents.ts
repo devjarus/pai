@@ -18,6 +18,7 @@ import {
   getOwner,
 } from "@personal-ai/core";
 import { streamText, generateText, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, tool } from "ai";
+
 import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { validate } from "../validate.js";
@@ -25,7 +26,7 @@ import { validate } from "../validate.js";
 export { threadMigrations };
 
 const MAX_MESSAGES_PER_THREAD = 500;
-const TITLE_GENERATE_AT = 3;   // Generate LLM title after this many user turns
+const TITLE_GENERATE_AT = 1;   // Generate LLM title after this many user turns
 const TITLE_REFRESH_EVERY = 5; // Re-check title every N user turns after that
 const STREAM_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;  // 30 seconds
@@ -237,8 +238,18 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
             conversationHistory: [...history],
           };
 
-          // Attach thread ID for background jobs (research_start needs it)
+          // Attach thread ID and chat ID for tools that need them (research, schedules)
           (agentCtx as unknown as Record<string, unknown>).threadId = sid;
+          // Resolve chat_id from thread for Telegram-originated chats
+          try {
+            const chatRow = ctx.storage.query<{ chat_id: number }>(
+              "SELECT chat_id FROM telegram_threads WHERE thread_id = ?",
+              [sid],
+            );
+            if (chatRow[0]) {
+              (agentCtx as unknown as Record<string, unknown>).chatId = chatRow[0].chat_id;
+            }
+          } catch { /* table may not exist */ }
 
           const tools = agentPlugin.agent.createTools?.(agentCtx) as Record<string, unknown> | undefined;
 
@@ -367,13 +378,13 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                     });
                   }
 
-                  // Generate/refresh thread title via LLM
+                  // Generate/refresh thread title via LLM (awaited so UI picks up the new title on refresh)
                   const shouldTitle = userTurnCount === TITLE_GENERATE_AT
                     || (userTurnCount > TITLE_GENERATE_AT && (userTurnCount - TITLE_GENERATE_AT) % TITLE_REFRESH_EVERY === 0);
                   if (shouldTitle) {
                     const allMessages = listMessages(ctx.storage, sid, { limit: 10 })
                       .map((row) => ({ role: row.role, content: row.content }));
-                    generateThreadTitle(ctx, sid, allMessages).catch((err) => {
+                    await generateThreadTitle(ctx, sid, allMessages).catch((err) => {
                       ctx.logger.warn(`Title generation failed: ${err instanceof Error ? err.message : String(err)}`);
                     });
                   }

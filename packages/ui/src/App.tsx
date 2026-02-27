@@ -1,4 +1,6 @@
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./lib/query-client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Layout from "./components/Layout";
@@ -10,6 +12,7 @@ import Knowledge from "./pages/Knowledge";
 import Tasks from "./pages/Tasks";
 import Inbox from "./pages/Inbox";
 import Jobs from "./pages/Jobs";
+import Schedules from "./pages/Schedules";
 import Login from "./pages/Login";
 import Setup from "./pages/Setup";
 import Onboarding from "./pages/Onboarding";
@@ -54,6 +57,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -68,11 +72,13 @@ export default function App() {
             <Route path="/knowledge" element={<ErrorBoundary><Knowledge /></ErrorBoundary>} />
             <Route path="/tasks" element={<ErrorBoundary><Tasks /></ErrorBoundary>} />
             <Route path="/jobs" element={<ErrorBoundary><Jobs /></ErrorBoundary>} />
+            <Route path="/schedules" element={<ErrorBoundary><Schedules /></ErrorBoundary>} />
             <Route path="/settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
       </AuthProvider>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 }

@@ -483,3 +483,55 @@ export function getJobDetail(id: string): Promise<{ job: ResearchJobDetail }> {
 export function clearJobs(): Promise<{ ok: boolean; cleared: number }> {
   return request("/jobs/clear", { method: "POST", body: "{}" });
 }
+
+// ---------------------------------------------------------------------------
+// Schedules
+// ---------------------------------------------------------------------------
+
+export interface Schedule {
+  id: string;
+  label: string;
+  type: string;
+  goal: string;
+  intervalHours: number;
+  chatId: number | null;
+  threadId: string | null;
+  lastRunAt: string | null;
+  nextRunAt: string;
+  status: string;
+  createdAt: string;
+}
+
+export function getSchedules(): Promise<Schedule[]> {
+  return request("/schedules");
+}
+
+export function createScheduleApi(data: {
+  label: string;
+  goal: string;
+  intervalHours?: number;
+  startAt?: string;
+}): Promise<Schedule> {
+  return request("/schedules", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteScheduleApi(id: string): Promise<{ ok: boolean }> {
+  return request(`/schedules/${id}`, { method: "DELETE" });
+}
+
+export function pauseScheduleApi(id: string): Promise<{ ok: boolean }> {
+  return request(`/schedules/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "pause" }),
+  });
+}
+
+export function resumeScheduleApi(id: string): Promise<{ ok: boolean }> {
+  return request(`/schedules/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "resume" }),
+  });
+}

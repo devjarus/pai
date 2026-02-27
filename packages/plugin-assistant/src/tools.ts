@@ -7,6 +7,7 @@ import { activeJobs } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
+import { createSchedule, listSchedules, deleteSchedule } from "@personal-ai/plugin-schedules";
 import { webSearch, formatSearchResults } from "./web-search.js";
 import { fetchPageAsMarkdown, discoverSubPages } from "./page-fetch.js";
 
@@ -327,6 +328,61 @@ export function createAgentTools(ctx: AgentContext) {
         } catch (err) {
           return `Failed to start research: ${err instanceof Error ? err.message : "unknown error"}`;
         }
+      },
+    }),
+
+    schedule_create: tool({
+      description: "Create a recurring scheduled job. Use when the user wants periodic/recurring tasks (e.g., 'research AI news every day at 8am', 'send me a weekly report on crypto'). The schedule will automatically run at the specified interval and deliver results. Use start_at to schedule the first run at a specific date/time (e.g., 'tomorrow at 8am').",
+      inputSchema: z.object({
+        label: z.string().describe("Short name for the schedule (e.g., 'AI news daily')"),
+        goal: z.string().describe("Detailed goal — what to do each time the schedule runs"),
+        interval_hours: z.number().optional().describe("Hours between runs (default: 24 = daily). Use 168 for weekly, 12 for twice daily."),
+        start_at: z.string().optional().describe("ISO 8601 date-time for the first run (e.g., '2026-02-27T08:00:00'). If omitted, first run is interval_hours from now."),
+      }),
+      execute: async ({ label, goal, interval_hours, start_at }) => {
+        try {
+          const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
+          const chatId = (ctx as unknown as Record<string, unknown>).chatId as number | undefined;
+          const schedule = createSchedule(ctx.storage, {
+            label,
+            goal,
+            intervalHours: interval_hours,
+            startAt: start_at,
+            chatId: chatId ?? null,
+            threadId: threadId ?? null,
+          });
+          return `Schedule created! "${label}" will run every ${schedule.intervalHours} hours. First run at ${new Date(schedule.nextRunAt).toLocaleString()}. Reports will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
+        } catch (err) {
+          return `Failed to create schedule: ${err instanceof Error ? err.message : "unknown error"}`;
+        }
+      },
+    }),
+
+    schedule_list: tool({
+      description: "List all active scheduled jobs. Use when the user asks about their schedules or recurring tasks.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const schedules = listSchedules(ctx.storage, "active");
+        if (schedules.length === 0) return "No active schedules. You can create one by asking me to schedule a recurring task.";
+        return schedules.map((s) => ({
+          id: s.id,
+          label: s.label,
+          goal: s.goal.slice(0, 100),
+          intervalHours: s.intervalHours,
+          nextRunAt: s.nextRunAt,
+          lastRunAt: s.lastRunAt,
+        }));
+      },
+    }),
+
+    schedule_delete: tool({
+      description: "Delete a scheduled job. Use when the user wants to stop/cancel a recurring schedule.",
+      inputSchema: z.object({
+        id: z.string().describe("Schedule ID to delete"),
+      }),
+      execute: async ({ id }) => {
+        const ok = deleteSchedule(ctx.storage, id);
+        return ok ? "Schedule deleted." : "Schedule not found or already deleted.";
       },
     }),
 

@@ -95,6 +95,9 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       }
     }
 
+    // Load existing config from disk once — used to preserve secrets not sent in the request
+    const existing = loadConfigFile(configDir);
+
     const update: Record<string, unknown> = {};
     const llmUpdate: Record<string, unknown> = {};
 
@@ -107,6 +110,13 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     }
     if (body.apiKey !== undefined) llmUpdate.apiKey = body.apiKey;
 
+    // Preserve existing secrets from disk when not explicitly changed.
+    // The UI sends apiKey/telegramToken only when the user enters a new value;
+    // omitting them means "keep existing", not "clear".
+    if (body.apiKey === undefined && existing.llm?.apiKey) {
+      llmUpdate.apiKey = existing.llm.apiKey;
+    }
+
     if (Object.keys(llmUpdate).length > 0) {
       update.llm = { ...ctx.config.llm, ...llmUpdate };
     }
@@ -117,15 +127,18 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
 
     // Telegram settings
     if (body.telegramToken !== undefined || body.telegramEnabled !== undefined) {
-      const existing = ctx.config.telegram ?? {};
-      const telegramUpdate: Record<string, unknown> = { ...existing };
+      const existingTelegram = ctx.config.telegram ?? {};
+      const telegramUpdate: Record<string, unknown> = { ...existingTelegram };
       if (body.telegramToken !== undefined) telegramUpdate.token = body.telegramToken || undefined;
       if (body.telegramEnabled !== undefined) telegramUpdate.enabled = body.telegramEnabled;
+      // Preserve existing token from disk if not explicitly changed
+      if (body.telegramToken === undefined && (existing.telegram as Record<string, unknown>)?.token) {
+        telegramUpdate.token = (existing.telegram as Record<string, unknown>).token;
+      }
       update.telegram = telegramUpdate;
     }
 
-    // Write config to persistent location (configDir is module-level)
-    const existing = loadConfigFile(configDir);
+    // Write config to persistent location
     const merged = { ...existing, ...update };
     writeConfig(configDir, merged as never);
 

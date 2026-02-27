@@ -1,18 +1,18 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
-  getTasks,
-  createTask,
-  updateTask,
-  completeTask,
-  reopenTask,
-  deleteTask,
-  clearAllTasks,
-  getGoals,
-  createGoal,
-  completeGoal,
-  deleteGoal,
-} from "../api";
+  useTasks,
+  useCreateTask,
+  useUpdateTask,
+  useCompleteTask,
+  useReopenTask,
+  useDeleteTask,
+  useClearAllTasks,
+  useGoals,
+  useCreateGoal,
+  useCompleteGoal,
+  useDeleteGoal,
+} from "@/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -55,10 +55,6 @@ const priorityStyles: Record<string, string> = {
 };
 
 export default function Tasks() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [allTasks, setAllTasks] = useState<Task[]>([]);
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"tasks" | "goals">("tasks");
   const [statusFilter, setStatusFilter] = useState<string>("open");
 
@@ -71,11 +67,9 @@ export default function Tasks() {
     dueDate: "",
     goalId: "",
   });
-  const [isSavingTask, setIsSavingTask] = useState(false);
 
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [goalForm, setGoalForm] = useState({ title: "", description: "" });
-  const [isSavingGoal, setIsSavingGoal] = useState(false);
 
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
   const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null);
@@ -87,77 +81,53 @@ export default function Tasks() {
     document.title = "Tasks - pai";
   }, []);
 
-  const fetchTasks = useCallback(async () => {
-    try {
-      const data = await getTasks({ status: statusFilter });
-      setTasks(data);
-    } catch {
-      setTasks([]);
-    }
-  }, [statusFilter]);
+  // --- TanStack Query hooks ---
+  const { data: tasks = [], isLoading: tasksLoading } = useTasks({ status: statusFilter });
+  const { data: allTasks = [], isLoading: allTasksLoading } = useTasks({ status: "all" });
+  const { data: goals = [], isLoading: goalsLoading } = useGoals("all");
 
-  const fetchAllTasks = useCallback(async () => {
-    try {
-      const data = await getTasks({ status: "all" });
-      setAllTasks(data);
-    } catch {
-      setAllTasks([]);
-    }
-  }, []);
+  const loading = tasksLoading || allTasksLoading || goalsLoading;
 
-  const fetchGoals = useCallback(async () => {
-    try {
-      const data = await getGoals("all");
-      setGoals(data);
-    } catch {
-      setGoals([]);
-    }
-  }, []);
+  const createTaskMut = useCreateTask();
+  const updateTaskMut = useUpdateTask();
+  const completeTaskMut = useCompleteTask();
+  const reopenTaskMut = useReopenTask();
+  const deleteTaskMut = useDeleteTask();
+  const clearAllTasksMut = useClearAllTasks();
 
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([fetchTasks(), fetchAllTasks(), fetchGoals()]).finally(() =>
-      setLoading(false),
-    );
-  }, [fetchTasks, fetchAllTasks, fetchGoals]);
+  const createGoalMut = useCreateGoal();
+  const completeGoalMut = useCompleteGoal();
+  const deleteGoalMut = useDeleteGoal();
 
   // --- Task handlers ---
 
-  const handleToggleTask = useCallback(
-    async (task: Task) => {
-      try {
-        if (task.status === "open") {
-          await completeTask(task.id);
-          toast.success("Task completed");
-        } else {
-          await reopenTask(task.id);
-          toast.success("Task reopened");
-        }
-        await Promise.all([fetchTasks(), fetchAllTasks()]);
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to update task",
-        );
+  const handleToggleTask = async (task: Task) => {
+    try {
+      if (task.status === "open") {
+        await completeTaskMut.mutateAsync(task.id);
+        toast.success("Task completed");
+      } else {
+        await reopenTaskMut.mutateAsync(task.id);
+        toast.success("Task reopened");
       }
-    },
-    [fetchTasks, fetchAllTasks],
-  );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update task",
+      );
+    }
+  };
 
-  const handleDeleteTask = useCallback(
-    async (task: Task) => {
-      try {
-        await deleteTask(task.id);
-        toast.success("Task deleted");
-        setDeletingTask(null);
-        await Promise.all([fetchTasks(), fetchAllTasks()]);
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to delete task",
-        );
-      }
-    },
-    [fetchTasks, fetchAllTasks],
-  );
+  const handleDeleteTask = async (task: Task) => {
+    try {
+      await deleteTaskMut.mutateAsync(task.id);
+      toast.success("Task deleted");
+      setDeletingTask(null);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete task",
+      );
+    }
+  };
 
   const openAddTask = () => {
     setTaskForm({
@@ -183,22 +153,24 @@ export default function Tasks() {
     setShowAddTask(true);
   };
 
-  const handleSaveTask = useCallback(async () => {
+  const handleSaveTask = async () => {
     const title = taskForm.title.trim();
     if (!title) return;
-    setIsSavingTask(true);
     try {
       if (editingTask) {
-        await updateTask(editingTask.id, {
-          title,
-          priority: taskForm.priority,
-          dueDate: taskForm.dueDate || undefined,
-          description: taskForm.description.trim() || undefined,
-          goalId: taskForm.goalId || undefined,
+        await updateTaskMut.mutateAsync({
+          id: editingTask.id,
+          updates: {
+            title,
+            priority: taskForm.priority,
+            dueDate: taskForm.dueDate || undefined,
+            description: taskForm.description.trim() || undefined,
+            goalId: taskForm.goalId || undefined,
+          },
         });
         toast.success("Task updated");
       } else {
-        await createTask({
+        await createTaskMut.mutateAsync({
           title,
           description: taskForm.description.trim() || undefined,
           priority: taskForm.priority,
@@ -209,26 +181,24 @@ export default function Tasks() {
       }
       setShowAddTask(false);
       setEditingTask(null);
-      await Promise.all([fetchTasks(), fetchAllTasks()]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save task");
-    } finally {
-      setIsSavingTask(false);
     }
-  }, [taskForm, editingTask, fetchTasks, fetchAllTasks]);
+  };
 
-  const handleQuickAdd = useCallback(async () => {
+  const isSavingTask = createTaskMut.isPending || updateTaskMut.isPending;
+
+  const handleQuickAdd = async () => {
     const title = quickAddTitle.trim();
     if (!title) return;
     try {
-      await createTask({ title, priority: "medium" });
+      await createTaskMut.mutateAsync({ title, priority: "medium" });
       setQuickAddTitle("");
       toast.success("Task created");
-      await Promise.all([fetchTasks(), fetchAllTasks()]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create task");
     }
-  }, [quickAddTitle, fetchTasks, fetchAllTasks]);
+  };
 
   // --- Goal handlers ---
 
@@ -237,66 +207,55 @@ export default function Tasks() {
     setShowAddGoal(true);
   };
 
-  const handleSaveGoal = useCallback(async () => {
+  const handleSaveGoal = async () => {
     const title = goalForm.title.trim();
     if (!title) return;
-    setIsSavingGoal(true);
     try {
-      await createGoal({
+      await createGoalMut.mutateAsync({
         title,
         description: goalForm.description.trim() || undefined,
       });
       toast.success("Goal created");
       setShowAddGoal(false);
-      await fetchGoals();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create goal");
-    } finally {
-      setIsSavingGoal(false);
     }
-  }, [goalForm, fetchGoals]);
+  };
 
-  const handleCompleteGoal = useCallback(
-    async (goal: Goal) => {
-      try {
-        await completeGoal(goal.id);
-        toast.success("Goal completed");
-        await fetchGoals();
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to complete goal",
-        );
-      }
-    },
-    [fetchGoals],
-  );
+  const isSavingGoal = createGoalMut.isPending;
 
-  const handleDeleteGoal = useCallback(
-    async (goal: Goal) => {
-      try {
-        await deleteGoal(goal.id);
-        toast.success("Goal deleted");
-        setDeletingGoal(null);
-        await fetchGoals();
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to delete goal",
-        );
-      }
-    },
-    [fetchGoals],
-  );
-
-  const handleClearAllTasks = useCallback(async () => {
+  const handleCompleteGoal = async (goal: Goal) => {
     try {
-      const result = await clearAllTasks();
+      await completeGoalMut.mutateAsync(goal.id);
+      toast.success("Goal completed");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to complete goal",
+      );
+    }
+  };
+
+  const handleDeleteGoal = async (goal: Goal) => {
+    try {
+      await deleteGoalMut.mutateAsync(goal.id);
+      toast.success("Goal deleted");
+      setDeletingGoal(null);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete goal",
+      );
+    }
+  };
+
+  const handleClearAllTasks = async () => {
+    try {
+      const result = await clearAllTasksMut.mutateAsync();
       toast.success(`Cleared ${result.cleared} task${result.cleared !== 1 ? "s" : ""}`);
       setShowClearAll(false);
-      await Promise.all([fetchTasks(), fetchAllTasks()]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to clear tasks");
     }
-  }, [fetchTasks, fetchAllTasks]);
+  };
 
   // --- Goal progress helpers ---
 

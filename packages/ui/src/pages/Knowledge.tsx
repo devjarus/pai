@@ -1,6 +1,16 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { getKnowledgeSources, searchKnowledge, learnFromUrl, deleteKnowledgeSource, updateKnowledgeSource, getCrawlStatus, getSourceChunks, crawlSubPages, reindexKnowledge } from "../api";
+import {
+  useKnowledgeSources,
+  useSearchKnowledge,
+  useCrawlStatus,
+  useSourceChunks,
+  useLearnFromUrl,
+  useCrawlSubPages,
+  useDeleteKnowledgeSource,
+  useReindexKnowledge,
+  useUpdateKnowledgeSource,
+} from "@/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,7 +24,7 @@ import {
   RefreshCwIcon, LoaderIcon, EyeIcon, GlobeIcon, TagIcon, CheckIcon,
   ChevronRightIcon,
 } from "lucide-react";
-import type { KnowledgeSource, KnowledgeSearchResult, CrawlJob } from "../types";
+import type { KnowledgeSource, KnowledgeSearchResult } from "../types";
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr.replace(" ", "T"));
@@ -27,33 +37,39 @@ function parseTags(tags: string | null): string[] {
 }
 
 export default function Knowledge() {
-  const [sources, setSources] = useState<KnowledgeSource[]>([]);
-  const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
-  const [loading, setLoading] = useState(true);
+  // --- Debounced search state ---
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isSearching, setIsSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // --- UI toggle / dialog state ---
   const [selectedSource, setSelectedSource] = useState<KnowledgeSource | null>(null);
   const [showLearnDialog, setShowLearnDialog] = useState(false);
   const [learnUrl, setLearnUrl] = useState("");
   const [learnCrawl, setLearnCrawl] = useState(false);
-  const [isLearning, setIsLearning] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<KnowledgeSource | null>(null);
-  const [crawlJobs, setCrawlJobs] = useState<CrawlJob[]>([]);
   const [retryingUrl, setRetryingUrl] = useState<string | null>(null);
   const [dismissedJobs, setDismissedJobs] = useState<Set<string>>(new Set());
   const [viewChunksSource, setViewChunksSource] = useState<KnowledgeSource | null>(null);
-  const [chunks, setChunks] = useState<Array<{ id: string; content: string; chunkIndex: number }>>([]);
-  const [chunksLoading, setChunksLoading] = useState(false);
   const [expandedChunk, setExpandedChunk] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isCrawling, setIsCrawling] = useState(false);
-  const [isReindexing, setIsReindexing] = useState(false);
   const [editingTags, setEditingTags] = useState(false);
   const [tagsInput, setTagsInput] = useState("");
   const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set());
   const [filterTag, setFilterTag] = useState<string>("");
+
+  // --- TanStack Query hooks ---
+  const { data: sources = [], isLoading: loading } = useKnowledgeSources();
+  const { data: searchResults = [], isFetching: isSearching } = useSearchKnowledge(searchQuery);
+  const { data: crawlData } = useCrawlStatus();
+  const crawlJobs = crawlData?.jobs ?? [];
+  const { data: chunks = [], isLoading: chunksLoading } = useSourceChunks(viewChunksSource?.id ?? null);
+
+  // --- Mutations ---
+  const learnMutation = useLearnFromUrl();
+  const crawlSubPagesMutation = useCrawlSubPages();
+  const deleteMutation = useDeleteKnowledgeSource();
+  const reindexMutation = useReindexKnowledge();
+  const updateTagsMutation = useUpdateKnowledgeSource();
 
   useEffect(() => { document.title = "Knowledge Base - pai"; }, []);
 
@@ -63,77 +79,16 @@ export default function Knowledge() {
     return () => clearTimeout(debounceRef.current);
   }, [searchInput]);
 
-  const fetchSources = useCallback(async () => {
-    setLoading(true);
-    try {
-      const results = await getKnowledgeSources();
-      setSources(results);
-    } catch {
-      setSources([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchSources(); }, [fetchSources]);
-
+  // Reset expanded chunk when viewing a different source
   useEffect(() => {
-    if (!viewChunksSource) return;
-    let cancelled = false;
-    setChunksLoading(true);
-    setChunks([]);
     setExpandedChunk(null);
-    getSourceChunks(viewChunksSource.id).then((result) => {
-      if (!cancelled) setChunks(result);
-    }).catch(() => {
-      if (!cancelled) setChunks([]);
-    }).finally(() => {
-      if (!cancelled) setChunksLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [viewChunksSource?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [viewChunksSource?.id]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const { jobs } = await getCrawlStatus();
-        if (!cancelled) setCrawlJobs(jobs);
-      } catch { /* ignore */ }
-    };
-    poll();
-    const hasRunning = crawlJobs.some((j) => j.status === "running");
-    if (!hasRunning) return;
-    const interval = setInterval(() => {
-      poll();
-      fetchSources();
-    }, 3000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [crawlJobs.some((j) => j.status === "running"), fetchSources]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    let cancelled = false;
-    setIsSearching(true);
-    searchKnowledge(searchQuery).then((results) => {
-      if (!cancelled) setSearchResults(results);
-    }).catch(() => {
-      if (!cancelled) setSearchResults([]);
-    }).finally(() => {
-      if (!cancelled) setIsSearching(false);
-    });
-    return () => { cancelled = true; };
-  }, [searchQuery]);
-
-  const handleLearn = useCallback(async (forceRelearn = false) => {
+  const handleLearn = async (forceRelearn = false) => {
     const url = learnUrl.trim();
     if (!url) return;
-    setIsLearning(true);
     try {
-      const result = await learnFromUrl(url, { crawl: learnCrawl, force: forceRelearn });
+      const result = await learnMutation.mutateAsync({ url, options: { crawl: learnCrawl, force: forceRelearn } });
       if (result.skipped) {
         toast(`Already learned from "${result.title}"`, {
           action: {
@@ -149,114 +104,98 @@ export default function Knowledge() {
       }
       if (result.crawling) {
         toast.info(`Crawling ${result.subPages} sub-pages in the background...`);
-        const { jobs } = await getCrawlStatus();
-        setCrawlJobs(jobs);
       }
-      await fetchSources();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to learn from URL");
-    } finally {
-      setIsLearning(false);
     }
-  }, [learnUrl, learnCrawl, fetchSources]);
+  };
 
-  const handleRefresh = useCallback(async (source: KnowledgeSource) => {
-    setIsRefreshing(true);
+  const handleRefresh = async (source: KnowledgeSource) => {
     try {
-      const result = await learnFromUrl(source.url, { force: true });
+      const result = await learnMutation.mutateAsync({ url: source.url, options: { force: true } });
       toast.success(`Re-learned "${result.title}" - ${result.chunks} chunks`);
-      await fetchSources();
-      const updated = (await getKnowledgeSources()).find((s) => s.url === source.url);
+      // After invalidation, find the updated source from the refetched list
+      const updated = sources.find((s) => s.url === source.url);
       if (updated) setSelectedSource(updated);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to re-learn");
-    } finally {
-      setIsRefreshing(false);
     }
-  }, [fetchSources]);
+  };
 
-  const handleCrawlSubPages = useCallback(async (source: KnowledgeSource) => {
-    setIsCrawling(true);
+  const handleCrawlSubPages = async (source: KnowledgeSource) => {
     try {
-      const result = await crawlSubPages(source.id);
+      const result = await crawlSubPagesMutation.mutateAsync(source.id);
       if (result.subPages === 0) {
         toast.info("No sub-pages found to crawl");
       } else {
         toast.success(`Crawling ${result.subPages} sub-pages in the background...`);
-        const { jobs } = await getCrawlStatus();
-        setCrawlJobs(jobs);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to crawl sub-pages");
-    } finally {
-      setIsCrawling(false);
     }
-  }, []);
+  };
 
-  const handleSaveTags = useCallback(async (source: KnowledgeSource) => {
+  const handleSaveTags = async (source: KnowledgeSource) => {
     const newTags = tagsInput.trim() || null;
     try {
-      await updateKnowledgeSource(source.id, { tags: newTags });
+      await updateTagsMutation.mutateAsync({ id: source.id, data: { tags: newTags } });
       setSelectedSource({ ...source, tags: newTags });
-      setSources((prev) => prev.map((s) => s.id === source.id ? { ...s, tags: newTags } : s));
       setEditingTags(false);
       toast.success("Tags updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update tags");
     }
-  }, [tagsInput]);
+  };
 
-  const handleRetryUrl = useCallback(async (url: string) => {
+  const handleRetryUrl = async (url: string) => {
     setRetryingUrl(url);
     try {
-      const result = await learnFromUrl(url);
+      const result = await learnMutation.mutateAsync({ url });
       if (result.skipped) {
         toast.info(`Already learned from "${result.title}"`);
       } else {
         toast.success(`Learned from "${result.title}" - ${result.chunks} chunks`);
       }
-      await fetchSources();
-      const { jobs } = await getCrawlStatus();
-      setCrawlJobs(jobs);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : `Failed to learn from ${url}`);
     } finally {
       setRetryingUrl(null);
     }
-  }, [fetchSources]);
+  };
 
-  const handleReindex = useCallback(async () => {
-    setIsReindexing(true);
+  const handleReindex = async () => {
     try {
-      const result = await reindexKnowledge();
+      const result = await reindexMutation.mutateAsync();
       toast.success(`Re-indexed ${result.reindexed} source${result.reindexed !== 1 ? "s" : ""} with contextual headers`);
-      await fetchSources();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to re-index");
-    } finally {
-      setIsReindexing(false);
     }
-  }, [fetchSources]);
+  };
 
-  const handleDelete = useCallback(async (source: KnowledgeSource) => {
+  const handleDelete = async (source: KnowledgeSource) => {
     try {
-      await deleteKnowledgeSource(source.id);
+      await deleteMutation.mutateAsync(source.id);
       toast.success(`Removed "${source.title}"`);
       setShowDeleteConfirm(null);
       if (selectedSource?.id === source.id) setSelectedSource(null);
-      await fetchSources();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove source");
     }
-  }, [fetchSources, selectedSource]);
+  };
 
-  const handleSearchResultClick = useCallback((result: KnowledgeSearchResult) => {
+  const handleSearchResultClick = (result: KnowledgeSearchResult) => {
     const source = sources.find((s) => s.id === result.sourceId);
     if (source) {
       setSelectedSource(source);
       setSearchInput("");
     }
-  }, [sources]);
+  };
+
+  // Derived state
+  const isRefreshing = learnMutation.isPending;
+  const isCrawling = crawlSubPagesMutation.isPending;
+  const isReindexing = reindexMutation.isPending;
+  const isLearning = learnMutation.isPending;
 
   const allTags = [...new Set(sources.flatMap((s) => parseTags(s.tags)))];
 

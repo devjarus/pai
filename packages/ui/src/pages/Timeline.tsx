@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { getBeliefs } from "../api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,6 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
+import { useBeliefs } from "@/hooks";
 import type { Belief, BeliefType } from "../types";
 
 const TYPES: BeliefType[] = ["factual", "preference", "procedural", "architectural", "insight", "meta"];
@@ -39,24 +39,18 @@ const cardAccentColors: Record<string, string> = {
 };
 
 export default function Timeline() {
-  const [beliefs, setBeliefs] = useState<Belief[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>("");
 
   useEffect(() => { document.title = "Timeline - pai"; }, []);
 
-  useEffect(() => {
-    setLoading(true);
-    getBeliefs({ type: filterType || undefined })
-      .then((results) => {
-        const sorted = [...results].sort(
-          (a, b) => new Date(b.updated_at.replace(" ", "T")).getTime() - new Date(a.updated_at.replace(" ", "T")).getTime(),
-        );
-        setBeliefs(sorted);
-      })
-      .catch(() => setBeliefs([]))
-      .finally(() => setLoading(false));
-  }, [filterType]);
+  const { data: rawBeliefs = [], isLoading: loading } = useBeliefs({
+    type: filterType || undefined,
+  });
+
+  // Sort by updated_at descending
+  const beliefs = [...rawBeliefs].sort(
+    (a, b) => new Date(b.updated_at.replace(" ", "T")).getTime() - new Date(a.updated_at.replace(" ", "T")).getTime(),
+  );
 
   // Group by date
   const grouped = beliefs.reduce<Record<string, Belief[]>>((acc, belief) => {

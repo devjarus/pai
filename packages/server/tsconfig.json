@@ -11,6 +11,7 @@
     { "path": "../plugin-assistant" },
     { "path": "../plugin-curator" },
     { "path": "../plugin-research" },
+    { "path": "../plugin-schedules" },
     { "path": "../plugin-telegram" }
   ]
 }

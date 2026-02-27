@@ -70,6 +70,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     { command: "clear", description: "Clear conversation history" },
     { command: "tasks", description: "Show open tasks" },
     { command: "memories", description: "Show recent memories" },
+    { command: "schedules", description: "Show active schedules" },
   ]).catch((err) => {
     ctx.logger.warn(`Failed to register bot commands: ${err instanceof Error ? err.message : String(err)}`);
   });
@@ -84,7 +85,8 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       "/help — Show available commands\n" +
       "/clear — Start a fresh conversation\n" +
       "/tasks — Show your open tasks\n" +
-      "/memories — Show recent memories",
+      "/memories — Show recent memories\n" +
+      "/schedules — Show active schedules",
       { parse_mode: "HTML" },
     );
   });
@@ -97,7 +99,8 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       "/help — This help message\n" +
       "/clear — Clear conversation history and start fresh\n" +
       "/tasks — List your open tasks\n" +
-      "/memories — Show your top 10 memories\n\n" +
+      "/memories — Show your top 10 memories\n" +
+      "/schedules — Show active recurring research schedules\n\n" +
       "Or just send any message to chat!",
       { parse_mode: "HTML" },
     );
@@ -147,6 +150,30 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     }
   });
 
+  // /schedules — Show active scheduled jobs
+  bot.command("schedules", async (tgCtx) => {
+    try {
+      const schedules = ctx.storage.query<{
+        id: string; label: string; interval_hours: number;
+        next_run_at: string; last_run_at: string | null;
+      }>(
+        "SELECT id, label, interval_hours, next_run_at, last_run_at FROM scheduled_jobs WHERE status = 'active' ORDER BY created_at DESC",
+      );
+      if (schedules.length === 0) {
+        await tgCtx.reply("No active schedules. Ask me to schedule recurring research!");
+        return;
+      }
+      const lines = schedules.map((s) => {
+        const interval = s.interval_hours >= 24 ? `${Math.round(s.interval_hours / 24)}d` : `${s.interval_hours}h`;
+        const next = new Date(s.next_run_at).toLocaleString();
+        return `\u{1F504} <b>${s.label}</b> (every ${interval})\n   Next: ${next}\n   ID: <code>${s.id}</code>`;
+      });
+      await tgCtx.reply(`<b>Active Schedules</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
+    } catch {
+      await tgCtx.reply("No schedules found. Ask me to schedule recurring research!");
+    }
+  });
+
   // Shared chat handler for private messages, groups, and channels
   async function handleChat(chatId: number, text: string, sender: { username?: string; displayName?: string } | undefined, reply: typeof bot.api.sendMessage, chatType?: "private" | "group" | "supergroup" | "channel") {
     ctx.logger.debug("Telegram handleChat", { chatId });
@@ -163,6 +190,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         message: text,
         sender,
         chatType,
+        chatId,
         onPreflight: (action) => {
           bot.api.editMessageText(chatId, placeholder.message_id, action)
             .catch(() => { /* ignore edit failures */ });

@@ -105,6 +105,8 @@ vi.mock("ai", () => ({
   createUIMessageStreamResponse: ({ stream }: { stream: ReadableStream }) =>
     new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8" } }),
   stepCountIs: (...args: unknown[]) => mockStepCountIs(...args),
+  generateText: vi.fn().mockResolvedValue({ text: "" }),
+  tool: (def: unknown) => def,
 }));
 
 // ---------------------------------------------------------------------------
@@ -866,7 +868,7 @@ describe("agent routes", () => {
 
     expect(mockStreamText).toHaveBeenCalledWith(
       expect.objectContaining({
-        tools: mockTools,
+        tools: expect.objectContaining(mockTools),
         toolChoice: "auto",
       }),
     );

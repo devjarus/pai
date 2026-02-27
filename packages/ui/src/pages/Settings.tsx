@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { getConfig, getStats, updateConfig, browseDir } from "../api";
+import { useConfig, useUpdateConfig, useMemoryStats } from "@/hooks";
+import { browseDir } from "../api";
 import type { BrowseResult } from "../api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
 import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon } from "lucide-react";
-import type { ConfigInfo, MemoryStats } from "../types";
 
 const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedModel: string }> = {
   ollama: { baseUrl: "http://localhost:11434", model: "llama3.2", embedModel: "nomic-embed-text" },
@@ -22,9 +22,12 @@ const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedMo
 };
 
 export default function Settings() {
-  const [config, setConfig] = useState<ConfigInfo | null>(null);
-  const [stats, setStats] = useState<MemoryStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  // --- TanStack Query hooks ---
+  const { data: config, isLoading: configLoading } = useConfig();
+  const { data: stats, isLoading: statsLoading } = useMemoryStats();
+  const updateConfigMut = useUpdateConfig();
+
+  const loading = configLoading || statsLoading;
 
   // Editable fields
   const [editing, setEditing] = useState(false);
@@ -35,7 +38,6 @@ export default function Settings() {
   const [embedProvider, setEmbedProvider] = useState("auto");
   const [apiKey, setApiKey] = useState("");
   const [dataDir, setDataDir] = useState("");
-  const [saving, setSaving] = useState(false);
 
   // Telegram settings
   const [telegramToken, setTelegramToken] = useState("");
@@ -51,59 +53,48 @@ export default function Settings() {
 
   useEffect(() => { document.title = "Settings - pai"; }, []);
 
+  // Sync local form state when config loads or changes
   useEffect(() => {
-    Promise.all([
-      getConfig().catch(() => null),
-      getStats().catch(() => null),
-    ]).then(([c, s]) => {
-      setConfig(c);
-      setStats(s);
-      if (c) {
-        setProvider(c.llm.provider);
-        setModel(c.llm.model);
-        setBaseUrl(c.llm.baseUrl ?? "");
-        setEmbedModel(c.llm.embedModel ?? "");
-        setEmbedProvider(c.llm.embedProvider ?? "auto");
-        setDataDir(c.dataDir);
-        setTelegramEnabled(c.telegram?.enabled ?? false);
-        setEnvOverrides(c.envOverrides ?? []);
-      }
-      setLoading(false);
-    });
-  }, []);
+    if (config) {
+      setProvider(config.llm.provider);
+      setModel(config.llm.model);
+      setBaseUrl(config.llm.baseUrl ?? "");
+      setEmbedModel(config.llm.embedModel ?? "");
+      setEmbedProvider(config.llm.embedProvider ?? "auto");
+      setDataDir(config.dataDir);
+      setTelegramEnabled(config.telegram?.enabled ?? false);
+      setEnvOverrides(config.envOverrides ?? []);
+    }
+  }, [config]);
 
   const handleSave = useCallback(async () => {
-    setSaving(true);
+    if (!config) return;
     try {
       const updates: Record<string, string | boolean> = {};
-      if (provider !== config?.llm.provider) updates.provider = provider;
-      if (model !== config?.llm.model) updates.model = model;
-      if (baseUrl !== (config?.llm.baseUrl ?? "")) updates.baseUrl = baseUrl;
-      if (embedModel !== (config?.llm.embedModel ?? "")) updates.embedModel = embedModel;
-      if (embedProvider !== (config?.llm.embedProvider ?? "auto")) updates.embedProvider = embedProvider;
+      if (provider !== config.llm.provider) updates.provider = provider;
+      if (model !== config.llm.model) updates.model = model;
+      if (baseUrl !== (config.llm.baseUrl ?? "")) updates.baseUrl = baseUrl;
+      if (embedModel !== (config.llm.embedModel ?? "")) updates.embedModel = embedModel;
+      if (embedProvider !== (config.llm.embedProvider ?? "auto")) updates.embedProvider = embedProvider;
       if (apiKey) updates.apiKey = apiKey;
-      if (dataDir !== config?.dataDir) updates.dataDir = dataDir;
+      if (dataDir !== config.dataDir) updates.dataDir = dataDir;
       if (telegramToken) updates.telegramToken = telegramToken;
-      if (telegramEnabled !== (config?.telegram?.enabled ?? false)) updates.telegramEnabled = telegramEnabled;
+      if (telegramEnabled !== (config.telegram?.enabled ?? false)) updates.telegramEnabled = telegramEnabled;
 
       if (Object.keys(updates).length === 0) {
         setEditing(false);
         return;
       }
 
-      const updated = await updateConfig(updates);
-      setConfig(updated);
+      await updateConfigMut.mutateAsync(updates);
       setApiKey("");
       setTelegramToken("");
-      setTelegramEnabled(updated.telegram?.enabled ?? false);
       setEditing(false);
       toast.success("Configuration saved");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save configuration");
-    } finally {
-      setSaving(false);
     }
-  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, telegramToken, telegramEnabled, config]);
+  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, telegramToken, telegramEnabled, config, updateConfigMut]);
 
   const handleCancel = useCallback(() => {
     if (config) {
@@ -149,6 +140,8 @@ export default function Settings() {
     setDataDir(path);
     setBrowseOpen(false);
   }, []);
+
+  const saving = updateConfigMut.isPending;
 
   if (loading) {
     return (

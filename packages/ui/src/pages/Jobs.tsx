@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,9 @@ import {
   GlobeIcon,
   XIcon,
 } from "lucide-react";
-import { getJobs, getJobDetail, clearJobs } from "../api";
 import { toast } from "sonner";
-import type { BackgroundJobInfo, ResearchJobDetail } from "../api";
+import type { BackgroundJobInfo } from "../api";
+import { useJobs, useJobDetail, useClearJobs } from "@/hooks";
 import ReactMarkdown from "react-markdown";
 
 const statusStyles: Record<string, string> = {
@@ -46,51 +46,25 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function Jobs() {
-  const [jobs, setJobs] = useState<BackgroundJobInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<ResearchJobDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const { data: jobsData, isLoading, isRefetching, refetch } = useJobs();
+  const jobs = jobsData?.jobs ?? [];
 
-  const fetchJobs = useCallback(async () => {
-    try {
-      const data = await getJobs();
-      setJobs(data.jobs);
-    } catch (err) {
-      console.error("Failed to load jobs:", err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const { data: jobDetailData, isLoading: detailLoading } = useJobDetail(selectedJobId);
+  const selectedJob = jobDetailData?.job ?? null;
+
+  const clearJobsMutation = useClearJobs();
 
   useEffect(() => {
     document.title = "Jobs - pai";
-    fetchJobs();
-    // Poll every 10s while jobs are running
-    const interval = setInterval(fetchJobs, 10_000);
-    return () => clearInterval(interval);
-  }, [fetchJobs]);
+  }, []);
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchJobs();
-  };
-
-  const handleSelectJob = async (job: BackgroundJobInfo) => {
+  const handleSelectJob = (job: BackgroundJobInfo) => {
     if (job.type !== "research") return;
-    setDetailLoading(true);
-    try {
-      const data = await getJobDetail(job.id);
-      setSelectedJob(data.job);
-    } catch {
-      // ignore
-    } finally {
-      setDetailLoading(false);
-    }
+    setSelectedJobId(job.id);
   };
 
-  if (loading) return <JobsSkeleton />;
+  if (isLoading) return <JobsSkeleton />;
 
   const runningCount = jobs.filter((j) => j.status === "running" || j.status === "pending").length;
 
@@ -118,24 +92,25 @@ export default function Jobs() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={handleRefresh}
-                disabled={refreshing}
+                onClick={() => refetch()}
+                disabled={isRefetching}
                 className="text-muted-foreground hover:text-foreground"
               >
-                <RefreshCwIcon className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                <RefreshCwIcon className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
               </Button>
               {jobs.some((j) => j.status === "done" || j.status === "error" || j.status === "failed") && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={async () => {
-                    try {
-                      const result = await clearJobs();
-                      toast.success(`Cleared ${result.cleared} job${result.cleared !== 1 ? "s" : ""}`);
-                      fetchJobs();
-                    } catch {
-                      toast.error("Failed to clear jobs");
-                    }
+                  onClick={() => {
+                    clearJobsMutation.mutate(undefined, {
+                      onSuccess: (result) => {
+                        toast.success(`Cleared ${result.cleared} job${result.cleared !== 1 ? "s" : ""}`);
+                      },
+                      onError: () => {
+                        toast.error("Failed to clear jobs");
+                      },
+                    });
                   }}
                   className="text-xs text-muted-foreground hover:text-destructive"
                 >
@@ -217,7 +192,7 @@ export default function Jobs() {
         <>
           <div
             className="fixed inset-0 z-30 bg-black/60 md:hidden"
-            onClick={() => setSelectedJob(null)}
+            onClick={() => setSelectedJobId(null)}
           />
           <div className="fixed right-0 top-0 z-40 h-full w-full overflow-y-auto border-l border-border/40 bg-[#0f0f0f] md:static md:w-[480px]">
             <div className="p-6">
@@ -229,7 +204,7 @@ export default function Jobs() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setSelectedJob(null)}
+                  onClick={() => setSelectedJobId(null)}
                   className="shrink-0 text-muted-foreground hover:text-foreground"
                 >
                   <XIcon className="h-4 w-4" />

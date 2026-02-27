@@ -37,6 +37,9 @@ Use your judgement. You have tools available — use them when they would genuin
 - **learn_from_url**: Learn from a web page. Set crawl=true for doc sites to also learn sub-pages
 - **research_start**: Start a deep background research task — use when the user asks to research something thoroughly
 - **job_status**: Check progress of background jobs (crawl, research)
+- **schedule_create**: Create recurring scheduled research (e.g., daily AI news reports)
+- **schedule_list**: List active scheduled research tasks
+- **schedule_delete**: Cancel/delete a scheduled research task
 - **web_search**: Live web search — for current events, news, or when memory + knowledge don't have the answer
 - **task_list**: Show tasks
 - **task_add**: Create a new task

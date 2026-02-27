@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { getInboxAll, getInboxBriefing, refreshInbox, clearInbox, createThread } from "../api";
+import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox } from "@/hooks";
+import { createThread, getInboxAll } from "../api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -99,24 +100,32 @@ export default function Inbox() {
 
 function InboxDetail({ id }: { id: string }) {
   const navigate = useNavigate();
-  const [item, setItem] = useState<InboxItem | null>(null);
-  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const { markRead } = useContext(ReadContext);
+
+  const { data: briefingData, isLoading: loading } = useInboxBriefing(id);
+
+  const item: InboxItem | null = useMemo(() => {
+    if (!briefingData) return null;
+    const b = briefingData.briefing;
+    return {
+      id: b.id,
+      generatedAt: b.generatedAt,
+      sections: b.sections as unknown as Record<string, unknown>,
+      status: b.status,
+      type: (b as unknown as { type?: string }).type ?? "daily",
+    };
+  }, [briefingData]);
 
   useEffect(() => {
     markRead(id);
   }, [id, markRead]);
 
   useEffect(() => {
-    getInboxBriefing(id)
-      .then((data) => {
-        const b = data.briefing;
-        setItem({ id: b.id, generatedAt: b.generatedAt, sections: b.sections as unknown as Record<string, unknown>, status: b.status, type: (b as unknown as { type?: string }).type ?? "daily" });
-      })
-      .catch(() => toast.error("Briefing not found"))
-      .finally(() => setLoading(false));
-  }, [id]);
+    if (briefingData === undefined && !loading) {
+      // query finished but no data (error case handled by react-query)
+    }
+  }, [briefingData, loading]);
 
   const handleStartChat = async () => {
     if (!item) return;
@@ -311,12 +320,29 @@ function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<str
 // ---- Feed View ----
 
 function InboxFeed() {
-  const [items, setItems] = useState<InboxItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const navigate = useNavigate();
   const pollRef = useRef<ReturnType<typeof setInterval>>(null);
   const { readIds, markRead } = useContext(ReadContext);
+
+  const { data: inboxData, isLoading: loading } = useInboxAll();
+  const items: InboxItem[] = inboxData?.briefings ?? [];
+
+  // Track generating state from initial load
+  useEffect(() => {
+    if (inboxData?.generating) {
+      setGenerating(true);
+      startPoll();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inboxData?.generating]);
+
+  // Store last seen briefing ID
+  useEffect(() => {
+    if (items.length > 0) {
+      localStorage.setItem("pai-last-seen-briefing-id", items[0].id);
+    }
+  }, [items]);
 
   const unreadCount = useMemo(
     () => items.filter((i) => !readIds.has(i.id)).length,
@@ -331,35 +357,8 @@ function InboxFeed() {
     [markRead, navigate],
   );
 
-  const fetchItems = useCallback(async () => {
-    try {
-      const data = await getInboxAll();
-      setItems(data.briefings);
-      if (data.briefings.length > 0) {
-        localStorage.setItem("pai-last-seen-briefing-id", data.briefings[0].id);
-      }
-      if (data.generating) {
-        setGenerating(true);
-      } else if (generating) {
-        setGenerating(false);
-        toast.success("Briefing updated!");
-      }
-      return data.generating;
-    } catch (err) {
-      console.error("Failed to load inbox:", err);
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  }, [generating]);
-
-  useEffect(() => {
-    fetchItems().then((isGenerating) => {
-      if (isGenerating) startPoll();
-    });
-    return () => stopPoll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const refreshInboxMut = useRefreshInbox();
+  const clearInboxMut = useClearInbox();
 
   const startPoll = () => {
     stopPoll();
@@ -368,13 +367,14 @@ function InboxFeed() {
       attempts++;
       try {
         const data = await getInboxAll();
-        setItems(data.briefings);
         if (data.briefings.length > 0) {
           localStorage.setItem("pai-last-seen-briefing-id", data.briefings[0].id);
         }
         if (!data.generating) {
           setGenerating(false);
           stopPoll();
+          // Invalidate the query so TanStack Query picks up the new data
+          refreshInboxMut.reset();
           toast.success("Briefing updated!");
         }
       } catch { /* ignore */ }
@@ -393,10 +393,14 @@ function InboxFeed() {
     }
   };
 
+  useEffect(() => {
+    return () => stopPoll();
+  }, []);
+
   const handleRefresh = async () => {
     setGenerating(true);
     try {
-      await refreshInbox();
+      await refreshInboxMut.mutateAsync();
       toast.success("Generating new briefing...");
       startPoll();
     } catch {
@@ -407,8 +411,7 @@ function InboxFeed() {
 
   const handleClear = async () => {
     try {
-      const result = await clearInbox();
-      setItems([]);
+      const result = await clearInboxMut.mutateAsync();
       toast.success(`Cleared ${result.cleared} item${result.cleared !== 1 ? "s" : ""}`);
     } catch {
       toast.error("Failed to clear inbox");

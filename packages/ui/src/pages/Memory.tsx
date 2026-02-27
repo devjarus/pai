@@ -1,7 +1,14 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { toast } from "sonner";
 import BeliefCard from "../components/BeliefCard";
-import { getBeliefs, searchMemory, forgetBelief, remember, clearAllMemory, updateBelief } from "../api";
+import {
+  useBeliefs,
+  useSearchMemory,
+  useForgetBelief,
+  useRemember,
+  useClearAllMemory,
+  useUpdateBelief,
+} from "@/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -56,23 +63,39 @@ function sortBeliefs(results: Belief[], sortBy: string): Belief[] {
 }
 
 export default function Memory() {
-  const [beliefs, setBeliefs] = useState<Belief[]>([]);
-  const [loading, setLoading] = useState(true);
+  // --- Debounced search state ---
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // --- Filter / sort state ---
   const [filterType, setFilterType] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("active");
   const [filterSubject, setFilterSubject] = useState<string>("");
   const [sortBy, setSortBy] = useState<string>("confidence");
+
+  // --- UI state ---
   const [selectedBelief, setSelectedBelief] = useState<Belief | null>(null);
   const [rememberText, setRememberText] = useState("");
-  const [isRemembering, setIsRemembering] = useState(false);
   const [showExplainer, setShowExplainer] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [isClearing, setIsClearing] = useState(false);
   const [editingStatement, setEditingStatement] = useState<string | null>(null);
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // --- TanStack Query hooks ---
+  const isSearchMode = searchQuery.trim().length > 0;
+
+  const beliefsParams = useMemo(
+    () => ({ status: filterStatus, type: filterType || undefined }),
+    [filterStatus, filterType],
+  );
+  const { data: rawBeliefs = [], isLoading: beliefsLoading } = useBeliefs(beliefsParams);
+  const { data: rawSearchResults = [], isLoading: searchLoading } = useSearchMemory(searchQuery);
+
+  // --- Mutations ---
+  const forgetMutation = useForgetBelief();
+  const rememberMutation = useRemember();
+  const clearAllMutation = useClearAllMemory();
+  const updateBeliefMutation = useUpdateBelief();
 
   useEffect(() => { document.title = "Memory Explorer - pai"; }, []);
 
@@ -82,39 +105,28 @@ export default function Memory() {
     return () => clearTimeout(debounceRef.current);
   }, [searchInput]);
 
-  const fetchBeliefs = useCallback(async () => {
-    setLoading(true);
-    try {
-      let results: Belief[];
-      if (searchQuery.trim()) {
-        results = await searchMemory(searchQuery);
-        if (filterStatus && filterStatus !== "all") {
-          results = results.filter((b) => b.status === filterStatus);
-        }
-        if (filterType) {
-          results = results.filter((b) => b.type === filterType);
-        }
-      } else {
-        results = await getBeliefs({
-          status: filterStatus,
-          type: filterType || undefined,
-        });
+  // Derive the final beliefs list from query data + client-side filters/sort
+  const beliefs = useMemo(() => {
+    let results: Belief[];
+    if (isSearchMode) {
+      results = [...rawSearchResults];
+      // Apply filters that the search API doesn't handle
+      if (filterStatus && filterStatus !== "all") {
+        results = results.filter((b) => b.status === filterStatus);
       }
-      if (filterSubject) {
-        results = results.filter((b) => b.subject === filterSubject);
+      if (filterType) {
+        results = results.filter((b) => b.type === filterType);
       }
-      results = sortBeliefs(results, sortBy);
-      setBeliefs(results);
-    } catch {
-      setBeliefs([]);
-    } finally {
-      setLoading(false);
+    } else {
+      results = [...rawBeliefs];
     }
-  }, [searchQuery, filterType, filterStatus, filterSubject, sortBy]);
+    if (filterSubject) {
+      results = results.filter((b) => b.subject === filterSubject);
+    }
+    return sortBeliefs(results, sortBy);
+  }, [rawBeliefs, rawSearchResults, isSearchMode, filterStatus, filterType, filterSubject, sortBy]);
 
-  useEffect(() => {
-    fetchBeliefs();
-  }, [fetchBeliefs]);
+  const loading = isSearchMode ? searchLoading : beliefsLoading;
 
   const subjects = useMemo(() => {
     const unique = [...new Set(beliefs.map((b) => b.subject).filter(Boolean))] as string[];
@@ -134,75 +146,63 @@ export default function Memory() {
     return { avgConfidence, topTypes };
   }, [beliefs]);
 
-  const handleForget = useCallback(
-    async (id: string) => {
-      try {
-        await forgetBelief(id);
-        toast.success("Belief forgotten");
-        await fetchBeliefs();
-        if (selectedBelief?.id === id) setSelectedBelief(null);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to forget belief");
-      }
-    },
-    [fetchBeliefs, selectedBelief],
-  );
+  const handleForget = async (id: string) => {
+    try {
+      await forgetMutation.mutateAsync(id);
+      toast.success("Belief forgotten");
+      if (selectedBelief?.id === id) setSelectedBelief(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to forget belief");
+    }
+  };
 
-  const handleRemember = useCallback(async () => {
+  const handleRemember = async () => {
     const text = rememberText.trim();
     if (!text) return;
-    setIsRemembering(true);
     try {
-      await remember(text);
+      await rememberMutation.mutateAsync(text);
       setRememberText("");
       toast.success("Memory stored");
-      await fetchBeliefs();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remember");
-    } finally {
-      setIsRemembering(false);
     }
-  }, [rememberText, fetchBeliefs]);
+  };
 
-  const handleClearAll = useCallback(async () => {
-    setIsClearing(true);
+  const handleClearAll = async () => {
     try {
-      await clearAllMemory();
+      await clearAllMutation.mutateAsync();
       setShowClearConfirm(false);
       setSelectedBelief(null);
       toast.success("All memory cleared");
-      await fetchBeliefs();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to clear memory");
-    } finally {
-      setIsClearing(false);
     }
-  }, [fetchBeliefs]);
+  };
 
-  const handleSaveEdit = useCallback(async () => {
+  const handleSaveEdit = async () => {
     if (!selectedBelief || editingStatement === null) return;
     const trimmed = editingStatement.trim();
     if (!trimmed || trimmed === selectedBelief.statement) {
       setEditingStatement(null);
       return;
     }
-    setIsSavingEdit(true);
     try {
-      const updated = await updateBelief(selectedBelief.id, trimmed);
+      const updated = await updateBeliefMutation.mutateAsync({ id: selectedBelief.id, statement: trimmed });
       setSelectedBelief(updated);
       setEditingStatement(null);
       toast.success("Belief updated");
-      await fetchBeliefs();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update belief");
-    } finally {
-      setIsSavingEdit(false);
     }
-  }, [selectedBelief, editingStatement, fetchBeliefs]);
+  };
 
   const handleStatusChange = (value: string) => {
     setFilterStatus(value);
   };
+
+  const isRemembering = rememberMutation.isPending;
+  const isClearing = clearAllMutation.isPending;
+  const isSavingEdit = updateBeliefMutation.isPending;
 
   return (
     <div className="flex h-full">
