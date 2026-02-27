@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, renameSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
@@ -96,9 +96,12 @@ export function writeConfig(homeDir: string, config: Partial<Config>): void {
   if (telegram?.token && typeof telegram.token === "string" && !telegram.token.startsWith(ENC_PREFIX)) {
     telegram.token = encryptSecret(telegram.token);
   }
-  writeFileSync(configPath, JSON.stringify(toWrite, null, 2) + "\n", "utf-8");
-  // Restrict file permissions: owner read/write only (0600)
-  try { chmodSync(configPath, 0o600); } catch { /* Windows doesn't support chmod — ignore */ }
+  // Atomic write: write to temp file first, then rename.
+  // This prevents corruption if the process is killed mid-write (e.g., Railway deploy).
+  const tmpPath = configPath + ".tmp";
+  writeFileSync(tmpPath, JSON.stringify(toWrite, null, 2) + "\n", "utf-8");
+  try { chmodSync(tmpPath, 0o600); } catch { /* Windows doesn't support chmod — ignore */ }
+  renameSync(tmpPath, configPath);
 }
 
 export function resolveDataDir(
@@ -149,7 +152,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       embedModel: savedLlm.embedModel ?? env["PAI_LLM_EMBED_MODEL"] ?? fileLlm.embedModel,
       embedProvider: (savedLlm.embedProvider as Config["llm"]["embedProvider"]) ?? (env["PAI_LLM_EMBED_PROVIDER"] as Config["llm"]["embedProvider"]) ?? (fileLlm.embedProvider as Config["llm"]["embedProvider"]) ?? "auto",
       baseUrl: savedLlm.baseUrl ?? env["PAI_LLM_BASE_URL"] ?? fileLlm.baseUrl ?? "http://127.0.0.1:11434",
-      apiKey: savedLlm.apiKey ?? env["PAI_LLM_API_KEY"] ?? fileLlm.apiKey,
+      apiKey: savedLlm.apiKey || env["PAI_LLM_API_KEY"] || fileLlm.apiKey,
     },
     logLevel: (env["PAI_LOG_LEVEL"] as Config["logLevel"]) ?? (fileConfig.logLevel as Config["logLevel"]) ?? "silent",
     plugins: env["PAI_PLUGINS"]?.split(",").map((s) => s.trim()) ?? fileConfig.plugins ?? ["memory", "tasks"],

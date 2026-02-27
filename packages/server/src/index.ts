@@ -509,13 +509,15 @@ export async function createServer(options?: { port?: number; host?: string }) {
         try { pendingCloseStorage.close(); } catch { /* ignore */ }
       }
     }
-    // Drain in-flight requests then close
-    try { await app.close(); } catch { /* ignore */ }
+    // Close SQLite FIRST (synchronous — flushes WAL immediately) to prevent data loss
+    // if Railway sends SIGKILL while HTTP requests are still draining
     try { ctx.storage.close(); } catch { /* ignore */ }
+    // Then drain in-flight HTTP requests
+    try { await app.close(); } catch { /* ignore */ }
     process.exit(0);
   };
-  process.on("SIGTERM", () => { shutdown(); });
-  process.on("SIGINT", () => { shutdown(); });
+  process.on("SIGTERM", () => void shutdown());
+  process.on("SIGINT", () => void shutdown());
 
   return app;
 }
