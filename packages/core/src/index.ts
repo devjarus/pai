@@ -1,7 +1,9 @@
 export type {
   Config, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult, EmbedResult, StreamEvent,
   PluginContext, Command, Plugin, AgentPlugin, AgentContext, Logger, LogLevel, LogFileOptions,
+  BackgroundJob,
 } from "./types.js";
+export { activeJobs } from "./types.js";
 export { loadConfig, loadConfigFile, writeConfig, findGitRoot, resolveConfigHome } from "./config.js";
 export { createStorage, backupDatabase } from "./storage.js";
 export { createLLMClient } from "./llm.js";
