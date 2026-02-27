@@ -14,7 +14,7 @@ import { taskMigrations } from "@personal-ai/plugin-tasks";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
-import { telegramMigrations, createBot, formatBriefingHTML, splitMessage, markdownToTelegramHTML } from "@personal-ai/plugin-telegram";
+import { telegramMigrations, createBot, splitMessage, markdownToTelegramHTML } from "@personal-ai/plugin-telegram";
 import { registerAuthRoutes, extractToken } from "./routes/auth.js";
 import { registerMemoryRoutes } from "./routes/memory.js";
 import { registerAgentRoutes } from "./routes/agents.js";
@@ -22,7 +22,7 @@ import { registerConfigRoutes } from "./routes/config.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 import { researchMigrations } from "@personal-ai/plugin-research";
-import { briefingMigrations, generateBriefing, getLatestBriefing, type BriefingSection } from "./briefing.js";
+import { briefingMigrations, generateBriefing, getLatestBriefing } from "./briefing.js";
 import { learningMigrations, runBackgroundLearning } from "./learning.js";
 import { scheduleMigrations, getDueSchedules, markScheduleRun, listSchedules, createSchedule, deleteSchedule, pauseSchedule, resumeSchedule } from "@personal-ai/plugin-schedules";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
@@ -521,22 +521,6 @@ export async function createServer(options?: { port?: number; host?: string }) {
     }
   }
 
-  async function sendToAllTelegramChats(html: string): Promise<void> {
-    if (!telegramBot || !telegramStatus.running) return;
-    const chatRows = ctx.storage.query<{ chat_id: number }>(
-      "SELECT chat_id FROM telegram_threads",
-    );
-    for (const row of chatRows) {
-      await sendToTelegramChat(row.chat_id, html);
-    }
-  }
-
-  async function pushBriefingToTelegram(briefing: { sections: BriefingSection }): Promise<void> {
-    const html = formatBriefingHTML(briefing.sections);
-    await sendToAllTelegramChats(html);
-    ctx.logger.info("Briefing pushed to Telegram");
-  }
-
   // --- Push new research reports to Telegram ---
   // Seed with existing IDs so we only push reports created AFTER this boot
   const sentResearchIds = new Set<string>(
@@ -596,9 +580,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   // --- Background briefing generation ---
   const BRIEFING_INTERVAL_MS = 6 * 60 * 60 * 1000;
   const briefingTimer = setInterval(() => {
-    generateBriefing(ctx).then((briefing) => {
-      if (briefing) pushBriefingToTelegram(briefing).catch(() => {});
-    }).catch((err) => {
+    generateBriefing(ctx).catch((err) => {
       ctx.logger.warn(`Background briefing failed: ${err instanceof Error ? err.message : String(err)}`);
     });
   }, BRIEFING_INTERVAL_MS);
@@ -606,9 +588,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   // Generate initial briefing if none exists
   const latest = getLatestBriefing(storage);
   if (!latest) {
-    generateBriefing(ctx).then((briefing) => {
-      if (briefing) pushBriefingToTelegram(briefing).catch(() => {});
-    }).catch((err) => {
+    generateBriefing(ctx).catch((err) => {
       ctx.logger.warn(`Initial briefing failed: ${err instanceof Error ? err.message : String(err)}`);
     });
   }
