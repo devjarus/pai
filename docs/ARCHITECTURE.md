@@ -403,7 +403,7 @@ Timer is registered in `packages/server/src/index.ts` alongside the briefing tim
 
 Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 
-**Server hardening:** Global error handler (hides stack in prod), request ID tracing (`x-request-id`), Helmet CSP, rate limiting (100/min global, stricter on expensive endpoints), CORS whitelist, JWT auth (cloud-only), content-type validation (CSRF protection), request logging, PaaS detection with storage retry, graceful shutdown.
+**Server hardening:** Global error handler (hides stack in prod), request ID tracing (`x-request-id`), Helmet CSP, rate limiting (300/min global, stricter on expensive endpoints), CORS whitelist, JWT auth (cloud-only), content-type validation (CSRF protection), request logging, PaaS detection with storage retry, graceful shutdown.
 
 ### Routes
 
@@ -531,12 +531,12 @@ Tasks (status/priority/due date) + Goals. `ai-suggest` feeds tasks + memory to L
 
 ## Web UI
 
-React SPA — Inbox, Chat, Memory Explorer, Knowledge, Tasks, Settings, Timeline.
+React SPA — Inbox, Chat, Memory Explorer, Knowledge, Tasks, Settings, Timeline. Uses TanStack Query for server state (cached queries, automatic invalidation, polling) via custom hooks in `src/hooks/use-*.ts`.
 
 | Page | Key features |
 |------|-------------|
 | **Inbox** (`/`) | Unified feed of daily briefings and research reports. Detail view (`/inbox/:id`) with "Start Chat" button (creates thread, auto-sends research context). Staggered fade-in animations. Refresh/clear buttons. Cards navigate to Tasks/Memory/Knowledge. |
-| **Chat** | AI SDK `useChat` + `DefaultChatTransport`, thread sidebar with clear-all-threads option, tool cards, responsive mobile, token usage badge |
+| **Chat** | assistant-ui primitives (`<Thread />`, `<Composer />`, `makeAssistantToolUI`) with `useExternalStoreRuntime` + `DefaultChatTransport`, thread sidebar with clear-all-threads option, tool cards, responsive mobile, token usage badge |
 | **Jobs** | Background job tracker for crawl and research jobs. Shows status, progress, and results. Clear completed jobs. |
 | **Memory** | Browse/search beliefs, type filter tabs, detail sidebar, clear all, empty state |
 | **Knowledge** | Browse sources, view chunks, search knowledge base, learn from URLs, crawl sub-pages |
@@ -614,7 +614,7 @@ learning_watermarks (source TEXT PK, last_id TEXT, last_ts TEXT, updated_at TEXT
 | Embeddings | JSON in SQLite, cosine similarity in JS |
 | LLM | Vercel AI SDK (ai, @ai-sdk/openai, @ai-sdk/google, ai-sdk-ollama) |
 | API Server | Fastify + CORS + static serving |
-| Frontend | React + Vite + Tailwind CSS + shadcn/ui |
+| Frontend | React + Vite + Tailwind CSS + shadcn/ui + assistant-ui + TanStack Query |
 | Telegram | grammY |
 | CLI | Commander.js |
 | MCP | @modelcontextprotocol/sdk (stdio) |

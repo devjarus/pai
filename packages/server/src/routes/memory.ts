@@ -45,7 +45,8 @@ export function registerMemoryRoutes(app: FastifyInstance, { ctx }: ServerContex
       return updated;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update belief";
-      return reply.status(404).send({ error: message });
+      const status = message.includes("not found") ? 404 : 500;
+      return reply.status(status).send({ error: message });
     }
   });
 

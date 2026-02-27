@@ -537,7 +537,7 @@ describe("Embeddings", () => {
   });
 
   it("should throw when forgetting non-existent belief", () => {
-    expect(() => forgetBelief(storage, "nonexistent-id")).toThrow(/no active belief/i);
+    expect(() => forgetBelief(storage, "nonexistent-id")).toThrow(/no match found/i);
   });
 
   it("should throw on ambiguous prefix when forgetting", () => {

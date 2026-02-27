@@ -30,6 +30,28 @@ import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/we
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { registerInboxRoutes } from "./routes/inbox.js";
 import { registerJobRoutes } from "./routes/jobs.js";
+import type { Storage, Migration } from "@personal-ai/core";
+
+/** All plugin migrations in registration order */
+const allMigrations: Array<[string, Migration[]]> = [
+  ["memory", memoryMigrations],
+  ["tasks", taskMigrations],
+  ["threads", threadMigrations],
+  ["telegram", telegramMigrations],
+  ["knowledge", knowledgeMigrations],
+  ["auth", authMigrations],
+  ["inbox", briefingMigrations],
+  ["research", researchMigrations],
+  ["learning", learningMigrations],
+  ["schedules", scheduleMigrations],
+];
+
+/** Run all plugin migrations on a storage instance */
+function runAllMigrations(storage: Storage): void {
+  for (const [name, migrations] of allMigrations) {
+    storage.migrate(name, migrations);
+  }
+}
 
 export interface ServerContext {
   ctx: PluginContext;
@@ -92,16 +114,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     }
   }
 
-  storage.migrate("memory", memoryMigrations);
-  storage.migrate("tasks", taskMigrations);
-  storage.migrate("threads", threadMigrations);
-  storage.migrate("telegram", telegramMigrations);
-  storage.migrate("knowledge", knowledgeMigrations);
-  storage.migrate("auth", authMigrations);
-  storage.migrate("inbox", briefingMigrations);
-  storage.migrate("research", researchMigrations);
-  storage.migrate("learning", learningMigrations);
-  storage.migrate("schedules", scheduleMigrations);
+  runAllMigrations(storage);
 
   // Password reset via environment variable
   const resetPassword = process.env.PAI_RESET_PASSWORD;
@@ -201,16 +214,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     const newStorage = createStorage(newConfig.dataDir, newLogger);
     const newLlm = createLLMClient(newConfig.llm, newLogger);
 
-    newStorage.migrate("memory", memoryMigrations);
-    newStorage.migrate("tasks", taskMigrations);
-    newStorage.migrate("threads", threadMigrations);
-    newStorage.migrate("telegram", telegramMigrations);
-    newStorage.migrate("knowledge", knowledgeMigrations);
-    newStorage.migrate("auth", authMigrations);
-    newStorage.migrate("inbox", briefingMigrations);
-    newStorage.migrate("research", researchMigrations);
-    newStorage.migrate("learning", learningMigrations);
-    newStorage.migrate("schedules", scheduleMigrations);
+    runAllMigrations(newStorage);
 
     // Update ctx in place so all routes see the new connections
     Object.assign(ctx, {
@@ -390,10 +394,10 @@ export async function createServer(options?: { port?: number; host?: string }) {
   app.get("/api/schedules", async () => {
     return listSchedules(ctx.storage);
   });
-  app.post("/api/schedules", async (request) => {
+  app.post("/api/schedules", async (request, reply) => {
     const body = request.body as { label?: string; goal?: string; intervalHours?: number; startAt?: string };
     if (!body.label || !body.goal) {
-      return { error: "label and goal are required" };
+      return reply.status(400).send({ error: "label and goal are required" });
     }
     return createSchedule(ctx.storage, {
       label: body.label,
@@ -407,12 +411,12 @@ export async function createServer(options?: { port?: number; host?: string }) {
     const ok = deleteSchedule(ctx.storage, id);
     return { ok };
   });
-  app.patch("/api/schedules/:id", async (request) => {
+  app.patch("/api/schedules/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as { action?: string };
     if (body.action === "pause") return { ok: pauseSchedule(ctx.storage, id) };
     if (body.action === "resume") return { ok: resumeSchedule(ctx.storage, id) };
-    return { error: "action must be 'pause' or 'resume'" };
+    return reply.status(400).send({ error: "action must be 'pause' or 'resume'" });
   });
 
   // SPA fallback — serve index.html for non-API routes

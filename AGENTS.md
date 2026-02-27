@@ -17,7 +17,7 @@ pnpm monorepo with 8 packages under `packages/`:
 - **`plugin-curator`** — Memory Curator agent plugin. Analyzes memory health (duplicates, stale beliefs, contradictions) and fixes issues with user approval. Tools: `curate_memory`, `fix_issues`, `list_beliefs`.
 - **`plugin-telegram`** — Telegram bot interface. Uses grammY to connect to Telegram, reuses the same agent chat pipeline (memory, tools, web search) as the web UI. Runs standalone without the Fastify server. Thread persistence via `telegram_threads` mapping table.
 - **`server`** — Fastify API server. Serves REST endpoints for memory, agents, chat (SSE streaming), config, threads, inbox, jobs, tasks, and goals. Also serves the static UI build. Has `reinitialize()` for hot-swapping data directories. Hardened with global error handler, request ID tracing, Helmet security headers, rate limiting, CORS whitelist, JWT auth (cloud-only), content-type validation, request logging, PaaS detection with storage retry, and graceful shutdown. Background briefing generation on 6-hour timer. Background learning worker (`learning.ts`) runs every 2 hours (5-minute initial delay), gathers signals from chat threads, research reports, completed tasks, and knowledge sources using SQL watermarks, makes one focused LLM call to extract facts, and stores via `remember()`. Migrations include `briefingMigrations` and `learningMigrations`. Default port: 3141.
-- **`ui`** — React + Vite + Tailwind CSS + shadcn/ui SPA. Pages: Inbox (AI briefing home screen), Chat (SSE streaming, markdown rendering, token usage badge), Memory Explorer (type tooltips, explainer, clear all), Knowledge (browse sources, view chunks, search), Tasks (CRUD with goals, priority badges, clear all), Settings (editable config, directory browser, provider presets auto-fill), Timeline. Global error handling via `ErrorBoundary` and `OfflineBanner` (auto-reconnect detection).
+- **`ui`** — React + Vite + Tailwind CSS + shadcn/ui SPA. Uses **assistant-ui** for chat (Thread, Composer, makeAssistantToolUI) and **TanStack Query** for server state (cached queries, automatic invalidation, optimistic updates). Custom hooks in `src/hooks/use-*.ts` wrap `api.ts` functions. Pages: Inbox (AI briefing home screen), Chat (assistant-ui primitives, thread sidebar, tool cards, token usage badge), Memory Explorer (type tooltips, explainer, clear all), Knowledge (browse sources, view chunks, search), Tasks (CRUD with goals, priority badges, clear all), Settings (editable config, directory browser, provider presets auto-fill), Timeline. Global error handling via `ErrorBoundary` and `OfflineBanner` (auto-reconnect detection).
 
 **Plugin contract:** Two interfaces:
 
@@ -95,6 +95,8 @@ pnpm e2e:ui                               # Playwright UI mode
 - bcrypt + jsonwebtoken for auth
 - Fastify for API server
 - React + Vite + Tailwind CSS + shadcn/ui for web UI
+- assistant-ui (@assistant-ui/react, @assistant-ui/react-ai-sdk) for chat UI primitives
+- @tanstack/react-query for server state management (cached queries, mutations, polling)
 - react-markdown + remark-gfm for chat rendering
 - lucide-react for icons
 

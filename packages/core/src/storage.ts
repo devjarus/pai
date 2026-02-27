@@ -49,6 +49,39 @@ function cleanupOldBackups(dbPath: string): void {
   }
 }
 
+/**
+ * Resolve a full ID from a prefix. Tries exact match first, then LIKE prefix.
+ * Throws if no match or ambiguous (2+ matches).
+ *
+ * @param storage - Storage instance
+ * @param table - Table name to search
+ * @param idOrPrefix - Full ID or prefix (8+ chars)
+ * @param where - Optional additional WHERE clause (e.g., "AND status = 'active'")
+ * @param params - Optional params for the WHERE clause
+ * @returns The resolved full ID
+ */
+export function resolveIdPrefix(
+  storage: Storage,
+  table: string,
+  idOrPrefix: string,
+  where = "",
+  params: unknown[] = [],
+): string {
+  const exact = storage.query<{ id: string }>(
+    `SELECT id FROM ${table} WHERE id = ? ${where} LIMIT 1`,
+    [idOrPrefix, ...params],
+  );
+  if (exact[0]) return exact[0].id;
+
+  const prefixMatches = storage.query<{ id: string }>(
+    `SELECT id FROM ${table} WHERE id LIKE ? ${where} ORDER BY created_at DESC LIMIT 2`,
+    [`${idOrPrefix}%`, ...params],
+  );
+  if (prefixMatches.length === 0) throw new Error(`No match found for "${idOrPrefix}" in ${table}.`);
+  if (prefixMatches.length > 1) throw new Error(`ID prefix "${idOrPrefix}" is ambiguous. Provide more characters.`);
+  return prefixMatches[0]!.id;
+}
+
 export function createStorage(dataDir: string, logger?: Logger): Storage {
   const log = logger ?? createLogger();
   mkdirSync(dataDir, { recursive: true });

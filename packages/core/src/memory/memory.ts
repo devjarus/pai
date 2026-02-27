@@ -1,5 +1,6 @@
 import type { Storage, Migration, LLMClient, Logger } from "../types.js";
 import { nanoid } from "nanoid";
+import { resolveIdPrefix } from "../storage.js";
 import { knowledgeSearch } from "../knowledge.js";
 import type { KnowledgeSearchResult } from "../knowledge.js";
 
@@ -238,19 +239,7 @@ export function listBeliefs(storage: Storage, status = "active"): Belief[] {
 }
 
 export function forgetBelief(storage: Storage, beliefId: string): void {
-  const rows = storage.query<Pick<Belief, "id">>(
-    "SELECT id FROM beliefs WHERE id = ? AND status = 'active' LIMIT 1",
-    [beliefId],
-  );
-  const id = rows[0]?.id ?? (() => {
-    const prefixMatches = storage.query<Pick<Belief, "id">>(
-      "SELECT id FROM beliefs WHERE id LIKE ? AND status = 'active' ORDER BY created_at DESC LIMIT 2",
-      [`${beliefId}%`],
-    );
-    if (prefixMatches.length === 0) throw new Error(`No active belief matches "${beliefId}".`);
-    if (prefixMatches.length > 1) throw new Error(`Belief id prefix "${beliefId}" is ambiguous. Provide more characters.`);
-    return prefixMatches[0]!.id;
-  })();
+  const id = resolveIdPrefix(storage, "beliefs", beliefId, "AND status = 'active'");
   storage.run("UPDATE beliefs SET status = 'forgotten', updated_at = datetime('now') WHERE id = ?", [id]);
   logBeliefChange(storage, { beliefId: id, changeType: "forgotten", detail: "Manually forgotten by user" });
 }

@@ -49,7 +49,7 @@ describe("Tasks", () => {
 
   it("should throw if no task matches id or prefix", () => {
     addTask(storage, { title: "Existing task" });
-    expect(() => completeTask(storage, "missing")).toThrow(/no open task matches/i);
+    expect(() => completeTask(storage, "missing")).toThrow(/no match found/i);
   });
 
   it("should list completed tasks with done status filter", () => {
@@ -130,7 +130,7 @@ describe("Tasks", () => {
 
   it("should throw when reopening a non-done task", () => {
     const task = addTask(storage, { title: "Open task" });
-    expect(() => reopenTask(storage, task.id)).toThrow(/no done task/i);
+    expect(() => reopenTask(storage, task.id)).toThrow(/no match found/i);
   });
 
   it("should complete a goal", () => {
@@ -149,7 +149,7 @@ describe("Tasks", () => {
   it("should throw when completing non-active goal", () => {
     const goal = addGoal(storage, { title: "Ship v1" });
     completeGoal(storage, goal.id);
-    expect(() => completeGoal(storage, goal.id)).toThrow(/no active goal/i);
+    expect(() => completeGoal(storage, goal.id)).toThrow(/no match found/i);
   });
 
   it("should reject empty task title", () => {

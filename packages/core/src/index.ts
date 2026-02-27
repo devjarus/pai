@@ -5,7 +5,7 @@ export type {
 } from "./types.js";
 export { activeJobs } from "./types.js";
 export { loadConfig, loadConfigFile, writeConfig, findGitRoot, resolveConfigHome } from "./config.js";
-export { createStorage, backupDatabase } from "./storage.js";
+export { createStorage, backupDatabase, resolveIdPrefix } from "./storage.js";
 export { createLLMClient } from "./llm.js";
 export { createLogger } from "./logger.js";
 
