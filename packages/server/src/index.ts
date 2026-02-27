@@ -473,7 +473,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     } else if (path === "/api/remember") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: "1 minute" } };
     } else if (path === "/api/auth/login") {
-      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 5, timeWindow: "1 minute" } };
+      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: "1 minute" } };
     } else if (path === "/api/auth/refresh") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: "1 minute" } };
     } else if (path === "/api/inbox/refresh") {
