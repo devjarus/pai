@@ -228,11 +228,18 @@ export async function createServer(options?: { port?: number; host?: string }) {
       pendingCloseStorage = null;
     }, 5000);
 
-    // Restart or stop Telegram bot based on new config
-    if (newConfig.telegram?.enabled && newConfig.telegram?.token) {
-      startTelegramBot();
-    } else {
-      stopTelegramBot();
+    // Restart or stop Telegram bot based on new config.
+    // Guard so a Telegram failure never breaks config saves.
+    try {
+      if (newConfig.telegram?.enabled && newConfig.telegram?.token) {
+        startTelegramBot();
+      } else {
+        stopTelegramBot();
+      }
+    } catch (err) {
+      ctx.logger.error("Telegram bot restart failed during reinitialize", {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
     } finally {
       reinitializing = false;

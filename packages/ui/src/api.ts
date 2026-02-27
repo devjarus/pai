@@ -24,6 +24,12 @@ const BASE = "/api";
  * Matches against known error patterns and HTTP status codes.
  */
 function humanizeError(status: number, body: string): string {
+  // Try to extract a structured error message from JSON responses
+  try {
+    const json = JSON.parse(body);
+    if (json.error && typeof json.error === "string") return json.error;
+  } catch { /* not JSON, fall through */ }
+
   // Check for known error strings in the response body
   if (body.includes("SQLITE_CANTOPEN")) {
     return "Couldn't load your data. Check the data directory in Settings.";

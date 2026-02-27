@@ -142,8 +142,17 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     const merged = { ...existing, ...update };
     writeConfig(configDir, merged as never);
 
-    // Reinitialize storage, LLM, and config from the new settings
-    serverCtx.reinitialize();
+    // Reinitialize storage, LLM, and config from the new settings.
+    // Wrapped in try-catch so a bad config never crashes the server.
+    try {
+      serverCtx.reinitialize();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      ctx.logger.error("reinitialize failed after config update", { error: msg });
+      return reply.status(500).send({
+        error: `Configuration saved but failed to apply: ${msg}. The server is still running with the previous settings. Fix the configuration and try again.`,
+      });
+    }
 
     // Apply user's explicit changes on top of the reloaded config.
     // loadConfig() prefers env vars, but the user explicitly chose new values

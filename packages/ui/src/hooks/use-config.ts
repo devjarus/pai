@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getConfig, updateConfig, browseDir } from "../api";
+import { healthKeys } from "./use-health";
 
 export const configKeys = {
   all: ["config"] as const,
@@ -38,6 +39,8 @@ export function useUpdateConfig() {
     }) => updateConfig(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: configKeys.all });
+      // Re-check LLM connectivity after config change (e.g. new API key)
+      queryClient.invalidateQueries({ queryKey: healthKeys.status() });
     },
   });
 }
