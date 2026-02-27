@@ -14,7 +14,7 @@ import { taskMigrations } from "@personal-ai/plugin-tasks";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
-import { telegramMigrations, createBot, formatBriefingHTML, splitMessage } from "@personal-ai/plugin-telegram";
+import { telegramMigrations, createBot, formatBriefingHTML, splitMessage, markdownToTelegramHTML } from "@personal-ai/plugin-telegram";
 import { registerAuthRoutes, extractToken } from "./routes/auth.js";
 import { registerMemoryRoutes } from "./routes/memory.js";
 import { registerAgentRoutes } from "./routes/agents.js";
@@ -159,6 +159,10 @@ export async function createServer(options?: { port?: number; host?: string }) {
     telegramStatus.running = false;
     telegramStatus.username = undefined;
     telegramStatus.error = undefined;
+  }
+
+  function escapeHTMLForTelegram(text: string): string {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   // Track pending storage close timers so we can cancel them on consecutive reinitialize calls
@@ -456,31 +460,64 @@ export async function createServer(options?: { port?: number; host?: string }) {
     startTelegramBot();
   }
 
-  // --- Push briefing to all Telegram chats ---
-  async function pushBriefingToTelegram(briefing: { sections: BriefingSection }): Promise<void> {
+  // --- Push messages to all Telegram chats ---
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type TgBot = { api: { sendMessage(chatId: number, text: string, opts?: Record<string, unknown>): Promise<any> } };
+
+  async function sendToAllTelegramChats(html: string): Promise<void> {
     if (!telegramBot || !telegramStatus.running) return;
     const chatRows = ctx.storage.query<{ chat_id: number }>(
       "SELECT chat_id FROM telegram_threads",
     );
     if (chatRows.length === 0) return;
 
-    const html = formatBriefingHTML(briefing.sections);
     const parts = splitMessage(html);
-
     for (const row of chatRows) {
       try {
         for (const part of parts) {
-          await (telegramBot as { api: { sendMessage(chatId: number, text: string, opts?: { parse_mode: string }): Promise<unknown> } }).api
-            .sendMessage(row.chat_id, part, { parse_mode: "HTML" });
+          await (telegramBot as TgBot).api.sendMessage(row.chat_id, part, { parse_mode: "HTML" });
         }
       } catch (err) {
-        ctx.logger.warn("Failed to push briefing to Telegram chat", {
+        ctx.logger.warn("Failed to send Telegram message", {
           chatId: row.chat_id,
           error: err instanceof Error ? err.message : String(err),
         });
       }
     }
-    ctx.logger.info("Briefing pushed to Telegram", { chatCount: chatRows.length });
+  }
+
+  async function pushBriefingToTelegram(briefing: { sections: BriefingSection }): Promise<void> {
+    const html = formatBriefingHTML(briefing.sections);
+    await sendToAllTelegramChats(html);
+    ctx.logger.info("Briefing pushed to Telegram");
+  }
+
+  // --- Push new research reports to Telegram ---
+  const sentResearchIds = new Set<string>();
+
+  async function checkAndPushResearch(): Promise<void> {
+    if (!telegramBot || !telegramStatus.running) return;
+    try {
+      const rows = ctx.storage.query<{ id: string; sections: string }>(
+        "SELECT id, sections FROM briefings WHERE type = 'research' AND status = 'ready' ORDER BY generated_at DESC LIMIT 5",
+      );
+      for (const row of rows) {
+        if (sentResearchIds.has(row.id)) continue;
+        sentResearchIds.add(row.id);
+        try {
+          const parsed = JSON.parse(row.sections) as { goal?: string; report?: string };
+          if (!parsed.report) continue;
+          const title = parsed.goal ?? "Research Report";
+          // Truncate long reports for Telegram
+          const preview = parsed.report.length > 2000
+            ? parsed.report.slice(0, 2000) + "\n\n<i>... report truncated. View full report in the web UI.</i>"
+            : parsed.report;
+          const html = `\uD83D\uDD2C <b>Research Complete: ${escapeHTMLForTelegram(title)}</b>\n\n${markdownToTelegramHTML(preview)}`;
+          await sendToAllTelegramChats(html);
+          ctx.logger.info("Research report pushed to Telegram", { briefingId: row.id });
+        } catch { /* skip malformed entries */ }
+      }
+    } catch { /* ignore query errors during startup */ }
   }
 
   // --- Background briefing generation ---
@@ -502,6 +539,12 @@ export async function createServer(options?: { port?: number; host?: string }) {
       ctx.logger.warn(`Initial briefing failed: ${err instanceof Error ? err.message : String(err)}`);
     });
   }
+
+  // --- Research report push (check every 60s for completed research) ---
+  const RESEARCH_CHECK_INTERVAL_MS = 60 * 1000;
+  const researchCheckTimer = setInterval(() => {
+    checkAndPushResearch().catch(() => {});
+  }, RESEARCH_CHECK_INTERVAL_MS);
 
   // --- Background learning worker ---
   const LEARNING_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -531,6 +574,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     try { unlinkSync(pidFile); } catch { /* ignore */ }
     stopTelegramBot();
     clearInterval(briefingTimer);
+    clearInterval(researchCheckTimer);
     clearTimeout(learningInitTimer);
     clearInterval(learningTimer);
     // Cancel any pending storage close from reinitialize
