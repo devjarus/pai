@@ -4,7 +4,8 @@ import type { ServerContext } from "../index.js";
 import { validate } from "../validate.js";
 import { learnFromContent, knowledgeSearch, listSources, getSourceChunks, forgetSource, reindexSource, reindexAllSources } from "@personal-ai/core";
 import { fetchPageAsMarkdown, discoverSubPages } from "@personal-ai/plugin-assistant/page-fetch";
-import { activeCrawls, runCrawlInBackground } from "@personal-ai/plugin-assistant/tools";
+import { runCrawlInBackground } from "@personal-ai/plugin-assistant/tools";
+import { activeJobs } from "@personal-ai/core";
 
 const learnSchema = z.object({
   url: z
@@ -123,27 +124,26 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
 
   // Crawl status — check progress and get failed URLs
   app.get("/api/knowledge/crawl-status", async () => {
-    const jobs = [...activeCrawls.entries()].map(([url, job]) => ({
-      url,
-      status: job.status,
-      total: job.total,
-      learned: job.learned,
-      skipped: job.skipped,
-      failed: job.failed,
-      failedUrls: job.failedUrls,
-      startedAt: job.startedAt,
-      ...(job.error ? { error: job.error } : {}),
-    }));
+    const crawlJobs = [...activeJobs.entries()]
+      .filter(([, j]) => j.type === "crawl")
+      .map(([_id, j]) => ({
+        url: j.label,
+        status: j.status,
+        progress: j.progress,
+        startedAt: j.startedAt,
+        ...(j.error ? { error: j.error } : {}),
+        ...(j.result ? { result: j.result } : {}),
+      }));
 
     // Clean up completed jobs older than 30 minutes
     const cutoff = Date.now() - 30 * 60 * 1000;
-    for (const [url, job] of activeCrawls) {
-      if (job.status !== "running" && new Date(job.startedAt).getTime() < cutoff) {
-        activeCrawls.delete(url);
+    for (const [id, j] of activeJobs) {
+      if (j.type === "crawl" && j.status !== "running" && new Date(j.startedAt).getTime() < cutoff) {
+        activeJobs.delete(id);
       }
     }
 
-    return { jobs };
+    return { jobs: crawlJobs };
   });
 
   // Get chunks for a source

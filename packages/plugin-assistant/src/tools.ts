@@ -3,43 +3,29 @@ import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
 import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, learnFromContent, knowledgeSearch, listSources, forgetSource } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
+import { activeJobs } from "@personal-ai/core";
+import type { BackgroundJob } from "@personal-ai/core";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
 import { webSearch, formatSearchResults } from "./web-search.js";
 import { fetchPageAsMarkdown, discoverSubPages } from "./page-fetch.js";
 
-// ---- Background crawl tracker ----
-
-interface CrawlJob {
-  url: string;
-  total: number;
-  learned: number;
-  skipped: number;
-  failed: number;
-  failedUrls: string[];
-  status: "running" | "done" | "error";
-  startedAt: string;
-  error?: string;
-}
-
-export const activeCrawls = new Map<string, CrawlJob>();
-
-export { type CrawlJob };
-
 export async function runCrawlInBackground(storage: Storage, llm: LLMClient, rootUrl: string, subPages: string[]): Promise<void> {
   const maxPages = Math.min(subPages.length, 30);
-  const job: CrawlJob = {
-    url: rootUrl,
-    total: maxPages,
-    learned: 0,
-    skipped: 0,
-    failed: 0,
-    failedUrls: [],
+  const jobId = `crawl-${rootUrl}`;
+  const job: BackgroundJob = {
+    id: jobId,
+    type: "crawl",
+    label: rootUrl,
     status: "running",
+    progress: `0/${maxPages}`,
     startedAt: new Date().toISOString(),
   };
-  activeCrawls.set(rootUrl, job);
+  activeJobs.set(jobId, job);
 
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let learned = 0;
+  let skipped = 0;
+  let failed = 0;
 
   try {
     for (let i = 0; i < maxPages; i++) {
@@ -48,16 +34,17 @@ export async function runCrawlInBackground(storage: Storage, llm: LLMClient, roo
       try {
         const pageUrl = subPages[i]!;
         const subPage = await fetchPageAsMarkdown(pageUrl);
-        if (!subPage) { job.failed++; job.failedUrls.push(pageUrl); continue; }
+        if (!subPage) { failed++; continue; }
         const result = await learnFromContent(storage, llm, pageUrl, subPage.title, subPage.markdown);
-        if (result.skipped) job.skipped++;
-        else job.learned++;
+        if (result.skipped) skipped++;
+        else learned++;
       } catch {
-        job.failed++;
-        job.failedUrls.push(subPages[i]!);
+        failed++;
       }
+      job.progress = `${learned + skipped + failed}/${maxPages}`;
     }
     job.status = "done";
+    job.result = `Learned: ${learned}, Skipped: ${skipped}, Failed: ${failed}`;
   } catch (err) {
     job.status = "error";
     job.error = err instanceof Error ? err.message : String(err);
@@ -245,7 +232,7 @@ export function createAgentTools(ctx: AgentContext) {
           // Kick off crawling in background — don't await
           runCrawlInBackground(ctx.storage, ctx.llm, url, subPages).catch(() => {});
 
-          return `${mainMsg}\n\nStarted crawling ${maxPages} sub-pages in the background. Use knowledge_status to check progress.`;
+          return `${mainMsg}\n\nStarted crawling ${maxPages} sub-pages in the background. Use job_status to check progress.`;
         } catch (err) {
           return `Failed to learn from URL: ${err instanceof Error ? err.message : "unknown error"}`;
         }
@@ -305,29 +292,28 @@ export function createAgentTools(ctx: AgentContext) {
       },
     }),
 
-    knowledge_status: tool({
-      description: "Check the status of background knowledge crawl jobs. Use this when the user asks about crawl progress or you want to report back on a previously started crawl.",
+    job_status: tool({
+      description: "Check the status of background jobs (crawl, research). Use when the user asks about crawl progress, research status, or background tasks.",
       inputSchema: z.object({}),
       execute: async () => {
-        if (activeCrawls.size === 0) return "No crawl jobs running or recently completed.";
+        if (activeJobs.size === 0) return "No background jobs running or recently completed.";
 
-        const jobs = [...activeCrawls.entries()].map(([url, job]) => ({
-          url,
-          status: job.status,
-          progress: `${job.learned + job.skipped + job.failed}/${job.total}`,
-          learned: job.learned,
-          skipped: job.skipped,
-          failed: job.failed,
-          ...(job.failedUrls.length > 0 ? { failedUrls: job.failedUrls } : {}),
-          startedAt: job.startedAt,
-          ...(job.error ? { error: job.error } : {}),
+        const jobs = [...activeJobs.entries()].map(([id, j]) => ({
+          id,
+          type: j.type,
+          label: j.label,
+          status: j.status,
+          progress: j.progress,
+          startedAt: j.startedAt,
+          ...(j.error ? { error: j.error } : {}),
+          ...(j.result ? { result: j.result } : {}),
         }));
 
         // Clean up completed jobs older than 10 minutes
         const cutoff = Date.now() - 10 * 60 * 1000;
-        for (const [url, job] of activeCrawls) {
-          if (job.status !== "running" && new Date(job.startedAt).getTime() < cutoff) {
-            activeCrawls.delete(url);
+        for (const [id, j] of activeJobs) {
+          if (j.status !== "running" && new Date(j.startedAt).getTime() < cutoff) {
+            activeJobs.delete(id);
           }
         }
 

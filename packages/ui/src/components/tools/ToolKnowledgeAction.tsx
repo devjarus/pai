@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 
 interface ToolKnowledgeActionProps {
   state: string;
-  toolName: "learn_from_url" | "knowledge_forget" | "knowledge_status";
+  toolName: "learn_from_url" | "knowledge_forget" | "knowledge_status" | "job_status";
   input?: { url?: string; id?: string };
   output?: { ok?: boolean; message?: string; title?: string; chunks?: number } | string;
 }
@@ -16,12 +16,13 @@ export function ToolKnowledgeAction({ state, toolName, input, output }: ToolKnow
       learn_from_url: `Learning from ${inputObj.url ? `"${String(inputObj.url).slice(0, 60)}"` : "URL"}...`,
       knowledge_forget: "Removing source...",
       knowledge_status: "Checking crawl status...",
+      job_status: "Checking background job status...",
     };
 
     return (
       <Card className="gap-0 rounded-lg border-border/50 py-0 shadow-none">
         <CardContent className="flex items-center gap-2 px-3 py-2.5">
-          {toolName === "knowledge_status" ? (
+          {toolName === "knowledge_status" || toolName === "job_status" ? (
             <LoaderIcon className="size-3.5 shrink-0 animate-spin text-primary" />
           ) : (
             <BookOpenIcon className="size-3.5 shrink-0 animate-pulse text-primary" />
@@ -37,6 +38,7 @@ export function ToolKnowledgeAction({ state, toolName, input, output }: ToolKnow
       learn_from_url: "Failed to learn from URL.",
       knowledge_forget: "Failed to remove source.",
       knowledge_status: "Failed to check crawl status.",
+      job_status: "Failed to check job status.",
     };
 
     return (

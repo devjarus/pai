@@ -35,7 +35,7 @@ Use your judgement. You have tools available — use them when they would genuin
 - **knowledge_search**: Search learned web pages and docs — use this for content questions
 - **knowledge_sources**: List all learned pages — ONLY when the user asks "what have you learned?" or "show my sources", NEVER for answering content questions
 - **learn_from_url**: Learn from a web page. Set crawl=true for doc sites to also learn sub-pages
-- **knowledge_status**: Check progress of background crawl jobs
+- **job_status**: Check progress of background jobs (crawl, research)
 - **web_search**: Live web search — for current events, news, or when memory + knowledge don't have the answer
 - **task_list**: Show tasks
 - **task_add**: Create a new task

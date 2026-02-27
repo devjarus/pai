@@ -85,11 +85,12 @@ export function renderToolPart(part: ToolPart, key: string | number): ReactNode 
     case "learn_from_url":
     case "knowledge_forget":
     case "knowledge_status":
+    case "job_status":
       return (
         <ToolKnowledgeAction
           key={key}
           state={state}
-          toolName={toolName as "learn_from_url" | "knowledge_forget" | "knowledge_status"}
+          toolName={toolName as "learn_from_url" | "knowledge_forget" | "knowledge_status" | "job_status"}
           input={input}
           output={output}
         />
