@@ -513,11 +513,8 @@ export async function createServer(options?: { port?: number; host?: string }) {
           const parsed = JSON.parse(row.sections) as { goal?: string; report?: string };
           if (!parsed.report) continue;
           const title = parsed.goal ?? "Research Report";
-          // Truncate long reports for Telegram
-          const preview = parsed.report.length > 2000
-            ? parsed.report.slice(0, 2000) + "\n\n<i>... report truncated. View full report in the web UI.</i>"
-            : parsed.report;
-          const html = `\uD83D\uDD2C <b>Research Complete: ${escapeHTMLForTelegram(title)}</b>\n\n${markdownToTelegramHTML(preview)}`;
+          // Send full report — splitMessage handles Telegram's 4096 char limit
+          const html = `\uD83D\uDD2C <b>Research Complete: ${escapeHTMLForTelegram(title)}</b>\n\n${markdownToTelegramHTML(parsed.report)}`;
           await sendToAllTelegramChats(html);
           ctx.logger.info("Research report pushed to Telegram", { briefingId: row.id });
         } catch { /* skip malformed entries */ }
