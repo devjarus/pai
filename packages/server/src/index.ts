@@ -493,7 +493,12 @@ export async function createServer(options?: { port?: number; host?: string }) {
   }
 
   // --- Push new research reports to Telegram ---
-  const sentResearchIds = new Set<string>();
+  // Seed with existing IDs so we only push reports created AFTER this boot
+  const sentResearchIds = new Set<string>(
+    ctx.storage.query<{ id: string }>(
+      "SELECT id FROM briefings WHERE type = 'research'",
+    ).map((r) => r.id),
+  );
 
   async function checkAndPushResearch(): Promise<void> {
     if (!telegramBot || !telegramStatus.running) return;
