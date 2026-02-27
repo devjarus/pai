@@ -1,10 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { OfflineBanner } from "./OfflineBanner";
-import { getInbox } from "../api";
+import { useInboxAll } from "@/hooks/use-inbox";
 
 const navItems = [
   { to: "/", label: "Inbox", icon: IconInbox },
@@ -19,50 +19,32 @@ const navItems = [
 ];
 
 const INBOX_SEEN_KEY = "pai-last-seen-briefing-id";
-const INBOX_POLL_MS = 30 * 60 * 1000; // 30 minutes
 
 export default function Layout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [hasNewBriefing, setHasNewBriefing] = useState(false);
   const location = useLocation();
-  const pollRef = useRef<ReturnType<typeof setInterval>>(null);
+
+  // Shared inbox query — reuses cache with Inbox page, polls every 30 min
+  const { data: inboxData } = useInboxAll();
 
   // Close mobile nav on route change
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location.pathname]);
 
-  // Check for new briefings (poll every 5 min + on mount)
-  useEffect(() => {
-    const checkBriefing = async () => {
-      try {
-        const data = await getInbox();
-        const latestId = data.briefing?.id ?? null;
-        const seenId = localStorage.getItem(INBOX_SEEN_KEY);
-        setHasNewBriefing(!!latestId && latestId !== seenId);
-      } catch { /* ignore */ }
-    };
-    checkBriefing();
-    pollRef.current = setInterval(checkBriefing, INBOX_POLL_MS);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
+  // Track last-seen briefing ID (persisted in localStorage)
+  const [seenId, setSeenId] = useState(() => localStorage.getItem(INBOX_SEEN_KEY));
+
+  const latestId = inboxData?.briefings?.[0]?.id ?? null;
+  const hasNewBriefing = !!latestId && latestId !== seenId;
 
   // Mark briefing as seen when user visits Inbox
   useEffect(() => {
-    if (location.pathname === "/") {
-      // Small delay to let the Inbox page fetch and render
-      const timer = setTimeout(async () => {
-        try {
-          const data = await getInbox();
-          if (data.briefing?.id) {
-            localStorage.setItem(INBOX_SEEN_KEY, data.briefing.id);
-            setHasNewBriefing(false);
-          }
-        } catch { /* ignore */ }
-      }, 500);
-      return () => clearTimeout(timer);
+    if (location.pathname === "/" && latestId) {
+      localStorage.setItem(INBOX_SEEN_KEY, latestId);
+      setSeenId(latestId);
     }
-  }, [location.pathname]);
+  }, [location.pathname, latestId]);
 
   const toggleNav = useCallback(() => setMobileNavOpen((v) => !v), []);
 
@@ -105,24 +87,26 @@ export default function Layout() {
           {navItems.map((item) => (
             <Tooltip key={item.to}>
               <TooltipTrigger asChild>
-                <NavLink
-                  to={item.to}
-                  end={item.to === "/"}
-                  aria-label={item.label}
-                  className={({ isActive }) =>
-                    cn(
-                      "relative flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
-                      isActive
-                        ? "bg-primary/15 text-primary"
-                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                    )
-                  }
-                >
-                  <item.icon />
+                <div className="relative">
+                  <NavLink
+                    to={item.to}
+                    end={item.to === "/"}
+                    aria-label={item.label}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+                        isActive
+                          ? "bg-primary/15 text-primary"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                      )
+                    }
+                  >
+                    <item.icon />
+                  </NavLink>
                   {item.to === "/" && hasNewBriefing && (
-                    <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-[#0a0a0a]" />
+                    <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-[#0a0a0a] pointer-events-none" />
                   )}
-                </NavLink>
+                </div>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={8}>
                 {item.label}

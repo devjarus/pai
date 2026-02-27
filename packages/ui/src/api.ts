@@ -170,10 +170,6 @@ export function getBeliefs(params?: {
   return request<Belief[]>(`/beliefs${query ? `?${query}` : ""}`);
 }
 
-export function getBelief(id: string): Promise<Belief> {
-  return request<Belief>(`/beliefs/${id}`);
-}
-
 export function searchMemory(q: string): Promise<Belief[]> {
   return request<Belief[]>(`/search?q=${encodeURIComponent(q)}`);
 }
@@ -416,16 +412,8 @@ export function deleteGoal(id: string): Promise<{ ok: boolean }> {
 
 // ---- Inbox ----
 
-export function getInbox(): Promise<{ briefing: Briefing | null }> {
-  return request<{ briefing: Briefing | null }>("/inbox");
-}
-
 export function refreshInbox(): Promise<{ ok: boolean }> {
   return request("/inbox/refresh", { method: "POST", body: "{}" });
-}
-
-export function getInboxHistory(): Promise<{ briefings: Array<{ id: string; generatedAt: string }> }> {
-  return request("/inbox/history");
 }
 
 export function getInboxBriefing(id: string): Promise<{ briefing: Briefing }> {
