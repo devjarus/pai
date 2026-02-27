@@ -21,6 +21,7 @@ import { registerAgentRoutes } from "./routes/agents.js";
 import { registerConfigRoutes } from "./routes/config.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
+import { researchMigrations } from "@personal-ai/plugin-research";
 import { briefingMigrations, generateBriefing, getLatestBriefing } from "./briefing.js";
 import { registerInboxRoutes } from "./routes/inbox.js";
 
@@ -92,6 +93,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   storage.migrate("knowledge", knowledgeMigrations);
   storage.migrate("auth", authMigrations);
   storage.migrate("inbox", briefingMigrations);
+  storage.migrate("research", researchMigrations);
 
   // Password reset via environment variable
   const resetPassword = process.env.PAI_RESET_PASSWORD;
@@ -194,6 +196,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     newStorage.migrate("knowledge", knowledgeMigrations);
     newStorage.migrate("auth", authMigrations);
     newStorage.migrate("inbox", briefingMigrations);
+    newStorage.migrate("research", researchMigrations);
 
     // Update ctx in place so all routes see the new connections
     Object.assign(ctx, {

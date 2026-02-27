@@ -41,6 +41,7 @@
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
     "@personal-ai/core": "workspace:*",
+    "@personal-ai/plugin-research": "workspace:*",
     "@personal-ai/plugin-tasks": "workspace:*",
     "ai": "^6.0.0",
     "linkedom": "^0.18.12",

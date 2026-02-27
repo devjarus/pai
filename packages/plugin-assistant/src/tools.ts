@@ -5,6 +5,7 @@ import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, le
 import type { Storage, LLMClient } from "@personal-ai/core";
 import { activeJobs } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
+import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
 import { webSearch, formatSearchResults } from "./web-search.js";
 import { fetchPageAsMarkdown, discoverSubPages } from "./page-fetch.js";
@@ -289,6 +290,43 @@ export function createAgentTools(ctx: AgentContext) {
         if (!match) return { ok: false, error: "Source not found" };
         forgetSource(ctx.storage, match.id);
         return { ok: true, message: `Removed "${match.title}" and its ${match.chunk_count} chunks from knowledge base.` };
+      },
+    }),
+
+    research_start: tool({
+      description: "Start a deep research task that runs in the background. Use when the user asks you to research a topic thoroughly, investigate something in depth, or compile a report. The research runs autonomously and delivers results to the Inbox.",
+      inputSchema: z.object({
+        goal: z.string().describe("What to research — be specific about the topic and what kind of information to find"),
+      }),
+      execute: async ({ goal }) => {
+        try {
+          // Get thread ID from extended context (set by server route)
+          const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
+
+          const jobId = createResearchJob(ctx.storage, {
+            goal,
+            threadId: threadId ?? null,
+          });
+
+          // Fire and forget — pass injected dependencies
+          runResearchInBackground(
+            {
+              storage: ctx.storage,
+              llm: ctx.llm,
+              logger: ctx.logger,
+              webSearch,
+              formatSearchResults,
+              fetchPage: fetchPageAsMarkdown,
+            },
+            jobId,
+          ).catch((err) => {
+            ctx.logger.error(`Research background execution failed: ${err instanceof Error ? err.message : String(err)}`);
+          });
+
+          return `Research started! I'm investigating "${goal}" in the background. The report will appear in your Inbox when it's done. Use job_status to check progress.`;
+        } catch (err) {
+          return `Failed to start research: ${err instanceof Error ? err.message : "unknown error"}`;
+        }
       },
     }),
 

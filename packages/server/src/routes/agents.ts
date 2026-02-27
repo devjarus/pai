@@ -230,6 +230,9 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
             conversationHistory: [...history],
           };
 
+          // Attach thread ID for background jobs (research_start needs it)
+          (agentCtx as unknown as Record<string, unknown>).threadId = sid;
+
           const tools = agentPlugin.agent.createTools?.(agentCtx) as Record<string, unknown> | undefined;
 
           // Inject sub-agent delegation tools: let the assistant call other agents

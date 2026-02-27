@@ -36,6 +36,7 @@
     "@personal-ai/core": "workspace:*",
     "@personal-ai/plugin-assistant": "workspace:*",
     "@personal-ai/plugin-curator": "workspace:*",
+    "@personal-ai/plugin-research": "workspace:*",
     "@personal-ai/plugin-tasks": "workspace:*",
     "@personal-ai/plugin-telegram": "workspace:*",
     "ai": "^6.0.0",
