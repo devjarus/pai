@@ -147,3 +147,93 @@ export function gatherSignals(storage: Storage): GatheredSignals {
   const isEmpty = threads.length === 0 && research.length === 0 && tasks.length === 0 && knowledge.length === 0;
   return { threads, research, tasks, knowledge, isEmpty };
 }
+
+export interface ExtractedFact {
+  fact: string;
+  factType: "factual" | "preference" | "procedural" | "architectural";
+  importance: number;
+  subject: string;
+}
+
+export function buildLearningPrompt(signals: GatheredSignals): string {
+  const parts: string[] = [];
+
+  if (signals.threads.length > 0) {
+    const msgCount = signals.threads.reduce((acc, t) => acc + t.messages.length, 0);
+    parts.push(`RECENT CONVERSATIONS (${msgCount} messages across ${signals.threads.length} threads):`);
+    for (const t of signals.threads) {
+      parts.push(t.messages.map((m) => `- ${m.content}`).join("\n"));
+    }
+  }
+
+  if (signals.research.length > 0) {
+    parts.push(`\nCOMPLETED RESEARCH (${signals.research.length} reports):`);
+    for (const r of signals.research) {
+      parts.push(`- Goal: ${r.goal}\n  Findings: ${r.reportSnippet}`);
+    }
+  }
+
+  if (signals.tasks.length > 0) {
+    parts.push(`\nCOMPLETED TASKS (${signals.tasks.length}):`);
+    for (const t of signals.tasks) {
+      parts.push(`- [${t.priority}] ${t.title}`);
+    }
+  }
+
+  if (signals.knowledge.length > 0) {
+    parts.push(`\nNEW KNOWLEDGE SOURCES (${signals.knowledge.length}):`);
+    for (const k of signals.knowledge) {
+      parts.push(`- ${k.title} (${k.url}): ${k.firstChunk}`);
+    }
+  }
+
+  return `You are a background learning agent analyzing recent user activity to extract useful knowledge.
+
+Review the following activity and extract personal facts, topic interests, procedural patterns, and recurring themes.
+
+${parts.join("\n")}
+
+Guidelines:
+- Extract facts ABOUT the user or people they mention — preferences, interests, decisions, work patterns
+- Extract topic interests — subjects the user engages with repeatedly or deeply
+- Extract procedural patterns — how the user works, tools they prefer, recurring workflows
+- Do NOT extract generic knowledge or common facts (e.g., "Bitcoin is a cryptocurrency")
+- Do NOT extract greetings, pleasantries, or meta-conversation about the AI
+- Each fact must be specific and attributable to a person (use "owner" for the user)
+- Rate importance 1-10: 1-3 trivial, 4-6 useful, 7-9 core preference/decision
+- Maximum 15 facts total
+- Keep each fact under 20 words
+
+Respond with ONLY a JSON array (no markdown, no explanation):
+[{"fact":"...","factType":"factual|preference|procedural|architectural","importance":N,"subject":"owner|name"},...]
+
+If nothing worth extracting, respond with: []`;
+}
+
+export function parseLearningResponse(text: string): ExtractedFact[] {
+  let jsonText = text.trim();
+  const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch?.[1]) jsonText = fenceMatch[1].trim();
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item: Record<string, unknown>) =>
+        typeof item.fact === "string" &&
+        typeof item.factType === "string" &&
+        typeof item.importance === "number" &&
+        typeof item.subject === "string" &&
+        (item.fact as string).length > 0
+      )
+      .slice(0, 15)
+      .map((item: Record<string, unknown>) => ({
+        fact: String(item.fact),
+        factType: String(item.factType) as ExtractedFact["factType"],
+        importance: Number(item.importance),
+        subject: String(item.subject),
+      }));
+  } catch {
+    return [];
+  }
+}

@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createStorage, threadMigrations } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
-import { learningMigrations, getWatermark, updateWatermark, gatherSignals } from "../src/learning.js";
+import { learningMigrations, getWatermark, updateWatermark, gatherSignals, buildLearningPrompt, parseLearningResponse } from "../src/learning.js";
+import type { GatheredSignals } from "../src/learning.js";
 
 describe("learning watermarks", () => {
   let dir: string;
@@ -95,5 +96,69 @@ describe("gatherSignals", () => {
     const signals = gatherSignals(storage);
     expect(signals.threads[0].messages).toHaveLength(1);
     expect(signals.threads[0].messages[0].role).toBe("user");
+  });
+});
+
+describe("buildLearningPrompt", () => {
+  it("builds prompt with all signal types", () => {
+    const signals: GatheredSignals = {
+      threads: [{ threadId: "t1", messages: [{ role: "user", content: "I prefer React", createdAt: "2026-01-01" }] }],
+      research: [{ id: "r1", goal: "Bitcoin analysis", reportSnippet: "BTC is..." }],
+      tasks: [{ title: "Setup CI", priority: "high", completedAt: "2026-01-01" }],
+      knowledge: [{ title: "React docs", url: "https://react.dev", firstChunk: "React is..." }],
+      isEmpty: false,
+    };
+    const prompt = buildLearningPrompt(signals);
+    expect(prompt).toContain("RECENT CONVERSATIONS");
+    expect(prompt).toContain("COMPLETED RESEARCH");
+    expect(prompt).toContain("COMPLETED TASKS");
+    expect(prompt).toContain("NEW KNOWLEDGE SOURCES");
+    expect(prompt).toContain("Maximum 15 facts");
+  });
+
+  it("omits empty sections", () => {
+    const signals: GatheredSignals = {
+      threads: [], research: [], tasks: [],
+      knowledge: [{ title: "React docs", url: "https://react.dev", firstChunk: "React is..." }],
+      isEmpty: false,
+    };
+    const prompt = buildLearningPrompt(signals);
+    expect(prompt).not.toContain("RECENT CONVERSATIONS");
+    expect(prompt).not.toContain("COMPLETED RESEARCH");
+    expect(prompt).not.toContain("COMPLETED TASKS");
+    expect(prompt).toContain("NEW KNOWLEDGE SOURCES");
+  });
+});
+
+describe("parseLearningResponse", () => {
+  it("parses valid JSON array", () => {
+    const input = '[{"fact":"User prefers TypeScript","factType":"preference","importance":7,"subject":"owner"}]';
+    const facts = parseLearningResponse(input);
+    expect(facts).toHaveLength(1);
+    expect(facts[0].fact).toBe("User prefers TypeScript");
+    expect(facts[0].factType).toBe("preference");
+  });
+
+  it("handles markdown-wrapped JSON", () => {
+    const input = '```json\n[{"fact":"test","factType":"factual","importance":5,"subject":"owner"}]\n```';
+    const facts = parseLearningResponse(input);
+    expect(facts).toHaveLength(1);
+  });
+
+  it("returns empty array for invalid JSON", () => {
+    expect(parseLearningResponse("not json")).toEqual([]);
+    expect(parseLearningResponse("{}")).toEqual([]);
+  });
+
+  it("caps at 15 facts", () => {
+    const items = Array.from({ length: 20 }, (_, i) => ({
+      fact: `Fact ${i}`, factType: "factual", importance: 5, subject: "owner",
+    }));
+    expect(parseLearningResponse(JSON.stringify(items))).toHaveLength(15);
+  });
+
+  it("filters out items with missing fields", () => {
+    const input = '[{"fact":"good","factType":"factual","importance":5,"subject":"owner"},{"bad":true}]';
+    expect(parseLearningResponse(input)).toHaveLength(1);
   });
 });
