@@ -2,6 +2,55 @@
 
 const TELEGRAM_MAX_LENGTH = 4096;
 
+export interface BriefingSections {
+  greeting: string;
+  taskFocus: {
+    summary: string;
+    items: Array<{ title: string; priority: string; insight: string }>;
+  };
+  memoryInsights: {
+    summary: string;
+    highlights: Array<{ statement: string; type: string; detail: string }>;
+  };
+  suggestions: Array<{ title: string; reason: string }>;
+}
+
+/** Format a briefing as Telegram HTML */
+export function formatBriefingHTML(sections: BriefingSections): string {
+  const lines: string[] = [];
+
+  lines.push(`\uD83D\uDCCB <b>${escapeHTML(sections.greeting)}</b>`);
+  lines.push("");
+
+  if (sections.taskFocus?.items?.length) {
+    lines.push(`<b>Tasks</b>  ${escapeHTML(sections.taskFocus.summary)}`);
+    for (const item of sections.taskFocus.items.slice(0, 5)) {
+      const icon = item.priority === "high" ? "\uD83D\uDD34" : item.priority === "medium" ? "\uD83D\uDFE1" : "\uD83D\uDFE2";
+      lines.push(`${icon} <b>${escapeHTML(item.title)}</b>`);
+      if (item.insight) lines.push(`    <i>${escapeHTML(item.insight)}</i>`);
+    }
+    lines.push("");
+  }
+
+  if (sections.memoryInsights?.highlights?.length) {
+    lines.push(`<b>Memory Insights</b>  ${escapeHTML(sections.memoryInsights.summary)}`);
+    for (const h of sections.memoryInsights.highlights.slice(0, 3)) {
+      lines.push(`\uD83E\uDDE0 ${escapeHTML(h.statement)}`);
+      if (h.detail) lines.push(`    <i>${escapeHTML(h.detail)}</i>`);
+    }
+    lines.push("");
+  }
+
+  if (sections.suggestions?.length) {
+    lines.push("<b>Suggestions</b>");
+    for (const s of sections.suggestions.slice(0, 3)) {
+      lines.push(`\uD83D\uDCA1 <b>${escapeHTML(s.title)}</b> — ${escapeHTML(s.reason)}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 /** Escape HTML entities for Telegram */
 function escapeHTML(text: string): string {
   return text

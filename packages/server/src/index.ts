@@ -14,7 +14,7 @@ import { taskMigrations } from "@personal-ai/plugin-tasks";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
-import { telegramMigrations, createBot } from "@personal-ai/plugin-telegram";
+import { telegramMigrations, createBot, formatBriefingHTML, splitMessage } from "@personal-ai/plugin-telegram";
 import { registerAuthRoutes, extractToken } from "./routes/auth.js";
 import { registerMemoryRoutes } from "./routes/memory.js";
 import { registerAgentRoutes } from "./routes/agents.js";
@@ -22,7 +22,7 @@ import { registerConfigRoutes } from "./routes/config.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 import { researchMigrations } from "@personal-ai/plugin-research";
-import { briefingMigrations, generateBriefing, getLatestBriefing } from "./briefing.js";
+import { briefingMigrations, generateBriefing, getLatestBriefing, type BriefingSection } from "./briefing.js";
 import { learningMigrations, runBackgroundLearning } from "./learning.js";
 import { registerInboxRoutes } from "./routes/inbox.js";
 import { registerJobRoutes } from "./routes/jobs.js";
@@ -456,10 +456,39 @@ export async function createServer(options?: { port?: number; host?: string }) {
     startTelegramBot();
   }
 
+  // --- Push briefing to all Telegram chats ---
+  async function pushBriefingToTelegram(briefing: { sections: BriefingSection }): Promise<void> {
+    if (!telegramBot || !telegramStatus.running) return;
+    const chatRows = ctx.storage.query<{ chat_id: number }>(
+      "SELECT chat_id FROM telegram_threads",
+    );
+    if (chatRows.length === 0) return;
+
+    const html = formatBriefingHTML(briefing.sections);
+    const parts = splitMessage(html);
+
+    for (const row of chatRows) {
+      try {
+        for (const part of parts) {
+          await (telegramBot as { api: { sendMessage(chatId: number, text: string, opts?: { parse_mode: string }): Promise<unknown> } }).api
+            .sendMessage(row.chat_id, part, { parse_mode: "HTML" });
+        }
+      } catch (err) {
+        ctx.logger.warn("Failed to push briefing to Telegram chat", {
+          chatId: row.chat_id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    ctx.logger.info("Briefing pushed to Telegram", { chatCount: chatRows.length });
+  }
+
   // --- Background briefing generation ---
   const BRIEFING_INTERVAL_MS = 6 * 60 * 60 * 1000;
   const briefingTimer = setInterval(() => {
-    generateBriefing(ctx).catch((err) => {
+    generateBriefing(ctx).then((briefing) => {
+      if (briefing) pushBriefingToTelegram(briefing).catch(() => {});
+    }).catch((err) => {
       ctx.logger.warn(`Background briefing failed: ${err instanceof Error ? err.message : String(err)}`);
     });
   }, BRIEFING_INTERVAL_MS);
@@ -467,7 +496,9 @@ export async function createServer(options?: { port?: number; host?: string }) {
   // Generate initial briefing if none exists
   const latest = getLatestBriefing(storage);
   if (!latest) {
-    generateBriefing(ctx).catch((err) => {
+    generateBriefing(ctx).then((briefing) => {
+      if (briefing) pushBriefingToTelegram(briefing).catch(() => {});
+    }).catch((err) => {
       ctx.logger.warn(`Initial briefing failed: ${err instanceof Error ? err.message : String(err)}`);
     });
   }

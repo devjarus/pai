@@ -10,7 +10,7 @@ import { createBot } from "./bot.js";
 // Re-exports
 export { createBot } from "./bot.js";
 export { runAgentChat, createThread, deleteThread, clearThread } from "./chat.js";
-export { markdownToTelegramHTML, splitMessage } from "./formatter.js";
+export { markdownToTelegramHTML, splitMessage, formatBriefingHTML } from "./formatter.js";
 
 /** Migrations for telegram_threads mapping table */
 export const telegramMigrations: Migration[] = [
