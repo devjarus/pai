@@ -23,7 +23,9 @@ import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 import { researchMigrations } from "@personal-ai/plugin-research";
 import { briefingMigrations, generateBriefing, getLatestBriefing } from "./briefing.js";
+import { learningMigrations } from "./learning.js";
 import { registerInboxRoutes } from "./routes/inbox.js";
+import { registerJobRoutes } from "./routes/jobs.js";
 
 export interface ServerContext {
   ctx: PluginContext;
@@ -94,6 +96,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   storage.migrate("auth", authMigrations);
   storage.migrate("inbox", briefingMigrations);
   storage.migrate("research", researchMigrations);
+  storage.migrate("learning", learningMigrations);
 
   // Password reset via environment variable
   const resetPassword = process.env.PAI_RESET_PASSWORD;
@@ -197,6 +200,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     newStorage.migrate("auth", authMigrations);
     newStorage.migrate("inbox", briefingMigrations);
     newStorage.migrate("research", researchMigrations);
+    newStorage.migrate("learning", learningMigrations);
 
     // Update ctx in place so all routes see the new connections
     Object.assign(ctx, {
@@ -363,6 +367,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   registerKnowledgeRoutes(app, serverCtx);
   registerTaskRoutes(app, serverCtx);
   registerInboxRoutes(app, serverCtx);
+  registerJobRoutes(app, serverCtx);
 
   // SPA fallback — serve index.html for non-API routes
   app.setNotFoundHandler(async (request, reply) => {
