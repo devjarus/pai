@@ -100,7 +100,7 @@ export function completeTask(storage: Storage, taskId: string): void {
 export function editTask(
   storage: Storage,
   taskId: string,
-  updates: { title?: string; priority?: string; dueDate?: string },
+  updates: { title?: string; priority?: string; dueDate?: string; description?: string; goalId?: string | null },
 ): void {
   const task = resolveTaskId(storage, taskId);
   const sets: string[] = [];
@@ -115,6 +115,8 @@ export function editTask(
     sets.push("priority = ?"); params.push(updates.priority);
   }
   if (updates.dueDate !== undefined) { sets.push("due_date = ?"); params.push(updates.dueDate || null); }
+  if (updates.description !== undefined) { sets.push("description = ?"); params.push(updates.description || null); }
+  if (updates.goalId !== undefined) { sets.push("goal_id = ?"); params.push(updates.goalId || null); }
   if (sets.length === 0) throw new Error("No updates provided.");
   params.push(task.id);
   storage.run(`UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`, params);
@@ -168,8 +170,11 @@ export function addGoal(storage: Storage, input: { title: string; description?: 
   return storage.query<Goal>("SELECT * FROM goals WHERE id = ?", [id])[0]!;
 }
 
-export function listGoals(storage: Storage): Goal[] {
-  return storage.query<Goal>("SELECT * FROM goals WHERE status = 'active' ORDER BY created_at DESC");
+export function listGoals(storage: Storage, status: "active" | "done" | "all" = "active"): Goal[] {
+  if (status === "all") {
+    return storage.query<Goal>("SELECT * FROM goals ORDER BY created_at DESC");
+  }
+  return storage.query<Goal>("SELECT * FROM goals WHERE status = ? ORDER BY created_at DESC", [status]);
 }
 
 export function deleteGoal(storage: Storage, goalId: string): void {

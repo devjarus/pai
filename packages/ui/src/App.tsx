@@ -60,15 +60,15 @@ export default function App() {
           <Route path="/setup" element={<Setup />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route element={<AuthGate><Layout /></AuthGate>}>
-            <Route path="/" element={<Inbox />} />
-            <Route path="/inbox/:id" element={<Inbox />} />
-            <Route path="/chat" element={<Chat />} />
-            <Route path="/memory" element={<Memory />} />
-            <Route path="/timeline" element={<Timeline />} />
-            <Route path="/knowledge" element={<Knowledge />} />
-            <Route path="/tasks" element={<Tasks />} />
-            <Route path="/jobs" element={<Jobs />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route path="/" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
+            <Route path="/inbox/:id" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
+            <Route path="/chat" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
+            <Route path="/memory" element={<ErrorBoundary><Memory /></ErrorBoundary>} />
+            <Route path="/timeline" element={<ErrorBoundary><Timeline /></ErrorBoundary>} />
+            <Route path="/knowledge" element={<ErrorBoundary><Knowledge /></ErrorBoundary>} />
+            <Route path="/tasks" element={<ErrorBoundary><Tasks /></ErrorBoundary>} />
+            <Route path="/jobs" element={<ErrorBoundary><Jobs /></ErrorBoundary>} />
+            <Route path="/settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

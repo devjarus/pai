@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { getInboxAll, getInboxBriefing, refreshInbox, clearInbox, createThread } from "../api";
@@ -23,6 +23,25 @@ import {
   LoaderIcon,
   MessageSquarePlusIcon,
 } from "lucide-react";
+
+const STORAGE_KEY = "pai-inbox-read";
+
+function loadReadIds(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function persistReadIds(ids: Set<string>) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify([...ids]));
+}
+
+const ReadContext = createContext<{
+  readIds: Set<string>;
+  markRead: (id: string) => void;
+}>({ readIds: new Set(), markRead: () => {} });
 
 const priorityStyles: Record<string, string> = {
   high: "bg-red-500/15 text-red-400 border-red-500/20",
@@ -50,11 +69,30 @@ interface InboxItem {
 
 export default function Inbox() {
   const { id } = useParams<{ id: string }>();
+  const [readIds, setReadIds] = useState<Set<string>>(loadReadIds);
+
+  const markRead = useCallback((itemId: string) => {
+    setReadIds((prev) => {
+      if (prev.has(itemId)) return prev;
+      const next = new Set(prev);
+      next.add(itemId);
+      persistReadIds(next);
+      return next;
+    });
+  }, []);
 
   if (id) {
-    return <InboxDetail id={id} />;
+    return (
+      <ReadContext.Provider value={{ readIds, markRead }}>
+        <InboxDetail id={id} />
+      </ReadContext.Provider>
+    );
   }
-  return <InboxFeed />;
+  return (
+    <ReadContext.Provider value={{ readIds, markRead }}>
+      <InboxFeed />
+    </ReadContext.Provider>
+  );
 }
 
 // ---- Detail View ----
@@ -64,6 +102,11 @@ function InboxDetail({ id }: { id: string }) {
   const [item, setItem] = useState<InboxItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const { markRead } = useContext(ReadContext);
+
+  useEffect(() => {
+    markRead(id);
+  }, [id, markRead]);
 
   useEffect(() => {
     getInboxBriefing(id)
@@ -84,11 +127,9 @@ function InboxDetail({ id }: { id: string }) {
         ? `Research: ${sections.goal ?? "Report"}`
         : sections.greeting?.slice(0, 60) ?? "Briefing Discussion";
       const thread = await createThread(title);
-      // Navigate to chat with this thread and a context message
       const context = item.type === "research"
         ? `I'd like to discuss this research report:\n\n**Goal:** ${sections.goal}\n\n${sections.report ?? ""}`
         : `I'd like to discuss today's briefing.`;
-      // Store context in sessionStorage to avoid URL length limits
       sessionStorage.setItem("pai-chat-auto-send", JSON.stringify({ threadId: thread.id, message: context }));
       navigate(`/chat?thread=${thread.id}`);
     } catch {
@@ -125,7 +166,6 @@ function InboxDetail({ id }: { id: string }) {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl p-6">
-        {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-2 text-muted-foreground hover:text-foreground">
             <ArrowLeftIcon className="h-4 w-4" /> Inbox
@@ -144,7 +184,6 @@ function InboxDetail({ id }: { id: string }) {
           </div>
         </div>
 
-        {/* Title area */}
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-2">
             {item.type === "research" ? (
@@ -161,7 +200,6 @@ function InboxDetail({ id }: { id: string }) {
 
         <Separator className="mb-6 opacity-30" />
 
-        {/* Content */}
         {item.type === "research" && sections.report ? (
           <div className="rounded-lg border border-border/20 bg-card/40 p-6">
             <MarkdownContent content={sections.report} />
@@ -189,7 +227,6 @@ function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<str
 
   return (
     <div className="space-y-6">
-      {/* Task Focus */}
       {(sections.taskFocus?.items?.length ?? 0) > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -213,7 +250,6 @@ function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<str
         </div>
       )}
 
-      {/* Memory Insights */}
       {(sections.memoryInsights?.highlights?.length ?? 0) > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -237,7 +273,6 @@ function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<str
         </div>
       )}
 
-      {/* Suggestions */}
       {(sections.suggestions?.length ?? 0) > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -281,6 +316,20 @@ function InboxFeed() {
   const [generating, setGenerating] = useState(false);
   const navigate = useNavigate();
   const pollRef = useRef<ReturnType<typeof setInterval>>(null);
+  const { readIds, markRead } = useContext(ReadContext);
+
+  const unreadCount = useMemo(
+    () => items.filter((i) => !readIds.has(i.id)).length,
+    [items, readIds],
+  );
+
+  const handleCardClick = useCallback(
+    (itemId: string) => {
+      markRead(itemId);
+      navigate(`/inbox/${itemId}`);
+    },
+    [markRead, navigate],
+  );
 
   const fetchItems = useCallback(async () => {
     try {
@@ -393,13 +442,17 @@ function InboxFeed() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-2xl space-y-4 p-6">
-        {/* Header */}
         <div className="inbox-fade-in flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="font-mono text-lg font-semibold text-foreground">Inbox</h1>
             <Badge variant="outline" className="text-[10px]">
               {items.length}
             </Badge>
+            {unreadCount > 0 && (
+              <Badge className="text-[10px] bg-blue-500 text-white hover:bg-blue-600">
+                {unreadCount} unread
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -422,7 +475,6 @@ function InboxFeed() {
           </div>
         </div>
 
-        {/* Generating indicator */}
         {generating && (
           <div className="inbox-fade-in flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
             <LoaderIcon className="h-4 w-4 animate-spin text-primary" />
@@ -432,13 +484,16 @@ function InboxFeed() {
 
         <Separator className="opacity-30" />
 
-        {/* Unified feed */}
         {items.map((item, idx) => (
-          <div key={item.id} className="inbox-fade-in" style={{ animationDelay: `${idx * 80}ms` }}>
+          <div
+            key={item.id}
+            className={`inbox-fade-in ${readIds.has(item.id) ? "opacity-80" : ""}`}
+            style={{ animationDelay: `${idx * 80}ms` }}
+          >
             {item.type === "daily" ? (
-              <DailyBriefingCard item={item} navigate={navigate} />
+              <DailyBriefingCard item={item} onCardClick={handleCardClick} isRead={readIds.has(item.id)} />
             ) : item.type === "research" ? (
-              <ResearchReportCard item={item} navigate={navigate} />
+              <ResearchReportCard item={item} onCardClick={handleCardClick} isRead={readIds.has(item.id)} />
             ) : (
               <GenericBriefingCard item={item} />
             )}
@@ -451,8 +506,9 @@ function InboxFeed() {
   );
 }
 
-function DailyBriefingCard({ item, navigate }: { item: InboxItem; navigate: ReturnType<typeof useNavigate> }) {
+function DailyBriefingCard({ item, onCardClick, isRead }: { item: InboxItem; onCardClick: (id: string) => void; isRead: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const navigate = useNavigate();
   const sections = item.sections as {
     greeting?: string;
     taskFocus?: { summary: string; items: Array<{ id: string; title: string; priority: string; insight: string }> };
@@ -460,14 +516,30 @@ function DailyBriefingCard({ item, navigate }: { item: InboxItem; navigate: Retu
     suggestions?: Array<{ title: string; reason: string; action?: string }>;
   };
 
+  const counts: string[] = [];
+  if ((sections.taskFocus?.items?.length ?? 0) > 0) {
+    const n = sections.taskFocus!.items.length;
+    counts.push(`${n} task${n !== 1 ? "s" : ""}`);
+  }
+  if ((sections.memoryInsights?.highlights?.length ?? 0) > 0) {
+    const n = sections.memoryInsights!.highlights.length;
+    counts.push(`${n} insight${n !== 1 ? "s" : ""}`);
+  }
+  if ((sections.suggestions?.length ?? 0) > 0) {
+    const n = sections.suggestions!.length;
+    counts.push(`${n} suggestion${n !== 1 ? "s" : ""}`);
+  }
+
   return (
-    <Card className="border-border/30 bg-card/40 transition-all duration-200">
+    <Card className="relative border-border/30 bg-card/40 transition-all duration-200">
+      {!isRead && (
+        <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-blue-500" />
+      )}
       <CardContent className="p-4">
-        {/* Header row */}
         <div className="flex items-start justify-between gap-3">
           <div
             className="min-w-0 flex-1 cursor-pointer"
-            onClick={() => navigate(`/inbox/${item.id}`)}
+            onClick={() => onCardClick(item.id)}
           >
             <div className="flex items-center gap-2">
               <SparklesIcon className="h-4 w-4 shrink-0 text-primary" />
@@ -490,25 +562,14 @@ function DailyBriefingCard({ item, navigate }: { item: InboxItem; navigate: Retu
           </Button>
         </div>
 
-        {/* Collapsed summary */}
-        {!expanded && (
-          <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
-            {(sections.taskFocus?.items?.length ?? 0) > 0 && (
-              <span>{sections.taskFocus!.items.length} task{sections.taskFocus!.items.length !== 1 ? "s" : ""}</span>
-            )}
-            {(sections.memoryInsights?.highlights?.length ?? 0) > 0 && (
-              <span>{sections.memoryInsights!.highlights.length} insight{sections.memoryInsights!.highlights.length !== 1 ? "s" : ""}</span>
-            )}
-            {(sections.suggestions?.length ?? 0) > 0 && (
-              <span>{sections.suggestions!.length} suggestion{sections.suggestions!.length !== 1 ? "s" : ""}</span>
-            )}
+        {!expanded && counts.length > 0 && (
+          <div className="mt-2 text-[10px] text-muted-foreground">
+            {counts.join(" \u00B7 ")}
           </div>
         )}
 
-        {/* Expanded sections */}
         {expanded && (
           <div className="mt-4 space-y-4">
-            {/* Task Focus */}
             {(sections.taskFocus?.items?.length ?? 0) > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -537,7 +598,6 @@ function DailyBriefingCard({ item, navigate }: { item: InboxItem; navigate: Retu
               </div>
             )}
 
-            {/* Memory Insights */}
             {(sections.memoryInsights?.highlights?.length ?? 0) > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -563,7 +623,6 @@ function DailyBriefingCard({ item, navigate }: { item: InboxItem; navigate: Retu
               </div>
             )}
 
-            {/* Suggestions */}
             {(sections.suggestions?.length ?? 0) > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -602,17 +661,21 @@ function DailyBriefingCard({ item, navigate }: { item: InboxItem; navigate: Retu
   );
 }
 
-function ResearchReportCard({ item, navigate }: { item: InboxItem; navigate: ReturnType<typeof useNavigate> }) {
+function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; onCardClick: (id: string) => void; isRead: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const navigate = useNavigate();
   const sections = item.sections as { report?: string; goal?: string };
 
   return (
-    <Card className="border-border/30 bg-card/40 transition-all duration-200">
+    <Card className="relative border-border/30 bg-card/40 transition-all duration-200">
+      {!isRead && (
+        <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-blue-500" />
+      )}
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div
             className="min-w-0 flex-1 cursor-pointer"
-            onClick={() => navigate(`/inbox/${item.id}`)}
+            onClick={() => onCardClick(item.id)}
           >
             <div className="flex items-center gap-2">
               <SearchIcon className="h-4 w-4 shrink-0 text-blue-400" />

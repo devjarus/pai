@@ -15,6 +15,7 @@ import {
   PanelLeftIcon,
   PanelLeftCloseIcon,
   SquareIcon,
+  ChevronDown,
 } from "lucide-react";
 import ChatMessage from "../components/ChatMessage";
 import { renderToolPart } from "../components/tools";
@@ -101,6 +102,8 @@ export default function Chat() {
   const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [threadSidebarOpen, setThreadSidebarOpen] = useState(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [threadLoading, setThreadLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -208,6 +211,26 @@ export default function Chat() {
       .map((p: any) => String(p.output));
   }, [chatMessages]);
 
+  const lastAssistantIdx = useMemo(() => {
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].role === "assistant") return i;
+    }
+    return -1;
+  }, [chatMessages]);
+
+  const handleRetry = useCallback(() => {
+    if (isStreaming || chatMessages.length === 0) return;
+    const lastUserMsg = [...chatMessages].reverse().find((m) => m.role === "user");
+    if (!lastUserMsg) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const textParts = (lastUserMsg.parts ?? []).filter((p: any) => p.type === "text");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const text = textParts.map((p: any) => p.text).join("");
+    if (!text) return;
+    setChatMessages(chatMessages.filter((m) => m.id !== chatMessages[lastAssistantIdx]?.id));
+    sendMessage({ parts: [{ type: "text", text }] });
+  }, [isStreaming, chatMessages, lastAssistantIdx, setChatMessages, sendMessage]);
+
   useEffect(() => { document.title = "Chat - pai"; }, []);
 
   // On mobile, sidebars start closed
@@ -276,12 +299,14 @@ export default function Chat() {
       if (!el) return;
       const threshold = 80;
       userAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+      setShowScrollButton(!userAtBottomRef.current);
     });
   }, []);
 
   // Auto-scroll on new messages only if user is at bottom
   useEffect(() => {
     if (!userAtBottomRef.current) return;
+    setShowScrollButton(false);
     requestAnimationFrame(() => {
       const el = scrollRef.current;
       if (el) {
@@ -309,6 +334,7 @@ export default function Chat() {
 
       // Clear messages immediately so user doesn't see stale chat from previous thread
       setChatMessages([]);
+      setThreadLoading(true);
       setActiveThreadId(threadId);
       activeThreadIdRef.current = threadId;
       // Close thread sidebar on mobile after selecting
@@ -342,6 +368,8 @@ export default function Chat() {
         } catch {
           if (!controller.signal.aborted) setChatMessages([]);
         }
+      } finally {
+        if (!controller.signal.aborted) setThreadLoading(false);
       }
     },
     [activeThreadId, isStreaming, isMobile, setChatMessages],
@@ -416,6 +444,7 @@ export default function Chat() {
 
   const handleClear = useCallback(() => {
     if (!activeThreadId) return;
+    if (!confirm("Clear all messages in this thread?")) return;
     clearChatHistory(activeThreadId).catch(() => {});
     setChatMessages([]);
     refreshThreads();
@@ -434,6 +463,14 @@ export default function Chat() {
       toast.error("Failed to clear threads");
     }
   }, [setChatMessages]);
+
+  const handleScrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+    setShowScrollButton(false);
+  }, []);
 
   const activeThread = threads.find((t) => t.id === activeThreadId);
 
@@ -685,7 +722,7 @@ export default function Chat() {
                 onChange={(e) =>
                   setSelectedAgent(e.target.value || undefined)
                 }
-                className="hidden rounded-md border border-border bg-muted/30 px-2 py-1 text-xs text-muted-foreground outline-none transition-colors focus:border-primary/50 md:block"
+                className="rounded-md border border-border bg-muted/30 px-2 py-1 text-xs text-muted-foreground outline-none transition-colors focus:border-primary/50"
               >
                 <option value="">Default Agent</option>
                 {agents.map((a) => (
@@ -735,8 +772,27 @@ export default function Chat() {
         </header>
 
         {/* Messages */}
-        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto scroll-smooth">
-          {chatMessages.length === 0 && (
+        <div ref={scrollRef} onScroll={handleScroll} className="relative flex-1 overflow-y-auto scroll-smooth">
+          {threadLoading && chatMessages.length === 0 ? (
+            <div className="flex flex-col">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "flex gap-3 px-5 py-4",
+                    i % 2 === 1 && "bg-muted/30",
+                  )}
+                >
+                  <Skeleton className="mt-0.5 size-8 shrink-0 rounded-full" />
+                  <div className="min-w-0 flex-1">
+                    <Skeleton className="mb-2 h-3 w-12" />
+                    <Skeleton className={cn("h-4", i % 2 === 0 ? "w-2/3" : "w-full")} />
+                    {i % 2 === 1 && <Skeleton className="mt-1.5 h-4 w-4/5" />}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : chatMessages.length === 0 ? (
             <div className="flex h-full min-h-[400px] flex-col items-center justify-center px-4">
               <div className="mb-3 font-mono text-5xl font-bold tracking-tighter text-muted-foreground/30">
                 pai
@@ -747,7 +803,7 @@ export default function Chat() {
                   : "Start a conversation or select a thread."}
               </p>
             </div>
-          )}
+          ) : null}
           {chatMessages.map((message, msgIdx) => {
             // Separate text parts and tool parts
             const parts = message.parts ?? [];
@@ -769,26 +825,28 @@ export default function Chat() {
               msgIdx === chatMessages.length - 1 &&
               message.role === "assistant";
 
+            const isLastAssistantMsg =
+              message.role === "assistant" &&
+              msgIdx === lastAssistantIdx;
+
             return (
               <div key={message.id}>
-                {/* Render tool cards for assistant messages */}
                 {message.role === "assistant" &&
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   toolParts.map((part: any, i: number) => (
-                    // AI SDK v6 parts already have { type, state, input, output } — pass directly
                     <div key={`${message.id}-tool-${i}`} className="mx-auto max-w-3xl px-4 md:px-6">
                       {renderToolPart(part, `${message.id}-tool-${i}`)}
                     </div>
                   ))}
-                {/* Render text content via existing ChatMessage component */}
                 {(textContent || isLastAssistant) && (
                   <ChatMessage
                     role={message.role as "user" | "assistant"}
                     content={textContent}
                     isStreaming={isLastAssistant}
+                    isLast={isLastAssistantMsg && !isStreaming}
+                    onRetry={isLastAssistantMsg && !isStreaming ? handleRetry : undefined}
                   />
                 )}
-                {/* Token usage badge for completed assistant messages */}
                 {message.role === "assistant" && !isLastAssistant && (
                   <div className="mx-auto max-w-3xl px-5">
                     <TokenBadge message={message} />
@@ -797,17 +855,26 @@ export default function Chat() {
               </div>
             );
           })}
-          {/* Show thinking indicator when submitted but no assistant message yet */}
           {status === "submitted" && (chatMessages.length === 0 || chatMessages[chatMessages.length - 1].role !== "assistant") && (
             <ChatMessage role="assistant" content="" isStreaming />
           )}
-          {/* Show inline error when chat fails */}
           {chatError && status !== "streaming" && status !== "submitted" && (
             <div className="mx-auto max-w-3xl px-5 py-2">
               <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                 Failed to get a response. Check your LLM provider settings or try again.
               </div>
             </div>
+          )}
+
+          {showScrollButton && chatMessages.length > 0 && (
+            <Button
+              variant="secondary"
+              size="icon"
+              className="absolute bottom-20 left-1/2 z-10 -translate-x-1/2 rounded-full shadow-lg"
+              onClick={handleScrollToBottom}
+            >
+              <ChevronDown className="size-4" />
+            </Button>
           )}
         </div>
 

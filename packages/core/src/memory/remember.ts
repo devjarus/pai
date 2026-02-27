@@ -160,14 +160,17 @@ async function processNewBelief(
 
   // Without embedding: skip dedup/contradiction check, just create
   if (!embedding) {
-    const belief = createBelief(storage, { statement, confidence: 0.6, type, importance, subject });
-    linkBeliefToEpisode(storage, belief.id, episodeId);
-    logBeliefChange(storage, {
-      beliefId: belief.id,
-      changeType: "created",
-      detail: `Extracted from: "${statement}" (no embedding available)`,
-      episodeId,
-    });
+    const belief = storage.db.transaction(() => {
+      const b = createBelief(storage, { statement, confidence: 0.6, type, importance, subject });
+      linkBeliefToEpisode(storage, b.id, episodeId);
+      logBeliefChange(storage, {
+        beliefId: b.id,
+        changeType: "created",
+        detail: `Extracted from: "${statement}" (no embedding available)`,
+        episodeId,
+      });
+      return b;
+    })();
     logger?.info("New belief created (no embedding)", { beliefId: belief.id, type, statement });
     return { beliefId: belief.id, isReinforcement: false };
   }
@@ -228,16 +231,19 @@ async function processNewBelief(
         });
         // New belief confidence reflects relative evidence strength
         const newConfidence = Math.min(0.6, 1 / (supportCount + 1) + 0.4);
-        const belief = createBelief(storage, { statement, confidence: newConfidence, type, importance, subject });
-        storeEmbedding(storage, belief.id, embedding);
-        linkBeliefToEpisode(storage, belief.id, episodeId);
-        logBeliefChange(storage, {
-          beliefId: belief.id,
-          changeType: "created",
-          detail: `Challenges belief ${contradictedId} (retained with ${supportCount} episodes)`,
-          episodeId,
-        });
-        linkSupersession(storage, contradictedId, belief.id);
+        const belief = storage.db.transaction(() => {
+          const b = createBelief(storage, { statement, confidence: newConfidence, type, importance, subject });
+          storeEmbedding(storage, b.id, embedding!);
+          linkBeliefToEpisode(storage, b.id, episodeId);
+          logBeliefChange(storage, {
+            beliefId: b.id,
+            changeType: "created",
+            detail: `Challenges belief ${contradictedId} (retained with ${supportCount} episodes)`,
+            episodeId,
+          });
+          linkSupersession(storage, contradictedId, b.id);
+          return b;
+        })();
         logger?.info("Belief weakened but retained due to strong evidence", {
           oldBeliefId: contradictedId, newBeliefId: belief.id, supportCount, drop,
         });
@@ -245,23 +251,26 @@ async function processNewBelief(
       }
 
       // Weak evidence — invalidate
-      storage.run("UPDATE beliefs SET status = 'invalidated', updated_at = datetime('now') WHERE id = ?", [contradictedId]);
-      logBeliefChange(storage, {
-        beliefId: contradictedId,
-        changeType: "contradicted",
-        detail: `Contradicted by: "${statement}"`,
-        episodeId,
-      });
-      const belief = createBelief(storage, { statement, confidence: 0.6, type, importance, subject });
-      storeEmbedding(storage, belief.id, embedding);
-      linkBeliefToEpisode(storage, belief.id, episodeId);
-      logBeliefChange(storage, {
-        beliefId: belief.id,
-        changeType: "created",
-        detail: `Replaced contradicted belief ${contradictedId}`,
-        episodeId,
-      });
-      linkSupersession(storage, contradictedId, belief.id);
+      const belief = storage.db.transaction(() => {
+        storage.run("UPDATE beliefs SET status = 'invalidated', updated_at = datetime('now') WHERE id = ?", [contradictedId]);
+        logBeliefChange(storage, {
+          beliefId: contradictedId,
+          changeType: "contradicted",
+          detail: `Contradicted by: "${statement}"`,
+          episodeId,
+        });
+        const b = createBelief(storage, { statement, confidence: 0.6, type, importance, subject });
+        storeEmbedding(storage, b.id, embedding!);
+        linkBeliefToEpisode(storage, b.id, episodeId);
+        logBeliefChange(storage, {
+          beliefId: b.id,
+          changeType: "created",
+          detail: `Replaced contradicted belief ${contradictedId}`,
+          episodeId,
+        });
+        linkSupersession(storage, contradictedId, b.id);
+        return b;
+      })();
       logger?.info("Belief contradicted and replaced", { oldBeliefId: contradictedId, newBeliefId: belief.id });
       return { beliefId: belief.id, isReinforcement: false };
     }
@@ -270,21 +279,22 @@ async function processNewBelief(
   }
 
   // No match or low similarity — create new
-  const belief = createBelief(storage, { statement, confidence: 0.6, type, importance, subject });
-  storeEmbedding(storage, belief.id, embedding);
-  linkBeliefToEpisode(storage, belief.id, episodeId);
-  logBeliefChange(storage, {
-    beliefId: belief.id,
-    changeType: "created",
-    detail: `Extracted from: "${statement}"`,
-    episodeId,
-  });
-
-  // Link to related beliefs (Zettelkasten-style, A-MEM inspired)
   const neighbors = similar.filter((s) => s.similarity >= 0.4 && s.similarity < 0.85);
-  for (const n of neighbors.slice(0, 3)) {
-    linkBeliefs(storage, belief.id, n.beliefId);
-  }
+  const belief = storage.db.transaction(() => {
+    const b = createBelief(storage, { statement, confidence: 0.6, type, importance, subject });
+    storeEmbedding(storage, b.id, embedding!);
+    linkBeliefToEpisode(storage, b.id, episodeId);
+    logBeliefChange(storage, {
+      beliefId: b.id,
+      changeType: "created",
+      detail: `Extracted from: "${statement}"`,
+      episodeId,
+    });
+    for (const n of neighbors.slice(0, 3)) {
+      linkBeliefs(storage, b.id, n.beliefId);
+    }
+    return b;
+  })();
 
   logger?.info("New belief created", { beliefId: belief.id, type, statement, linkedCount: neighbors.length });
   return { beliefId: belief.id, isReinforcement: false };

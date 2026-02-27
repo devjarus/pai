@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
-import { join } from "node:path";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { join, dirname, basename } from "node:path";
+import { copyFileSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import type { Storage, Migration, Logger } from "./types.js";
 import { createLogger } from "./logger.js";
 
@@ -16,7 +16,37 @@ export function backupDatabase(storage: Storage): string {
   // Checkpoint WAL so the main db file has all data
   storage.db.pragma("wal_checkpoint(TRUNCATE)");
   copyFileSync(dbPath, backupPath);
+  cleanupOldBackups(dbPath);
   return backupPath;
+}
+
+function cleanupOldBackups(dbPath: string): void {
+  try {
+    const dir = dirname(dbPath);
+    const prefix = basename(dbPath) + "-backup-";
+    const files = readdirSync(dir)
+      .filter((f) => f.startsWith(prefix) && f.endsWith(".db"))
+      .map((f) => {
+        const fullPath = join(dir, f);
+        const mtime = statSync(fullPath).mtimeMs;
+        return { path: fullPath, mtime };
+      })
+      .sort((a, b) => a.mtime - b.mtime);
+
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const maxBackups = 5;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]!;
+      const isOverLimit = files.length - i > maxBackups;
+      const isOld = file.mtime < sevenDaysAgo;
+      if (isOverLimit || isOld) {
+        unlinkSync(file.path);
+      }
+    }
+  } catch {
+    // best-effort cleanup
+  }
 }
 
 export function createStorage(dataDir: string, logger?: Logger): Storage {

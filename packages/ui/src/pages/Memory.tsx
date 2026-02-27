@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { toast } from "sonner";
 import BeliefCard from "../components/BeliefCard";
-import { getBeliefs, searchMemory, forgetBelief, remember, clearAllMemory } from "../api";
+import { getBeliefs, searchMemory, forgetBelief, remember, clearAllMemory, updateBelief } from "../api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
-import { Trash2Icon, HelpCircleIcon } from "lucide-react";
+import { Trash2Icon, HelpCircleIcon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
 import type { Belief, BeliefType } from "../types";
 
 const TYPES: BeliefType[] = ["factual", "preference", "procedural", "architectural", "insight", "meta"];
@@ -35,10 +35,24 @@ const typeDescriptions: Record<string, string> = {
   meta: "Beliefs about the memory system itself. e.g. 'Related beliefs about testing were synthesized'",
 };
 
-/** Parse SQLite datetime strings (e.g. "2026-02-18 20:53:32") into displayable dates */
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr.replace(" ", "T"));
   return isNaN(d.getTime()) ? dateStr : d.toLocaleString();
+}
+
+function sortBeliefs(results: Belief[], sortBy: string): Belief[] {
+  return [...results].sort((a, b) => {
+    switch (sortBy) {
+      case "recent":
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      case "importance":
+        return b.importance - a.importance;
+      case "created":
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      default:
+        return b.confidence - a.confidence;
+    }
+  });
 }
 
 export default function Memory() {
@@ -49,16 +63,19 @@ export default function Memory() {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [filterType, setFilterType] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("active");
+  const [filterSubject, setFilterSubject] = useState<string>("");
+  const [sortBy, setSortBy] = useState<string>("confidence");
   const [selectedBelief, setSelectedBelief] = useState<Belief | null>(null);
   const [rememberText, setRememberText] = useState("");
   const [isRemembering, setIsRemembering] = useState(false);
   const [showExplainer, setShowExplainer] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [editingStatement, setEditingStatement] = useState<string | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   useEffect(() => { document.title = "Memory Explorer - pai"; }, []);
 
-  // Debounce search input → searchQuery
   useEffect(() => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => setSearchQuery(searchInput), 300);
@@ -71,7 +88,6 @@ export default function Memory() {
       let results: Belief[];
       if (searchQuery.trim()) {
         results = await searchMemory(searchQuery);
-        // Apply status/type filters to search results client-side
         if (filterStatus && filterStatus !== "all") {
           results = results.filter((b) => b.status === filterStatus);
         }
@@ -84,17 +100,39 @@ export default function Memory() {
           type: filterType || undefined,
         });
       }
+      if (filterSubject) {
+        results = results.filter((b) => b.subject === filterSubject);
+      }
+      results = sortBeliefs(results, sortBy);
       setBeliefs(results);
     } catch {
       setBeliefs([]);
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, filterType, filterStatus]);
+  }, [searchQuery, filterType, filterStatus, filterSubject, sortBy]);
 
   useEffect(() => {
     fetchBeliefs();
   }, [fetchBeliefs]);
+
+  const subjects = useMemo(() => {
+    const unique = [...new Set(beliefs.map((b) => b.subject).filter(Boolean))] as string[];
+    return unique.length >= 2 ? unique : [];
+  }, [beliefs]);
+
+  const stats = useMemo(() => {
+    if (beliefs.length === 0) return null;
+    const avgConfidence = beliefs.reduce((s, b) => s + b.confidence, 0) / beliefs.length;
+    const typeCounts = beliefs.reduce((acc, b) => {
+      acc[b.type] = (acc[b.type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const topTypes = Object.entries(typeCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3);
+    return { avgConfidence, topTypes };
+  }, [beliefs]);
 
   const handleForget = useCallback(
     async (id: string) => {
@@ -141,6 +179,27 @@ export default function Memory() {
     }
   }, [fetchBeliefs]);
 
+  const handleSaveEdit = useCallback(async () => {
+    if (!selectedBelief || editingStatement === null) return;
+    const trimmed = editingStatement.trim();
+    if (!trimmed || trimmed === selectedBelief.statement) {
+      setEditingStatement(null);
+      return;
+    }
+    setIsSavingEdit(true);
+    try {
+      const updated = await updateBelief(selectedBelief.id, trimmed);
+      setSelectedBelief(updated);
+      setEditingStatement(null);
+      toast.success("Belief updated");
+      await fetchBeliefs();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update belief");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }, [selectedBelief, editingStatement, fetchBeliefs]);
+
   const handleStatusChange = (value: string) => {
     setFilterStatus(value);
   };
@@ -148,7 +207,6 @@ export default function Memory() {
   return (
     <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Header */}
         <header className="space-y-4 border-b border-border/40 bg-[#0a0a0a] px-4 py-4 md:px-6">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
@@ -180,16 +238,42 @@ export default function Memory() {
             </div>
           </div>
 
-          {/* Search */}
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Semantic search across beliefs..."
-            className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-          />
+          {!loading && !searchQuery && stats && (
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                Avg conf: {Math.round(stats.avgConfidence * 100)}%
+              </Badge>
+              {stats.topTypes.map(([type, count]) => (
+                <Badge key={type} variant="outline" className={cn("text-[10px]", typeColorMap[type])}>
+                  {type}: {count}
+                </Badge>
+              ))}
+            </div>
+          )}
 
-          {/* Status tabs */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Semantic search across beliefs..."
+              className="flex-1 rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+            />
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className="text-[10px] text-muted-foreground">Sort</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+              >
+                <option value="confidence">Confidence</option>
+                <option value="recent">Recent</option>
+                <option value="importance">Importance</option>
+                <option value="created">Created</option>
+              </select>
+            </div>
+          </div>
+
           <Tabs defaultValue="active" onValueChange={handleStatusChange}>
             <TabsList className="h-8">
               <TabsTrigger value="active" className="text-xs">Active</TabsTrigger>
@@ -199,7 +283,6 @@ export default function Memory() {
             </TabsList>
           </Tabs>
 
-          {/* Type filter badges with tooltips */}
           <div className="flex flex-wrap gap-1.5">
             <Badge
               variant={filterType === "" ? "default" : "ghost"}
@@ -230,9 +313,35 @@ export default function Memory() {
               </Tooltip>
             ))}
           </div>
+
+          {subjects.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              <Badge
+                variant={filterSubject === "" ? "default" : "ghost"}
+                className="cursor-pointer text-[10px]"
+                onClick={() => setFilterSubject("")}
+              >
+                All subjects
+              </Badge>
+              {subjects.map((s) => (
+                <Badge
+                  key={s}
+                  variant="ghost"
+                  className={cn(
+                    "cursor-pointer border text-[10px] capitalize transition-colors",
+                    filterSubject === s
+                      ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/30"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() => setFilterSubject(filterSubject === s ? "" : s)}
+                >
+                  {s}
+                </Badge>
+              ))}
+            </div>
+          )}
         </header>
 
-        {/* Remember input */}
         <div className="border-b border-border/40 bg-[#0a0a0a] px-4 py-3 md:px-6">
           <div className="flex items-center gap-2">
             <input
@@ -256,7 +365,6 @@ export default function Memory() {
           </div>
         </div>
 
-        {/* Belief grid */}
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="p-4 md:p-6">
             {loading ? (
@@ -308,7 +416,6 @@ export default function Memory() {
         </div>
       </div>
 
-      {/* Detail sidebar backdrop (mobile) */}
       {selectedBelief && (
         <div
           className="fixed inset-0 z-[51] bg-black/60 md:hidden"
@@ -316,20 +423,36 @@ export default function Memory() {
         />
       )}
 
-      {/* Detail sidebar */}
       {selectedBelief && (
         <aside className="fixed inset-y-0 right-0 z-[52] w-[85vw] max-w-80 overflow-hidden border-l border-border/40 bg-[#0a0a0a] md:relative md:z-auto md:w-80 md:max-w-none">
           <div className="h-full overflow-y-auto">
             <div className="p-5">
               <Card className="gap-4 border-border/50 bg-card/30 py-4">
                 <CardHeader className="flex-row items-center justify-between px-4 py-0">
-                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Belief Detail
-                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Belief Detail
+                    </CardTitle>
+                    {editingStatement === null && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => setEditingStatement(selectedBelief.statement)}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <PencilIcon className="size-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Edit statement</TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    onClick={() => setSelectedBelief(null)}
+                    onClick={() => { setSelectedBelief(null); setEditingStatement(null); }}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -340,7 +463,6 @@ export default function Memory() {
                 </CardHeader>
 
                 <CardContent className="space-y-4 px-4 py-0">
-                  {/* Type badge with description */}
                   <div>
                     <Badge
                       variant="outline"
@@ -356,24 +478,54 @@ export default function Memory() {
                     </p>
                   </div>
 
-                  {/* Statement */}
-                  <p className="text-sm leading-relaxed text-foreground/90">
-                    {selectedBelief.statement}
-                  </p>
+                  {editingStatement !== null ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={editingStatement}
+                        onChange={(e) => setEditingStatement(e.target.value)}
+                        className="w-full rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+                        rows={4}
+                        disabled={isSavingEdit}
+                      />
+                      <div className="flex gap-1.5">
+                        <Button
+                          size="sm"
+                          onClick={handleSaveEdit}
+                          disabled={isSavingEdit || !editingStatement.trim()}
+                          className="h-7 gap-1 px-2 text-xs"
+                        >
+                          <CheckIcon className="size-3" />
+                          {isSavingEdit ? "Saving..." : "Save"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingStatement(null)}
+                          disabled={isSavingEdit}
+                          className="h-7 gap-1 px-2 text-xs"
+                        >
+                          <XIcon className="size-3" />
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm leading-relaxed text-foreground/90">
+                      {selectedBelief.statement}
+                    </p>
+                  )}
 
                   <Separator className="opacity-30" />
 
-                  {/* Metrics grid */}
                   <div className="grid grid-cols-2 gap-3">
                     <DetailMetric label="Confidence" value={`${Math.round(selectedBelief.confidence * 100)}%`} info="How certain pai is about this belief. Increases when reinforced, decreases when contradicted." />
-                    <DetailMetric label="Stability" value={selectedBelief.stability.toFixed(1)} info="Resistance to decay (1.0–5.0). Frequently accessed beliefs become more stable over time." />
+                    <DetailMetric label="Stability" value={selectedBelief.stability.toFixed(1)} info="Resistance to decay (1.0-5.0). Frequently accessed beliefs become more stable over time." />
                     <DetailMetric label="Importance" value={selectedBelief.importance.toFixed(2)} info="How significant this belief is for retrieval ranking. Higher importance beliefs surface first in search." />
                     <DetailMetric label="Access Count" value={String(selectedBelief.access_count)} info="Number of times this belief has been recalled or referenced in conversations." />
                   </div>
 
                   <Separator className="opacity-30" />
 
-                  {/* Status */}
                   <div>
                     <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                       Status
@@ -383,14 +535,21 @@ export default function Memory() {
                     </Badge>
                   </div>
 
-                  {/* Dates */}
+                  {selectedBelief.subject && (
+                    <div>
+                      <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        Subject
+                      </span>
+                      <span className="text-sm capitalize text-foreground/70">{selectedBelief.subject}</span>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <DetailRow label="Created" value={formatDate(selectedBelief.created_at)} />
                     <DetailRow label="Updated" value={formatDate(selectedBelief.updated_at)} />
                     <DetailRow label="ID" value={selectedBelief.id} mono />
                   </div>
 
-                  {/* Forget action */}
                   {selectedBelief.status === "active" && (
                     <Button
                       variant="destructive"
@@ -408,19 +567,16 @@ export default function Memory() {
         </aside>
       )}
 
-      {/* Memory System Explainer Dialog */}
       <Dialog open={showExplainer} onOpenChange={setShowExplainer}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-sm">How Memory Works</DialogTitle>
           </DialogHeader>
           <div className="space-y-5 text-sm">
-            {/* Visual lifecycle */}
             <div className="rounded-lg border border-border/50 bg-muted/20 p-4 overflow-x-auto">
               <pre className="font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre">{"Observation        LLM extracts beliefs\n─────────── ────► ┌──────────────────┐\n\"User said X\"      │  Belief created  │\n                   │  confidence: 0.7 │\n                   └────────┬─────────┘\n                            │\n           ┌────────────────┼───────────────┐\n           ▼                ▼               ▼\n     ┌──────────┐   ┌─────────────┐  ┌─────────────┐\n     │Reinforced│   │Contradicted │  │ Decays over │\n     │conf ↑    │   │conf ↓       │  │ time if not │\n     │stable ↑  │   │may become   │  │ accessed    │\n     └──────────┘   │invalidated  │  └─────────────┘\n                    └─────────────┘"}</pre>
             </div>
 
-            {/* Type explanations */}
             <div>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Belief Types</h3>
               <div className="space-y-2">
@@ -435,17 +591,15 @@ export default function Memory() {
               </div>
             </div>
 
-            {/* Key concepts */}
             <div>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Key Metrics</h3>
               <div className="space-y-1.5 text-xs text-muted-foreground">
-                <p><strong className="text-foreground/80">Confidence</strong> — How certain pai is (0–100%). Reinforced beliefs gain confidence, contradicted ones lose it.</p>
-                <p><strong className="text-foreground/80">Stability</strong> — Resistance to decay (1.0–5.0). Frequently accessed beliefs become more stable.</p>
+                <p><strong className="text-foreground/80">Confidence</strong> — How certain pai is (0-100%). Reinforced beliefs gain confidence, contradicted ones lose it.</p>
+                <p><strong className="text-foreground/80">Stability</strong> — Resistance to decay (1.0-5.0). Frequently accessed beliefs become more stable.</p>
                 <p><strong className="text-foreground/80">Importance</strong> — Retrieval priority. Higher importance beliefs surface first in search.</p>
               </div>
             </div>
 
-            {/* Status lifecycle */}
             <div>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Statuses</h3>
               <div className="space-y-1.5 text-xs text-muted-foreground">
@@ -458,7 +612,6 @@ export default function Memory() {
         </DialogContent>
       </Dialog>
 
-      {/* Clear All Confirmation Dialog */}
       <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
         <DialogContent className="max-w-sm">
           <DialogHeader>

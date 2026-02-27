@@ -37,8 +37,8 @@ function decryptSecret(stored: string): string {
     const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
-  } catch {
-    // If decryption fails (e.g., migrated from another machine), return as-is
+  } catch (err) {
+    console.warn(`[pai] Failed to decrypt secret: ${err instanceof Error ? err.message : String(err)}`);
     return stored.startsWith(ENC_PREFIX) ? "" : stored;
   }
 }
@@ -74,7 +74,8 @@ export function loadConfigFile(homeDir?: string): Partial<Config> {
       (telegram as Record<string, unknown>).token = decryptSecret(telegram.token as string);
     }
     return parsed;
-  } catch {
+  } catch (err) {
+    console.warn(`[pai] Failed to parse config.json at ${configPath}: ${err instanceof Error ? err.message : String(err)}`);
     return {};
   }
 }

@@ -63,7 +63,7 @@ const updateConfigSchema = z.object({
       "Base URL must be a valid http or https URL",
     ),
   embedModel: z.string().optional(),
-  embedProvider: z.enum(["auto", "ollama", "openai", "local"]).optional(),
+  embedProvider: z.enum(["auto", "ollama", "openai", "google", "local"]).optional(),
   apiKey: z.string().optional(),
   dataDir: z.string().optional(),
   telegramToken: z.string().optional(),

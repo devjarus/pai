@@ -193,6 +193,13 @@ export function forgetBelief(id: string): Promise<{ ok: boolean }> {
   return request(`/forget/${id}`, { method: "POST", body: "{}" });
 }
 
+export function updateBelief(id: string, statement: string): Promise<Belief> {
+  return request<Belief>(`/beliefs/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ statement }),
+  });
+}
+
 export function clearAllMemory(): Promise<{ ok: boolean; cleared: number }> {
   return request("/memory/clear", { method: "POST", body: "{}" });
 }
@@ -359,7 +366,7 @@ export function createTask(input: {
 
 export function updateTask(
   id: string,
-  updates: { title?: string; priority?: string; dueDate?: string },
+  updates: { title?: string; priority?: string; dueDate?: string; description?: string; goalId?: string | null },
 ): Promise<{ ok: boolean }> {
   return request(`/tasks/${id}`, {
     method: "PATCH",
@@ -385,8 +392,11 @@ export function clearAllTasks(): Promise<{ ok: boolean; cleared: number }> {
 
 // ---- Goals ----
 
-export function getGoals(): Promise<Goal[]> {
-  return request<Goal[]>("/goals");
+export function getGoals(status?: "active" | "done" | "all"): Promise<Goal[]> {
+  const qs = new URLSearchParams();
+  if (status) qs.set("status", status);
+  const query = qs.toString();
+  return request<Goal[]>(`/goals${query ? `?${query}` : ""}`);
 }
 
 export function createGoal(input: { title: string; description?: string }): Promise<Goal> {

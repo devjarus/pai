@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from "react";
-import { AlertTriangleIcon, RefreshCwIcon, CopyIcon, CheckIcon } from "lucide-react";
+import { AlertTriangleIcon, RefreshCwIcon, RotateCcwIcon, CopyIcon, CheckIcon } from "lucide-react";
 
 interface Props {
   children: ReactNode;
@@ -20,6 +20,10 @@ export class ErrorBoundary extends Component<Props, State> {
   static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error };
   }
+
+  handleTryAgain = () => {
+    this.setState({ hasError: false, error: null });
+  };
 
   handleRefresh = () => {
     window.location.reload();
@@ -65,7 +69,7 @@ export class ErrorBoundary extends Component<Props, State> {
               Something went wrong
             </h1>
             <p className="text-sm text-muted-foreground">
-              An unexpected error occurred. You can try refreshing the page or
+              An unexpected error occurred. Try again, refresh the page, or
               copy the error details to report the issue.
             </p>
           </div>
@@ -81,11 +85,19 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={this.handleRefresh}
+              onClick={this.handleTryAgain}
               className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
+              <RotateCcwIcon className="h-4 w-4" />
+              Try Again
+            </button>
+            <button
+              type="button"
+              onClick={this.handleRefresh}
+              className="inline-flex items-center gap-2 rounded-md border border-border/50 bg-card/50 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-card/80"
+            >
               <RefreshCwIcon className="h-4 w-4" />
-              Refresh
+              Refresh Page
             </button>
             <button
               type="button"

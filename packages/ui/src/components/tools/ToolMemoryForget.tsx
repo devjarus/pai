@@ -7,13 +7,15 @@ interface ToolMemoryForgetProps {
   output?: { ok?: boolean; message?: string; error?: string } | string;
 }
 
-export function ToolMemoryForget({ state, output }: ToolMemoryForgetProps) {
+export function ToolMemoryForget({ state, input, output }: ToolMemoryForgetProps) {
+  const beliefId = input?.id ? input.id.slice(0, 8) : undefined;
+
   if (state === "input-available") {
     return (
       <Card className="gap-0 rounded-lg border-border/50 py-0 shadow-none">
         <CardContent className="flex items-center gap-2 px-3 py-2.5">
           <TrashIcon className="size-3.5 shrink-0 animate-pulse text-primary" />
-          <span className="text-xs text-muted-foreground">Forgetting belief...</span>
+          <span className="text-xs text-muted-foreground">Forgetting belief{beliefId ? ` ${beliefId}` : ""}...</span>
         </CardContent>
       </Card>
     );

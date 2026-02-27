@@ -5,7 +5,7 @@ interface ToolKnowledgeActionProps {
   state: string;
   toolName: "learn_from_url" | "knowledge_forget" | "knowledge_status" | "job_status";
   input?: { url?: string; id?: string };
-  output?: { ok?: boolean; message?: string; title?: string; chunks?: number } | string;
+  output?: { ok?: boolean; message?: string; title?: string; chunks?: number } | string | unknown[];
 }
 
 export function ToolKnowledgeAction({ state, toolName, input, output }: ToolKnowledgeActionProps) {
@@ -52,7 +52,7 @@ export function ToolKnowledgeAction({ state, toolName, input, output }: ToolKnow
   }
 
   if (state === "output-available") {
-    const outObj = typeof output === "object" && output ? output : null;
+    const outObj = typeof output === "object" && output && !Array.isArray(output) ? output : null;
     const outStr = typeof output === "string" ? output : null;
 
     if (toolName === "learn_from_url") {
@@ -87,6 +87,39 @@ export function ToolKnowledgeAction({ state, toolName, input, output }: ToolKnow
             <span className="text-xs text-foreground">
               {outObj?.message || outStr || "Source removed."}
             </span>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (toolName === "job_status") {
+      const jobs = Array.isArray(output) ? output : outObj ? [outObj] : [];
+      if (jobs.length === 0) {
+        return (
+          <Card className="gap-0 rounded-lg border-border/50 py-0 shadow-none">
+            <CardContent className="flex items-center gap-2 px-3 py-2.5">
+              <CheckIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="text-xs text-foreground">No background jobs running.</span>
+            </CardContent>
+          </Card>
+        );
+      }
+      return (
+        <Card className="gap-0 rounded-lg border-border/50 py-0 shadow-none">
+          <CardContent className="space-y-1.5 px-3 py-2.5">
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {jobs.map((job: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 text-xs text-foreground">
+                {job.status === "running" ? (
+                  <LoaderIcon className="size-3 shrink-0 animate-spin text-primary" />
+                ) : (
+                  <CheckIcon className="size-3 shrink-0 text-green-500" />
+                )}
+                <span className="truncate">{job.label || job.type || "Job"}</span>
+                {job.progress && <span className="text-muted-foreground">{job.progress}</span>}
+                <span className="text-muted-foreground">{job.status}</span>
+              </div>
+            ))}
           </CardContent>
         </Card>
       );

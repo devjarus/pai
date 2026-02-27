@@ -29,6 +29,8 @@ const editTaskSchema = z.object({
   title: z.string().min(1).optional(),
   priority: z.enum(["low", "medium", "high"]).optional(),
   dueDate: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  goalId: z.string().nullable().optional(),
 });
 
 const createGoalSchema = z.object({
@@ -37,7 +39,6 @@ const createGoalSchema = z.object({
 });
 
 export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
-  // List tasks
   app.get<{ Querystring: { status?: string; goalId?: string } }>("/api/tasks", async (request) => {
     const status = (request.query.status ?? "open") as TaskStatusFilter;
     let tasks = listTasks(ctx.storage, status);
@@ -47,7 +48,6 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
     return tasks;
   });
 
-  // Create task
   app.post<{ Body: { title: string; description?: string; priority?: string; dueDate?: string; goalId?: string } }>(
     "/api/tasks",
     async (request, reply) => {
@@ -61,8 +61,7 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
     },
   );
 
-  // Update task
-  app.patch<{ Params: { id: string }; Body: { title?: string; priority?: string; dueDate?: string } }>(
+  app.patch<{ Params: { id: string }; Body: { title?: string; priority?: string; dueDate?: string; description?: string; goalId?: string | null } }>(
     "/api/tasks/:id",
     async (request, reply) => {
       try {
@@ -70,6 +69,8 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
         editTask(ctx.storage, request.params.id, {
           ...body,
           dueDate: body.dueDate ?? undefined,
+          description: body.description ?? undefined,
+          goalId: body.goalId,
         });
         return { ok: true };
       } catch (err) {
@@ -78,7 +79,6 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
     },
   );
 
-  // Complete task
   app.post<{ Params: { id: string } }>("/api/tasks/:id/done", async (request, reply) => {
     try {
       completeTask(ctx.storage, request.params.id);
@@ -88,7 +88,6 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
     }
   });
 
-  // Reopen task
   app.post<{ Params: { id: string } }>("/api/tasks/:id/reopen", async (request, reply) => {
     try {
       reopenTask(ctx.storage, request.params.id);
@@ -98,7 +97,6 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
     }
   });
 
-  // Delete task
   app.delete<{ Params: { id: string } }>("/api/tasks/:id", async (request, reply) => {
     try {
       deleteTask(ctx.storage, request.params.id);
@@ -108,7 +106,6 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
     }
   });
 
-  // Clear all tasks
   app.post("/api/tasks/clear", async () => {
     const cleared = clearAllTasks(ctx.storage);
     return { ok: true, cleared };
@@ -116,12 +113,11 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
 
   // ---- Goals ----
 
-  // List goals
-  app.get("/api/goals", async () => {
-    return listGoals(ctx.storage);
+  app.get<{ Querystring: { status?: string } }>("/api/goals", async (request) => {
+    const status = (request.query.status ?? "active") as "active" | "done" | "all";
+    return listGoals(ctx.storage, status);
   });
 
-  // Create goal
   app.post<{ Body: { title: string; description?: string } }>("/api/goals", async (request, reply) => {
     try {
       const body = validate(createGoalSchema, request.body);
@@ -132,7 +128,6 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
     }
   });
 
-  // Complete goal
   app.post<{ Params: { id: string } }>("/api/goals/:id/done", async (request, reply) => {
     try {
       completeGoal(ctx.storage, request.params.id);
@@ -142,7 +137,6 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
     }
   });
 
-  // Delete goal
   app.delete<{ Params: { id: string } }>("/api/goals/:id", async (request, reply) => {
     try {
       deleteGoal(ctx.storage, request.params.id);

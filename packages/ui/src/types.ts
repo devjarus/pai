@@ -22,6 +22,7 @@ export interface Belief {
   last_accessed?: string;
   superseded_by?: string | null;
   supersedes?: string | null;
+  subject?: string;
 }
 
 export interface MemoryStats {

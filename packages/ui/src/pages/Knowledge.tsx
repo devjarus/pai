@@ -21,6 +21,11 @@ function formatDate(dateStr: string): string {
   return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString();
 }
 
+function parseTags(tags: string | null): string[] {
+  if (!tags) return [];
+  return tags.split(",").map((t) => t.trim()).filter(Boolean);
+}
+
 export default function Knowledge() {
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
   const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
@@ -38,24 +43,20 @@ export default function Knowledge() {
   const [crawlJobs, setCrawlJobs] = useState<CrawlJob[]>([]);
   const [retryingUrl, setRetryingUrl] = useState<string | null>(null);
   const [dismissedJobs, setDismissedJobs] = useState<Set<string>>(new Set());
-  // Chunk viewer dialog
   const [viewChunksSource, setViewChunksSource] = useState<KnowledgeSource | null>(null);
   const [chunks, setChunks] = useState<Array<{ id: string; content: string; chunkIndex: number }>>([]);
   const [chunksLoading, setChunksLoading] = useState(false);
   const [expandedChunk, setExpandedChunk] = useState<string | null>(null);
-  // Actions
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCrawling, setIsCrawling] = useState(false);
   const [isReindexing, setIsReindexing] = useState(false);
-  // Tags editing
   const [editingTags, setEditingTags] = useState(false);
   const [tagsInput, setTagsInput] = useState("");
-  // Domain group expansion
   const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set());
+  const [filterTag, setFilterTag] = useState<string>("");
 
   useEffect(() => { document.title = "Knowledge Base - pai"; }, []);
 
-  // Debounce search
   useEffect(() => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => setSearchQuery(searchInput), 300);
@@ -76,7 +77,6 @@ export default function Knowledge() {
 
   useEffect(() => { fetchSources(); }, [fetchSources]);
 
-  // Load chunks when viewer opens
   useEffect(() => {
     if (!viewChunksSource) return;
     let cancelled = false;
@@ -93,7 +93,6 @@ export default function Knowledge() {
     return () => { cancelled = true; };
   }, [viewChunksSource?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll crawl status when jobs are running
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
@@ -112,7 +111,6 @@ export default function Knowledge() {
     return () => { cancelled = true; clearInterval(interval); };
   }, [crawlJobs.some((j) => j.status === "running"), fetchSources]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Search knowledge
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
@@ -168,7 +166,6 @@ export default function Knowledge() {
       const result = await learnFromUrl(source.url, { force: true });
       toast.success(`Re-learned "${result.title}" - ${result.chunks} chunks`);
       await fetchSources();
-      // Update selected source
       const updated = (await getKnowledgeSources()).find((s) => s.url === source.url);
       if (updated) setSelectedSource(updated);
     } catch (err) {
@@ -253,17 +250,29 @@ export default function Knowledge() {
     }
   }, [fetchSources, selectedSource]);
 
-  // Group sources by domain — domains with 3+ sources get collapsed
+  const handleSearchResultClick = useCallback((result: KnowledgeSearchResult) => {
+    const source = sources.find((s) => s.id === result.sourceId);
+    if (source) {
+      setSelectedSource(source);
+      setSearchInput("");
+    }
+  }, [sources]);
+
+  const allTags = [...new Set(sources.flatMap((s) => parseTags(s.tags)))];
+
+  const filteredSources = filterTag
+    ? sources.filter((s) => parseTags(s.tags).includes(filterTag))
+    : sources;
+
   const groupedSources = (() => {
     const byDomain: Record<string, KnowledgeSource[]> = {};
-    for (const s of sources) {
+    for (const s of filteredSources) {
       try { const d = new URL(s.url).hostname; (byDomain[d] ??= []).push(s); } catch { (byDomain["other"] ??= []).push(s); }
     }
     const groups: Array<{ domain: string; sources: KnowledgeSource[]; collapsed: boolean }> = [];
     for (const [domain, domainSources] of Object.entries(byDomain)) {
       groups.push({ domain, sources: domainSources, collapsed: domainSources.length >= 3 });
     }
-    // Sort: ungrouped (single/dual) first, then grouped by source count desc
     return groups.sort((a, b) => {
       if (a.collapsed !== b.collapsed) return a.collapsed ? 1 : -1;
       return b.sources.length - a.sources.length;
@@ -285,7 +294,6 @@ export default function Knowledge() {
   return (
     <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Header */}
         <header className="space-y-4 border-b border-border/40 bg-[#0a0a0a] px-4 py-4 md:px-6">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
@@ -303,7 +311,7 @@ export default function Knowledge() {
                     <RefreshCwIcon className={`size-4 text-muted-foreground ${isReindexing ? "animate-spin" : ""}`} />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{isReindexing ? "Re-indexing..." : "Re-index all sources"}</TooltipContent>
+                <TooltipContent>Re-index all sources with contextual headers</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -316,7 +324,6 @@ export default function Knowledge() {
             </div>
           </div>
 
-          {/* Search */}
           <div className="relative">
             <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/50" />
             <input
@@ -329,10 +336,8 @@ export default function Knowledge() {
           </div>
         </header>
 
-        {/* Content */}
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="p-4 md:p-6">
-            {/* Crawl progress banners */}
             {runningJobs.map((job) => (
               <div key={job.url} className="mb-4 flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
                 <LoaderIcon className="size-4 shrink-0 animate-spin text-primary" />
@@ -349,7 +354,6 @@ export default function Knowledge() {
               </div>
             ))}
 
-            {/* Failed pages banners */}
             {doneJobsWithFailures.map((job) => (
               <div key={job.url} className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
                 <div className="mb-2 flex items-center gap-2">
@@ -417,7 +421,11 @@ export default function Knowledge() {
                 ) : (
                   <div className="space-y-3">
                     {searchResults.map((r, i) => (
-                      <Card key={i} className="border-border/50 bg-card/50">
+                      <Card
+                        key={i}
+                        className="cursor-pointer border-border/50 bg-card/50 transition-colors hover:border-border/80 hover:bg-card/70"
+                        onClick={() => handleSearchResultClick(r)}
+                      >
                         <CardContent className="p-4">
                           <div className="mb-2 flex items-center gap-2">
                             <Badge variant="secondary" className="text-[10px]">
@@ -429,6 +437,7 @@ export default function Knowledge() {
                               target="_blank"
                               rel="noopener noreferrer"
                               className="ml-auto text-muted-foreground transition-colors hover:text-foreground"
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <ExternalLinkIcon className="size-3.5" />
                             </a>
@@ -452,9 +461,37 @@ export default function Knowledge() {
               </div>
             ) : (
               <div className="space-y-6">
+                {allTags.length >= 2 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setFilterTag("")}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                        filterTag === ""
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                      }`}
+                    >
+                      All
+                    </button>
+                    {allTags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setFilterTag(filterTag === tag ? "" : tag)}
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          filterTag === tag
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {groupedSources.map(({ domain, sources: domainSources, collapsed }) => {
                   if (!collapsed) {
-                    // Ungrouped — render cards directly
                     return (
                       <div key={domain} className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                         {domainSources.map((s) => (
@@ -463,7 +500,6 @@ export default function Knowledge() {
                       </div>
                     );
                   }
-                  // Grouped domain — collapsible
                   const isExpanded = expandedDomains.has(domain);
                   const totalChunks = domainSources.reduce((sum, s) => sum + s.chunks, 0);
                   return (
@@ -499,7 +535,6 @@ export default function Knowledge() {
         </div>
       </div>
 
-      {/* Detail sidebar backdrop (mobile) */}
       {selectedSource && (
         <div
           className="fixed inset-0 z-[51] bg-black/60 md:hidden"
@@ -507,7 +542,6 @@ export default function Knowledge() {
         />
       )}
 
-      {/* Detail sidebar */}
       {selectedSource && (
         <aside className="fixed inset-y-0 right-0 z-[52] w-[85vw] max-w-96 overflow-hidden border-l border-border/40 bg-[#0a0a0a] md:relative md:z-auto md:w-96 md:max-w-none">
           <div className="h-full overflow-y-auto">
@@ -531,12 +565,10 @@ export default function Knowledge() {
                 </CardHeader>
 
                 <CardContent className="space-y-4 px-4 py-0">
-                  {/* Title */}
                   <p className="text-sm font-medium leading-relaxed text-foreground/90">
                     {selectedSource.title || "Untitled"}
                   </p>
 
-                  {/* URL */}
                   <a
                     href={selectedSource.url}
                     target="_blank"
@@ -549,7 +581,6 @@ export default function Knowledge() {
 
                   <Separator className="opacity-30" />
 
-                  {/* Metrics */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Chunks</span>
@@ -563,7 +594,6 @@ export default function Knowledge() {
 
                   <Separator className="opacity-30" />
 
-                  {/* ID */}
                   <div className="min-w-0">
                     <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">ID</span>
                     <span className="block break-all font-mono text-xs text-muted-foreground">{selectedSource.id}</span>
@@ -571,7 +601,6 @@ export default function Knowledge() {
 
                   <Separator className="opacity-30" />
 
-                  {/* Tags */}
                   <div className="min-w-0">
                     <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Tags</span>
                     {editingTags ? (
@@ -603,7 +632,6 @@ export default function Knowledge() {
 
                   <Separator className="opacity-30" />
 
-                  {/* Action buttons */}
                   <div className="space-y-2">
                     <Button
                       variant="outline"
@@ -651,7 +679,6 @@ export default function Knowledge() {
         </aside>
       )}
 
-      {/* Chunk Viewer Dialog — full screen */}
       <Dialog open={!!viewChunksSource} onOpenChange={() => setViewChunksSource(null)}>
         <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
           <DialogHeader>
@@ -707,7 +734,6 @@ export default function Knowledge() {
         </DialogContent>
       </Dialog>
 
-      {/* Learn from URL Dialog */}
       <Dialog open={showLearnDialog} onOpenChange={setShowLearnDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -749,7 +775,6 @@ export default function Knowledge() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -775,6 +800,7 @@ export default function Knowledge() {
 }
 
 function SourceCard({ source: s, onClick }: { source: KnowledgeSource; onClick: (s: KnowledgeSource) => void }) {
+  const tags = parseTags(s.tags);
   return (
     <Card
       className="cursor-pointer border-border/50 bg-card/50 transition-colors hover:border-border/80 hover:bg-card/70"
@@ -792,6 +818,15 @@ function SourceCard({ source: s, onClick }: { source: KnowledgeSource; onClick: 
         <p className="mb-3 truncate text-xs text-muted-foreground">
           {s.url}
         </p>
+        {tags.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-1">
+            {tags.map((tag) => (
+              <Badge key={tag} variant="outline" className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground">
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        )}
         <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
           <span>{formatDate(s.learnedAt)}</span>
           <span className="font-mono">{s.id.slice(0, 8)}</span>

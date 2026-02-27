@@ -255,6 +255,33 @@ export function forgetBelief(storage: Storage, beliefId: string): void {
   logBeliefChange(storage, { beliefId: id, changeType: "forgotten", detail: "Manually forgotten by user" });
 }
 
+export async function updateBeliefContent(
+  storage: Storage,
+  llmClient: LLMClient,
+  beliefId: string,
+  newStatement: string,
+): Promise<Belief> {
+  const rows = storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [beliefId]);
+  if (rows.length === 0) throw new Error(`Belief not found: ${beliefId}`);
+  const old = rows[0]!;
+  storage.run(
+    "UPDATE beliefs SET statement = ?, updated_at = datetime('now') WHERE id = ?",
+    [newStatement, beliefId],
+  );
+  try {
+    const { embedding } = await llmClient.embed(newStatement);
+    storeEmbedding(storage, beliefId, embedding);
+  } catch {
+    // embedding update is best-effort
+  }
+  logBeliefChange(storage, {
+    beliefId,
+    changeType: "edited",
+    detail: `Statement changed from: ${old.statement}`,
+  });
+  return storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [beliefId])[0]!;
+}
+
 export function pruneBeliefs(storage: Storage, threshold = 0.05): string[] {
   const beliefs = storage.query<Belief>("SELECT * FROM beliefs WHERE status = 'active'");
   const toPrune = beliefs.filter((b) => effectiveConfidence(b) < threshold);

@@ -62,7 +62,6 @@ export default function Tasks() {
   const [activeTab, setActiveTab] = useState<"tasks" | "goals">("tasks");
   const [statusFilter, setStatusFilter] = useState<string>("open");
 
-  // Task dialogs
   const [showAddTask, setShowAddTask] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskForm, setTaskForm] = useState({
@@ -74,15 +73,15 @@ export default function Tasks() {
   });
   const [isSavingTask, setIsSavingTask] = useState(false);
 
-  // Goal dialogs
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [goalForm, setGoalForm] = useState({ title: "", description: "" });
   const [isSavingGoal, setIsSavingGoal] = useState(false);
 
-  // Delete confirmations
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
   const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null);
   const [showClearAll, setShowClearAll] = useState(false);
+
+  const [quickAddTitle, setQuickAddTitle] = useState("");
 
   useEffect(() => {
     document.title = "Tasks - pai";
@@ -108,7 +107,7 @@ export default function Tasks() {
 
   const fetchGoals = useCallback(async () => {
     try {
-      const data = await getGoals();
+      const data = await getGoals("all");
       setGoals(data);
     } catch {
       setGoals([]);
@@ -194,6 +193,8 @@ export default function Tasks() {
           title,
           priority: taskForm.priority,
           dueDate: taskForm.dueDate || undefined,
+          description: taskForm.description.trim() || undefined,
+          goalId: taskForm.goalId || undefined,
         });
         toast.success("Task updated");
       } else {
@@ -215,6 +216,19 @@ export default function Tasks() {
       setIsSavingTask(false);
     }
   }, [taskForm, editingTask, fetchTasks, fetchAllTasks]);
+
+  const handleQuickAdd = useCallback(async () => {
+    const title = quickAddTitle.trim();
+    if (!title) return;
+    try {
+      await createTask({ title, priority: "medium" });
+      setQuickAddTitle("");
+      toast.success("Task created");
+      await Promise.all([fetchTasks(), fetchAllTasks()]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create task");
+    }
+  }, [quickAddTitle, fetchTasks, fetchAllTasks]);
 
   // --- Goal handlers ---
 
@@ -303,6 +317,7 @@ export default function Tasks() {
   );
 
   const activeGoals = goals.filter((g) => g.status === "active");
+  const doneGoals = goals.filter((g) => g.status === "done");
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -397,7 +412,7 @@ export default function Tasks() {
               ))}
             </div>
           ) : activeTab === "tasks" ? (
-            tasks.length === 0 ? (
+            tasks.length === 0 && !quickAddTitle ? (
               <div className="flex flex-col items-center justify-center py-16 text-sm text-muted-foreground">
                 <CircleIcon className="mb-4 size-12 opacity-20" />
                 <p>No tasks found.</p>
@@ -409,6 +424,16 @@ export default function Tasks() {
               </div>
             ) : (
               <div className="space-y-2">
+                <input
+                  type="text"
+                  value={quickAddTitle}
+                  onChange={(e) => setQuickAddTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleQuickAdd();
+                  }}
+                  placeholder="Quick add task..."
+                  className="w-full rounded-lg border-transparent bg-transparent px-4 py-2 text-xs text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-border/40 focus:bg-card/30 focus:ring-0"
+                />
                 {tasks.map((task) => (
                   <TaskRow
                     key={task.id}
@@ -433,7 +458,7 @@ export default function Tasks() {
             </div>
           ) : (
             <div className="space-y-3">
-              {goals.map((goal) => {
+              {activeGoals.map((goal) => {
                 const progress = getGoalProgress(goal.id);
                 const pct =
                   progress.total > 0
@@ -446,9 +471,7 @@ export default function Tasks() {
                   >
                     <div className="mb-3 flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <h3
-                          className={`text-sm font-medium leading-tight ${goal.status === "done" ? "text-muted-foreground line-through" : "text-foreground/90"}`}
-                        >
+                        <h3 className="text-sm font-medium leading-tight text-foreground/90">
                           {goal.title}
                         </h3>
                         {goal.description && (
@@ -458,16 +481,14 @@ export default function Tasks() {
                         )}
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
-                        {goal.status === "active" && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-green-400"
-                            onClick={() => handleCompleteGoal(goal)}
-                          >
-                            <CheckCircle2Icon className="size-4" />
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-green-400"
+                          onClick={() => handleCompleteGoal(goal)}
+                        >
+                          <CheckCircle2Icon className="size-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -491,6 +512,59 @@ export default function Tasks() {
                   </div>
                 );
               })}
+              {doneGoals.length > 0 && (
+                <>
+                  {activeGoals.length > 0 && (
+                    <div className="pt-2 text-xs text-muted-foreground/60">Completed</div>
+                  )}
+                  {doneGoals.map((goal) => {
+                    const progress = getGoalProgress(goal.id);
+                    const pct =
+                      progress.total > 0
+                        ? Math.round((progress.done / progress.total) * 100)
+                        : 0;
+                    return (
+                      <div
+                        key={goal.id}
+                        className="rounded-lg border border-border/40 bg-card/50 p-4 opacity-50 transition-colors hover:bg-accent/50"
+                      >
+                        <div className="mb-3 flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="text-sm font-medium leading-tight text-muted-foreground line-through">
+                              {goal.title}
+                            </h3>
+                            {goal.description && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {goal.description}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => setDeletingGoal(goal)}
+                            >
+                              <Trash2Icon className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          {progress.done}/{progress.total} tasks done
+                        </p>
+                        <div className="h-1.5 w-full rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary transition-all"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -532,22 +606,20 @@ export default function Tasks() {
               />
             </div>
 
-            {!editingTask && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Description
-                </label>
-                <textarea
-                  value={taskForm.description}
-                  onChange={(e) =>
-                    setTaskForm((f) => ({ ...f, description: e.target.value }))
-                  }
-                  placeholder="Optional details..."
-                  rows={3}
-                  className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-                />
-              </div>
-            )}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Description
+              </label>
+              <textarea
+                value={taskForm.description}
+                onChange={(e) =>
+                  setTaskForm((f) => ({ ...f, description: e.target.value }))
+                }
+                placeholder="Optional details..."
+                rows={3}
+                className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+              />
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -581,27 +653,25 @@ export default function Tasks() {
               </div>
             </div>
 
-            {!editingTask && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Goal
-                </label>
-                <select
-                  value={taskForm.goalId}
-                  onChange={(e) =>
-                    setTaskForm((f) => ({ ...f, goalId: e.target.value }))
-                  }
-                  className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-                >
-                  <option value="">No goal</option>
-                  {activeGoals.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Goal
+              </label>
+              <select
+                value={taskForm.goalId}
+                onChange={(e) =>
+                  setTaskForm((f) => ({ ...f, goalId: e.target.value }))
+                }
+                className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+              >
+                <option value="">No goal</option>
+                {activeGoals.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.title}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -834,14 +904,26 @@ function TaskRow({
             {task.priority}
           </Badge>
         </div>
+        {task.description && (
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {task.description}
+          </p>
+        )}
         <div className="mt-1 flex flex-wrap items-center gap-2">
-          {task.due_date && (
-            <span
-              className={`flex items-center gap-1 text-[11px] ${isDone ? "text-muted-foreground" : isOverdue(task.due_date) ? "text-red-400" : "text-muted-foreground"}`}
-            >
-              <CalendarIcon className="size-3" />
-              {formatDate(task.due_date)}
+          {isDone && task.completed_at ? (
+            <span className="flex items-center gap-1 text-[11px] text-green-500/70">
+              <CheckCircle2Icon className="size-3" />
+              Completed {formatDate(task.completed_at)}
             </span>
+          ) : (
+            task.due_date && (
+              <span
+                className={`flex items-center gap-1 text-[11px] ${isOverdue(task.due_date) ? "text-red-400" : "text-muted-foreground"}`}
+              >
+                <CalendarIcon className="size-3" />
+                {formatDate(task.due_date)}
+              </span>
+            )
           )}
           {goalName && (
             <Badge
@@ -856,7 +938,7 @@ function TaskRow({
       </div>
 
       {/* Actions */}
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="flex shrink-0 items-center gap-1 md:opacity-0 md:transition-opacity md:group-hover:opacity-100">
         <Button
           variant="ghost"
           size="icon"
