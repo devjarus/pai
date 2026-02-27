@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
 import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, learnFromContent, knowledgeSearch, listSources, forgetSource } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
-import { activeJobs } from "@personal-ai/core";
+import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
@@ -22,7 +22,7 @@ export async function runCrawlInBackground(storage: Storage, llm: LLMClient, roo
     progress: `0/${maxPages}`,
     startedAt: new Date().toISOString(),
   };
-  activeJobs.set(jobId, job);
+  upsertJob(storage, job);
 
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
   let learned = 0;
@@ -43,13 +43,11 @@ export async function runCrawlInBackground(storage: Storage, llm: LLMClient, roo
       } catch {
         failed++;
       }
-      job.progress = `${learned + skipped + failed}/${maxPages}`;
+      updateJobStatus(storage, jobId, { progress: `${learned + skipped + failed}/${maxPages}` });
     }
-    job.status = "done";
-    job.result = `Learned: ${learned}, Skipped: ${skipped}, Failed: ${failed}`;
+    updateJobStatus(storage, jobId, { status: "done", result: `Learned: ${learned}, Skipped: ${skipped}, Failed: ${failed}` });
   } catch (err) {
-    job.status = "error";
-    job.error = err instanceof Error ? err.message : String(err);
+    updateJobStatus(storage, jobId, { status: "error", error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -390,10 +388,14 @@ export function createAgentTools(ctx: AgentContext) {
       description: "Check the status of background jobs (crawl, research). Use when the user asks about crawl progress, research status, or background tasks.",
       inputSchema: z.object({}),
       execute: async () => {
-        if (activeJobs.size === 0) return "No background jobs running or recently completed.";
+        // Clean up completed jobs older than 10 minutes
+        clearCompletedBackgroundJobs(ctx.storage, 10 * 60 * 1000);
 
-        const jobs = [...activeJobs.entries()].map(([id, j]) => ({
-          id,
+        const jobs = listJobs(ctx.storage);
+        if (jobs.length === 0) return "No background jobs running or recently completed.";
+
+        return jobs.map((j) => ({
+          id: j.id,
           type: j.type,
           label: j.label,
           status: j.status,
@@ -402,16 +404,6 @@ export function createAgentTools(ctx: AgentContext) {
           ...(j.error ? { error: j.error } : {}),
           ...(j.result ? { result: j.result } : {}),
         }));
-
-        // Clean up completed jobs older than 10 minutes
-        const cutoff = Date.now() - 10 * 60 * 1000;
-        for (const [id, j] of activeJobs) {
-          if (j.status !== "running" && new Date(j.startedAt).getTime() < cutoff) {
-            activeJobs.delete(id);
-          }
-        }
-
-        return jobs;
       },
     }),
   };

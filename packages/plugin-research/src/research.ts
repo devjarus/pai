@@ -3,7 +3,7 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger } from "@personal-ai/core";
-import { activeJobs, knowledgeSearch, appendMessages } from "@personal-ai/core";
+import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 
 // ---- Types ----
@@ -255,7 +255,7 @@ export async function runResearchInBackground(
     return;
   }
 
-  // Register in shared tracker
+  // Register in shared tracker (DB-backed)
   const tracked: BackgroundJob = {
     id: jobId,
     type: "research",
@@ -264,7 +264,7 @@ export async function runResearchInBackground(
     progress: "starting",
     startedAt: new Date().toISOString(),
   };
-  activeJobs.set(jobId, tracked);
+  upsertJob(ctx.storage, tracked);
 
   // Set status to running
   updateJob(ctx.storage, jobId, { status: "running" });
@@ -293,9 +293,7 @@ export async function runResearchInBackground(
       completed_at: new Date().toISOString(),
     });
 
-    tracked.status = "done";
-    tracked.progress = "complete";
-    tracked.result = report.slice(0, 200);
+    updateJobStatus(ctx.storage, jobId, { status: "done", progress: "complete", result: report.slice(0, 200) });
 
     // Create Inbox briefing for the report
     try {
@@ -331,8 +329,7 @@ export async function runResearchInBackground(
       completed_at: new Date().toISOString(),
     });
 
-    tracked.status = "error";
-    tracked.error = errorMsg;
+    updateJobStatus(ctx.storage, jobId, { status: "error", error: errorMsg });
 
     // Post failure to thread
     if (job.threadId) {

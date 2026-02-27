@@ -1,13 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
-import { activeJobs } from "@personal-ai/core";
+import { listJobs, clearCompletedBackgroundJobs } from "@personal-ai/core";
 import { listResearchJobs, getResearchJob, clearCompletedJobs } from "@personal-ai/plugin-research";
 
 export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext): void {
-  // List all background jobs — in-memory active + persisted research jobs
+  // List all background jobs — DB-backed active + persisted research jobs
   app.get("/api/jobs", async () => {
-    // In-memory active jobs (crawl + research currently running/recent)
-    const active = [...activeJobs.values()].map((j) => ({
+    // Background jobs from DB (crawl + research status/progress)
+    const active = listJobs(serverCtx.ctx.storage).map((j) => ({
       id: j.id,
       type: j.type,
       label: j.label,
@@ -18,7 +18,7 @@ export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext
       result: j.result ?? null,
     }));
 
-    // Persisted research jobs from DB
+    // Persisted research jobs from DB (with extra detail fields)
     const research = listResearchJobs(serverCtx.ctx.storage).map((j) => ({
       id: j.id,
       type: "research" as const,
@@ -45,17 +45,10 @@ export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext
     return { job };
   });
 
-  // Clear completed/failed jobs from DB + in-memory tracker
+  // Clear completed/failed jobs from both tables
   app.post("/api/jobs/clear", async () => {
+    const bgCleared = clearCompletedBackgroundJobs(serverCtx.ctx.storage);
     const dbCleared = clearCompletedJobs(serverCtx.ctx.storage);
-    // Also clear completed/errored from in-memory tracker
-    let memCleared = 0;
-    for (const [id, job] of activeJobs) {
-      if (job.status === "done" || job.status === "error") {
-        activeJobs.delete(id);
-        memCleared++;
-      }
-    }
-    return { ok: true, cleared: dbCleared + memCleared };
+    return { ok: true, cleared: bgCleared + dbCleared };
   });
 }

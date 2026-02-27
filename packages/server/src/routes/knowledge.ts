@@ -5,7 +5,7 @@ import { validate } from "../validate.js";
 import { learnFromContent, knowledgeSearch, listSources, getSourceChunks, forgetSource, reindexSource, reindexAllSources } from "@personal-ai/core";
 import { fetchPageAsMarkdown, discoverSubPages } from "@personal-ai/plugin-assistant/page-fetch";
 import { runCrawlInBackground } from "@personal-ai/plugin-assistant/tools";
-import { activeJobs } from "@personal-ai/core";
+import { listJobs, clearCompletedBackgroundJobs } from "@personal-ai/core";
 
 const learnSchema = z.object({
   url: z
@@ -124,9 +124,12 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
 
   // Crawl status — check progress and get failed URLs
   app.get("/api/knowledge/crawl-status", async () => {
-    const crawlJobs = [...activeJobs.entries()]
-      .filter(([, j]) => j.type === "crawl")
-      .map(([_id, j]) => ({
+    // Clean up completed jobs older than 30 minutes
+    clearCompletedBackgroundJobs(ctx.storage, 30 * 60 * 1000);
+
+    const crawlJobs = listJobs(ctx.storage)
+      .filter((j) => j.type === "crawl")
+      .map((j) => ({
         url: j.label,
         status: j.status,
         progress: j.progress,
@@ -134,14 +137,6 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
         ...(j.error ? { error: j.error } : {}),
         ...(j.result ? { result: j.result } : {}),
       }));
-
-    // Clean up completed jobs older than 30 minutes
-    const cutoff = Date.now() - 30 * 60 * 1000;
-    for (const [id, j] of activeJobs) {
-      if (j.type === "crawl" && j.status !== "running" && new Date(j.startedAt).getTime() < cutoff) {
-        activeJobs.delete(id);
-      }
-    }
 
     return { jobs: crawlJobs };
   });

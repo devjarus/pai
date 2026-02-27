@@ -1,9 +1,11 @@
 export type {
   Config, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult, EmbedResult, StreamEvent,
   PluginContext, Command, Plugin, AgentPlugin, AgentContext, Logger, LogLevel, LogFileOptions,
-  BackgroundJob,
 } from "./types.js";
-export { activeJobs } from "./types.js";
+
+// Background jobs (DB-backed)
+export { backgroundJobMigrations, upsertJob, getJob, listJobs, updateJobStatus, clearCompletedBackgroundJobs } from "./background-jobs.js";
+export type { BackgroundJob } from "./background-jobs.js";
 export { loadConfig, loadConfigFile, writeConfig, findGitRoot, resolveConfigHome } from "./config.js";
 export { createStorage, backupDatabase, resolveIdPrefix } from "./storage.js";
 export { createLLMClient } from "./llm.js";

@@ -9,7 +9,7 @@ import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import jwt from "jsonwebtoken";
-import { loadConfig, createStorage, createLLMClient, createLogger, memoryMigrations, threadMigrations, knowledgeMigrations, authMigrations, hasOwner, getJwtSecret, resetOwnerPassword } from "@personal-ai/core";
+import { loadConfig, createStorage, createLLMClient, createLogger, memoryMigrations, threadMigrations, knowledgeMigrations, authMigrations, backgroundJobMigrations, hasOwner, getJwtSecret, resetOwnerPassword } from "@personal-ai/core";
 import { taskMigrations } from "@personal-ai/plugin-tasks";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
@@ -44,6 +44,7 @@ const allMigrations: Array<[string, Migration[]]> = [
   ["research", researchMigrations],
   ["learning", learningMigrations],
   ["schedules", scheduleMigrations],
+  ["background_jobs", backgroundJobMigrations],
 ];
 
 /** Run all plugin migrations on a storage instance */
@@ -526,12 +527,6 @@ export async function createServer(options?: { port?: number; host?: string }) {
   }
 
   // --- Push new research reports to Telegram ---
-  // Seed with existing IDs so we only push reports created AFTER this boot
-  const sentResearchIds = new Set<string>(
-    ctx.storage.query<{ id: string }>(
-      "SELECT id FROM briefings WHERE type = 'research'",
-    ).map((r) => r.id),
-  );
 
   function findChatIdForResearchBriefing(briefingId: string): number | null {
     // Briefing IDs follow pattern "research-{jobId}"
@@ -558,11 +553,9 @@ export async function createServer(options?: { port?: number; host?: string }) {
     if (!telegramBot || !telegramStatus.running) return;
     try {
       const rows = ctx.storage.query<{ id: string; sections: string }>(
-        "SELECT id, sections FROM briefings WHERE type = 'research' AND status = 'ready' ORDER BY generated_at DESC LIMIT 5",
+        "SELECT id, sections FROM briefings WHERE type = 'research' AND status = 'ready' AND telegram_sent_at IS NULL ORDER BY generated_at DESC LIMIT 5",
       );
       for (const row of rows) {
-        if (sentResearchIds.has(row.id)) continue;
-        sentResearchIds.add(row.id);
         try {
           const parsed = JSON.parse(row.sections) as { goal?: string; report?: string };
           if (!parsed.report) continue;
@@ -572,8 +565,11 @@ export async function createServer(options?: { port?: number; host?: string }) {
           const chatId = findChatIdForResearchBriefing(row.id);
           if (chatId) {
             await sendToTelegramChat(chatId, html);
+            ctx.storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
             ctx.logger.info("Research report pushed to Telegram", { briefingId: row.id, chatId });
           } else {
+            // Mark as sent even without a chat, to avoid re-checking
+            ctx.storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
             ctx.logger.info("Research report ready (no originating Telegram chat)", { briefingId: row.id });
           }
         } catch { /* skip malformed entries */ }

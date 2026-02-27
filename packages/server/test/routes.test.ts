@@ -39,6 +39,8 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     memoryStats: vi.fn(),
     remember: vi.fn(),
     getMemoryContext: vi.fn().mockResolvedValue(""),
+    listJobs: (...args: unknown[]) => mockListJobs(...args),
+    clearCompletedBackgroundJobs: (...args: unknown[]) => mockClearCompletedBackgroundJobs(...args),
     hasOwner: (...args: unknown[]) => mockHasOwner(...args),
     createOwner: (...args: unknown[]) => mockCreateOwner(...args),
     getOwner: (...args: unknown[]) => mockGetOwner(...args),
@@ -64,6 +66,12 @@ const mockGetJwtSecret = vi.fn().mockReturnValue("test-secret-key-for-jwt-testin
 // ---------------------------------------------------------------------------
 const mockWriteConfig = vi.fn();
 const mockLoadConfigFile = vi.fn().mockReturnValue({});
+
+// ---------------------------------------------------------------------------
+// Background jobs mock functions
+// ---------------------------------------------------------------------------
+const mockListJobs = vi.fn().mockReturnValue([]);
+const mockClearCompletedBackgroundJobs = vi.fn().mockReturnValue(0);
 
 // ---------------------------------------------------------------------------
 // Mock @personal-ai/plugin-tasks — isolate task route handlers
@@ -222,7 +230,6 @@ import {
   forgetBelief,
   memoryStats,
   remember,
-  activeJobs,
 } from "@personal-ai/core";
 
 // ---------------------------------------------------------------------------
@@ -1956,7 +1963,8 @@ describe("jobs routes", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    activeJobs.clear();
+    mockListJobs.mockReturnValue([]);
+    mockClearCompletedBackgroundJobs.mockReturnValue(0);
     app = Fastify();
     serverCtx = createMockServerCtx();
     registerJobRoutes(app, serverCtx);
@@ -1964,7 +1972,6 @@ describe("jobs routes", () => {
   });
 
   afterEach(async () => {
-    activeJobs.clear();
     await app.close();
   });
 
@@ -1976,15 +1983,15 @@ describe("jobs routes", () => {
     expect(body.jobs).toEqual([]);
   });
 
-  it("GET /api/jobs returns in-memory active jobs", async () => {
-    activeJobs.set("job1", {
+  it("GET /api/jobs returns DB-backed active jobs", async () => {
+    mockListJobs.mockReturnValue([{
       id: "job1",
       type: "crawl",
       label: "Crawling example.com",
       status: "running",
       progress: "3/10 pages",
       startedAt: "2026-02-25T08:00:00Z",
-    });
+    }]);
     mockListResearchJobs.mockReturnValue([]);
 
     const res = await app.inject({ method: "GET", url: "/api/jobs" });
@@ -2023,14 +2030,14 @@ describe("jobs routes", () => {
   });
 
   it("GET /api/jobs deduplicates active and persisted jobs by id", async () => {
-    activeJobs.set("rj1", {
+    mockListJobs.mockReturnValue([{
       id: "rj1",
       type: "research",
       label: "Research AI trends (active)",
       status: "running",
       progress: "2/10 searches",
       startedAt: "2026-02-25T08:00:00Z",
-    });
+    }]);
     mockListResearchJobs.mockReturnValue([
       {
         id: "rj1",
@@ -2076,44 +2083,15 @@ describe("jobs routes", () => {
     expect(res.json().error).toBe("Job not found");
   });
 
-  it("POST /api/jobs/clear clears completed jobs from DB and memory", async () => {
-    activeJobs.set("done1", {
-      id: "done1",
-      type: "crawl",
-      label: "Done crawl",
-      status: "done",
-      progress: "10/10",
-      startedAt: "2026-02-25T08:00:00Z",
-    });
-    activeJobs.set("err1", {
-      id: "err1",
-      type: "research",
-      label: "Failed research",
-      status: "error",
-      progress: "0/10",
-      startedAt: "2026-02-25T08:00:00Z",
-      error: "LLM timeout",
-    });
-    activeJobs.set("running1", {
-      id: "running1",
-      type: "crawl",
-      label: "Still running",
-      status: "running",
-      progress: "5/10",
-      startedAt: "2026-02-25T08:00:00Z",
-    });
-    mockClearCompletedJobs.mockReturnValue(2);
+  it("POST /api/jobs/clear clears completed jobs from both tables", async () => {
+    mockClearCompletedBackgroundJobs.mockReturnValue(2);
+    mockClearCompletedJobs.mockReturnValue(3);
 
     const res = await app.inject({ method: "POST", url: "/api/jobs/clear", payload: {} });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.ok).toBe(true);
-    // 2 from DB + 2 from memory (done1 + err1)
-    expect(body.cleared).toBe(4);
-    // running1 should still be in activeJobs
-    expect(activeJobs.has("running1")).toBe(true);
-    expect(activeJobs.has("done1")).toBe(false);
-    expect(activeJobs.has("err1")).toBe(false);
+    expect(body.cleared).toBe(5); // 2 background + 3 research
   });
 });
 

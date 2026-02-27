@@ -1,10 +1,25 @@
-import { describe, it, expect } from "vitest";
-import { activeJobs } from "../src/index.js";
-import type { BackgroundJob } from "../src/index.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { createStorage } from "../src/storage.js";
+import type { Storage } from "../src/types.js";
+import { backgroundJobMigrations, upsertJob, getJob, listJobs } from "../src/background-jobs.js";
+import type { BackgroundJob } from "../src/background-jobs.js";
 
-describe("activeJobs", () => {
-  it("is a Map that tracks background jobs", () => {
-    expect(activeJobs).toBeInstanceOf(Map);
+describe("background jobs (DB-backed)", () => {
+  let dir: string;
+  let storage: Storage;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-jobs-test-"));
+    storage = createStorage(dir);
+    storage.migrate("background_jobs", backgroundJobMigrations);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("stores and retrieves a job", () => {
@@ -16,9 +31,12 @@ describe("activeJobs", () => {
       progress: "0/5",
       startedAt: new Date().toISOString(),
     };
-    activeJobs.set(job.id, job);
-    expect(activeJobs.get("test-1")).toEqual(job);
-    activeJobs.delete("test-1"); // cleanup
+    upsertJob(storage, job);
+    const stored = getJob(storage, "test-1");
+    expect(stored).not.toBeNull();
+    expect(stored!.id).toBe("test-1");
+    expect(stored!.type).toBe("crawl");
+    expect(stored!.status).toBe("running");
   });
 
   it("supports research type", () => {
@@ -31,9 +49,22 @@ describe("activeJobs", () => {
       startedAt: new Date().toISOString(),
       result: "# Report\n\nFindings here.",
     };
-    activeJobs.set(job.id, job);
-    expect(activeJobs.get("res-1")!.type).toBe("research");
-    expect(activeJobs.get("res-1")!.result).toContain("Findings");
-    activeJobs.delete("res-1");
+    upsertJob(storage, job);
+    const stored = getJob(storage, "res-1");
+    expect(stored!.type).toBe("research");
+    expect(stored!.result).toContain("Findings");
+  });
+
+  it("lists all jobs", () => {
+    upsertJob(storage, {
+      id: "j1", type: "crawl", label: "a", status: "running",
+      progress: "", startedAt: "2026-01-01T00:00:00Z",
+    });
+    upsertJob(storage, {
+      id: "j2", type: "research", label: "b", status: "done",
+      progress: "", startedAt: "2026-02-01T00:00:00Z",
+    });
+    const jobs = listJobs(storage);
+    expect(jobs).toHaveLength(2);
   });
 });

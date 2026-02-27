@@ -61,6 +61,10 @@ export const briefingMigrations: Migration[] = [
     version: 2,
     up: `ALTER TABLE briefings ADD COLUMN type TEXT NOT NULL DEFAULT 'daily';`,
   },
+  {
+    version: 3,
+    up: `ALTER TABLE briefings ADD COLUMN telegram_sent_at TEXT;`,
+  },
 ];
 
 // --- Data Access ---

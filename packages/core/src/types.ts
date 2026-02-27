@@ -150,17 +150,4 @@ export interface AgentContext extends PluginContext {
   sender?: { displayName?: string; username?: string };
 }
 
-// ---- Shared background-job tracker ----
-
-export interface BackgroundJob {
-  id: string;
-  type: "crawl" | "research";
-  label: string;
-  status: "running" | "done" | "error";
-  progress: string;
-  startedAt: string;
-  error?: string;
-  result?: string;
-}
-
-export const activeJobs = new Map<string, BackgroundJob>();
+// BackgroundJob type and DB-backed CRUD are in ./background-jobs.ts

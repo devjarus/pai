@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createStorage, threadMigrations, createThread, listMessages } from "@personal-ai/core";
+import { createStorage, threadMigrations, backgroundJobMigrations, createThread, listMessages, getJob } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
 import type { Migration } from "@personal-ai/core";
 import { researchMigrations } from "../src/index.js";
@@ -24,6 +24,7 @@ describe("Research jobs", () => {
     dir = mkdtempSync(join(tmpdir(), "pai-research-test-"));
     storage = createStorage(dir);
     storage.migrate("research", researchMigrations);
+    storage.migrate("background_jobs", backgroundJobMigrations);
     vi.clearAllMocks();
   });
 
@@ -128,8 +129,7 @@ describe("Research jobs", () => {
       expect(job!.status).toBe("failed");
     });
 
-    it("registers job in activeJobs tracker", async () => {
-      const { activeJobs } = await import("@personal-ai/core");
+    it("registers job in background_jobs DB table", async () => {
       const { generateText } = await import("ai");
       (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
         text: "# Report\nDone.",
@@ -144,12 +144,10 @@ describe("Research jobs", () => {
 
       await runResearchInBackground(ctx, id);
 
-      const tracked = activeJobs.get(id);
+      const tracked = getJob(storage, id);
       expect(tracked).toBeDefined();
       expect(tracked!.status).toBe("done");
       expect(tracked!.type).toBe("research");
-
-      activeJobs.delete(id); // cleanup
     });
   });
 
