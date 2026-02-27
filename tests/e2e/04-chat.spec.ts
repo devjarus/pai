@@ -9,8 +9,8 @@ test.describe("Chat", () => {
   });
 
   test("send a message and receive a streamed response", async ({ page }) => {
-    // Find the chat textarea by placeholder
-    const input = page.getByPlaceholder(/type a message/i);
+    // Find the chat textarea by placeholder (assistant-ui uses "Send a message...")
+    const input = page.getByPlaceholder(/send a message/i);
     await expect(input).toBeVisible({ timeout: 5_000 });
 
     // Type and send
