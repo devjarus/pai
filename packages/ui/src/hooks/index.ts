@@ -8,3 +8,4 @@ export * from "./use-inbox";
 export * from "./use-jobs";
 export * from "./use-schedules";
 export * from "./use-config";
+export * from "./use-health";

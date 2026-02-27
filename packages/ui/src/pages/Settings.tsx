@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { useConfig, useUpdateConfig, useMemoryStats, useBrowseDir } from "@/hooks";
+import { useConfig, useUpdateConfig, useMemoryStats, useBrowseDir, useHealth } from "@/hooks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
-import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon } from "lucide-react";
+import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon } from "lucide-react";
 
 const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedModel: string }> = {
   ollama: { baseUrl: "http://localhost:11434", model: "llama3.2", embedModel: "nomic-embed-text" },
@@ -24,6 +24,7 @@ export default function Settings() {
   const { data: config, isLoading: configLoading } = useConfig();
   const { data: stats, isLoading: statsLoading } = useMemoryStats();
   const updateConfigMut = useUpdateConfig();
+  const { data: health, isLoading: healthLoading } = useHealth();
 
   const loading = configLoading || statsLoading;
 
@@ -302,6 +303,41 @@ export default function Settings() {
                   )}
                 </div>
               </div>
+
+              {/* LLM Connection Status */}
+              <div className="flex items-center justify-between border-t border-border/30 px-5 py-3">
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  LLM Status
+                  <InfoBubble text="Whether pai can reach your LLM provider. If this shows an error, check your provider, base URL, and API key above." side="right" />
+                </span>
+                <span className="flex items-center gap-2 font-mono text-sm">
+                  {healthLoading ? (
+                    <>
+                      <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+                      <span className="text-muted-foreground">Checking...</span>
+                    </>
+                  ) : health?.ok ? (
+                    <>
+                      <CircleCheckIcon className="size-3.5 text-green-500" />
+                      <span className="text-green-500">Connected</span>
+                    </>
+                  ) : (
+                    <>
+                      <CircleXIcon className="size-3.5 text-red-400" />
+                      <span className="text-red-400">Not connected</span>
+                    </>
+                  )}
+                </span>
+              </div>
+
+              {/* API Key Warning for cloud providers */}
+              {!editing && !config.llm.hasApiKey && config.llm.provider !== "ollama" && (
+                <div className="flex items-center gap-2 border-t border-amber-500/20 bg-amber-500/5 px-5 py-2.5">
+                  <span className="text-xs text-amber-400">
+                    No API key set for {config.llm.provider}. Click Edit above to add your API key.
+                  </span>
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : (

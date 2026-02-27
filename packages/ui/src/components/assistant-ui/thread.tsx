@@ -8,6 +8,7 @@ import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useConfig, useHealth } from "@/hooks";
 import {
   ActionBarMorePrimitive,
   ActionBarPrimitive,
@@ -30,7 +31,10 @@ import {
   PencilIcon,
   RefreshCwIcon,
   SquareIcon,
+  AlertTriangleIcon,
+  SettingsIcon,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import type { FC } from "react";
 
 export const Thread: FC = () => {
@@ -59,6 +63,9 @@ export const Thread: FC = () => {
 
         <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mx-auto mt-auto flex w-full max-w-(--thread-max-width) flex-col gap-4 overflow-visible rounded-t-3xl bg-background pb-4 md:pb-6">
           <ThreadScrollToBottom />
+          <AuiIf condition={(s) => !s.thread.isEmpty}>
+            <LlmConfigWarning />
+          </AuiIf>
           <Composer />
         </ThreadPrimitive.ViewportFooter>
       </ThreadPrimitive.Viewport>
@@ -80,6 +87,55 @@ const ThreadScrollToBottom: FC = () => {
   );
 };
 
+const LlmConfigWarning: FC = () => {
+  const { data: config } = useConfig();
+  const { data: health, isLoading: healthLoading } = useHealth();
+
+  if (healthLoading || !config) return null;
+
+  const needsApiKey = !config.llm.hasApiKey && config.llm.provider !== "ollama";
+  const isUnreachable = health && !health.ok;
+
+  if (!needsApiKey && !isUnreachable) return null;
+
+  return (
+    <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-2">
+      <div className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+        <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-amber-400" />
+        <div className="min-w-0 flex-1 space-y-1">
+          {needsApiKey ? (
+            <>
+              <p className="text-sm font-medium text-amber-300">API key not configured</p>
+              <p className="text-xs text-amber-400/80">
+                Your LLM provider ({config.llm.provider}) requires an API key to work.
+                Add your key in Settings to start chatting.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-amber-300">Cannot reach LLM provider</p>
+              <p className="text-xs text-amber-400/80">
+                Unable to connect to {config.llm.provider}
+                {config.llm.baseUrl ? ` at ${config.llm.baseUrl}` : ""}.
+                {config.llm.provider === "ollama"
+                  ? " Make sure Ollama is running locally."
+                  : " Check your API key and base URL in Settings."}
+              </p>
+            </>
+          )}
+          <Link
+            to="/settings"
+            className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
+          >
+            <SettingsIcon className="size-3" />
+            Open Settings
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ThreadWelcome: FC = () => {
   return (
     <div className="aui-thread-welcome-root mx-auto my-auto flex w-full max-w-(--thread-max-width) grow flex-col">
@@ -93,6 +149,7 @@ const ThreadWelcome: FC = () => {
           </p>
         </div>
       </div>
+      <LlmConfigWarning />
       <WelcomeSuggestions />
     </div>
   );
