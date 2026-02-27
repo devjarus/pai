@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createStorage, threadMigrations } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
-import { learningMigrations, getWatermark, updateWatermark, gatherSignals, buildLearningPrompt, parseLearningResponse } from "../src/learning.js";
+import { learningMigrations, getWatermark, updateWatermark, gatherSignals, buildLearningPrompt, parseLearningResponse, runBackgroundLearning } from "../src/learning.js";
 import type { GatheredSignals } from "../src/learning.js";
+import type { PluginContext } from "@personal-ai/core";
 
 describe("learning watermarks", () => {
   let dir: string;
@@ -160,5 +161,62 @@ describe("parseLearningResponse", () => {
   it("filters out items with missing fields", () => {
     const input = '[{"fact":"good","factType":"factual","importance":5,"subject":"owner"},{"bad":true}]';
     expect(parseLearningResponse(input)).toHaveLength(1);
+  });
+});
+
+describe("runBackgroundLearning", () => {
+  let dir: string;
+  let storage: Storage;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-learning-orchestrator-test-"));
+    storage = createStorage(dir);
+    storage.migrate("learning", learningMigrations);
+    storage.migrate("threads", threadMigrations);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("updates watermarks and skips LLM when no signals exist", async () => {
+    const mockCtx = {
+      storage,
+      llm: {
+        health: async () => ({ ok: true }),
+        getModel: () => ({}),
+        embed: async () => [],
+      },
+      logger: {
+        info: () => {},
+        debug: () => {},
+        warn: () => {},
+        error: () => {},
+      },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    // Watermarks should be updated (not the 24h-ago default anymore)
+    const wm = getWatermark(storage, "threads");
+    const age = Date.now() - new Date(wm).getTime();
+    // Should be very recent (within last 5 seconds)
+    expect(age).toBeLessThan(5000);
+  });
+
+  it("skips when LLM is unhealthy", async () => {
+    const mockCtx = {
+      storage,
+      llm: { health: async () => ({ ok: false }) },
+      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    // Watermarks should NOT be updated (still 24h ago default)
+    const wm = getWatermark(storage, "threads");
+    const age = Date.now() - new Date(wm).getTime();
+    expect(age).toBeGreaterThan(23 * 60 * 60 * 1000);
   });
 });

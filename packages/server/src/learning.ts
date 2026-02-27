@@ -1,4 +1,7 @@
-import type { Migration, Storage } from "@personal-ai/core";
+import { generateText } from "ai";
+import type { LanguageModel } from "ai";
+import { remember } from "@personal-ai/core";
+import type { Migration, PluginContext, Storage } from "@personal-ai/core";
 
 export const learningMigrations: Migration[] = [
   {
@@ -236,4 +239,101 @@ export function parseLearningResponse(text: string): ExtractedFact[] {
   } catch {
     return [];
   }
+}
+
+export async function runBackgroundLearning(ctx: PluginContext): Promise<void> {
+  const start = Date.now();
+  ctx.logger.info("Background learning: starting");
+
+  // Health check
+  try {
+    const health = await ctx.llm.health();
+    if (!health.ok) {
+      ctx.logger.info("Background learning: skipped (LLM unavailable)");
+      return;
+    }
+  } catch {
+    ctx.logger.info("Background learning: skipped (LLM health check failed)");
+    return;
+  }
+
+  // Phase 1: Gather signals
+  const signals = gatherSignals(ctx.storage);
+
+  ctx.logger.info("Background learning: signals gathered", {
+    threadCount: signals.threads.length,
+    messageCount: signals.threads.reduce((acc, t) => acc + t.messages.length, 0),
+    researchCount: signals.research.length,
+    taskCount: signals.tasks.length,
+    knowledgeCount: signals.knowledge.length,
+  });
+
+  if (signals.isEmpty) {
+    const now = new Date().toISOString();
+    updateWatermark(ctx.storage, "threads", now);
+    updateWatermark(ctx.storage, "research", now);
+    updateWatermark(ctx.storage, "tasks", now);
+    updateWatermark(ctx.storage, "knowledge", now);
+    ctx.logger.info("Background learning: nothing new, skipped LLM call", {
+      durationMs: Date.now() - start,
+    });
+    return;
+  }
+
+  // Phase 2: LLM extraction
+  const prompt = buildLearningPrompt(signals);
+  let facts: ExtractedFact[] = [];
+
+  try {
+    const llmStart = Date.now();
+    const result = await generateText({
+      model: ctx.llm.getModel() as LanguageModel,
+      prompt,
+      temperature: 0.3,
+      maxRetries: 1,
+    });
+    ctx.logger.debug("Background learning: LLM call complete", {
+      durationMs: Date.now() - llmStart,
+    });
+    facts = parseLearningResponse(result.text);
+  } catch (err) {
+    ctx.logger.error("Background learning: LLM extraction failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return; // Don't update watermarks on LLM failure
+  }
+
+  // Phase 3: Store facts via remember()
+  let created = 0;
+  let reinforced = 0;
+
+  for (const fact of facts) {
+    try {
+      const result = await remember(ctx.storage, ctx.llm, fact.fact, ctx.logger);
+      if (result.isReinforcement) {
+        reinforced++;
+      } else {
+        created++;
+      }
+    } catch (err) {
+      ctx.logger.debug("Background learning: failed to store a fact", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // Phase 4: Update watermarks
+  const now = new Date().toISOString();
+  updateWatermark(ctx.storage, "threads", now);
+  updateWatermark(ctx.storage, "research", now);
+  updateWatermark(ctx.storage, "tasks", now);
+  updateWatermark(ctx.storage, "knowledge", now);
+
+  const duration = Date.now() - start;
+  ctx.logger.info("Background learning: complete", {
+    factsExtracted: facts.length,
+    beliefsCreated: created,
+    beliefsReinforced: reinforced,
+    durationMs: duration,
+  });
 }
