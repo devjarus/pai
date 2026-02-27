@@ -91,6 +91,35 @@ export function getResearchJob(storage: Storage, id: string): ResearchJob | null
   };
 }
 
+export function listResearchJobs(storage: Storage): ResearchJob[] {
+  const rows = storage.query<ResearchJobRow>(
+    "SELECT * FROM research_jobs ORDER BY created_at DESC LIMIT 50",
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    threadId: row.thread_id,
+    goal: row.goal,
+    status: row.status as ResearchJob["status"],
+    budgetMaxSearches: row.budget_max_searches,
+    budgetMaxPages: row.budget_max_pages,
+    searchesUsed: row.searches_used,
+    pagesLearned: row.pages_learned,
+    stepsLog: JSON.parse(row.steps_log) as string[],
+    report: row.report,
+    briefingId: row.briefing_id,
+    createdAt: row.created_at,
+    completedAt: row.completed_at,
+  }));
+}
+
+export function clearCompletedJobs(storage: Storage): number {
+  const count = storage.query<{ cnt: number }>(
+    "SELECT COUNT(*) as cnt FROM research_jobs WHERE status IN ('done', 'failed')",
+  )[0]?.cnt ?? 0;
+  storage.run("DELETE FROM research_jobs WHERE status IN ('done', 'failed')");
+  return count;
+}
+
 function updateJob(storage: Storage, id: string, fields: Record<string, unknown>): void {
   const sets = Object.keys(fields).map((k) => `${k} = ?`).join(", ");
   const values = Object.values(fields);

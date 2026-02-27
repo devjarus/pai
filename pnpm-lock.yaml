@@ -125,6 +125,9 @@ importers:
       '@personal-ai/core':
         specifier: workspace:*
         version: link:../core
+      '@personal-ai/plugin-research':
+        specifier: workspace:*
+        version: link:../plugin-research
       '@personal-ai/plugin-tasks':
         specifier: workspace:*
         version: link:../plugin-tasks
@@ -274,6 +277,9 @@ importers:
       '@personal-ai/plugin-curator':
         specifier: workspace:*
         version: link:../plugin-curator
+      '@personal-ai/plugin-research':
+        specifier: workspace:*
+        version: link:../plugin-research
       '@personal-ai/plugin-tasks':
         specifier: workspace:*
         version: link:../plugin-tasks

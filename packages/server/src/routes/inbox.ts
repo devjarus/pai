@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
-import { getLatestBriefing, getBriefingById, listBriefings, generateBriefing, clearAllBriefings, getResearchBriefings } from "../briefing.js";
+import { getLatestBriefing, getBriefingById, listBriefings, listAllBriefings, generateBriefing, clearAllBriefings, getResearchBriefings } from "../briefing.js";
 
 export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
   app.get("/api/inbox", async () => {
@@ -26,6 +26,16 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext
   app.post("/api/inbox/clear", async () => {
     const cleared = clearAllBriefings(ctx.storage);
     return { ok: true, cleared };
+  });
+
+  // Unified feed — all briefing types in chronological order
+  app.get("/api/inbox/all", async () => {
+    const briefings = listAllBriefings(ctx.storage);
+    // Check if a briefing is currently being generated
+    const generating = ctx.storage.query<{ id: string }>(
+      "SELECT id FROM briefings WHERE status = 'generating' LIMIT 1",
+    );
+    return { briefings, generating: generating.length > 0 };
   });
 
   app.get("/api/inbox/research", async () => {

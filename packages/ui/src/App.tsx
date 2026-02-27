@@ -9,6 +9,7 @@ import Settings from "./pages/Settings";
 import Knowledge from "./pages/Knowledge";
 import Tasks from "./pages/Tasks";
 import Inbox from "./pages/Inbox";
+import Jobs from "./pages/Jobs";
 import Login from "./pages/Login";
 import Setup from "./pages/Setup";
 import Onboarding from "./pages/Onboarding";
@@ -65,6 +66,7 @@ export default function App() {
             <Route path="/timeline" element={<Timeline />} />
             <Route path="/knowledge" element={<Knowledge />} />
             <Route path="/tasks" element={<Tasks />} />
+            <Route path="/jobs" element={<Jobs />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
           </Route>

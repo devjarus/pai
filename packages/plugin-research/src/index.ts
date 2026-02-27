@@ -1,6 +1,6 @@
 import type { Plugin, PluginContext, Command, Migration } from "@personal-ai/core";
 
-export { runResearchInBackground, createResearchJob, getResearchJob } from "./research.js";
+export { runResearchInBackground, createResearchJob, getResearchJob, listResearchJobs, clearCompletedJobs } from "./research.js";
 export type { ResearchJob, ResearchContext } from "./research.js";
 
 export const researchMigrations: Migration[] = [

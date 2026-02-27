@@ -418,10 +418,54 @@ export function getInboxBriefing(id: string): Promise<{ briefing: Briefing }> {
   return request<{ briefing: Briefing }>(`/inbox/${id}`);
 }
 
+export function getInboxAll(): Promise<{ briefings: Array<{ id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string }>; generating: boolean }> {
+  return request("/inbox/all");
+}
+
 export function clearInbox(): Promise<{ ok: boolean; cleared: number }> {
   return request("/inbox/clear", { method: "POST", body: "{}" });
 }
 
 export function getResearchBriefings(): Promise<{ briefings: Array<{ id: string; generatedAt: string; sections: { report: string; goal: string }; status: string; type: "research" }> }> {
   return request("/inbox/research");
+}
+
+// ---- Jobs ----
+
+export interface BackgroundJobInfo {
+  id: string;
+  type: "crawl" | "research";
+  label: string;
+  status: "pending" | "running" | "done" | "error" | "failed";
+  progress: string;
+  startedAt: string;
+  completedAt?: string | null;
+  error?: string | null;
+  result?: string | null;
+}
+
+export interface ResearchJobDetail {
+  id: string;
+  threadId: string | null;
+  goal: string;
+  status: string;
+  budgetMaxSearches: number;
+  budgetMaxPages: number;
+  searchesUsed: number;
+  pagesLearned: number;
+  report: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export function getJobs(): Promise<{ jobs: BackgroundJobInfo[] }> {
+  return request("/jobs");
+}
+
+export function getJobDetail(id: string): Promise<{ job: ResearchJobDetail }> {
+  return request(`/jobs/${id}`);
+}
+
+export function clearJobs(): Promise<{ ok: boolean; cleared: number }> {
+  return request("/jobs/clear", { method: "POST", body: "{}" });
 }
