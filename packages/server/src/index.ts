@@ -23,7 +23,7 @@ import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 import { researchMigrations } from "@personal-ai/plugin-research";
 import { briefingMigrations, generateBriefing, getLatestBriefing } from "./briefing.js";
-import { learningMigrations } from "./learning.js";
+import { learningMigrations, runBackgroundLearning } from "./learning.js";
 import { registerInboxRoutes } from "./routes/inbox.js";
 import { registerJobRoutes } from "./routes/jobs.js";
 
@@ -472,6 +472,22 @@ export async function createServer(options?: { port?: number; host?: string }) {
     });
   }
 
+  // --- Background learning worker ---
+  const LEARNING_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
+  const LEARNING_INITIAL_DELAY_MS = 5 * 60 * 1000; // 5 minutes
+
+  const learningInitTimer = setTimeout(() => {
+    runBackgroundLearning(ctx).catch((err) => {
+      ctx.logger.warn(`Background learning failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  }, LEARNING_INITIAL_DELAY_MS);
+
+  const learningTimer = setInterval(() => {
+    runBackgroundLearning(ctx).catch((err) => {
+      ctx.logger.warn(`Background learning failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  }, LEARNING_INTERVAL_MS);
+
   // Write PID file for process management
   const pidFile = join(homedir(), ".personal-ai", "server.pid");
   try {
@@ -484,6 +500,8 @@ export async function createServer(options?: { port?: number; host?: string }) {
     try { unlinkSync(pidFile); } catch { /* ignore */ }
     stopTelegramBot();
     clearInterval(briefingTimer);
+    clearTimeout(learningInitTimer);
+    clearInterval(learningTimer);
     // Cancel any pending storage close from reinitialize
     if (pendingCloseTimer) {
       clearTimeout(pendingCloseTimer);
