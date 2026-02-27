@@ -8,6 +8,7 @@ import {
   deleteTask,
   clearAllTasks,
 } from "../api";
+import type { Task } from "../types";
 
 export const taskKeys = {
   all: ["tasks"] as const,
@@ -61,7 +62,18 @@ export function useCompleteTask() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => completeTask(id),
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: taskKeys.all });
+      const prev = queryClient.getQueriesData<Task[]>({ queryKey: taskKeys.all });
+      queryClient.setQueriesData<Task[]>({ queryKey: taskKeys.all }, (old) =>
+        old?.map((t) => (t.id === id ? { ...t, status: "done", completed_at: new Date().toISOString() } : t)),
+      );
+      return { prev };
+    },
+    onError: (_err, _id, context) => {
+      context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.all });
     },
   });
@@ -71,7 +83,18 @@ export function useReopenTask() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => reopenTask(id),
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: taskKeys.all });
+      const prev = queryClient.getQueriesData<Task[]>({ queryKey: taskKeys.all });
+      queryClient.setQueriesData<Task[]>({ queryKey: taskKeys.all }, (old) =>
+        old?.map((t) => (t.id === id ? { ...t, status: "open", completed_at: null } : t)),
+      );
+      return { prev };
+    },
+    onError: (_err, _id, context) => {
+      context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.all });
     },
   });
@@ -81,7 +104,18 @@ export function useDeleteTask() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteTask(id),
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: taskKeys.all });
+      const prev = queryClient.getQueriesData<Task[]>({ queryKey: taskKeys.all });
+      queryClient.setQueriesData<Task[]>({ queryKey: taskKeys.all }, (old) =>
+        old?.filter((t) => t.id !== id),
+      );
+      return { prev };
+    },
+    onError: (_err, _id, context) => {
+      context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.all });
     },
   });

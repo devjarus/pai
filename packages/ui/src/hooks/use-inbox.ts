@@ -14,10 +14,11 @@ export const inboxKeys = {
   research: () => ["inbox", "research"] as const,
 };
 
-export function useInboxAll() {
+export function useInboxAll(options?: { refetchInterval?: number | false }) {
   return useQuery({
     queryKey: inboxKeys.list(),
     queryFn: () => getInboxAll(),
+    refetchInterval: options?.refetchInterval,
   });
 }
 

@@ -16,7 +16,6 @@ import {
   ComposerPrimitive,
   ErrorPrimitive,
   MessagePrimitive,
-  SuggestionPrimitive,
   ThreadPrimitive,
 } from "@assistant-ui/react";
 import {
@@ -94,39 +93,38 @@ const ThreadWelcome: FC = () => {
           </p>
         </div>
       </div>
-      <ThreadSuggestions />
+      <WelcomeSuggestions />
     </div>
   );
 };
 
-const ThreadSuggestions: FC = () => {
+const SUGGESTIONS = [
+  { title: "What's on my plate?", description: "Review tasks and priorities" },
+  { title: "Recall my preferences", description: "Search your memory" },
+  { title: "Research a topic", description: "Deep-dive into any subject" },
+  { title: "Summarize my knowledge", description: "Review what you've learned" },
+];
+
+const WelcomeSuggestions: FC = () => {
   return (
     <div className="aui-thread-welcome-suggestions grid w-full @md:grid-cols-2 gap-2 pb-4">
-      <ThreadPrimitive.Suggestions
-        components={{
-          Suggestion: ThreadSuggestionItem,
-        }}
-      />
-    </div>
-  );
-};
-
-const ThreadSuggestionItem: FC = () => {
-  return (
-    <div className="aui-thread-welcome-suggestion-display fade-in slide-in-from-bottom-2 @md:nth-[n+3]:block nth-[n+3]:hidden animate-in fill-mode-both duration-200">
-      <SuggestionPrimitive.Trigger send asChild>
-        <Button
-          variant="ghost"
-          className="aui-thread-welcome-suggestion h-auto w-full @md:flex-col flex-wrap items-start justify-start gap-1 rounded-2xl border px-4 py-3 text-left text-sm transition-colors hover:bg-muted"
+      {SUGGESTIONS.map((s) => (
+        <ThreadPrimitive.Suggestion
+          key={s.title}
+          prompt={s.title}
+          method="replace"
+          autoSend
+          asChild
         >
-          <span className="aui-thread-welcome-suggestion-text-1 font-medium">
-            <SuggestionPrimitive.Title />
-          </span>
-          <span className="aui-thread-welcome-suggestion-text-2 text-muted-foreground">
-            <SuggestionPrimitive.Description />
-          </span>
-        </Button>
-      </SuggestionPrimitive.Trigger>
+          <Button
+            variant="ghost"
+            className="aui-thread-welcome-suggestion h-auto w-full @md:flex-col flex-wrap items-start justify-start gap-1 rounded-2xl border px-4 py-3 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <span className="aui-thread-welcome-suggestion-text-1 font-medium">{s.title}</span>
+            <span className="aui-thread-welcome-suggestion-text-2 text-muted-foreground">{s.description}</span>
+          </Button>
+        </ThreadPrimitive.Suggestion>
+      ))}
     </div>
   );
 };

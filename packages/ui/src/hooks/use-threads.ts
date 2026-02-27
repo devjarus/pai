@@ -7,6 +7,7 @@ import {
   renameThread,
   getThreadMessages,
 } from "../api";
+import type { Thread } from "../types";
 
 export const threadKeys = {
   all: ["threads"] as const,
@@ -44,7 +45,18 @@ export function useDeleteThread() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteThread(id),
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: threadKeys.all });
+      const prev = queryClient.getQueriesData<Thread[]>({ queryKey: threadKeys.all });
+      queryClient.setQueriesData<Thread[]>({ queryKey: threadKeys.all }, (old) =>
+        old?.filter((t) => t.id !== id),
+      );
+      return { prev };
+    },
+    onError: (_err, _id, context) => {
+      context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: threadKeys.all });
     },
   });
@@ -55,7 +67,18 @@ export function useRenameThread() {
   return useMutation({
     mutationFn: (input: { id: string; title: string }) =>
       renameThread(input.id, input.title),
-    onSuccess: () => {
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: threadKeys.all });
+      const prev = queryClient.getQueriesData<Thread[]>({ queryKey: threadKeys.all });
+      queryClient.setQueriesData<Thread[]>({ queryKey: threadKeys.all }, (old) =>
+        old?.map((t) => (t.id === input.id ? { ...t, title: input.title } : t)),
+      );
+      return { prev };
+    },
+    onError: (_err, _input, context) => {
+      context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: threadKeys.all });
     },
   });

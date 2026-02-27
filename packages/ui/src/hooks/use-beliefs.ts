@@ -8,6 +8,7 @@ import {
   clearAllMemory,
   getStats,
 } from "../api";
+import type { Belief } from "../types";
 
 export const beliefKeys = {
   all: ["beliefs"] as const,
@@ -53,7 +54,18 @@ export function useForgetBelief() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => forgetBelief(id),
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: beliefKeys.all });
+      const prev = queryClient.getQueriesData<Belief[]>({ queryKey: beliefKeys.all });
+      queryClient.setQueriesData<Belief[]>({ queryKey: beliefKeys.all }, (old) =>
+        old?.map((b) => (b.id === id ? { ...b, status: "forgotten" } : b)),
+      );
+      return { prev };
+    },
+    onError: (_err, _id, context) => {
+      context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: beliefKeys.all });
     },
   });

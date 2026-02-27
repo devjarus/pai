@@ -125,13 +125,6 @@ export const KnowledgeForgetToolUI = makeAssistantToolUI({
   ),
 });
 
-export const KnowledgeStatusToolUI = makeAssistantToolUI({
-  toolName: "knowledge_status",
-  render: ({ args, result, status }) => (
-    <ToolKnowledgeAction state={mapStatus(status)} toolName="knowledge_status" input={args} output={result as any} />
-  ),
-});
-
 export const JobStatusToolUI = makeAssistantToolUI({
   toolName: "job_status",
   render: ({ args, result, status }) => (
@@ -206,7 +199,6 @@ export const AllToolUIs = () => (
     <KnowledgeSourcesToolUI />
     <LearnFromUrlToolUI />
     <KnowledgeForgetToolUI />
-    <KnowledgeStatusToolUI />
     <JobStatusToolUI />
     <CurateMemoryToolUI />
     <FixIssuesToolUI />

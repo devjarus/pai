@@ -11,6 +11,7 @@ import {
   deleteKnowledgeSource,
   updateKnowledgeSource,
 } from "../api";
+import type { KnowledgeSource } from "../types";
 
 export const knowledgeKeys = {
   all: ["knowledge"] as const,
@@ -98,7 +99,18 @@ export function useDeleteKnowledgeSource() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteKnowledgeSource(id),
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: knowledgeKeys.all });
+      const prev = queryClient.getQueriesData<KnowledgeSource[]>({ queryKey: knowledgeKeys.all });
+      queryClient.setQueriesData<KnowledgeSource[]>({ queryKey: knowledgeKeys.all }, (old) =>
+        old?.filter((s) => s.id !== id),
+      );
+      return { prev };
+    },
+    onError: (_err, _id, context) => {
+      context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: knowledgeKeys.all });
     },
   });

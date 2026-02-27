@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox } from "@/hooks";
-import { createThread, getInboxAll } from "../api";
+import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread } from "@/hooks";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -102,6 +101,7 @@ function InboxDetail({ id }: { id: string }) {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const { markRead } = useContext(ReadContext);
+  const createThreadMut = useCreateThread();
 
   const { data: briefingData, isLoading: loading } = useInboxBriefing(id);
 
@@ -135,7 +135,7 @@ function InboxDetail({ id }: { id: string }) {
       const title = item.type === "research"
         ? `Research: ${sections.goal ?? "Report"}`
         : sections.greeting?.slice(0, 60) ?? "Briefing Discussion";
-      const thread = await createThread(title);
+      const thread = await createThreadMut.mutateAsync({ title });
       const context = item.type === "research"
         ? `I'd like to discuss this research report:\n\n**Goal:** ${sections.goal}\n\n${sections.report ?? ""}`
         : `I'd like to discuss today's briefing.`;
@@ -322,20 +322,25 @@ function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<str
 function InboxFeed() {
   const [generating, setGenerating] = useState(false);
   const navigate = useNavigate();
-  const pollRef = useRef<ReturnType<typeof setInterval>>(null);
+  const prevGeneratingRef = useRef(false);
   const { readIds, markRead } = useContext(ReadContext);
 
-  const { data: inboxData, isLoading: loading } = useInboxAll();
+  const { data: inboxData, isLoading: loading } = useInboxAll({
+    refetchInterval: generating ? 3000 : false,
+  });
   const items: InboxItem[] = inboxData?.briefings ?? [];
 
-  // Track generating state from initial load
+  // Track generating state transitions via query data
   useEffect(() => {
-    if (inboxData?.generating) {
+    if (inboxData?.generating && !generating) {
       setGenerating(true);
-      startPoll();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inboxData?.generating]);
+    if (prevGeneratingRef.current && !inboxData?.generating) {
+      setGenerating(false);
+      toast.success("Briefing updated!");
+    }
+    prevGeneratingRef.current = !!inboxData?.generating;
+  }, [inboxData?.generating]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Store last seen briefing ID
   useEffect(() => {
@@ -360,49 +365,11 @@ function InboxFeed() {
   const refreshInboxMut = useRefreshInbox();
   const clearInboxMut = useClearInbox();
 
-  const startPoll = () => {
-    stopPoll();
-    let attempts = 0;
-    pollRef.current = setInterval(async () => {
-      attempts++;
-      try {
-        const data = await getInboxAll();
-        if (data.briefings.length > 0) {
-          localStorage.setItem("pai-last-seen-briefing-id", data.briefings[0].id);
-        }
-        if (!data.generating) {
-          setGenerating(false);
-          stopPoll();
-          // Invalidate the query so TanStack Query picks up the new data
-          refreshInboxMut.reset();
-          toast.success("Briefing updated!");
-        }
-      } catch { /* ignore */ }
-      if (attempts > 60) {
-        setGenerating(false);
-        stopPoll();
-        toast.error("Briefing is taking longer than expected.");
-      }
-    }, 3000);
-  };
-
-  const stopPoll = () => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => stopPoll();
-  }, []);
-
   const handleRefresh = async () => {
     setGenerating(true);
     try {
       await refreshInboxMut.mutateAsync();
       toast.success("Generating new briefing...");
-      startPoll();
     } catch {
       setGenerating(false);
       toast.error("Failed to start briefing refresh");

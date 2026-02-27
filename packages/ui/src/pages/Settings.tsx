@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { useConfig, useUpdateConfig, useMemoryStats } from "@/hooks";
-import { browseDir } from "../api";
-import type { BrowseResult } from "../api";
+import { useConfig, useUpdateConfig, useMemoryStats, useBrowseDir } from "@/hooks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,8 +46,8 @@ export default function Settings() {
 
   // Directory browser
   const [browseOpen, setBrowseOpen] = useState(false);
-  const [browseData, setBrowseData] = useState<BrowseResult | null>(null);
-  const [browseLoading, setBrowseLoading] = useState(false);
+  const [browsePath, setBrowsePath] = useState<string | undefined>(undefined);
+  const { data: browseResult, isLoading: browseLoading } = useBrowseDir(browsePath, browseOpen);
 
   useEffect(() => { document.title = "Settings - pai"; }, []);
 
@@ -111,29 +109,13 @@ export default function Settings() {
     setEditing(false);
   }, [config]);
 
-  const openBrowser = useCallback(async (startPath?: string) => {
+  const openBrowser = useCallback((startPath?: string) => {
+    setBrowsePath(startPath || dataDir || undefined);
     setBrowseOpen(true);
-    setBrowseLoading(true);
-    try {
-      const result = await browseDir(startPath || dataDir || undefined);
-      setBrowseData(result);
-    } catch {
-      setBrowseData(null);
-    } finally {
-      setBrowseLoading(false);
-    }
   }, [dataDir]);
 
-  const navigateTo = useCallback(async (path: string) => {
-    setBrowseLoading(true);
-    try {
-      const result = await browseDir(path);
-      setBrowseData(result);
-    } catch {
-      // stay on current
-    } finally {
-      setBrowseLoading(false);
-    }
+  const navigateTo = useCallback((path: string) => {
+    setBrowsePath(path);
   }, []);
 
   const selectDir = useCallback((path: string) => {
@@ -460,11 +442,11 @@ export default function Settings() {
             <DialogTitle className="text-sm">Choose Data Directory</DialogTitle>
           </DialogHeader>
 
-          {browseData && (
+          {browseResult && (
             <div className="space-y-3">
               {/* Current path */}
               <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2">
-                <span className="font-mono text-xs text-muted-foreground">{browseData.current}</span>
+                <span className="font-mono text-xs text-muted-foreground">{browseResult.current}</span>
               </div>
 
               {/* Up button */}
@@ -472,7 +454,7 @@ export default function Settings() {
                 variant="ghost"
                 size="sm"
                 className="h-7 w-full justify-start gap-2 text-xs text-muted-foreground"
-                onClick={() => navigateTo(browseData.parent)}
+                onClick={() => navigateTo(browseResult.parent)}
                 disabled={browseLoading}
               >
                 <ChevronUpIcon className="size-3.5" />
@@ -487,11 +469,11 @@ export default function Settings() {
                       <Skeleton key={i} className="h-7 w-full" />
                     ))}
                   </div>
-                ) : browseData.entries.length === 0 ? (
+                ) : browseResult.entries.length === 0 ? (
                   <p className="p-4 text-center text-xs text-muted-foreground">No subdirectories</p>
                 ) : (
                   <div className="p-1">
-                    {browseData.entries.map((entry) => (
+                    {browseResult.entries.map((entry) => (
                       <button
                         key={entry.path}
                         type="button"
@@ -517,7 +499,7 @@ export default function Settings() {
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs"
-                    onClick={() => selectDir(browseData.current)}
+                    onClick={() => selectDir(browseResult.current)}
                   >
                     Use current
                   </Button>
