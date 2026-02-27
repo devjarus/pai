@@ -11,6 +11,7 @@ import {
   listBriefings,
   clearAllBriefings,
   generateBriefing,
+  getResearchBriefings,
 } from "../src/briefing.js";
 import type { BriefingSection } from "../src/briefing.js";
 
@@ -161,6 +162,45 @@ describe("Briefing CRUD", () => {
 
       const list = listBriefings(storage);
       expect(list).toHaveLength(30);
+    });
+  });
+
+  describe("briefing type column", () => {
+    it("defaults to 'daily' for existing briefings", () => {
+      insertBriefing("daily-1", { greeting: "hi" });
+      const row = storage.query<{ type: string }>("SELECT type FROM briefings WHERE id = 'daily-1'");
+      expect(row[0]!.type).toBe("daily");
+    });
+
+    it("stores research type briefings", () => {
+      storage.run(
+        "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
+        ["res-1", JSON.stringify({ report: "findings" })],
+      );
+      const row = storage.query<{ type: string }>("SELECT type FROM briefings WHERE id = 'res-1'");
+      expect(row[0]!.type).toBe("research");
+    });
+
+    it("getLatestBriefing only returns daily type", () => {
+      insertBriefing("daily-old", { greeting: "old" }, "ready", "2025-01-01 00:00:00");
+      storage.run(
+        "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, '2025-12-01 00:00:00', ?, null, 'ready', 'research')",
+        ["res-latest", JSON.stringify({ report: "findings" })],
+      );
+      const result = getLatestBriefing(storage);
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe("daily-old");
+    });
+
+    it("getResearchBriefings returns only research type", () => {
+      insertBriefing("daily-x", { greeting: "hi" }, "ready", "2025-01-01 00:00:00");
+      storage.run(
+        "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, '2025-06-01 00:00:00', ?, null, 'ready', 'research')",
+        ["res-x", JSON.stringify({ report: "research findings", goal: "test goal" })],
+      );
+      const results = getResearchBriefings(storage);
+      expect(results).toHaveLength(1);
+      expect(results[0]!.id).toBe("res-x");
     });
   });
 

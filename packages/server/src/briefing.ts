@@ -30,6 +30,7 @@ export interface BriefingRow {
   sections: string;
   raw_context: string | null;
   status: string;
+  type: string;
 }
 
 export interface Briefing {
@@ -55,13 +56,17 @@ export const briefingMigrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_briefings_generated_at ON briefings(generated_at);
     `,
   },
+  {
+    version: 2,
+    up: `ALTER TABLE briefings ADD COLUMN type TEXT NOT NULL DEFAULT 'daily';`,
+  },
 ];
 
 // --- Data Access ---
 
 export function getLatestBriefing(storage: PluginContext["storage"]): Briefing | null {
   const rows = storage.query<BriefingRow>(
-    "SELECT * FROM briefings WHERE status = 'ready' ORDER BY generated_at DESC LIMIT 1",
+    "SELECT * FROM briefings WHERE status = 'ready' AND type = 'daily' ORDER BY generated_at DESC LIMIT 1",
     [],
   );
   const row = rows[0];
@@ -91,7 +96,7 @@ export function getBriefingById(storage: PluginContext["storage"], id: string): 
 
 export function listBriefings(storage: PluginContext["storage"]): Array<{ id: string; generatedAt: string }> {
   return storage.query<{ id: string; generated_at: string }>(
-    "SELECT id, generated_at FROM briefings WHERE status = 'ready' ORDER BY generated_at DESC LIMIT 30",
+    "SELECT id, generated_at FROM briefings WHERE status = 'ready' AND type = 'daily' ORDER BY generated_at DESC LIMIT 30",
     [],
   ).map((r) => ({ id: r.id, generatedAt: r.generated_at }));
 }
@@ -100,6 +105,31 @@ export function clearAllBriefings(storage: PluginContext["storage"]): number {
   const count = storage.query<{ cnt: number }>("SELECT COUNT(*) as cnt FROM briefings")[0]?.cnt ?? 0;
   storage.run("DELETE FROM briefings");
   return count;
+}
+
+export function getResearchBriefings(storage: PluginContext["storage"]): Briefing[] {
+  const rows = storage.query<BriefingRow>(
+    "SELECT * FROM briefings WHERE status = 'ready' AND type = 'research' ORDER BY generated_at DESC LIMIT 20",
+    [],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    generatedAt: row.generated_at,
+    sections: JSON.parse(row.sections),
+    status: row.status,
+  }));
+}
+
+export function createResearchBriefing(
+  storage: PluginContext["storage"],
+  id: string,
+  report: string,
+  goal: string,
+): void {
+  storage.run(
+    "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
+    [id, JSON.stringify({ report, goal })],
+  );
 }
 
 function pruneOldBriefings(storage: PluginContext["storage"]): void {
