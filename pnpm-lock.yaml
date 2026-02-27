@@ -176,6 +176,31 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.19.11)(jiti@2.6.1)(lightningcss@1.31.1)(msw@2.12.10(@types/node@22.19.11)(typescript@5.9.3))(yaml@2.8.2)
 
+  packages/plugin-research:
+    dependencies:
+      '@personal-ai/core':
+        specifier: workspace:*
+        version: link:../core
+      ai:
+        specifier: ^6.0.0
+        version: 6.0.94(zod@3.25.76)
+      nanoid:
+        specifier: ^5.0.0
+        version: 5.1.6
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.11
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@22.19.11)(jiti@2.6.1)(lightningcss@1.31.1)(msw@2.12.10(@types/node@22.19.11)(typescript@5.9.3))(yaml@2.8.2)
+
   packages/plugin-tasks:
     dependencies:
       '@personal-ai/core':
