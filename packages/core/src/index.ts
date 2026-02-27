@@ -20,6 +20,7 @@ export {
   appendMessages,
   clearThread,
   deleteThread,
+  clearAllThreads,
   getThread,
   withThreadLock,
 } from "./threads.js";

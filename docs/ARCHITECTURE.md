@@ -53,8 +53,8 @@ packages/
   plugin-assistant/   Personal Assistant agent — system prompt, AI SDK tools, afterResponse hook
   plugin-curator/     Memory Curator agent — health analysis, dedup, contradiction resolution
   plugin-telegram/    Telegram bot — grammY, standalone entry point, chat pipeline
-  server/             Fastify API — REST + SSE + static UI + auth (JWT) + briefing generation + server hardening
-  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Inbox, Chat, Memory, Knowledge, Tasks, Settings, Timeline)
+  server/             Fastify API — REST + SSE + static UI + auth (JWT) + briefing generation + background learning worker + server hardening
+  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Inbox, Chat, Memory, Knowledge, Tasks, Jobs, Settings, Timeline)
 ```
 
 ---
@@ -320,6 +320,7 @@ telegram_threads   (chat_id INTEGER PK, thread_id, username, created_at)
 | `appendMessages(storage, threadId, msgs, { maxMessages, titleCandidate })` | Bulk insert + sliding window + auto-title |
 | `clearThread(storage, threadId)` | Delete messages, keep thread |
 | `deleteThread(storage, threadId)` | Hard delete thread + messages |
+| `clearAllThreads(storage)` | Delete all threads and messages |
 | `withThreadLock(threadId, fn)` | Per-thread promise queue (serialize concurrent requests) |
 
 ---
@@ -367,6 +368,37 @@ Background timer (every 6 hours) OR manual refresh (POST /api/inbox/refresh)
 
 ---
 
+## Background Learning Worker
+
+Passive always-on worker (`packages/server/src/learning.ts`) that continuously extracts knowledge from user activity without explicit user action.
+
+### How It Works
+
+```
+Timer: every 2 hours (5-minute initial delay after server start)
+    │
+    ├── Gather signals (SQL watermarks track progress):
+    │     ├── Chat threads — new messages since last scan
+    │     ├── Research reports — completed research briefings
+    │     ├── Completed tasks — recently finished tasks
+    │     └── Knowledge sources — newly learned pages
+    │
+    ├── Build a focused prompt with all new signals
+    │
+    ├── One LLM call → extract facts/preferences/insights
+    │
+    └── remember() for each extracted fact
+          → full dedup/contradiction pipeline
+```
+
+### Watermarks
+
+The `learning_watermarks` table tracks the last-processed ID and timestamp for each signal source, ensuring no data is processed twice and the worker can resume after restarts.
+
+Timer is registered in `packages/server/src/index.ts` alongside the briefing timer.
+
+---
+
 ## API Server
 
 Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
@@ -391,6 +423,7 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `GET` | `/api/threads/:id/messages` | Paginated messages (before= cursor) |
 | `PATCH` | `/api/threads/:id` | Rename thread |
 | `DELETE` | `/api/threads/:id` | Delete thread |
+| `POST` | `/api/threads/clear` | Clear all threads |
 | `GET` | `/api/chat/history` | Legacy history |
 | `DELETE` | `/api/chat/history` | Clear conversation |
 | `GET` | `/api/beliefs` | List beliefs (filter: status, type) |
@@ -412,10 +445,15 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `POST` | `/api/goals/:id/done` | Complete goal |
 | `DELETE` | `/api/goals/:id` | Delete goal |
 | `GET` | `/api/inbox` | Latest briefing |
+| `GET` | `/api/inbox/all` | Unified feed (daily + research) with `generating` flag |
+| `GET` | `/api/inbox/research` | Research briefings only |
 | `POST` | `/api/inbox/refresh` | Generate new briefing (5/min) |
 | `GET` | `/api/inbox/history` | List all briefings |
-| `GET` | `/api/inbox/:id` | Specific briefing |
+| `GET` | `/api/inbox/:id` | Specific briefing (detail view) |
 | `POST` | `/api/inbox/clear` | Clear all briefings |
+| `GET` | `/api/jobs` | List background jobs (crawl + research) |
+| `GET` | `/api/jobs/:id` | Job detail |
+| `POST` | `/api/jobs/clear` | Clear completed jobs |
 | `GET` | `/api/knowledge/sources` | List knowledge sources |
 | `GET` | `/api/knowledge/search?q=` | Search knowledge base |
 | `POST` | `/api/knowledge/learn` | Learn from URL |
@@ -497,8 +535,9 @@ React SPA — Inbox, Chat, Memory Explorer, Knowledge, Tasks, Settings, Timeline
 
 | Page | Key features |
 |------|-------------|
-| **Inbox** (`/`) | AI-generated daily briefing (greeting, task focus, memory insights, suggestions). Staggered fade-in animations. Refresh/clear buttons. Cards navigate to Tasks/Memory/Knowledge. |
-| **Chat** | AI SDK `useChat` + `DefaultChatTransport`, thread sidebar, tool cards, responsive mobile, token usage badge |
+| **Inbox** (`/`) | Unified feed of daily briefings and research reports. Detail view (`/inbox/:id`) with "Start Chat" button (creates thread, auto-sends research context). Staggered fade-in animations. Refresh/clear buttons. Cards navigate to Tasks/Memory/Knowledge. |
+| **Chat** | AI SDK `useChat` + `DefaultChatTransport`, thread sidebar with clear-all-threads option, tool cards, responsive mobile, token usage badge |
+| **Jobs** | Background job tracker for crawl and research jobs. Shows status, progress, and results. Clear completed jobs. |
 | **Memory** | Browse/search beliefs, type filter tabs, detail sidebar, clear all, empty state |
 | **Knowledge** | Browse sources, view chunks, search knowledge base, learn from URLs, crawl sub-pages |
 | **Tasks** | Two sub-tabs (Tasks/Goals), full CRUD, priority badges, due dates, goal linking, progress bars, clear all with confirmation |
@@ -553,9 +592,13 @@ goals              (id, title, description, status, created_at)
 auth_owners        (id, email, password_hash, name, created_at, updated_at)
 auth_refresh_tokens (id, owner_id FK, token_hash, expires_at, created_at)
 
--- Inbox — migration v1
-briefings          (id, generated_at, sections TEXT JSON, raw_context TEXT, status)
+-- Inbox — migrations v1-v2
+briefings          (id, generated_at, sections TEXT JSON, raw_context TEXT, status, type TEXT)
                     INDEX: (generated_at)
+                    -- type: "daily" | "research" (added in v2)
+
+-- Learning — migration v1
+learning_watermarks (source TEXT PK, last_id TEXT, last_ts TEXT, updated_at TEXT)
 ```
 
 ---

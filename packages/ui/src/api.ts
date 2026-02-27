@@ -232,6 +232,10 @@ export function deleteThread(id: string): Promise<{ ok: boolean }> {
   return request(`/threads/${id}`, { method: "DELETE" });
 }
 
+export function clearAllThreads(): Promise<{ ok: boolean; cleared: number }> {
+  return request("/threads/clear", { method: "POST", body: "{}" });
+}
+
 export function renameThread(id: string, title: string): Promise<Thread> {
   return request<Thread>(`/threads/${id}`, {
     method: "PATCH",

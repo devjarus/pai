@@ -12,6 +12,7 @@ import {
   appendMessages,
   clearThread,
   deleteThread,
+  clearAllThreads,
   withThreadLock,
   getThread,
   getOwner,
@@ -116,6 +117,12 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
   app.delete<{ Params: { id: string } }>("/api/threads/:id", async (request) => {
     deleteThread(ctx.storage, request.params.id);
     return { ok: true };
+  });
+
+  // Clear all threads
+  app.post("/api/threads/clear", async () => {
+    const cleared = clearAllThreads(ctx.storage);
+    return { ok: true, cleared };
   });
 
   // Rename a thread

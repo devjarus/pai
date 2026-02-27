@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { toast } from "sonner";
@@ -24,6 +25,7 @@ import {
   getThreads,
   createThread,
   deleteThread,
+  clearAllThreads,
   renameThread,
 } from "../api";
 import type { Agent, Thread } from "../types";
@@ -106,6 +108,7 @@ export default function Chat() {
   const switchAbortRef = useRef<AbortController | null>(null);
 
   const isMobile = useIsMobile();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Use a ref for activeThreadId so the transport body always has the latest value
   const activeThreadIdRef = useRef(activeThreadId);
@@ -217,14 +220,43 @@ export default function Chat() {
     }
   }, [isMobile]);
 
-  // Load agents and threads on mount
+  // Load agents and threads on mount; handle ?thread=X&prompt=Y from inbox
   useEffect(() => {
     getAgents().then(setAgents).catch(() => toast.error("Failed to load agents"));
     setThreadsLoading(true);
     getThreads()
-      .then(setThreads)
+      .then((loaded) => {
+        setThreads(loaded);
+        // If navigated with ?thread=X, select that thread
+        const threadParam = searchParams.get("thread");
+        if (threadParam) {
+          const found = loaded.find((t) => t.id === threadParam);
+          if (found) {
+            setActiveThreadId(found.id);
+            activeThreadIdRef.current = found.id;
+          }
+          // Clear the query params so they don't persist on refresh
+          setSearchParams({}, { replace: true });
+
+          // Check sessionStorage for auto-send context (e.g. from Inbox "Start Chat")
+          const autoSendRaw = sessionStorage.getItem("pai-chat-auto-send");
+          if (autoSendRaw) {
+            sessionStorage.removeItem("pai-chat-auto-send");
+            try {
+              const { threadId, message } = JSON.parse(autoSendRaw) as { threadId: string; message: string };
+              if (threadId === threadParam && message) {
+                // Small delay to let the chat transport initialize with the new thread
+                setTimeout(() => {
+                  sendMessage({ parts: [{ type: "text", text: message }] });
+                }, 300);
+              }
+            } catch { /* ignore parse errors */ }
+          }
+        }
+      })
       .catch(() => toast.error("Failed to load threads"))
       .finally(() => setThreadsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Refresh threads when streaming finishes
@@ -389,6 +421,20 @@ export default function Chat() {
     refreshThreads();
   }, [activeThreadId, refreshThreads, setChatMessages]);
 
+  const handleClearAllThreads = useCallback(async () => {
+    if (!confirm("Delete all threads? This cannot be undone.")) return;
+    try {
+      const result = await clearAllThreads();
+      setThreads([]);
+      setActiveThreadId(null);
+      activeThreadIdRef.current = null;
+      setChatMessages([]);
+      toast.success(`Cleared ${result.cleared} thread${result.cleared !== 1 ? "s" : ""}`);
+    } catch {
+      toast.error("Failed to clear threads");
+    }
+  }, [setChatMessages]);
+
   const activeThread = threads.find((t) => t.id === activeThreadId);
 
   // Show sidebar overlay backdrop on mobile
@@ -421,19 +467,35 @@ export default function Chat() {
             <span className="shrink-0">Threads</span>
             <InfoBubble text="Each thread is a separate conversation. Your chat history is preserved when you switch between threads." side="right" />
           </span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon-xs"
-                onClick={handleNewThread}
-                disabled={isStreaming}
-              >
-                <PlusIcon className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">New thread</TooltipContent>
-          </Tooltip>
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={handleClearAllThreads}
+                  disabled={isStreaming || threads.length === 0}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2Icon className="size-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Clear all threads</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon-xs"
+                  onClick={handleNewThread}
+                  disabled={isStreaming}
+                >
+                  <PlusIcon className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">New thread</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
         <Separator />

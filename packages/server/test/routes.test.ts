@@ -8,6 +8,7 @@ import { registerConfigRoutes } from "../src/routes/config.js";
 import { registerTaskRoutes } from "../src/routes/tasks.js";
 import { registerAuthRoutes } from "../src/routes/auth.js";
 import { registerInboxRoutes } from "../src/routes/inbox.js";
+import { registerJobRoutes } from "../src/routes/jobs.js";
 import type { ServerContext } from "../src/index.js";
 import jwt from "jsonwebtoken";
 
@@ -113,13 +114,32 @@ const mockGetLatestBriefing = vi.fn();
 const mockGetBriefingById = vi.fn();
 const mockListBriefings = vi.fn();
 const mockGenerateBriefing = vi.fn();
+const mockClearAllBriefings = vi.fn();
+const mockListAllBriefings = vi.fn();
+const mockGetResearchBriefings = vi.fn();
 
 vi.mock("../src/briefing.js", () => ({
   getLatestBriefing: (...args: unknown[]) => mockGetLatestBriefing(...args),
   getBriefingById: (...args: unknown[]) => mockGetBriefingById(...args),
   listBriefings: (...args: unknown[]) => mockListBriefings(...args),
   generateBriefing: (...args: unknown[]) => mockGenerateBriefing(...args),
+  clearAllBriefings: (...args: unknown[]) => mockClearAllBriefings(...args),
+  listAllBriefings: (...args: unknown[]) => mockListAllBriefings(...args),
+  getResearchBriefings: (...args: unknown[]) => mockGetResearchBriefings(...args),
   briefingMigrations: [],
+}));
+
+// ---------------------------------------------------------------------------
+// Mock @personal-ai/plugin-research — isolate job route handlers
+// ---------------------------------------------------------------------------
+const mockListResearchJobs = vi.fn();
+const mockGetResearchJob = vi.fn();
+const mockClearCompletedJobs = vi.fn();
+
+vi.mock("@personal-ai/plugin-research", () => ({
+  listResearchJobs: (...args: unknown[]) => mockListResearchJobs(...args),
+  getResearchJob: (...args: unknown[]) => mockGetResearchJob(...args),
+  clearCompletedJobs: (...args: unknown[]) => mockClearCompletedJobs(...args),
 }));
 
 /**
@@ -200,6 +220,7 @@ import {
   forgetBelief,
   memoryStats,
   remember,
+  activeJobs,
 } from "@personal-ai/core";
 
 // ---------------------------------------------------------------------------
@@ -1888,5 +1909,264 @@ describe("Inbox routes", () => {
     const res = await app.inject({ method: "GET", url: "/api/inbox/brief_456" });
     expect(res.statusCode).toBe(200);
     expect(res.json().briefing.id).toBe("brief_456");
+  });
+
+  it("POST /api/inbox/clear clears all briefings", async () => {
+    mockClearAllBriefings.mockReturnValue(3);
+    const res = await app.inject({ method: "POST", url: "/api/inbox/clear", payload: {} });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.cleared).toBe(3);
+  });
+
+  it("GET /api/inbox/all returns briefings and generating status", async () => {
+    mockListAllBriefings.mockReturnValue([
+      { id: "b1", generatedAt: "2026-02-25T08:00:00Z", status: "ready" },
+      { id: "b2", generatedAt: "2026-02-25T10:00:00Z", status: "ready" },
+    ]);
+    const res = await app.inject({ method: "GET", url: "/api/inbox/all" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.briefings).toHaveLength(2);
+    expect(body.generating).toBe(false);
+  });
+
+  it("GET /api/inbox/research returns research briefings", async () => {
+    mockGetResearchBriefings.mockReturnValue([
+      { id: "rb1", generatedAt: "2026-02-25T08:00:00Z", type: "research" },
+    ]);
+    const res = await app.inject({ method: "GET", url: "/api/inbox/research" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.briefings).toHaveLength(1);
+    expect(body.briefings[0].id).toBe("rb1");
+  });
+});
+
+// ==========================================================================
+// Jobs Routes
+// ==========================================================================
+
+describe("jobs routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    activeJobs.clear();
+    app = Fastify();
+    serverCtx = createMockServerCtx();
+    registerJobRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    activeJobs.clear();
+    await app.close();
+  });
+
+  it("GET /api/jobs returns empty list when no jobs exist", async () => {
+    mockListResearchJobs.mockReturnValue([]);
+    const res = await app.inject({ method: "GET", url: "/api/jobs" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.jobs).toEqual([]);
+  });
+
+  it("GET /api/jobs returns in-memory active jobs", async () => {
+    activeJobs.set("job1", {
+      id: "job1",
+      type: "crawl",
+      label: "Crawling example.com",
+      status: "running",
+      progress: "3/10 pages",
+      startedAt: "2026-02-25T08:00:00Z",
+    });
+    mockListResearchJobs.mockReturnValue([]);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.jobs).toHaveLength(1);
+    expect(body.jobs[0].id).toBe("job1");
+    expect(body.jobs[0].type).toBe("crawl");
+    expect(body.jobs[0].status).toBe("running");
+  });
+
+  it("GET /api/jobs returns persisted research jobs", async () => {
+    mockListResearchJobs.mockReturnValue([
+      {
+        id: "rj1",
+        goal: "Research AI trends",
+        status: "done",
+        searchesUsed: 5,
+        budgetMaxSearches: 10,
+        pagesLearned: 3,
+        budgetMaxPages: 20,
+        createdAt: "2026-02-25T08:00:00Z",
+        completedAt: "2026-02-25T09:00:00Z",
+        report: "AI is advancing rapidly in multiple domains...",
+      },
+    ]);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.jobs).toHaveLength(1);
+    expect(body.jobs[0].id).toBe("rj1");
+    expect(body.jobs[0].type).toBe("research");
+    expect(body.jobs[0].label).toBe("Research AI trends");
+    expect(body.jobs[0].progress).toBe("5/10 searches, 3/20 pages");
+  });
+
+  it("GET /api/jobs deduplicates active and persisted jobs by id", async () => {
+    activeJobs.set("rj1", {
+      id: "rj1",
+      type: "research",
+      label: "Research AI trends (active)",
+      status: "running",
+      progress: "2/10 searches",
+      startedAt: "2026-02-25T08:00:00Z",
+    });
+    mockListResearchJobs.mockReturnValue([
+      {
+        id: "rj1",
+        goal: "Research AI trends",
+        status: "done",
+        searchesUsed: 5,
+        budgetMaxSearches: 10,
+        pagesLearned: 3,
+        budgetMaxPages: 20,
+        createdAt: "2026-02-25T08:00:00Z",
+        completedAt: "2026-02-25T09:00:00Z",
+        report: null,
+      },
+    ]);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs" });
+    const body = res.json();
+    // Should only have 1 job (active version wins, persisted deduped)
+    expect(body.jobs).toHaveLength(1);
+    expect(body.jobs[0].label).toBe("Research AI trends (active)");
+  });
+
+  it("GET /api/jobs/:id returns a research job by id", async () => {
+    mockGetResearchJob.mockReturnValue({
+      id: "rj1",
+      goal: "Research AI trends",
+      status: "done",
+      report: "Full detailed report...",
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs/rj1" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.job.id).toBe("rj1");
+    expect(body.job.report).toBe("Full detailed report...");
+  });
+
+  it("GET /api/jobs/:id returns 404 when job not found", async () => {
+    mockGetResearchJob.mockReturnValue(null);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs/nonexistent" });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Job not found");
+  });
+
+  it("POST /api/jobs/clear clears completed jobs from DB and memory", async () => {
+    activeJobs.set("done1", {
+      id: "done1",
+      type: "crawl",
+      label: "Done crawl",
+      status: "done",
+      progress: "10/10",
+      startedAt: "2026-02-25T08:00:00Z",
+    });
+    activeJobs.set("err1", {
+      id: "err1",
+      type: "research",
+      label: "Failed research",
+      status: "error",
+      progress: "0/10",
+      startedAt: "2026-02-25T08:00:00Z",
+      error: "LLM timeout",
+    });
+    activeJobs.set("running1", {
+      id: "running1",
+      type: "crawl",
+      label: "Still running",
+      status: "running",
+      progress: "5/10",
+      startedAt: "2026-02-25T08:00:00Z",
+    });
+    mockClearCompletedJobs.mockReturnValue(2);
+
+    const res = await app.inject({ method: "POST", url: "/api/jobs/clear", payload: {} });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    // 2 from DB + 2 from memory (done1 + err1)
+    expect(body.cleared).toBe(4);
+    // running1 should still be in activeJobs
+    expect(activeJobs.has("running1")).toBe(true);
+    expect(activeJobs.has("done1")).toBe(false);
+    expect(activeJobs.has("err1")).toBe(false);
+  });
+});
+
+// ==========================================================================
+// Clear All Threads (agent route)
+// ==========================================================================
+
+describe("clear all threads", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    setupDefaultAIMocks();
+    app = Fastify();
+    app.addHook("onError", (_req, _reply, _error, done) => { done(); });
+    serverCtx = createMockServerCtx();
+    registerAgentRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("POST /api/threads/clear clears all threads and returns count", async () => {
+    // Create some threads first
+    await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Thread 1" },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Thread 2" },
+    });
+
+    // Verify threads exist
+    const listRes = await app.inject({ method: "GET", url: "/api/threads" });
+    expect(JSON.parse(listRes.payload)).toHaveLength(2);
+
+    // Clear all threads
+    const res = await app.inject({ method: "POST", url: "/api/threads/clear", payload: {} });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(typeof body.cleared).toBe("number");
+  });
+
+  it("POST /api/threads/clear returns 0 when no threads exist", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/threads/clear", payload: {} });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.cleared).toBe(0);
   });
 });

@@ -283,6 +283,13 @@ export function deleteThread(storage: Storage, threadId: string): void {
   storage.run("DELETE FROM threads WHERE id = ?", [threadId]);
 }
 
+export function clearAllThreads(storage: Storage): number {
+  const count = storage.query<{ cnt: number }>("SELECT COUNT(*) as cnt FROM threads")[0]?.cnt ?? 0;
+  storage.run("DELETE FROM thread_messages");
+  storage.run("DELETE FROM threads");
+  return count;
+}
+
 const threadQueues = new Map<string, Promise<unknown>>();
 
 export function withThreadLock<T>(threadId: string, fn: () => Promise<T>): Promise<T> {

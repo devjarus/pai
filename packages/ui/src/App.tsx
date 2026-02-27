@@ -61,6 +61,7 @@ export default function App() {
           <Route path="/onboarding" element={<Onboarding />} />
           <Route element={<AuthGate><Layout /></AuthGate>}>
             <Route path="/" element={<Inbox />} />
+            <Route path="/inbox/:id" element={<Inbox />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/memory" element={<Memory />} />
             <Route path="/timeline" element={<Timeline />} />

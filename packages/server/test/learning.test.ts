@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -7,6 +7,23 @@ import type { Storage } from "@personal-ai/core";
 import { learningMigrations, getWatermark, updateWatermark, gatherSignals, buildLearningPrompt, parseLearningResponse, runBackgroundLearning } from "../src/learning.js";
 import type { GatheredSignals } from "../src/learning.js";
 import type { PluginContext } from "@personal-ai/core";
+
+// ---------------------------------------------------------------------------
+// Mock external dependencies for orchestrator tests
+// ---------------------------------------------------------------------------
+const mockGenerateText = vi.fn();
+vi.mock("ai", () => ({
+  generateText: (...args: unknown[]) => mockGenerateText(...args),
+}));
+
+const mockRemember = vi.fn();
+vi.mock("@personal-ai/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@personal-ai/core")>();
+  return {
+    ...actual,
+    remember: (...args: unknown[]) => mockRemember(...args),
+  };
+});
 
 describe("learning watermarks", () => {
   let dir: string;
@@ -169,6 +186,7 @@ describe("runBackgroundLearning", () => {
   let storage: Storage;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     dir = mkdtempSync(join(tmpdir(), "pai-learning-orchestrator-test-"));
     storage = createStorage(dir);
     storage.migrate("learning", learningMigrations);
@@ -218,5 +236,118 @@ describe("runBackgroundLearning", () => {
     const wm = getWatermark(storage, "threads");
     const age = Date.now() - new Date(wm).getTime();
     expect(age).toBeGreaterThan(23 * 60 * 60 * 1000);
+  });
+
+  it("extracts facts from signals and stores them via remember()", async () => {
+    // Insert thread data so signals are non-empty
+    storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t1', 'Test', datetime('now'), datetime('now'), 1)");
+    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m1', 't1', 'user', 'I prefer TypeScript over JavaScript', datetime('now'), 1)");
+
+    // Mock LLM to return extracted facts
+    const llmResponse = JSON.stringify([
+      { fact: "User prefers TypeScript over JavaScript", factType: "preference", importance: 7, subject: "owner" },
+      { fact: "User works with web technologies", factType: "factual", importance: 5, subject: "owner" },
+    ]);
+    mockGenerateText.mockResolvedValue({ text: llmResponse });
+    mockRemember.mockResolvedValue({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false });
+
+    const mockCtx = {
+      storage,
+      llm: {
+        health: async () => ({ ok: true }),
+        getModel: () => ({}),
+        embed: async () => [],
+      },
+      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    // generateText should have been called
+    expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    // remember should have been called for each extracted fact
+    expect(mockRemember).toHaveBeenCalledTimes(2);
+    expect(mockRemember).toHaveBeenCalledWith(
+      storage,
+      expect.anything(),
+      "User prefers TypeScript over JavaScript",
+      expect.anything(),
+    );
+
+    // Watermarks should be updated (recent)
+    const wm = getWatermark(storage, "threads");
+    const age = Date.now() - new Date(wm).getTime();
+    expect(age).toBeLessThan(5000);
+  });
+
+  it("does not update watermarks when LLM extraction fails", async () => {
+    // Insert thread data so signals are non-empty
+    storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t2', 'Fail test', datetime('now'), datetime('now'), 1)");
+    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m2', 't2', 'user', 'Some user message', datetime('now'), 1)");
+
+    // Mock LLM to throw an error
+    mockGenerateText.mockRejectedValue(new Error("LLM connection timeout"));
+
+    const mockCtx = {
+      storage,
+      llm: {
+        health: async () => ({ ok: true }),
+        getModel: () => ({}),
+        embed: async () => [],
+      },
+      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    // generateText should have been called (signals were non-empty)
+    expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    // remember should NOT have been called (LLM failed)
+    expect(mockRemember).not.toHaveBeenCalled();
+
+    // Watermarks should NOT be updated (still 24h ago default)
+    const wm = getWatermark(storage, "threads");
+    const age = Date.now() - new Date(wm).getTime();
+    expect(age).toBeGreaterThan(23 * 60 * 60 * 1000);
+  });
+
+  it("counts reinforced vs created beliefs correctly", async () => {
+    // Insert thread data so signals are non-empty
+    storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t3', 'Count test', datetime('now'), datetime('now'), 1)");
+    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m3', 't3', 'user', 'I like Vitest', datetime('now'), 1)");
+
+    const llmResponse = JSON.stringify([
+      { fact: "User likes Vitest", factType: "preference", importance: 6, subject: "owner" },
+      { fact: "User uses pnpm", factType: "procedural", importance: 5, subject: "owner" },
+    ]);
+    mockGenerateText.mockResolvedValue({ text: llmResponse });
+    // First fact is new, second is reinforcement
+    mockRemember
+      .mockResolvedValueOnce({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false })
+      .mockResolvedValueOnce({ episodeId: "ep2", beliefIds: ["b2"], isReinforcement: true });
+
+    const logInfo = vi.fn();
+    const mockCtx = {
+      storage,
+      llm: {
+        health: async () => ({ ok: true }),
+        getModel: () => ({}),
+        embed: async () => [],
+      },
+      logger: { info: logInfo, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    // Check the final log message includes correct counts
+    const completionLog = logInfo.mock.calls.find(
+      (call: unknown[]) => typeof call[0] === "string" && call[0].includes("complete"),
+    );
+    expect(completionLog).toBeDefined();
+    expect(completionLog![1]).toMatchObject({
+      factsExtracted: 2,
+      beliefsCreated: 1,
+      beliefsReinforced: 1,
+    });
   });
 });

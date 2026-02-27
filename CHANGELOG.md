@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Background learning worker** — Passive always-on worker that extracts knowledge from user activity every 2 hours (5-minute initial delay). Gathers signals from chat threads, research reports, completed tasks, and knowledge sources using SQL watermarks, makes one focused LLM call to extract facts, and stores via `remember()`.
+- **Jobs page** — New UI page for tracking background jobs (crawl + research). Shows job status, progress, and results. API: `GET /api/jobs`, `GET /api/jobs/:id`, `POST /api/jobs/clear`.
+- **Unified inbox feed** — `GET /api/inbox/all` returns all briefing types (daily + research) chronologically with `generating` boolean. `GET /api/inbox/research` for research-only filtering. Briefings table now has a `type` column (migration v2) distinguishing "daily" vs "research".
+- **Inbox detail view** — `/inbox/:id` page with full briefing content and "Start Chat" button that creates a thread and auto-sends research context.
+- **Clear all threads** — `POST /api/threads/clear` endpoint and `clearAllThreads()` in core. Trash icon in Chat sidebar header for quick access.
+- **Clear inbox and clear jobs** — `POST /api/inbox/clear` clears all briefings, `POST /api/jobs/clear` clears completed jobs.
+- **Shared MarkdownContent component** — Reusable rich markdown renderer (`packages/ui/src/components/MarkdownContent.tsx`) with remarkGfm, code blocks with copy button, styled headings/tables/links. Used by ChatMessage and Inbox.
 - **Inbox briefing page** — AI-generated daily briefing as the app home screen (`/`). Collects open tasks, goals, memory stats, beliefs, and knowledge sources, then generates a structured briefing with 4 sections: greeting, task focus, memory insights, and suggestions. Background timer auto-generates every 6 hours. Manual refresh with polling. Clear all briefings. Animated card-based UI with staggered fade-in. Cards link to relevant pages.
 - **Clear all tasks** — Bulk delete all tasks with confirmation dialog. `POST /api/tasks/clear` endpoint + UI button.
 - **E2E testing** — Playwright browser tests with mock LLM server (Ollama/OpenAI-compatible). 4 test specs: setup wizard, auth, settings, chat. Global setup spawns real PAI server + mock LLM. Runs on Node 22 in CI.

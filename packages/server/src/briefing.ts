@@ -38,6 +38,7 @@ export interface Briefing {
   generatedAt: string;
   sections: BriefingSection;
   status: string;
+  type: string;
 }
 
 // --- Migration ---
@@ -76,6 +77,7 @@ export function getLatestBriefing(storage: PluginContext["storage"]): Briefing |
     generatedAt: row.generated_at,
     sections: JSON.parse(row.sections),
     status: row.status,
+    type: row.type,
   };
 }
 
@@ -91,6 +93,7 @@ export function getBriefingById(storage: PluginContext["storage"], id: string): 
     generatedAt: row.generated_at,
     sections: JSON.parse(row.sections),
     status: row.status,
+    type: row.type,
   };
 }
 
@@ -101,7 +104,7 @@ export function listBriefings(storage: PluginContext["storage"]): Array<{ id: st
   ).map((r) => ({ id: r.id, generatedAt: r.generated_at }));
 }
 
-export function listAllBriefings(storage: PluginContext["storage"]): Array<Briefing & { type: string }> {
+export function listAllBriefings(storage: PluginContext["storage"]): Briefing[] {
   const rows = storage.query<BriefingRow>(
     "SELECT * FROM briefings WHERE status = 'ready' ORDER BY generated_at DESC LIMIT 30",
     [],
@@ -131,6 +134,7 @@ export function getResearchBriefings(storage: PluginContext["storage"]): Briefin
     generatedAt: row.generated_at,
     sections: JSON.parse(row.sections),
     status: row.status,
+    type: row.type,
   }));
 }
 
@@ -316,6 +320,7 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
       generatedAt: new Date().toISOString(),
       sections: parsed,
       status: "ready",
+      type: "daily",
     };
   } catch (err) {
     console.error("Briefing generation failed:", err instanceof Error ? err.message : String(err));
