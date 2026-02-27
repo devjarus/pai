@@ -128,11 +128,18 @@ function updateJob(storage: Storage, id: string, fields: Record<string, unknown>
 
 // ---- Research Agent System Prompt ----
 
-const RESEARCH_SYSTEM_PROMPT = `You are a Research Agent. Your job is to thoroughly research a topic and produce a structured report.
+function getResearchSystemPrompt(): string {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+  return `You are a Research Agent. Your job is to thoroughly research a topic and produce a structured report.
+
+## Current Date
+Today is ${dateStr}. When searching for recent information, news, or developments, always include the current year (${now.getFullYear()}) in your search queries to get up-to-date results. Prioritize recent sources over older ones.
 
 ## Process
 1. Plan your research approach (which searches to run, what to look for)
-2. Execute searches using web_search
+2. Execute searches using web_search — include the year "${now.getFullYear()}" in queries about recent topics
 3. Read important pages using read_page to get detailed content
 4. Check existing knowledge using knowledge_search
 5. Synthesize findings into a structured report
@@ -158,6 +165,7 @@ Your final response MUST be a structured markdown report:
 You have a limited budget for searches and page reads. When a tool tells you the budget is exhausted, stop searching and synthesize what you have into the report.
 
 Be thorough but efficient. Focus on the most relevant and authoritative sources.`;
+}
 
 // ---- Budget-Limited Tool Factories ----
 
@@ -266,7 +274,7 @@ export async function runResearchInBackground(
 
     const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
-      system: RESEARCH_SYSTEM_PROMPT,
+      system: getResearchSystemPrompt(),
       messages: [
         { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
       ],
