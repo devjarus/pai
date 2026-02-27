@@ -421,3 +421,7 @@ export function getInboxBriefing(id: string): Promise<{ briefing: Briefing }> {
 export function clearInbox(): Promise<{ ok: boolean; cleared: number }> {
   return request("/inbox/clear", { method: "POST", body: "{}" });
 }
+
+export function getResearchBriefings(): Promise<{ briefings: Array<{ id: string; generatedAt: string; sections: { report: string; goal: string }; status: string; type: "research" }> }> {
+  return request("/inbox/research");
+}

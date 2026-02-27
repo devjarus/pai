@@ -11,6 +11,7 @@ import { ToolKnowledgeSources } from "./ToolKnowledgeSources";
 import { ToolKnowledgeAction } from "./ToolKnowledgeAction";
 import { ToolCurateMemory } from "./ToolCurateMemory";
 import { ToolCuratorAction } from "./ToolCuratorAction";
+import { ToolResearchStart } from "./ToolResearchStart";
 
 export { ToolSearchResults } from "./ToolSearchResults";
 export { ToolTaskList } from "./ToolTaskList";
@@ -24,6 +25,7 @@ export { ToolKnowledgeSources } from "./ToolKnowledgeSources";
 export { ToolKnowledgeAction } from "./ToolKnowledgeAction";
 export { ToolCurateMemory } from "./ToolCurateMemory";
 export { ToolCuratorAction } from "./ToolCuratorAction";
+export { ToolResearchStart } from "./ToolResearchStart";
 
 interface ToolPart {
   type: string;
@@ -110,6 +112,9 @@ export function renderToolPart(part: ToolPart, key: string | number): ReactNode 
           output={output}
         />
       );
+
+    case "research_start":
+      return <ToolResearchStart key={key} state={state} input={input} output={output} />;
 
     default:
       // Generic JSON fallback for unknown tools

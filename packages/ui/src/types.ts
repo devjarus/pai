@@ -185,4 +185,13 @@ export interface Briefing {
   generatedAt: string;
   sections: BriefingSection;
   status: string;
+  type?: "daily" | "research";
+}
+
+export interface ResearchBriefing {
+  id: string;
+  generatedAt: string;
+  sections: { report: string; goal: string };
+  status: string;
+  type: "research";
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { getInbox, refreshInbox, clearInbox } from "../api";
+import { getInbox, refreshInbox, clearInbox, getResearchBriefings } from "../api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   ArrowRightIcon,
   SparklesIcon,
   Trash2Icon,
+  SearchIcon,
 } from "lucide-react";
 import type { Briefing } from "../types";
 
@@ -275,7 +276,56 @@ export default function Inbox() {
           </div>
         )}
 
+        {/* Research Reports */}
+        <ResearchReports />
+
         <div className="h-8" />
+      </div>
+    </div>
+  );
+}
+
+function ResearchReports() {
+  const [reports, setReports] = useState<Array<{ id: string; generatedAt: string; sections: { report: string; goal: string } }>>([]);
+
+  useEffect(() => {
+    getResearchBriefings()
+      .then((data) => setReports(data.briefings))
+      .catch(() => {});
+  }, []);
+
+  if (reports.length === 0) return null;
+
+  return (
+    <div className="inbox-fade-in space-y-3" style={{ animationDelay: "400ms" }}>
+      <div className="flex items-center gap-2">
+        <SearchIcon className="h-4 w-4 text-blue-400" />
+        <h3 className="font-mono text-sm font-semibold text-foreground">Research Reports</h3>
+        <Badge variant="outline" className="text-[10px] border-blue-500/20 bg-blue-500/10 text-blue-400">
+          {reports.length}
+        </Badge>
+      </div>
+      <div className="space-y-2">
+        {reports.slice(0, 5).map((r) => (
+          <Card
+            key={r.id}
+            className="inbox-card border-border/30 bg-card/40 transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5"
+          >
+            <CardContent className="p-4">
+              <div className="min-w-0 flex-1">
+                <span className="text-sm font-medium text-foreground">
+                  {r.sections.goal}
+                </span>
+                <p className="mt-1 text-xs text-muted-foreground line-clamp-3">
+                  {r.sections.report.slice(0, 200)}
+                </p>
+                <p className="mt-1 text-[10px] text-muted-foreground/60">
+                  {timeAgo(r.generatedAt)}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );
