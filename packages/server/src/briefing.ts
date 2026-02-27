@@ -187,10 +187,16 @@ export async function generateBriefing(ctx: PluginContext): Promise<Briefing | n
       return age < 3 * 24 * 60 * 60 * 1000;
     })
     .slice(0, 15);
-  // If few recent beliefs, pad with highest-confidence ones
+  // If few recent beliefs, pad with a RANDOM sample (not always the same top-confidence ones)
+  const nonRecent = allBeliefs.filter((b) => !recentBeliefs.some((r) => r.id === b.id));
+  // Fisher-Yates shuffle for variety
+  for (let i = nonRecent.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [nonRecent[i], nonRecent[j]] = [nonRecent[j]!, nonRecent[i]!];
+  }
   const topBeliefs = recentBeliefs.length >= 10
     ? recentBeliefs
-    : [...recentBeliefs, ...allBeliefs.filter((b) => !recentBeliefs.some((r) => r.id === b.id)).slice(0, 10 - recentBeliefs.length)];
+    : [...recentBeliefs, ...nonRecent.slice(0, 10 - recentBeliefs.length)];
 
   // Recent episodes (conversations/interactions) — what user has been doing
   let recentEpisodes: Array<{ content: string; timestamp: string }> = [];
@@ -200,16 +206,29 @@ export async function generateBriefing(ctx: PluginContext): Promise<Briefing | n
     );
   } catch { /* episodes table may not exist */ }
 
-  // Previous briefing — to avoid repetition
-  let previousGreeting = "";
+  // Previous briefings — pass full content to avoid repetition
+  let previousBriefingSummary = "";
   try {
-    const prev = ctx.storage.query<{ sections: string }>(
-      "SELECT sections FROM briefings WHERE status = 'ready' AND type = 'daily' ORDER BY generated_at DESC LIMIT 1",
+    const prevRows = ctx.storage.query<{ sections: string }>(
+      "SELECT sections FROM briefings WHERE status = 'ready' AND type = 'daily' ORDER BY generated_at DESC LIMIT 2",
     );
-    if (prev[0]) {
-      const parsed = JSON.parse(prev[0].sections);
-      previousGreeting = parsed.greeting ?? "";
+    const summaries: string[] = [];
+    for (const row of prevRows) {
+      const parsed = JSON.parse(row.sections) as BriefingSection;
+      const parts: string[] = [];
+      if (parsed.greeting) parts.push(`Greeting: "${parsed.greeting}"`);
+      if (parsed.taskFocus?.items?.length) {
+        parts.push(`Tasks highlighted: ${parsed.taskFocus.items.map((i) => i.title).join(", ")}`);
+      }
+      if (parsed.memoryInsights?.highlights?.length) {
+        parts.push(`Memory highlights: ${parsed.memoryInsights.highlights.map((h) => h.statement).join("; ")}`);
+      }
+      if (parsed.suggestions?.length) {
+        parts.push(`Suggestions: ${parsed.suggestions.map((s) => s.title).join(", ")}`);
+      }
+      summaries.push(parts.join("\n"));
     }
+    previousBriefingSummary = summaries.join("\n---\n");
   } catch { /* ignore */ }
 
   const now = new Date();
@@ -271,12 +290,13 @@ ${rawContext.recentActivity.length > 0 ? rawContext.recentActivity.join("\n") : 
 KNOWLEDGE SOURCES (${sources.length}):
 ${JSON.stringify(rawContext.knowledgeSources, null, 2)}
 
-${previousGreeting ? `PREVIOUS BRIEFING GREETING (do NOT repeat this — say something different):\n"${previousGreeting}"\n` : ""}
+${previousBriefingSummary ? `PREVIOUS BRIEFINGS (you MUST NOT repeat these — choose DIFFERENT tasks, beliefs, and angles):\n${previousBriefingSummary}\n` : ""}
 Guidelines:
+- VARIETY IS CRITICAL. If the previous briefing highlighted certain tasks, pick DIFFERENT ones. If it mentioned certain beliefs, highlight DIFFERENT ones. If it gave certain suggestions, suggest DIFFERENT actions.
 - The greeting should be warm, unique each time, and reference what's actually happening — recent completions, new learnings, time of day, or recent activity. Don't just repeat stats.
-- taskFocus.items: Pick the most URGENT or RELEVANT tasks right now (max 5). For each, provide a brief insight about why it matters today or what to prioritize next.
-- memoryInsights.highlights: Prefer beliefs marked "isNew: true" (recently learned). Note new patterns, contradictions, or connections between beliefs. If nothing is new, highlight something the user hasn't accessed recently.
-- suggestions: Provide 2-3 actionable, SPECIFIC recommendations. Reference actual tasks, beliefs, or knowledge by name. Suggest concrete next steps.
+- taskFocus.items: Pick the most URGENT or RELEVANT tasks right now (max 5). For each, provide a brief insight about why it matters today or what to prioritize next. Rotate which tasks you highlight.
+- memoryInsights.highlights: Prefer beliefs marked "isNew: true" (recently learned). Note new patterns, contradictions, or connections between beliefs. If nothing is new, highlight something the user hasn't accessed recently. Pick DIFFERENT beliefs than previous briefings.
+- suggestions: Provide 2-3 actionable, SPECIFIC recommendations. Reference actual tasks, beliefs, or knowledge by name. Suggest concrete next steps. NEVER repeat a previous suggestion.
 - Keep everything concise. Each insight/suggestion should be 1-2 sentences max.
 
 Respond ONLY with a valid JSON object matching this exact shape (no markdown, no explanation):
@@ -297,6 +317,7 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
     const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
       prompt,
+      temperature: 0.8,
       maxRetries: 1,
     });
 
