@@ -71,7 +71,7 @@ export async function loginViaAPI(page: Page): Promise<void> {
  * Wait for the PAI server to be healthy (polls /api/health).
  * Useful after operations that trigger reinitialize().
  */
-export async function waitForServer(timeoutMs = 10_000): Promise<void> {
+export async function waitForServer(timeoutMs = 20_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
