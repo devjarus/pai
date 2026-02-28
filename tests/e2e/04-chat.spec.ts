@@ -23,8 +23,10 @@ test.describe("Chat", () => {
 
     // Wait for assistant response from mock LLM
     // Mock LLM returns: "Hello! I am your personal AI assistant."
+    // Use getByRole('paragraph') to target the message body, avoiding matches
+    // in the thread sidebar title and page heading.
     await expect(
-      page.getByText(/personal AI assistant/i),
+      page.getByRole("paragraph").filter({ hasText: /personal AI assistant/i }),
     ).toBeVisible({ timeout: 15_000 });
   });
 });
