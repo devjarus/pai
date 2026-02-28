@@ -108,11 +108,13 @@ export function resolveDataDir(
   env: Record<string, string | undefined>,
   fileConfig?: Partial<Config>,
 ): string {
-  // 1. Env var override
+  // 1. Explicit env var override
   if (env["PAI_DATA_DIR"]) return env["PAI_DATA_DIR"];
   // 2. Config file setting
   if (fileConfig?.dataDir) return fileConfig.dataDir;
-  // 3. Default
+  // 3. Railway volume auto-detection — use the mounted volume path automatically
+  if (env["RAILWAY_VOLUME_MOUNT_PATH"]) return env["RAILWAY_VOLUME_MOUNT_PATH"];
+  // 4. Default
   return DEFAULT_DATA_DIR;
 }
 
