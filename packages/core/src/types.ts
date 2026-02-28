@@ -30,6 +30,10 @@ export interface Config {
   };
   plugins: string[];
   webSearchEnabled?: boolean;
+  workers?: {
+    backgroundLearning?: boolean;  // default true
+    briefing?: boolean;            // default true
+  };
   telegram?: {
     token?: string;
     enabled?: boolean;

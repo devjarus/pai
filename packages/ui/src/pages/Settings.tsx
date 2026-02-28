@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
-import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon } from "lucide-react";
+import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon } from "lucide-react";
 
 const isCloudDeployment =
   typeof window !== "undefined" &&
@@ -47,6 +47,10 @@ export default function Settings() {
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramEnabled, setTelegramEnabled] = useState(false);
 
+  // Worker settings
+  const [bgLearningEnabled, setBgLearningEnabled] = useState(true);
+  const [briefingEnabled, setBriefingEnabled] = useState(true);
+
   // Env overrides (fields controlled by env vars on the server)
   const [envOverrides, setEnvOverrides] = useState<string[]>([]);
 
@@ -67,6 +71,8 @@ export default function Settings() {
       setEmbedProvider(config.llm.embedProvider ?? "auto");
       setDataDir(config.dataDir);
       setTelegramEnabled(config.telegram?.enabled ?? false);
+      setBgLearningEnabled(config.workers?.backgroundLearning !== false);
+      setBriefingEnabled(config.workers?.briefing !== false);
       setEnvOverrides(config.envOverrides ?? []);
     }
   }, [config]);
@@ -84,6 +90,8 @@ export default function Settings() {
       if (dataDir !== config.dataDir) updates.dataDir = dataDir;
       if (telegramToken) updates.telegramToken = telegramToken;
       if (telegramEnabled !== (config.telegram?.enabled ?? false)) updates.telegramEnabled = telegramEnabled;
+      if (bgLearningEnabled !== (config.workers?.backgroundLearning !== false)) updates.backgroundLearning = bgLearningEnabled;
+      if (briefingEnabled !== (config.workers?.briefing !== false)) updates.briefingEnabled = briefingEnabled;
 
       if (Object.keys(updates).length === 0) {
         setEditing(false);
@@ -98,7 +106,7 @@ export default function Settings() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save configuration");
     }
-  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, telegramToken, telegramEnabled, config, updateConfigMut]);
+  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, config, updateConfigMut]);
 
   const handleCancel = useCallback(() => {
     if (config) {
@@ -112,6 +120,8 @@ export default function Settings() {
     setApiKey("");
     setTelegramToken("");
     setTelegramEnabled(config?.telegram?.enabled ?? false);
+    setBgLearningEnabled(config?.workers?.backgroundLearning !== false);
+    setBriefingEnabled(config?.workers?.briefing !== false);
     setEditing(false);
   }, [config]);
 
@@ -433,6 +443,94 @@ export default function Settings() {
                     value={config.telegram?.hasToken ? "Configured" : "Not set"}
                   />
                 </>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Background Workers */}
+        {config && (
+          <Card className="gap-0 overflow-hidden border-border/50 bg-card/50 py-0">
+            <CardHeader className="px-5 py-4">
+              <CardTitle className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <CpuIcon className="size-3.5" />
+                Background Workers
+                <InfoBubble text="System jobs that run automatically. Background Learning extracts memories from your conversations every 2 hours. Briefing generates your Inbox summary every 6 hours." side="right" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-0 px-0 py-0">
+              {/* Background Learning */}
+              <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs text-foreground">Background Learning</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Extracts memories from conversations, reports, and knowledge (every 2h)
+                  </span>
+                </div>
+                {editing ? (
+                  <button
+                    type="button"
+                    onClick={() => setBgLearningEnabled(!bgLearningEnabled)}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                      bgLearningEnabled ? "bg-primary" : "bg-muted",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "pointer-events-none block size-4 rounded-full bg-background shadow-lg transition-transform",
+                        bgLearningEnabled ? "translate-x-4" : "translate-x-0",
+                      )}
+                    />
+                  </button>
+                ) : (
+                  <span className={cn("font-mono text-sm", config.workers?.backgroundLearning !== false ? "text-green-500" : "text-muted-foreground")}>
+                    {config.workers?.backgroundLearning !== false ? "On" : "Off"}
+                  </span>
+                )}
+              </div>
+
+              {/* Briefing Generator */}
+              <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs text-foreground">Inbox Briefing</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Generates daily summary for your Inbox (every 6h)
+                  </span>
+                </div>
+                {editing ? (
+                  <button
+                    type="button"
+                    onClick={() => setBriefingEnabled(!briefingEnabled)}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                      briefingEnabled ? "bg-primary" : "bg-muted",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "pointer-events-none block size-4 rounded-full bg-background shadow-lg transition-transform",
+                        briefingEnabled ? "translate-x-4" : "translate-x-0",
+                      )}
+                    />
+                  </button>
+                ) : (
+                  <span className={cn("font-mono text-sm", config.workers?.briefing !== false ? "text-green-500" : "text-muted-foreground")}>
+                    {config.workers?.briefing !== false ? "On" : "Off"}
+                  </span>
+                )}
+              </div>
+
+              {/* Last Run Info */}
+              {config.workers?.lastRun && (
+                <div className="flex items-center justify-between border-t border-border/30 px-5 py-3">
+                  <span className="text-xs text-muted-foreground">Last learning run</span>
+                  <span className="font-mono text-xs text-foreground/70">
+                    {config.workers.lastRun.threads
+                      ? new Date(config.workers.lastRun.threads).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      : "Never"}
+                  </span>
+                </div>
               )}
             </CardContent>
           </Card>

@@ -43,12 +43,13 @@ export class WorkerLoop {
 
     // --- Briefing generator ---
     this.briefingTimer = setInterval(() => {
+      if (this.ctx.config.workers?.briefing === false) return;
       generateBriefing(this.ctx).catch((err) => {
         this.ctx.logger.warn(`Background briefing failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     }, briefingMs);
 
-    if (generateInitial) {
+    if (generateInitial && this.ctx.config.workers?.briefing !== false) {
       const latest = getLatestBriefing(this.ctx.storage);
       if (!latest) {
         generateBriefing(this.ctx).catch((err) => {
@@ -64,12 +65,14 @@ export class WorkerLoop {
 
     // --- Background learning ---
     this.learningInitTimer = setTimeout(() => {
+      if (this.ctx.config.workers?.backgroundLearning === false) return;
       runBackgroundLearning(this.ctx).catch((err) => {
         this.ctx.logger.warn(`Background learning failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     }, learningDelayMs);
 
     this.learningTimer = setInterval(() => {
+      if (this.ctx.config.workers?.backgroundLearning === false) return;
       runBackgroundLearning(this.ctx).catch((err) => {
         this.ctx.logger.warn(`Background learning failed: ${err instanceof Error ? err.message : String(err)}`);
       });

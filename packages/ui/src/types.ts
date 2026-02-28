@@ -98,6 +98,11 @@ export interface ConfigInfo {
     username?: string;
     error?: string;
   };
+  workers?: {
+    backgroundLearning?: boolean;
+    briefing?: boolean;
+    lastRun?: Record<string, string | null>;
+  };
   envOverrides?: string[];
 }
 

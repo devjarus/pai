@@ -4,14 +4,28 @@ import { homedir } from "node:os";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { writeConfig, loadConfigFile } from "@personal-ai/core";
+import type { Storage } from "@personal-ai/core";
 import type { ServerContext } from "../index.js";
 import { validate } from "../validate.js";
+
+function getWorkerLastRun(storage: Storage): Record<string, string | null> {
+  try {
+    const rows = storage.query<{ source: string; last_processed_at: string }>(
+      "SELECT source, last_processed_at FROM learning_watermarks",
+    );
+    const result: Record<string, string | null> = { threads: null, research: null, knowledge: null };
+    for (const row of rows) result[row.source] = row.last_processed_at;
+    return result;
+  } catch {
+    return {};
+  }
+}
 
 /** Config file location: data dir (persistent volume) on Docker/PaaS, ~/.personal-ai/ locally */
 const configDir = process.env.PAI_DATA_DIR ?? join(homedir(), ".personal-ai");
 
-function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Record<string, unknown>; [key: string]: unknown }) {
-  const { llm, telegram, ...rest } = config;
+function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Record<string, unknown>; workers?: Record<string, unknown>; [key: string]: unknown }) {
+  const { llm, telegram, workers, ...rest } = config;
   return {
     ...rest,
     llm: {
@@ -25,6 +39,10 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
     telegram: {
       enabled: telegram?.enabled ?? false,
       hasToken: !!telegram?.token,
+    },
+    workers: {
+      backgroundLearning: (workers as Record<string, unknown> | undefined)?.backgroundLearning !== false,
+      briefing: (workers as Record<string, unknown> | undefined)?.briefing !== false,
     },
   };
 }
@@ -68,20 +86,29 @@ const updateConfigSchema = z.object({
   dataDir: z.string().optional(),
   telegramToken: z.string().optional(),
   telegramEnabled: z.boolean().optional(),
+  backgroundLearning: z.boolean().optional(),
+  briefingEnabled: z.boolean().optional(),
 });
 
 export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerContext): void {
   const { ctx } = serverCtx;
-  app.get("/api/config", async () => ({
-    ...sanitizeConfig(ctx.config as never),
-    telegram: {
-      ...sanitizeConfig(ctx.config as never).telegram,
-      running: serverCtx.telegramStatus.running,
-      username: serverCtx.telegramStatus.username,
-      error: serverCtx.telegramStatus.error,
-    },
-    envOverrides: getEnvOverrides(),
-  }));
+  app.get("/api/config", async () => {
+    const sanitized = sanitizeConfig(ctx.config as never);
+    return {
+      ...sanitized,
+      telegram: {
+        ...sanitized.telegram,
+        running: serverCtx.telegramStatus.running,
+        username: serverCtx.telegramStatus.username,
+        error: serverCtx.telegramStatus.error,
+      },
+      workers: {
+        ...sanitized.workers,
+        lastRun: getWorkerLastRun(ctx.storage),
+      },
+      envOverrides: getEnvOverrides(),
+    };
+  });
 
   app.put("/api/config", async (request, reply) => {
     const body = validate(updateConfigSchema, request.body);
@@ -123,6 +150,15 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
 
     if (body.dataDir) {
       update.dataDir = body.dataDir;
+    }
+
+    // Worker settings
+    if (body.backgroundLearning !== undefined || body.briefingEnabled !== undefined) {
+      const existingWorkers = ctx.config.workers ?? {};
+      const workersUpdate: Record<string, unknown> = { ...existingWorkers };
+      if (body.backgroundLearning !== undefined) workersUpdate.backgroundLearning = body.backgroundLearning;
+      if (body.briefingEnabled !== undefined) workersUpdate.briefing = body.briefingEnabled;
+      update.workers = workersUpdate;
     }
 
     // Telegram settings
