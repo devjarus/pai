@@ -8,7 +8,9 @@ import { startMockLLM } from "./mock-llm";
 const MOCK_LLM_PORT = 11435;
 const PAI_PORT = 3199;
 const HEALTH_URL = `http://127.0.0.1:${PAI_PORT}/api/health`;
-const MAX_WAIT_MS = 15_000;
+// CI runners can be slow when building cache, installing deps, and starting Node services.
+// Give the server enough time to boot to avoid startup race flakes.
+const MAX_WAIT_MS = 45_000;
 const POLL_INTERVAL_MS = 300;
 
 /** Path where we stash PIDs + temp dir path for teardown */
