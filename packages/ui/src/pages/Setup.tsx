@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { setupOwner } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -15,7 +15,18 @@ export default function Setup() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
-  const { refresh } = useAuth();
+  const { refresh, isAuthenticated, needsSetup, loading } = useAuth();
+
+  // Guard: redirect if already set up or authenticated
+  useEffect(() => {
+    if (loading) return;
+    if (isAuthenticated) {
+      navigate("/chat", { replace: true });
+    } else if (!needsSetup) {
+      // Owner exists but not authenticated → show login instead
+      navigate("/login", { replace: true });
+    }
+  }, [loading, isAuthenticated, needsSetup, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
