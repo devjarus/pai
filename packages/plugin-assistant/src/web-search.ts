@@ -49,7 +49,7 @@ export async function webSearch(
   const response = await fetch(`${baseUrl}/search?${params.toString()}`, {
     method: "GET",
     headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!response.ok) {

@@ -179,11 +179,15 @@ export function ToolSearchResults({ state, input, output }: ToolSearchResultsPro
     let results: StructuredResult[];
     let outputCategory: string | undefined;
 
-    // Output may arrive as a JSON string or already-parsed object
+    // Output may arrive as a JSON string, double-encoded JSON string, or already-parsed object
     let parsed: StructuredOutput | null = null;
     if (typeof output === "string") {
       try {
-        const obj = JSON.parse(output);
+        let obj = JSON.parse(output);
+        // Handle double-encoding: AI SDK may stringify the already-stringified tool result
+        if (typeof obj === "string") {
+          obj = JSON.parse(obj);
+        }
         if (obj && Array.isArray(obj.results)) {
           parsed = obj as StructuredOutput;
         }
