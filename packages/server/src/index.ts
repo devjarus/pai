@@ -9,7 +9,7 @@ import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import jwt from "jsonwebtoken";
-import { loadConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword } from "@personal-ai/core";
+import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword } from "@personal-ai/core";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
@@ -84,6 +84,16 @@ export async function createServer(options?: { port?: number; host?: string }) {
       );
     } else {
       logger.info("Persistent volume detected — data will survive restarts");
+    }
+
+    // Persist env-var-derived config to data dir so settings survive redeploys.
+    // Only write if no config.json exists yet (first boot with this volume).
+    const configJsonPath = join(config.dataDir, "config.json");
+    if (!fs.existsSync(configJsonPath)) {
+      try {
+        writeConfig(config.dataDir, config);
+        logger.info("Persisted initial config to " + configJsonPath);
+      } catch { /* read-only or permission issue — non-fatal */ }
     }
   }
 
