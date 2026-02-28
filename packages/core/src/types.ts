@@ -29,6 +29,8 @@ export interface Config {
     fallbackMode?: "local-first" | "strict";
   };
   plugins: string[];
+  /** IANA timezone (e.g. "America/Los_Angeles"). Defaults to server timezone if unset. */
+  timezone?: string;
   webSearchEnabled?: boolean;
   workers?: {
     backgroundLearning?: boolean;  // default true

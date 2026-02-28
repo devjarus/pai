@@ -323,6 +323,7 @@ export function createAgentTools(ctx: AgentContext) {
               storage: ctx.storage,
               llm: ctx.llm,
               logger: ctx.logger,
+              timezone: ctx.config.timezone,
               webSearch,
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,

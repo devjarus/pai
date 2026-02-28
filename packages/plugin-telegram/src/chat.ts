@@ -6,6 +6,7 @@ import {
   createThread as coreCreateThread,
   deleteThread as coreDeleteThread,
   clearThread as coreClearThread,
+  formatDateTime,
 } from "@personal-ai/core";
 import { generateText, stepCountIs } from "ai";
 import type { LanguageModel } from "ai";
@@ -89,10 +90,10 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
   // Build tools from agent plugin
   const tools = agentPlugin.agent.createTools?.(agentCtx);
 
-  // Inject current date/time
-  const now = new Date();
+  // Inject current date/time (timezone-aware)
+  const dt = formatDateTime(ctx.config.timezone);
   let systemPrompt = agentPlugin.agent.systemPrompt +
-    `\n\nCurrent date and time: ${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}, ${now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}. Use this for time-sensitive queries.`;
+    `\n\nCurrent date and time: ${dt.full}. Use this for time-sensitive queries.`;
 
   // Inject sender identity so the LLM knows who it's talking to
   if (sender) {

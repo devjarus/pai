@@ -47,6 +47,9 @@ export default function Settings() {
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramEnabled, setTelegramEnabled] = useState(false);
 
+  // Timezone
+  const [timezone, setTimezone] = useState("");
+
   // Worker settings
   const [bgLearningEnabled, setBgLearningEnabled] = useState(true);
   const [briefingEnabled, setBriefingEnabled] = useState(true);
@@ -70,6 +73,7 @@ export default function Settings() {
       setEmbedModel(config.llm.embedModel ?? "");
       setEmbedProvider(config.llm.embedProvider ?? "auto");
       setDataDir(config.dataDir);
+      setTimezone(config.timezone ?? "");
       setTelegramEnabled(config.telegram?.enabled ?? false);
       setBgLearningEnabled(config.workers?.backgroundLearning !== false);
       setBriefingEnabled(config.workers?.briefing !== false);
@@ -90,6 +94,7 @@ export default function Settings() {
       if (dataDir !== config.dataDir) updates.dataDir = dataDir;
       if (telegramToken) updates.telegramToken = telegramToken;
       if (telegramEnabled !== (config.telegram?.enabled ?? false)) updates.telegramEnabled = telegramEnabled;
+      if (timezone !== (config.timezone ?? "")) updates.timezone = timezone;
       if (bgLearningEnabled !== (config.workers?.backgroundLearning !== false)) updates.backgroundLearning = bgLearningEnabled;
       if (briefingEnabled !== (config.workers?.briefing !== false)) updates.briefingEnabled = briefingEnabled;
 
@@ -106,7 +111,7 @@ export default function Settings() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save configuration");
     }
-  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, config, updateConfigMut]);
+  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, config, updateConfigMut]);
 
   const handleCancel = useCallback(() => {
     if (config) {
@@ -118,6 +123,7 @@ export default function Settings() {
       setDataDir(config.dataDir);
     }
     setApiKey("");
+    setTimezone(config?.timezone ?? "");
     setTelegramToken("");
     setTelegramEnabled(config?.telegram?.enabled ?? false);
     setBgLearningEnabled(config?.workers?.backgroundLearning !== false);
@@ -303,6 +309,33 @@ export default function Settings() {
                   <ConfigRow label="Data Directory" value={config.dataDir} />
                 </>
               )}
+
+              {/* Timezone — always editable */}
+              <div className="flex items-center justify-between border-t border-border/30 px-5 py-2.5">
+                <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                  Timezone
+                  <InfoBubble text="Timezone for all date/time display and AI prompts. Auto uses your browser's detected timezone." side="right" />
+                </span>
+                <select
+                  value={timezone}
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    setTimezone(val);
+                    try {
+                      await updateConfigMut.mutateAsync({ timezone: val });
+                      toast.success("Timezone updated");
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Failed to update timezone");
+                    }
+                  }}
+                  className="rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+                >
+                  <option value="">Auto ({Intl.DateTimeFormat().resolvedOptions().timeZone})</option>
+                  {(Intl as unknown as { supportedValuesOf(key: string): string[] }).supportedValuesOf("timeZone").map((tz: string) => (
+                    <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>
+                  ))}
+                </select>
+              </div>
 
               <div className="flex items-center justify-between border-t border-border/30 px-5 py-3">
                 <span className="text-xs text-muted-foreground">Plugins</span>

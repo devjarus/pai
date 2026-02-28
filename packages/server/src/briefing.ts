@@ -1,7 +1,7 @@
 import { generateText } from "ai";
 import type { LanguageModel } from "ai";
 import type { Migration, PluginContext } from "@personal-ai/core";
-import { listBeliefs, memoryStats, listSources } from "@personal-ai/core";
+import { listBeliefs, memoryStats, listSources, formatDateTime } from "@personal-ai/core";
 import { listTasks, listGoals } from "@personal-ai/plugin-tasks";
 
 // --- Types ---
@@ -249,8 +249,8 @@ export async function generateBriefing(ctx: PluginContext): Promise<Briefing | n
 
   const rawContext = {
     ownerName,
-    date: now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }),
-    time: now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
+    date: formatDateTime(ctx.config.timezone, now).date,
+    time: formatDateTime(ctx.config.timezone, now).time,
     tasks: tasks.map((t) => ({ id: t.id, title: t.title, priority: t.priority, dueDate: t.due_date })),
     recentlyCompleted: recentlyDone.map((t) => ({ title: t.title, completedAt: t.completed_at })),
     goals: goals.map((g) => ({ title: g.title })),

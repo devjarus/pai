@@ -82,6 +82,7 @@ export interface ConfigInfo {
   dataDir: string;
   logLevel: string;
   plugins: string[];
+  timezone?: string;
   llm: {
     provider: string;
     model: string;
