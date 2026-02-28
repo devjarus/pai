@@ -1,6 +1,6 @@
 import { Bot } from "grammy";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
-import { listBeliefs, getThread } from "@personal-ai/core";
+import { listBeliefs, getThread, formatDateTime } from "@personal-ai/core";
 import { listTasks } from "@personal-ai/plugin-tasks";
 import { runAgentChat, createThread, clearThread as clearThreadMessages } from "./chat.js";
 import { markdownToTelegramHTML, splitMessage } from "./formatter.js";
@@ -165,7 +165,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       }
       const lines = schedules.map((s) => {
         const interval = s.interval_hours >= 24 ? `${Math.round(s.interval_hours / 24)}d` : `${s.interval_hours}h`;
-        const next = new Date(s.next_run_at).toLocaleString();
+        const next = formatDateTime(ctx.config.timezone, new Date(s.next_run_at)).full;
         return `\u{1F504} <b>${s.label}</b> (every ${interval})\n   Next: ${next}\n   ID: <code>${s.id}</code>`;
       });
       await tgCtx.reply(`<b>Active Schedules</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
