@@ -47,8 +47,9 @@ function humanizeError(status: number, body: string): string {
   // HTTP status code mapping
   switch (status) {
     case 401:
+      return "Session expired. Please refresh the page or log in again.";
     case 403:
-      return "Authentication failed. Check your API key in Settings.";
+      return "Access denied.";
     case 404:
       return "The requested resource was not found.";
     case 408:

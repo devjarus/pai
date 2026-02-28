@@ -68,7 +68,23 @@ export function ChatRuntimeProvider({
         fetch: async (input, init) => {
           // Send cookies for auth
           init = { ...init, credentials: "include" };
-          const res = await globalThis.fetch(input, init);
+          let res = await globalThis.fetch(input, init);
+
+          // Auto-refresh token on 401 and retry once (mirrors api.ts logic)
+          if (res.status === 401) {
+            try {
+              const refreshRes = await globalThis.fetch("/api/auth/refresh", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: "{}",
+                credentials: "include",
+              });
+              if (refreshRes.ok) {
+                res = await globalThis.fetch(input, init);
+              }
+            } catch { /* refresh failed, return original 401 */ }
+          }
+
           const newThreadId = res.headers.get("x-thread-id");
           if (newThreadId) {
             onThreadCreatedRef.current(newThreadId);

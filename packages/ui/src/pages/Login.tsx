@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { login } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -14,7 +14,14 @@ export default function Login() {
   const [checking, setChecking] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const navigate = useNavigate();
-  const { refresh } = useAuth();
+  const { refresh, isAuthenticated, loading } = useAuth();
+
+  // If already authenticated, redirect to chat
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      navigate("/chat", { replace: true });
+    }
+  }, [loading, isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

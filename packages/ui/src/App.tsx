@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route, Link, useNavigate } from "react-router-dom";
+import { Routes, Route, Link, Navigate } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/query-client";
 
@@ -38,7 +38,6 @@ function NotFound() {
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { loading, needsSetup, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
 
   if (loading) {
     return (
@@ -49,13 +48,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (needsSetup) {
-    navigate("/setup", { replace: true });
-    return null;
+    return <Navigate to="/setup" replace />;
   }
 
   if (!isAuthenticated) {
-    navigate("/login", { replace: true });
-    return null;
+    return <Navigate to="/login" replace />;
   }
 
   return <>{children}</>;
