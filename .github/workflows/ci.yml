@@ -28,7 +28,7 @@ jobs:
       # E2E tests — only on Node 22 to save CI minutes
       - run: pnpm build
         if: matrix.node-version == 22
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: PLAYWRIGHT_CHROMIUM_USE_HEADLESS_SHELL=0 pnpm exec playwright install --with-deps chromium
         if: matrix.node-version == 22
-      - run: pnpm e2e
+      - run: PLAYWRIGHT_CHROMIUM_USE_HEADLESS_SHELL=0 pnpm e2e
         if: matrix.node-version == 22
