@@ -377,3 +377,24 @@ Or just send any text message to chat with the assistant.
 ## Architecture Reference
 
 See `docs/ARCHITECTURE.md` for full design, data model, and future plugin path.
+
+## Cursor Cloud specific instructions
+
+### Services
+
+| Service | Command | Port | Notes |
+|---------|---------|------|-------|
+| PAI Server | `pnpm start` (or `pnpm dev` to build+start) | 3141 | Serves REST API + static UI. SQLite embedded, no external DB needed. |
+| Vite Dev Server | `pnpm dev:ui` | 5173 | HMR for UI development. Proxies `/api/*` to `:3141`. Requires server running first. |
+
+### Gotchas
+
+- **`pnpm typecheck`** runs `tsc --build` but `typescript` is not a root workspace dependency. Use `pnpm --filter @personal-ai/core exec tsc --build /workspace/tsconfig.json` as a workaround, or install typescript at the root temporarily.
+- **Localhost auth bypass**: When the server binds to `127.0.0.1` (default), authentication is not required. Auth is only enforced when binding to `0.0.0.0` (Docker/cloud).
+- **E2E tests**: `pnpm e2e` auto-starts a mock LLM server (port 11435) and a separate PAI server (port 3199) — no real LLM needed. Requires `pnpm build` first and Playwright Chromium installed (`npx playwright install chromium`).
+- **No LLM needed for unit tests or E2E**: Unit tests mock everything; E2E uses a built-in mock LLM. Only runtime chat requires a real LLM provider.
+- **Data directory**: Defaults to `~/.personal-ai/data/`. The server creates it automatically on first start. Delete `~/.personal-ai/data/personal-ai.db` to reset all state.
+
+### Standard commands
+
+See `## Build & Run` and `## Test Commands` sections above for all build/test/lint/run commands.
