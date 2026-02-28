@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
+import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   useKnowledgeSources,
   useSearchKnowledge,
@@ -37,6 +43,8 @@ function parseTags(tags: string | null): string[] {
 }
 
 export default function Knowledge() {
+  const isMobile = useIsMobile();
+
   // --- Debounced search state ---
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -474,149 +482,18 @@ export default function Knowledge() {
         </div>
       </div>
 
-      {selectedSource && (
-        <div
-          className="fixed inset-0 z-[51] bg-black/60 md:hidden"
-          onClick={() => setSelectedSource(null)}
-        />
-      )}
-
-      {selectedSource && (
-        <aside className="fixed inset-y-0 right-0 z-[52] w-[85vw] max-w-96 overflow-hidden border-l border-border/40 bg-[#0a0a0a] md:relative md:z-auto md:w-96 md:max-w-none">
-          <div className="h-full overflow-y-auto">
-            <div className="p-5">
-              <Card className="gap-4 border-border/50 bg-card/30 py-4">
-                <CardHeader className="flex-row items-center justify-between px-4 py-0">
-                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Source Detail
-                  </CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => setSelectedSource(null)}
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </Button>
-                </CardHeader>
-
-                <CardContent className="space-y-4 px-4 py-0">
-                  <p className="text-sm font-medium leading-relaxed text-foreground/90">
-                    {selectedSource.title || "Untitled"}
-                  </p>
-
-                  <a
-                    href={selectedSource.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex min-w-0 items-center gap-1.5 text-xs text-primary/80 transition-colors hover:text-primary"
-                  >
-                    <ExternalLinkIcon className="size-3 shrink-0" />
-                    <span className="break-all">{selectedSource.url}</span>
-                  </a>
-
-                  <Separator className="opacity-30" />
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Chunks</span>
-                      <span className="font-mono text-sm text-foreground">{selectedSource.chunks}</span>
-                    </div>
-                    <div>
-                      <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Learned</span>
-                      <span className="text-sm text-foreground">{formatDate(selectedSource.learnedAt)}</span>
-                    </div>
-                  </div>
-
-                  <Separator className="opacity-30" />
-
-                  <div className="min-w-0">
-                    <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">ID</span>
-                    <span className="block break-all font-mono text-xs text-muted-foreground">{selectedSource.id}</span>
-                  </div>
-
-                  <Separator className="opacity-30" />
-
-                  <div className="min-w-0">
-                    <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Tags</span>
-                    {editingTags ? (
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="text"
-                          value={tagsInput}
-                          onChange={(e) => setTagsInput(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleSaveTags(selectedSource); if (e.key === "Escape") setEditingTags(false); }}
-                          placeholder="e.g. Monica article, cooking"
-                          className="min-w-0 flex-1 rounded border border-border/50 bg-background/50 px-2 py-1 text-xs text-foreground outline-none focus:border-primary/50"
-                          autoFocus
-                        />
-                        <Button variant="ghost" size="icon-xs" onClick={() => handleSaveTags(selectedSource)}>
-                          <CheckIcon className="size-3.5 text-green-500" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => { setTagsInput(selectedSource.tags ?? ""); setEditingTags(true); }}
-                        className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                      >
-                        <TagIcon className="size-3 shrink-0" />
-                        <span>{selectedSource.tags || "Add tags..."}</span>
-                      </button>
-                    )}
-                  </div>
-
-                  <Separator className="opacity-30" />
-
-                  <div className="space-y-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => setViewChunksSource(selectedSource)}
-                    >
-                      <EyeIcon className="mr-1.5 size-3.5" />
-                      View contents
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => handleRefresh(selectedSource)}
-                      disabled={isRefreshing}
-                    >
-                      <RefreshCwIcon className={`mr-1.5 size-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
-                      {isRefreshing ? "Re-learning..." : "Re-learn (refresh)"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => handleCrawlSubPages(selectedSource)}
-                      disabled={isCrawling}
-                    >
-                      <GlobeIcon className={`mr-1.5 size-3.5 ${isCrawling ? "animate-spin" : ""}`} />
-                      {isCrawling ? "Discovering..." : "Crawl sub-pages"}
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => setShowDeleteConfirm(selectedSource)}
-                    >
-                      <Trash2Icon className="mr-1.5 size-3.5" />
-                      Remove source
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
+      {selectedSource && (isMobile ? (
+        <Sheet open={!!selectedSource} onOpenChange={(open) => { if (!open) setSelectedSource(null); }}>
+          <SheetContent side="right" showCloseButton={false} className="w-[85vw] max-w-96 gap-0 overflow-y-auto p-0">
+            <SheetTitle className="sr-only">Source Detail</SheetTitle>
+            <SourceDetailPanel source={selectedSource} onClose={() => setSelectedSource(null)} editingTags={editingTags} setEditingTags={setEditingTags} tagsInput={tagsInput} setTagsInput={setTagsInput} handleSaveTags={handleSaveTags} setViewChunksSource={setViewChunksSource} handleRefresh={handleRefresh} isRefreshing={isRefreshing} handleCrawlSubPages={handleCrawlSubPages} isCrawling={isCrawling} setShowDeleteConfirm={setShowDeleteConfirm} />
+          </SheetContent>
+        </Sheet>
+      ) : (
+        <aside className="relative z-auto w-96 overflow-hidden border-l border-border/40 bg-[#0a0a0a]">
+          <SourceDetailPanel source={selectedSource} onClose={() => setSelectedSource(null)} editingTags={editingTags} setEditingTags={setEditingTags} tagsInput={tagsInput} setTagsInput={setTagsInput} handleSaveTags={handleSaveTags} setViewChunksSource={setViewChunksSource} handleRefresh={handleRefresh} isRefreshing={isRefreshing} handleCrawlSubPages={handleCrawlSubPages} isCrawling={isCrawling} setShowDeleteConfirm={setShowDeleteConfirm} />
         </aside>
-      )}
+      ))}
 
       <Dialog open={!!viewChunksSource} onOpenChange={() => setViewChunksSource(null)}>
         <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
@@ -781,5 +658,170 @@ function IconBook() {
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
     </svg>
+  );
+}
+
+function SourceDetailPanel({
+  source,
+  onClose,
+  editingTags,
+  setEditingTags,
+  tagsInput,
+  setTagsInput,
+  handleSaveTags,
+  setViewChunksSource,
+  handleRefresh,
+  isRefreshing,
+  handleCrawlSubPages,
+  isCrawling,
+  setShowDeleteConfirm,
+}: {
+  source: KnowledgeSource;
+  onClose: () => void;
+  editingTags: boolean;
+  setEditingTags: (v: boolean) => void;
+  tagsInput: string;
+  setTagsInput: (v: string) => void;
+  handleSaveTags: (s: KnowledgeSource) => void;
+  setViewChunksSource: (s: KnowledgeSource | null) => void;
+  handleRefresh: (s: KnowledgeSource) => void;
+  isRefreshing: boolean;
+  handleCrawlSubPages: (s: KnowledgeSource) => void;
+  isCrawling: boolean;
+  setShowDeleteConfirm: (s: KnowledgeSource | null) => void;
+}) {
+  return (
+    <div className="h-full overflow-y-auto">
+      <div className="p-5">
+        <Card className="gap-4 border-border/50 bg-card/30 py-4">
+          <CardHeader className="flex-row items-center justify-between px-4 py-0">
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Source Detail
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={onClose}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </Button>
+          </CardHeader>
+
+          <CardContent className="space-y-4 px-4 py-0">
+            <p className="text-sm font-medium leading-relaxed text-foreground/90">
+              {source.title || "Untitled"}
+            </p>
+
+            <a
+              href={source.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-w-0 items-center gap-1.5 text-xs text-primary/80 transition-colors hover:text-primary"
+            >
+              <ExternalLinkIcon className="size-3 shrink-0" />
+              <span className="break-all">{source.url}</span>
+            </a>
+
+            <Separator className="opacity-30" />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Chunks</span>
+                <span className="font-mono text-sm text-foreground">{source.chunks}</span>
+              </div>
+              <div>
+                <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Learned</span>
+                <span className="text-sm text-foreground">{formatDate(source.learnedAt)}</span>
+              </div>
+            </div>
+
+            <Separator className="opacity-30" />
+
+            <div className="min-w-0">
+              <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">ID</span>
+              <span className="block break-all font-mono text-xs text-muted-foreground">{source.id}</span>
+            </div>
+
+            <Separator className="opacity-30" />
+
+            <div className="min-w-0">
+              <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Tags</span>
+              {editingTags ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={tagsInput}
+                    onChange={(e) => setTagsInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSaveTags(source); if (e.key === "Escape") setEditingTags(false); }}
+                    placeholder="e.g. Monica article, cooking"
+                    className="min-w-0 flex-1 rounded border border-border/50 bg-background/50 px-2 py-1 text-xs text-foreground outline-none focus:border-primary/50"
+                    autoFocus
+                  />
+                  <Button variant="ghost" size="icon-xs" onClick={() => handleSaveTags(source)}>
+                    <CheckIcon className="size-3.5 text-green-500" />
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setTagsInput(source.tags ?? ""); setEditingTags(true); }}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <TagIcon className="size-3 shrink-0" />
+                  <span>{source.tags || "Add tags..."}</span>
+                </button>
+              )}
+            </div>
+
+            <Separator className="opacity-30" />
+
+            <div className="space-y-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setViewChunksSource(source)}
+              >
+                <EyeIcon className="mr-1.5 size-3.5" />
+                View contents
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => handleRefresh(source)}
+                disabled={isRefreshing}
+              >
+                <RefreshCwIcon className={`mr-1.5 size-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+                {isRefreshing ? "Re-learning..." : "Re-learn (refresh)"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => handleCrawlSubPages(source)}
+                disabled={isCrawling}
+              >
+                <GlobeIcon className={`mr-1.5 size-3.5 ${isCrawling ? "animate-spin" : ""}`} />
+                {isCrawling ? "Discovering..." : "Crawl sub-pages"}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="w-full"
+                onClick={() => setShowDeleteConfirm(source)}
+              >
+                <Trash2Icon className="mr-1.5 size-3.5" />
+                Remove source
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

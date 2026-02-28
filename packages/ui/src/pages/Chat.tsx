@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getChatHistory, clearChatHistory, createThread } from "../api";
 import type { Thread } from "../types";
 import { useThreads, threadKeys } from "@/hooks/use-threads";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 import { ChatRuntimeProvider, useChatRuntimeHandle } from "@/components/chat/ChatRuntimeProvider";
 import { AllToolUIs } from "@/components/chat/tool-uis";
@@ -11,20 +12,6 @@ import { ThreadSidebar } from "@/components/chat/ThreadSidebar";
 import { MemorySidebar, getMemoryCount } from "@/components/chat/MemorySidebar";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Thread as AssistantThread } from "@/components/assistant-ui/thread";
-
-/** Detect if viewport is below md breakpoint */
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== "undefined" ? window.innerWidth < 768 : false,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-  return isMobile;
-}
 
 export default function Chat() {
   const [selectedAgent, setSelectedAgent] = useState<string | undefined>();

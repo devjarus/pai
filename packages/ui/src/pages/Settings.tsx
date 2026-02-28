@@ -12,8 +12,13 @@ import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
 import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon } from "lucide-react";
 
+const isCloudDeployment =
+  typeof window !== "undefined" &&
+  window.location.hostname !== "localhost" &&
+  window.location.hostname !== "127.0.0.1";
+
 const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedModel: string }> = {
-  ollama: { baseUrl: "http://localhost:11434", model: "llama3.2", embedModel: "nomic-embed-text" },
+  ollama: { baseUrl: isCloudDeployment ? "http://ollama:11434" : "http://localhost:11434", model: "llama3.2", embedModel: "nomic-embed-text" },
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o", embedModel: "text-embedding-3-small" },
   anthropic: { baseUrl: "https://api.anthropic.com", model: "claude-sonnet-4-20250514", embedModel: "" },
   google: { baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.0-flash", embedModel: "text-embedding-004" },

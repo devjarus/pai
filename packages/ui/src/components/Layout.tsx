@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { OfflineBanner } from "./OfflineBanner";
+import { MobileTabBar } from "./MobileTabBar";
 import { useInboxAll } from "@/hooks/use-inbox";
 
 const navItems = [
@@ -21,16 +22,10 @@ const navItems = [
 const INBOX_SEEN_KEY = "pai-last-seen-briefing-id";
 
 export default function Layout() {
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
 
   // Shared inbox query — reuses cache with Inbox page, polls every 30 min
   const { data: inboxData } = useInboxAll();
-
-  // Close mobile nav on route change
-  useEffect(() => {
-    setMobileNavOpen(false);
-  }, [location.pathname]);
 
   // Track last-seen briefing ID (persisted in localStorage)
   const [seenId, setSeenId] = useState(() => localStorage.getItem(INBOX_SEEN_KEY));
@@ -46,35 +41,10 @@ export default function Layout() {
     }
   }, [location.pathname, latestId]);
 
-  const toggleNav = useCallback(() => setMobileNavOpen((v) => !v), []);
-
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#0a0a0a]">
-      {/* Mobile hamburger button */}
-      <button
-        type="button"
-        onClick={toggleNav}
-        className="fixed left-2 top-2 z-50 flex h-9 w-9 items-center justify-center rounded-lg bg-[#0a0a0a] text-muted-foreground transition-colors hover:text-foreground md:hidden"
-        aria-label="Toggle navigation"
-      >
-        {mobileNavOpen ? <IconClose /> : <IconMenu />}
-      </button>
-
-      {/* Mobile backdrop */}
-      {mobileNavOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/60 md:hidden"
-          onClick={() => setMobileNavOpen(false)}
-        />
-      )}
-
-      {/* Nav sidebar — always visible on md+, overlay drawer on mobile */}
-      <nav
-        className={cn(
-          "fixed z-40 flex h-full w-14 flex-col items-center border-r border-border/40 bg-[#0a0a0a] py-4 transition-transform duration-200 md:static md:translate-x-0",
-          mobileNavOpen ? "translate-x-0" : "-translate-x-full",
-        )}
-      >
+      {/* Desktop sidebar — hidden on mobile, replaced by bottom tab bar */}
+      <nav className="hidden md:flex h-full w-14 flex-col items-center border-r border-border/40 bg-[#0a0a0a] py-4">
         {/* Branding */}
         <div className="mb-2 font-mono text-base font-bold tracking-tighter text-primary">
           pai
@@ -116,33 +86,17 @@ export default function Layout() {
         </div>
       </nav>
 
-      {/* Main content — add left padding on mobile to clear hamburger */}
-      <main className="flex flex-1 flex-col overflow-hidden bg-[#0f0f0f] pl-11 md:pl-0">
+      {/* Main content — bottom padding on mobile to clear tab bar */}
+      <main className="flex flex-1 flex-col overflow-hidden bg-[#0f0f0f] pb-14 md:pb-0">
         <OfflineBanner />
         <div className="flex-1 overflow-hidden">
           <Outlet />
         </div>
       </main>
+
+      {/* Mobile bottom tab bar */}
+      <MobileTabBar hasNewBriefing={hasNewBriefing} />
     </div>
-  );
-}
-
-function IconMenu() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="3" y1="6" x2="21" y2="6" />
-      <line x1="3" y1="12" x2="21" y2="12" />
-      <line x1="3" y1="18" x2="21" y2="18" />
-    </svg>
-  );
-}
-
-function IconClose() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="18" y1="6" x2="6" y2="18" />
-      <line x1="6" y1="6" x2="18" y2="18" />
-    </svg>
   );
 }
 

@@ -9,6 +9,7 @@ import {
   useClearAllMemory,
   useUpdateBelief,
 } from "@/hooks";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,6 +18,11 @@ import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
 import { Trash2Icon, HelpCircleIcon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
@@ -63,6 +69,8 @@ function sortBeliefs(results: Belief[], sortBy: string): Belief[] {
 }
 
 export default function Memory() {
+  const isMobile = useIsMobile();
+
   // --- Debounced search state ---
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -416,156 +424,18 @@ export default function Memory() {
         </div>
       </div>
 
-      {selectedBelief && (
-        <div
-          className="fixed inset-0 z-[51] bg-black/60 md:hidden"
-          onClick={() => setSelectedBelief(null)}
-        />
-      )}
-
-      {selectedBelief && (
-        <aside className="fixed inset-y-0 right-0 z-[52] w-[85vw] max-w-80 overflow-hidden border-l border-border/40 bg-[#0a0a0a] md:relative md:z-auto md:w-80 md:max-w-none">
-          <div className="h-full overflow-y-auto">
-            <div className="p-5">
-              <Card className="gap-4 border-border/50 bg-card/30 py-4">
-                <CardHeader className="flex-row items-center justify-between px-4 py-0">
-                  <div className="flex items-center gap-2">
-                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Belief Detail
-                    </CardTitle>
-                    {editingStatement === null && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => setEditingStatement(selectedBelief.statement)}
-                            className="text-muted-foreground hover:text-foreground"
-                          >
-                            <PencilIcon className="size-3" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Edit statement</TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => { setSelectedBelief(null); setEditingStatement(null); }}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </Button>
-                </CardHeader>
-
-                <CardContent className="space-y-4 px-4 py-0">
-                  <div>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "rounded-md text-[10px] font-medium uppercase tracking-wider",
-                        typeColorMap[selectedBelief.type] ?? "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {selectedBelief.type}
-                    </Badge>
-                    <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground/70">
-                      {typeDescriptions[selectedBelief.type]}
-                    </p>
-                  </div>
-
-                  {editingStatement !== null ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={editingStatement}
-                        onChange={(e) => setEditingStatement(e.target.value)}
-                        className="w-full rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-                        rows={4}
-                        disabled={isSavingEdit}
-                      />
-                      <div className="flex gap-1.5">
-                        <Button
-                          size="sm"
-                          onClick={handleSaveEdit}
-                          disabled={isSavingEdit || !editingStatement.trim()}
-                          className="h-7 gap-1 px-2 text-xs"
-                        >
-                          <CheckIcon className="size-3" />
-                          {isSavingEdit ? "Saving..." : "Save"}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditingStatement(null)}
-                          disabled={isSavingEdit}
-                          className="h-7 gap-1 px-2 text-xs"
-                        >
-                          <XIcon className="size-3" />
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-sm leading-relaxed text-foreground/90">
-                      {selectedBelief.statement}
-                    </p>
-                  )}
-
-                  <Separator className="opacity-30" />
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <DetailMetric label="Confidence" value={`${Math.round(selectedBelief.confidence * 100)}%`} info="How certain pai is about this belief. Increases when reinforced, decreases when contradicted." />
-                    <DetailMetric label="Stability" value={selectedBelief.stability.toFixed(1)} info="Resistance to decay (1.0-5.0). Frequently accessed beliefs become more stable over time." />
-                    <DetailMetric label="Importance" value={selectedBelief.importance.toFixed(2)} info="How significant this belief is for retrieval ranking. Higher importance beliefs surface first in search." />
-                    <DetailMetric label="Access Count" value={String(selectedBelief.access_count)} info="Number of times this belief has been recalled or referenced in conversations." />
-                  </div>
-
-                  <Separator className="opacity-30" />
-
-                  <div>
-                    <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                      Status
-                    </span>
-                    <Badge variant={selectedBelief.status === "active" ? "secondary" : "destructive"} className="text-[10px]">
-                      {selectedBelief.status}
-                    </Badge>
-                  </div>
-
-                  {selectedBelief.subject && (
-                    <div>
-                      <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                        Subject
-                      </span>
-                      <span className="text-sm capitalize text-foreground/70">{selectedBelief.subject}</span>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <DetailRow label="Created" value={formatDate(selectedBelief.created_at)} />
-                    <DetailRow label="Updated" value={formatDate(selectedBelief.updated_at)} />
-                    <DetailRow label="ID" value={selectedBelief.id} mono />
-                  </div>
-
-                  {selectedBelief.status === "active" && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => handleForget(selectedBelief.id)}
-                    >
-                      Forget this belief
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
+      {selectedBelief && (isMobile ? (
+        <Sheet open={!!selectedBelief} onOpenChange={(open) => { if (!open) { setSelectedBelief(null); setEditingStatement(null); } }}>
+          <SheetContent side="right" showCloseButton={false} className="w-[85vw] max-w-80 gap-0 overflow-y-auto p-0">
+            <SheetTitle className="sr-only">Belief Detail</SheetTitle>
+            <BeliefDetailPanel belief={selectedBelief} onClose={() => { setSelectedBelief(null); setEditingStatement(null); }} editingStatement={editingStatement} setEditingStatement={setEditingStatement} handleSaveEdit={handleSaveEdit} isSavingEdit={isSavingEdit} handleForget={handleForget} />
+          </SheetContent>
+        </Sheet>
+      ) : (
+        <aside className="relative z-auto w-80 overflow-hidden border-l border-border/40 bg-[#0a0a0a]">
+          <BeliefDetailPanel belief={selectedBelief} onClose={() => { setSelectedBelief(null); setEditingStatement(null); }} editingStatement={editingStatement} setEditingStatement={setEditingStatement} handleSaveEdit={handleSaveEdit} isSavingEdit={isSavingEdit} handleForget={handleForget} />
         </aside>
-      )}
+      ))}
 
       <Dialog open={showExplainer} onOpenChange={setShowExplainer}>
         <DialogContent className="max-w-lg">
@@ -660,6 +530,166 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
       <span className={cn("text-sm text-foreground/70", mono && "font-mono text-xs text-muted-foreground")}>
         {value}
       </span>
+    </div>
+  );
+}
+
+function BeliefDetailPanel({
+  belief,
+  onClose,
+  editingStatement,
+  setEditingStatement,
+  handleSaveEdit,
+  isSavingEdit,
+  handleForget,
+}: {
+  belief: Belief;
+  onClose: () => void;
+  editingStatement: string | null;
+  setEditingStatement: (v: string | null) => void;
+  handleSaveEdit: () => void;
+  isSavingEdit: boolean;
+  handleForget: (id: string) => void;
+}) {
+  return (
+    <div className="h-full overflow-y-auto">
+      <div className="p-5">
+        <Card className="gap-4 border-border/50 bg-card/30 py-4">
+          <CardHeader className="flex-row items-center justify-between px-4 py-0">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Belief Detail
+              </CardTitle>
+              {editingStatement === null && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => setEditingStatement(belief.statement)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <PencilIcon className="size-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Edit statement</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={onClose}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </Button>
+          </CardHeader>
+
+          <CardContent className="space-y-4 px-4 py-0">
+            <div>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "rounded-md text-[10px] font-medium uppercase tracking-wider",
+                  typeColorMap[belief.type] ?? "bg-muted text-muted-foreground",
+                )}
+              >
+                {belief.type}
+              </Badge>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground/70">
+                {typeDescriptions[belief.type]}
+              </p>
+            </div>
+
+            {editingStatement !== null ? (
+              <div className="space-y-2">
+                <textarea
+                  value={editingStatement}
+                  onChange={(e) => setEditingStatement(e.target.value)}
+                  className="w-full rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+                  rows={4}
+                  disabled={isSavingEdit}
+                />
+                <div className="flex gap-1.5">
+                  <Button
+                    size="sm"
+                    onClick={handleSaveEdit}
+                    disabled={isSavingEdit || !editingStatement.trim()}
+                    className="h-7 gap-1 px-2 text-xs"
+                  >
+                    <CheckIcon className="size-3" />
+                    {isSavingEdit ? "Saving..." : "Save"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditingStatement(null)}
+                    disabled={isSavingEdit}
+                    className="h-7 gap-1 px-2 text-xs"
+                  >
+                    <XIcon className="size-3" />
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm leading-relaxed text-foreground/90">
+                {belief.statement}
+              </p>
+            )}
+
+            <Separator className="opacity-30" />
+
+            <div className="grid grid-cols-2 gap-3">
+              <DetailMetric label="Confidence" value={`${Math.round(belief.confidence * 100)}%`} info="How certain pai is about this belief. Increases when reinforced, decreases when contradicted." />
+              <DetailMetric label="Stability" value={belief.stability.toFixed(1)} info="Resistance to decay (1.0-5.0). Frequently accessed beliefs become more stable over time." />
+              <DetailMetric label="Importance" value={belief.importance.toFixed(2)} info="How significant this belief is for retrieval ranking. Higher importance beliefs surface first in search." />
+              <DetailMetric label="Access Count" value={String(belief.access_count)} info="Number of times this belief has been recalled or referenced in conversations." />
+            </div>
+
+            <Separator className="opacity-30" />
+
+            <div>
+              <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Status
+              </span>
+              <Badge variant={belief.status === "active" ? "secondary" : "destructive"} className="text-[10px]">
+                {belief.status}
+              </Badge>
+            </div>
+
+            {belief.subject && (
+              <div>
+                <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Subject
+                </span>
+                <span className="text-sm capitalize text-foreground/70">{belief.subject}</span>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <DetailRow label="Created" value={formatDate(belief.created_at)} />
+              <DetailRow label="Updated" value={formatDate(belief.updated_at)} />
+              <DetailRow label="ID" value={belief.id} mono />
+            </div>
+
+            {belief.status === "active" && (
+              <Button
+                variant="destructive"
+                size="sm"
+                className="w-full"
+                onClick={() => handleForget(belief.id)}
+              >
+                Forget this belief
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
