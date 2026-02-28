@@ -6,11 +6,13 @@ import {
 import { taskMigrations } from "@personal-ai/plugin-tasks";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { createBot } from "./bot.js";
+import { startResearchPushLoop } from "./push.js";
 
 // Re-exports
 export { createBot } from "./bot.js";
 export { runAgentChat, createThread, deleteThread, clearThread } from "./chat.js";
 export { markdownToTelegramHTML, splitMessage, formatBriefingHTML } from "./formatter.js";
+export { startResearchPushLoop } from "./push.js";
 
 /** Migrations for telegram_threads mapping table */
 export const telegramMigrations: Migration[] = [
@@ -69,9 +71,13 @@ if (isDirectExecution) {
     },
   });
 
+  // Start research push loop (polls for completed research and sends to Telegram)
+  const pushHandle = startResearchPushLoop(storage, bot, logger);
+
   // Graceful shutdown
   const shutdown = () => {
     console.log("Shutting down...");
+    pushHandle.stop();
     bot.stop();
     storage.close();
     process.exit(0);

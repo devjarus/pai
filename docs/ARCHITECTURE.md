@@ -53,7 +53,7 @@ packages/
   plugin-assistant/   Personal Assistant agent — system prompt, AI SDK tools, afterResponse hook
   plugin-curator/     Memory Curator agent — health analysis, dedup, contradiction resolution
   plugin-telegram/    Telegram bot — grammY, standalone entry point, chat pipeline
-  server/             Fastify API — REST + SSE + static UI + auth (JWT) + briefing generation + background learning worker + server hardening
+  server/             Fastify API — REST + SSE + static UI + auth (JWT) + WorkerLoop (briefing, schedules, learning) + server hardening
   ui/                 React + Vite + Tailwind + shadcn/ui SPA (Inbox, Chat, Memory, Knowledge, Tasks, Jobs, Settings, Timeline)
 ```
 
@@ -395,7 +395,7 @@ Timer: every 2 hours (5-minute initial delay after server start)
 
 The `learning_watermarks` table tracks the last-processed ID and timestamp for each signal source, ensuring no data is processed twice and the worker can resume after restarts.
 
-Timer is registered in `packages/server/src/index.ts` alongside the briefing timer.
+Timer is managed by `WorkerLoop` in `packages/server/src/workers.ts` alongside the briefing and schedule timers. Can also run standalone via `pai worker`.
 
 ---
 

@@ -403,6 +403,29 @@ async function main(): Promise<void> {
       });
     });
 
+  // --- Worker management ---
+  const workerEntry = join(__dirname, "../../server/dist/worker.js");
+
+  program
+    .command("worker")
+    .description("Run background workers (briefing, schedules, learning)")
+    .option("-d, --daemon", "Run in background")
+    .action(async (opts: { daemon?: boolean }) => {
+      if (opts.daemon) {
+        mkdirSync(PID_DIR, { recursive: true });
+        const child = fork(workerEntry, [], { detached: true, stdio: "ignore" });
+        child.unref();
+        console.log(`pai worker started in background (PID ${child.pid})`);
+      } else {
+        const child = spawn("node", [workerEntry], { stdio: "inherit" });
+        process.on("SIGINT", () => child.kill("SIGINT"));
+        process.on("SIGTERM", () => child.kill("SIGTERM"));
+        await new Promise<void>((resolve) => {
+          child.on("exit", () => { storage.close(); resolve(); });
+        });
+      }
+    });
+
   // Health check command (built-in)
   program
     .command("health")

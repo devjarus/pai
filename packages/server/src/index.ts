@@ -9,50 +9,22 @@ import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import jwt from "jsonwebtoken";
-import { loadConfig, createStorage, createLLMClient, createLogger, memoryMigrations, threadMigrations, knowledgeMigrations, authMigrations, backgroundJobMigrations, hasOwner, getJwtSecret, resetOwnerPassword } from "@personal-ai/core";
-import { taskMigrations } from "@personal-ai/plugin-tasks";
+import { loadConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword } from "@personal-ai/core";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
-import { telegramMigrations, createBot, splitMessage, markdownToTelegramHTML } from "@personal-ai/plugin-telegram";
+import { createBot, startResearchPushLoop } from "@personal-ai/plugin-telegram";
 import { registerAuthRoutes, extractToken } from "./routes/auth.js";
 import { registerMemoryRoutes } from "./routes/memory.js";
 import { registerAgentRoutes } from "./routes/agents.js";
 import { registerConfigRoutes } from "./routes/config.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
-import { researchMigrations } from "@personal-ai/plugin-research";
-import { briefingMigrations, generateBriefing, getLatestBriefing } from "./briefing.js";
-import { learningMigrations, runBackgroundLearning } from "./learning.js";
-import { scheduleMigrations, getDueSchedules, markScheduleRun, listSchedules, createSchedule, deleteSchedule, pauseSchedule, resumeSchedule } from "@personal-ai/plugin-schedules";
-import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
-import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
-import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
+import { listSchedules, createSchedule, deleteSchedule, pauseSchedule, resumeSchedule } from "@personal-ai/plugin-schedules";
 import { registerInboxRoutes } from "./routes/inbox.js";
 import { registerJobRoutes } from "./routes/jobs.js";
-import type { Storage, Migration } from "@personal-ai/core";
-
-/** All plugin migrations in registration order */
-const allMigrations: Array<[string, Migration[]]> = [
-  ["memory", memoryMigrations],
-  ["tasks", taskMigrations],
-  ["threads", threadMigrations],
-  ["telegram", telegramMigrations],
-  ["knowledge", knowledgeMigrations],
-  ["auth", authMigrations],
-  ["inbox", briefingMigrations],
-  ["research", researchMigrations],
-  ["learning", learningMigrations],
-  ["schedules", scheduleMigrations],
-  ["background_jobs", backgroundJobMigrations],
-];
-
-/** Run all plugin migrations on a storage instance */
-function runAllMigrations(storage: Storage): void {
-  for (const [name, migrations] of allMigrations) {
-    storage.migrate(name, migrations);
-  }
-}
+import { runAllMigrations } from "./migrations.js";
+import { WorkerLoop } from "./workers.js";
 
 export interface ServerContext {
   ctx: PluginContext;
@@ -138,6 +110,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   // Telegram bot state — use ReturnType to avoid importing grammy types
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let telegramBot: any = null;
+  let telegramPushHandle: { stop(): void } | null = null;
   const telegramStatus: ServerContext["telegramStatus"] = { running: false };
 
   function startTelegramBot(): void {
@@ -163,6 +136,8 @@ export async function createServer(options?: { port?: number; host?: string }) {
         telegramStatus.error = err.message ?? String(err);
         ctx.logger.error("Telegram bot error", { error: telegramStatus.error });
       });
+      // Start research push loop alongside the bot
+      telegramPushHandle = startResearchPushLoop(ctx.storage, bot, ctx.logger);
     } catch (err) {
       telegramStatus.error = err instanceof Error ? err.message : String(err);
       telegramStatus.running = false;
@@ -171,6 +146,10 @@ export async function createServer(options?: { port?: number; host?: string }) {
   }
 
   function stopTelegramBot(): void {
+    if (telegramPushHandle) {
+      telegramPushHandle.stop();
+      telegramPushHandle = null;
+    }
     if (telegramBot) {
       try { (telegramBot as { stop(): void }).stop(); } catch { /* ignore */ }
       telegramBot = null;
@@ -178,10 +157,6 @@ export async function createServer(options?: { port?: number; host?: string }) {
     telegramStatus.running = false;
     telegramStatus.username = undefined;
     telegramStatus.error = undefined;
-  }
-
-  function escapeHTMLForTelegram(text: string): string {
-    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   // Track pending storage close timers so we can cancel them on consecutive reinitialize calls
@@ -507,150 +482,9 @@ export async function createServer(options?: { port?: number; host?: string }) {
     startTelegramBot();
   }
 
-  // --- Push messages to all Telegram chats ---
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type TgBot = { api: { sendMessage(chatId: number, text: string, opts?: Record<string, unknown>): Promise<any> } };
-
-  async function sendToTelegramChat(chatId: number, html: string): Promise<void> {
-    if (!telegramBot || !telegramStatus.running) return;
-    const parts = splitMessage(html);
-    try {
-      for (const part of parts) {
-        await (telegramBot as TgBot).api.sendMessage(chatId, part, { parse_mode: "HTML" });
-      }
-    } catch (err) {
-      ctx.logger.warn("Failed to send Telegram message", {
-        chatId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  // --- Push new research reports to Telegram ---
-
-  function findChatIdForResearchBriefing(briefingId: string): number | null {
-    // Briefing IDs follow pattern "research-{jobId}"
-    const jobId = briefingId.replace(/^research-/, "");
-    if (jobId === briefingId) return null; // Not a research briefing ID
-    try {
-      const jobRow = ctx.storage.query<{ thread_id: string | null }>(
-        "SELECT thread_id FROM research_jobs WHERE id = ?",
-        [jobId],
-      );
-      const threadId = jobRow[0]?.thread_id;
-      if (!threadId) return null;
-      const chatRow = ctx.storage.query<{ chat_id: number }>(
-        "SELECT chat_id FROM telegram_threads WHERE thread_id = ?",
-        [threadId],
-      );
-      return chatRow[0]?.chat_id ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  async function checkAndPushResearch(): Promise<void> {
-    if (!telegramBot || !telegramStatus.running) return;
-    try {
-      const rows = ctx.storage.query<{ id: string; sections: string }>(
-        "SELECT id, sections FROM briefings WHERE type = 'research' AND status = 'ready' AND telegram_sent_at IS NULL ORDER BY generated_at DESC LIMIT 5",
-      );
-      for (const row of rows) {
-        try {
-          const parsed = JSON.parse(row.sections) as { goal?: string; report?: string };
-          if (!parsed.report) continue;
-          const title = parsed.goal ?? "Research Report";
-          const html = `\uD83D\uDD2C <b>Research Complete: ${escapeHTMLForTelegram(title)}</b>\n\n${markdownToTelegramHTML(parsed.report)}`;
-          // Send to the originating Telegram chat, not all chats
-          const chatId = findChatIdForResearchBriefing(row.id);
-          if (chatId) {
-            await sendToTelegramChat(chatId, html);
-            ctx.storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
-            ctx.logger.info("Research report pushed to Telegram", { briefingId: row.id, chatId });
-          } else {
-            // Mark as sent even without a chat, to avoid re-checking
-            ctx.storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
-            ctx.logger.info("Research report ready (no originating Telegram chat)", { briefingId: row.id });
-          }
-        } catch { /* skip malformed entries */ }
-      }
-    } catch { /* ignore query errors during startup */ }
-  }
-
-  // --- Background briefing generation ---
-  const BRIEFING_INTERVAL_MS = 6 * 60 * 60 * 1000;
-  const briefingTimer = setInterval(() => {
-    generateBriefing(ctx).catch((err) => {
-      ctx.logger.warn(`Background briefing failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  }, BRIEFING_INTERVAL_MS);
-
-  // Generate initial briefing if none exists
-  const latest = getLatestBriefing(storage);
-  if (!latest) {
-    generateBriefing(ctx).catch((err) => {
-      ctx.logger.warn(`Initial briefing failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  }
-
-  // --- Research report push (check every 60s for completed research) ---
-  const RESEARCH_CHECK_INTERVAL_MS = 60 * 1000;
-  const researchCheckTimer = setInterval(() => {
-    checkAndPushResearch().catch(() => {});
-  }, RESEARCH_CHECK_INTERVAL_MS);
-
-  // --- Scheduled job runner (check every 60s for due schedules) ---
-  async function runDueSchedules(): Promise<void> {
-    try {
-      const due = getDueSchedules(ctx.storage);
-      for (const schedule of due) {
-        ctx.logger.info("Running scheduled job", { id: schedule.id, label: schedule.label });
-        markScheduleRun(ctx.storage, schedule.id);
-
-        if (schedule.type === "research") {
-          const jobId = createResearchJob(ctx.storage, {
-            goal: schedule.goal,
-            threadId: schedule.threadId,
-          });
-          runResearchInBackground(
-            {
-              storage: ctx.storage,
-              llm: ctx.llm,
-              logger: ctx.logger,
-              webSearch,
-              formatSearchResults,
-              fetchPage: fetchPageAsMarkdown,
-            },
-            jobId,
-          ).catch((err) => {
-            ctx.logger.error(`Scheduled research failed: ${err instanceof Error ? err.message : String(err)}`);
-          });
-        }
-      }
-    } catch (err) {
-      ctx.logger.warn(`Schedule runner error: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-  const SCHEDULE_CHECK_INTERVAL_MS = 60 * 1000;
-  const scheduleCheckTimer = setInterval(() => {
-    runDueSchedules().catch(() => {});
-  }, SCHEDULE_CHECK_INTERVAL_MS);
-
-  // --- Background learning worker ---
-  const LEARNING_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
-  const LEARNING_INITIAL_DELAY_MS = 5 * 60 * 1000; // 5 minutes
-
-  const learningInitTimer = setTimeout(() => {
-    runBackgroundLearning(ctx).catch((err) => {
-      ctx.logger.warn(`Background learning failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  }, LEARNING_INITIAL_DELAY_MS);
-
-  const learningTimer = setInterval(() => {
-    runBackgroundLearning(ctx).catch((err) => {
-      ctx.logger.warn(`Background learning failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  }, LEARNING_INTERVAL_MS);
+  // --- Background workers (briefing, schedules, learning) ---
+  const workerLoop = new WorkerLoop(ctx);
+  workerLoop.start();
 
   // Write PID file for process management
   const pidFile = join(homedir(), ".personal-ai", "server.pid");
@@ -663,11 +497,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     console.log("Shutting down gracefully...");
     try { unlinkSync(pidFile); } catch { /* ignore */ }
     stopTelegramBot();
-    clearInterval(briefingTimer);
-    clearInterval(researchCheckTimer);
-    clearInterval(scheduleCheckTimer);
-    clearTimeout(learningInitTimer);
-    clearInterval(learningTimer);
+    workerLoop.stop();
     // Cancel any pending storage close from reinitialize
     if (pendingCloseTimer) {
       clearTimeout(pendingCloseTimer);
