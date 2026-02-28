@@ -140,6 +140,10 @@ function ChatInner({
               createdAt: new Date(),
             })),
           );
+          requestAnimationFrame(() => {
+            const viewport = document.querySelector(".aui-thread-viewport");
+            if (viewport) viewport.scrollTop = viewport.scrollHeight;
+          });
         }).catch(() => {
           handleRef.current?.setChatMessages([]);
         });
@@ -173,8 +177,8 @@ function ChatInner({
       const controller = new AbortController();
       switchAbortRef.current = controller;
 
-      // Clear messages and switch
-      handleRef.current?.setChatMessages([]);
+      // Switch thread ID immediately but don't clear messages yet
+      // (avoids a blank flash while history loads)
       setActiveThreadId(threadId);
       activeThreadIdRef.current = threadId;
       // Close thread sidebar on mobile after selecting
@@ -191,16 +195,17 @@ function ChatInner({
       try {
         const history = await getChatHistory(threadId);
         if (controller.signal.aborted) return;
+        // Clear then immediately set — triggers assistant-ui scroll reset
+        // without a visible blank flash (same JS tick)
+        handleRef.current?.setChatMessages([]);
         handleRef.current?.setChatMessages(mapHistory(history));
+        // Scroll to bottom after messages render
+        requestAnimationFrame(() => {
+          const viewport = document.querySelector(".aui-thread-viewport");
+          if (viewport) viewport.scrollTop = viewport.scrollHeight;
+        });
       } catch {
-        if (controller.signal.aborted) return;
-        try {
-          const history = await getChatHistory(threadId);
-          if (controller.signal.aborted) return;
-          handleRef.current?.setChatMessages(mapHistory(history));
-        } catch {
-          if (!controller.signal.aborted) handleRef.current?.setChatMessages([]);
-        }
+        if (!controller.signal.aborted) handleRef.current?.setChatMessages([]);
       }
     },
     [activeThreadId, isStreaming, isMobile, setActiveThreadId, activeThreadIdRef, setThreadSidebarOpen, handleRef],

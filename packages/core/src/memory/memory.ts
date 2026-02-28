@@ -238,6 +238,25 @@ export function listBeliefs(storage: Storage, status = "active"): Belief[] {
     .sort((a, b) => b.confidence - a.confidence);
 }
 
+/**
+ * Returns the owner's core preferences and procedural beliefs — high-confidence,
+ * stable beliefs that should always be available to the LLM regardless of topic.
+ * Lightweight: returns at most `limit` beliefs, no embedding calls needed.
+ */
+export function getCorePreferences(storage: Storage, limit = 8): Belief[] {
+  return storage.query<Belief>(
+    `SELECT * FROM beliefs
+     WHERE status = 'active'
+       AND type IN ('preference', 'procedural')
+       AND subject = 'owner'
+       AND confidence >= 0.5
+       AND stability >= 1.0
+     ORDER BY importance DESC, confidence DESC
+     LIMIT ?`,
+    [limit],
+  ).map((b) => ({ ...b, confidence: effectiveConfidence(b) }));
+}
+
 export function forgetBelief(storage: Storage, beliefId: string): void {
   const id = resolveIdPrefix(storage, "beliefs", beliefId, "AND status = 'active'");
   storage.run("UPDATE beliefs SET status = 'forgotten', updated_at = datetime('now') WHERE id = ?", [id]);
@@ -490,9 +509,9 @@ export function semanticSearch(
       // Multi-factor score: semantic relevance + importance + recency + stability + subject match
       let score = 0.5 * cosine + 0.2 * importance + 0.1 * recency + 0.05 * stabilityBonus + 0.15 * subjectMatch;
 
-      // Deprioritize generic insight-type beliefs to reduce noise
+      // Slightly deprioritize generic insight-type beliefs to reduce noise
       if (row.type === "insight") {
-        score *= 0.5;
+        score *= 0.8;
       }
 
       return {
@@ -1155,11 +1174,17 @@ export async function getMemoryContext(
       // Fallback to FTS5/recent on embedding failure
     }
   }
-  // FTS fallback when semantic search returns no results (cosine mismatch)
-  if (beliefs.length === 0) {
-    beliefs = searchBeliefs(storage, query, beliefLimit).map((b) => ({
-      statement: b.statement, confidence: b.confidence, type: b.type, stability: b.stability ?? 1.0, subject: b.subject ?? "owner",
-    }));
+  // FTS supplement: always merge keyword matches to catch beliefs that
+  // semantic search missed (different phrasing, low cosine but relevant)
+  const ftsResults = searchBeliefs(storage, query, 5).map((b) => ({
+    statement: b.statement, confidence: b.confidence, type: b.type, stability: b.stability ?? 1.0, subject: b.subject ?? "owner",
+  }));
+  const existingStatements = new Set(beliefs.map((b) => b.statement));
+  for (const fts of ftsResults) {
+    if (!existingStatements.has(fts.statement) && beliefs.length < beliefLimit) {
+      beliefs.push(fts);
+      existingStatements.add(fts.statement);
+    }
   }
   if (episodes.length === 0) {
     episodes = listEpisodes(storage, episodeLimit);

@@ -151,7 +151,7 @@ function InboxDetail({ id }: { id: string }) {
   if (loading) {
     return (
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-3xl space-y-4 p-6">
+        <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-96 w-full rounded-lg" />
         </div>
@@ -161,7 +161,7 @@ function InboxDetail({ id }: { id: string }) {
 
   if (!item) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-4 md:p-6">
         <p className="text-sm text-muted-foreground">Briefing not found</p>
         <Button variant="ghost" onClick={() => navigate("/")} className="gap-2">
           <ArrowLeftIcon className="h-4 w-4" /> Back to Inbox
@@ -174,8 +174,8 @@ function InboxDetail({ id }: { id: string }) {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl p-6">
-        <div className="mb-6 flex items-center justify-between">
+      <div className="mx-auto max-w-3xl p-4 md:p-6">
+        <div className="mb-4 flex items-center justify-between md:mb-6">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-2 text-muted-foreground hover:text-foreground">
             <ArrowLeftIcon className="h-4 w-4" /> Inbox
           </Button>
@@ -193,7 +193,7 @@ function InboxDetail({ id }: { id: string }) {
           </div>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-4 md:mb-6">
           <div className="flex items-center gap-2 mb-2">
             {item.type === "research" ? (
               <Badge variant="outline" className="text-[10px] border-blue-500/20 bg-blue-500/10 text-blue-400">Research Report</Badge>
@@ -207,16 +207,16 @@ function InboxDetail({ id }: { id: string }) {
           </h1>
         </div>
 
-        <Separator className="mb-6 opacity-30" />
+        <Separator className="mb-4 opacity-30 md:mb-6" />
 
         {item.type === "research" && sections.report ? (
-          <div className="rounded-lg border border-border/20 bg-card/40 p-6">
+          <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
             <MarkdownContent content={sections.report} />
           </div>
         ) : item.type === "daily" ? (
           <DailyBriefingDetail sections={item.sections} navigate={navigate} />
         ) : (
-          <div className="rounded-lg border border-border/20 bg-card/40 p-6">
+          <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
             <MarkdownContent content={JSON.stringify(item.sections, null, 2)} />
           </div>
         )}
@@ -235,7 +235,7 @@ function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<str
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {(sections.taskFocus?.items?.length ?? 0) > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -389,7 +389,7 @@ function InboxFeed() {
 
   if (items.length === 0 && !generating) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-6 p-6">
+      <div className="flex h-full flex-col items-center justify-center gap-6 p-4 md:p-6">
         <div className="inbox-fade-in flex flex-col items-center gap-3 text-center">
           <SparklesIcon className="h-10 w-10 text-primary/60" />
           <h2 className="font-mono text-lg font-semibold text-foreground">Your Inbox</h2>
@@ -411,7 +411,7 @@ function InboxFeed() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl space-y-4 p-6">
+      <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
         <div className="inbox-fade-in flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="font-mono text-lg font-semibold text-foreground">Inbox</h1>
@@ -716,7 +716,7 @@ function GenericBriefingCard({ item }: { item: InboxItem }) {
 function InboxSkeleton() {
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl space-y-4 p-6">
+      <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
         <div className="flex items-center justify-between">
           <Skeleton className="h-6 w-24" />
           <div className="flex gap-1">

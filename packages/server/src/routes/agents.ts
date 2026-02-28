@@ -16,6 +16,7 @@ import {
   withThreadLock,
   getThread,
   getOwner,
+  getCorePreferences,
 } from "@personal-ai/core";
 import { streamText, generateText, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, tool } from "ai";
 
@@ -209,9 +210,16 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
     const now = new Date();
     const owner = getOwner(ctx.storage);
     const ownerName = owner?.name || owner?.email?.split("@")[0] || "the owner";
+    // Fetch owner's core preferences (lightweight SQL query, no embedding calls)
+    const corePrefs = getCorePreferences(ctx.storage);
+    const prefsBlock = corePrefs.length > 0
+      ? `\n\n## ${ownerName}'s core preferences (always apply these)\n${corePrefs.map((b) => `- ${b.statement}`).join("\n")}`
+      : "";
+
     let systemPrompt = agentPlugin.agent.systemPrompt +
       `\n\nCurrent date and time: ${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}, ${now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}. Use this for time-sensitive queries.` +
-      `\n\nYour owner's name is ${ownerName}. You are talking to them via the web UI. When they say "my" or "I", it refers to ${ownerName}. Memories tagged "owner" are about this person. Do not confuse ${ownerName} with other people mentioned in memories.`;
+      `\n\nYour owner's name is ${ownerName}. You are talking to them via the web UI. When they say "my" or "I", it refers to ${ownerName}. Memories tagged "owner" are about this person. Do not confuse ${ownerName} with other people mentioned in memories.` +
+      prefsBlock;
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         await withThreadLock(sid, async () => {

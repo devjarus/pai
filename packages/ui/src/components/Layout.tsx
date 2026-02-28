@@ -42,7 +42,7 @@ export default function Layout() {
   }, [location.pathname, latestId]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0a0a0a]">
+    <div className="flex h-dvh w-screen overflow-hidden bg-[#0a0a0a]">
       {/* Desktop sidebar — hidden on mobile, replaced by bottom tab bar */}
       <nav className="hidden md:flex h-full w-14 flex-col items-center border-r border-border/40 bg-[#0a0a0a] py-4">
         {/* Branding */}
