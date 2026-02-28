@@ -63,6 +63,7 @@ export function createAgentTools(ctx: AgentContext) {
 
         // Supplement with direct text search for short/name queries that embeddings miss
         const ftsResults = searchBeliefs(ctx.storage, query, 5);
+        let output = result.formatted;
         if (ftsResults.length > 0) {
           const ftsSection = ftsResults
             .map((b) => {
@@ -71,12 +72,18 @@ export function createAgentTools(ctx: AgentContext) {
             })
             .join("\n");
           // Avoid duplicating if FTS results are already in the formatted context
-          if (!ftsSection.split("\n").every(line => result.formatted.includes(line.replace(/^- /, "").trim()))) {
-            return `${result.formatted}\n\n## Text search matches\n${ftsSection}`;
+          if (!ftsSection.split("\n").every(line => output.includes(line.replace(/^- /, "").trim()))) {
+            output = `${output}\n\n## Text search matches\n${ftsSection}`;
           }
         }
 
-        return result.formatted || "[empty] No memories match this query. Try knowledge_search or answer from conversation context.";
+        if (!output) return "[empty] No memories match this query. Try knowledge_search or answer from conversation context.";
+
+        // Cap output to prevent context overfill (~2000 chars ≈ ~500 tokens)
+        if (output.length > 2000) {
+          output = output.slice(0, 2000) + "\n\n[truncated — use a more specific query for details]";
+        }
+        return output;
       },
     }),
 
@@ -249,9 +256,9 @@ export function createAgentTools(ctx: AgentContext) {
           const results = await knowledgeSearch(ctx.storage, ctx.llm, query, 3);
           if (results.length === 0) return "[empty] No knowledge matches this query. Answer from conversation context or try web_search.";
 
-          // Return top 3 results with truncated content to keep context small
+          // Return top 3 results with truncated content to keep context small (~1500 chars total)
           return results.slice(0, 3).map((r) => ({
-            content: r.chunk.content.slice(0, 300),
+            content: r.chunk.content.slice(0, 500),
             source: r.source.title,
           }));
         } catch (err) {

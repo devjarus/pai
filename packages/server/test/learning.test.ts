@@ -131,7 +131,7 @@ describe("buildLearningPrompt", () => {
     expect(prompt).toContain("COMPLETED RESEARCH");
     expect(prompt).toContain("COMPLETED TASKS");
     expect(prompt).toContain("NEW KNOWLEDGE SOURCES");
-    expect(prompt).toContain("Maximum 15 facts");
+    expect(prompt).toContain("Maximum 10 facts");
   });
 
   it("omits empty sections", () => {
@@ -168,11 +168,11 @@ describe("parseLearningResponse", () => {
     expect(parseLearningResponse("{}")).toEqual([]);
   });
 
-  it("caps at 15 facts", () => {
+  it("caps at 10 facts", () => {
     const items = Array.from({ length: 20 }, (_, i) => ({
       fact: `Fact ${i}`, factType: "factual", importance: 5, subject: "owner",
     }));
-    expect(parseLearningResponse(JSON.stringify(items))).toHaveLength(15);
+    expect(parseLearningResponse(JSON.stringify(items))).toHaveLength(10);
   });
 
   it("filters out items with missing fields", () => {

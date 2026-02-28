@@ -197,14 +197,15 @@ Review the following activity and extract personal facts, topic interests, proce
 ${parts.join("\n")}
 
 Guidelines:
-- Extract facts ABOUT the user or people they mention — preferences, interests, decisions, work patterns
-- Extract topic interests — subjects the user engages with repeatedly or deeply
-- Extract procedural patterns — how the user works, tools they prefer, recurring workflows
+- ONLY extract high-signal personal facts: core preferences, important decisions, key relationships, work patterns
+- Do NOT extract trivial observations, one-off mentions, or casual remarks
 - Do NOT extract generic knowledge or common facts (e.g., "Bitcoin is a cryptocurrency")
 - Do NOT extract greetings, pleasantries, or meta-conversation about the AI
+- Do NOT extract facts about what the user asked or searched for — only what they stated/decided/prefer
 - Each fact must be specific and attributable to a person (use "owner" for the user)
-- Rate importance 1-10: 1-3 trivial, 4-6 useful, 7-9 core preference/decision
-- Maximum 15 facts total
+- Rate importance 1-10: 1-3 trivial (skip these), 4-6 useful context, 7-9 core preference/decision
+- Only include facts you'd rate importance 4 or higher
+- Maximum 10 facts total — quality over quantity
 - Keep each fact under 20 words
 
 Respond with ONLY a JSON array (no markdown, no explanation):
@@ -229,7 +230,7 @@ export function parseLearningResponse(text: string): ExtractedFact[] {
         typeof item.subject === "string" &&
         (item.fact as string).length > 0
       )
-      .slice(0, 15)
+      .slice(0, 10)
       .map((item: Record<string, unknown>) => ({
         fact: String(item.fact),
         factType: String(item.factType) as ExtractedFact["factType"],
@@ -303,11 +304,17 @@ export async function runBackgroundLearning(ctx: PluginContext): Promise<void> {
     return; // Don't update watermarks on LLM failure
   }
 
-  // Phase 3: Store facts via remember()
+  // Phase 3: Store facts via remember() — only those above importance threshold
   let created = 0;
   let reinforced = 0;
+  let skipped = 0;
 
   for (const fact of facts) {
+    // Skip low-importance facts to avoid noise buildup
+    if (fact.importance < 4) {
+      skipped++;
+      continue;
+    }
     try {
       const result = await remember(ctx.storage, ctx.llm, fact.fact, ctx.logger);
       if (result.isReinforcement) {
@@ -334,6 +341,7 @@ export async function runBackgroundLearning(ctx: PluginContext): Promise<void> {
     factsExtracted: facts.length,
     beliefsCreated: created,
     beliefsReinforced: reinforced,
+    lowImportanceSkipped: skipped,
     durationMs: duration,
   });
 }
