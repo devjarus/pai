@@ -1,55 +1,69 @@
+import { useState } from "react";
 import { GlobeIcon, AlertCircleIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { CollapsibleToolCard } from "./CollapsibleToolCard";
-import { cn } from "@/lib/utils";
+
+interface StructuredResult {
+  title: string;
+  url: string;
+  snippet: string;
+  thumbnail?: string;
+}
+
+interface StructuredOutput {
+  text: string;
+  results: StructuredResult[];
+  query: string;
+  category?: string;
+}
 
 interface ToolSearchResultsProps {
   state: string;
-  input?: { query?: string };
-  output?: string;
+  input?: { query?: string; category?: string };
+  output?: string | StructuredOutput;
 }
 
-interface ParsedResult {
-  title: string;
-  snippet: string;
-  domain: string;
+/** Extract domain from a URL string */
+function getDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
-function parseSearchResults(output: string): ParsedResult[] {
-  const results: ParsedResult[] = [];
-  // Each result block is typically separated by blank lines
-  // Format varies but commonly: "Title\nSnippet\nURL" or markdown-style
+/** Parse legacy plain-text output into structured results (backward compat) */
+function parseLegacyOutput(output: string): StructuredResult[] {
+  const results: StructuredResult[] = [];
   const lines = output.split("\n").filter((l) => l.trim());
-  let current: Partial<ParsedResult> = {};
+  let current: Partial<StructuredResult> = {};
 
   for (const line of lines) {
     const trimmed = line.trim();
-    // Skip header lines like "## Web Search Results" or "---"
     if (trimmed.startsWith("##") || trimmed === "---") continue;
 
-    // Detect URL lines to extract domain
-    const urlMatch = trimmed.match(/https?:\/\/([^/\s]+)/);
+    const urlMatch = trimmed.match(/Source:\s*(https?:\/\/\S+)/);
     if (urlMatch) {
-      current.domain = urlMatch[1];
+      current.url = urlMatch[1];
       if (current.title) {
         results.push({
           title: current.title,
+          url: current.url,
           snippet: current.snippet || "",
-          domain: current.domain,
         });
         current = {};
       }
       continue;
     }
 
-    // Bold title pattern: **Title** or ### Title
-    const boldMatch = trimmed.match(/^\*\*(.+?)\*\*$/) || trimmed.match(/^###?\s+(.+)/);
+    const boldMatch = trimmed.match(/^\d+\.\s+\*\*(.+?)\*\*$/);
     if (boldMatch) {
-      if (current.title && current.snippet) {
+      if (current.title) {
         results.push({
           title: current.title,
-          snippet: current.snippet,
-          domain: current.domain || "",
+          url: current.url || "",
+          snippet: current.snippet || "",
         });
         current = {};
       }
@@ -57,43 +71,80 @@ function parseSearchResults(output: string): ParsedResult[] {
       continue;
     }
 
-    // Numbered result: "1. Title - snippet" pattern
-    const numberedMatch = trimmed.match(/^\d+\.\s+(.+)/);
-    if (numberedMatch && !current.title) {
-      current.title = numberedMatch[1];
-      continue;
-    }
-
-    // Bullet point snippets
-    const bulletMatch = trimmed.match(/^[-*]\s+(.*)/);
-    if (bulletMatch) {
-      if (!current.snippet) {
-        current.snippet = bulletMatch[1];
-      } else {
-        current.snippet += " " + bulletMatch[1];
-      }
-      continue;
-    }
-
-    // Treat as snippet text if we already have a title
-    if (current.title && !current.snippet) {
+    if (current.title && !current.snippet && !trimmed.startsWith("Source:")) {
       current.snippet = trimmed;
     }
   }
 
-  // Push last accumulated result
   if (current.title) {
     results.push({
       title: current.title,
+      url: current.url || "",
       snippet: current.snippet || "",
-      domain: current.domain || "",
     });
   }
 
   return results;
 }
 
+function ResultThumbnail({ src, domain }: { src?: string; domain: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt=""
+        className="size-12 shrink-0 rounded-md object-cover"
+        onError={() => setFailed(true)}
+        loading="lazy"
+      />
+    );
+  }
+
+  // Favicon fallback
+  return (
+    <img
+      src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`}
+      alt=""
+      className="size-8 shrink-0 rounded"
+      loading="lazy"
+    />
+  );
+}
+
+function ResultCard({ result }: { result: StructuredResult }) {
+  const domain = getDomain(result.url);
+
+  return (
+    <div className="flex gap-2.5 rounded-md bg-muted/30 px-2.5 py-2">
+      <ResultThumbnail src={result.thumbnail} domain={domain} />
+      <div className="min-w-0 flex-1">
+        <a
+          href={result.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-medium text-foreground hover:underline"
+        >
+          {result.title}
+        </a>
+        {result.snippet && (
+          <p className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
+            {result.snippet}
+          </p>
+        )}
+        <span className="mt-0.5 block text-[10px] text-muted-foreground/60">
+          {domain}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function ToolSearchResults({ state, input, output }: ToolSearchResultsProps) {
+  const category = input?.category;
+  const categoryLabel = category && category !== "general" ? category : undefined;
+
   // Loading state
   if (state === "input-available") {
     return (
@@ -101,7 +152,7 @@ export function ToolSearchResults({ state, input, output }: ToolSearchResultsPro
         <CardContent className="flex items-center gap-2 px-3 py-2.5">
           <GlobeIcon className="size-3.5 shrink-0 animate-pulse text-primary" />
           <span className="text-xs text-muted-foreground">
-            Searching the web for{" "}
+            Searching{categoryLabel ? ` ${categoryLabel}` : " the web"} for{" "}
             <span className="font-medium text-foreground">
               {input?.query ? `"${input.query}"` : "..."}
             </span>
@@ -125,22 +176,44 @@ export function ToolSearchResults({ state, input, output }: ToolSearchResultsPro
 
   // Success state
   if (state === "output-available" && output) {
-    const results = parseSearchResults(output);
+    let results: StructuredResult[];
+    let outputCategory: string | undefined;
+
+    // Output may arrive as a JSON string or already-parsed object
+    let parsed: StructuredOutput | null = null;
+    if (typeof output === "string") {
+      try {
+        const obj = JSON.parse(output);
+        if (obj && Array.isArray(obj.results)) {
+          parsed = obj as StructuredOutput;
+        }
+      } catch {
+        // Not JSON — legacy plain-text format
+      }
+    } else if (output && typeof output === "object") {
+      parsed = output as StructuredOutput;
+    }
+
+    if (parsed) {
+      results = parsed.results ?? [];
+      outputCategory = parsed.category;
+    } else {
+      // Legacy plain-text format
+      results = parseLegacyOutput(typeof output === "string" ? output : String(output));
+    }
+
+    const displayCategory = categoryLabel || (outputCategory && outputCategory !== "general" ? outputCategory : undefined);
 
     if (results.length === 0) {
-      // Fallback: show raw output truncated
       return (
         <Card className="my-2 gap-0 rounded-lg border-border/50 py-0 shadow-none">
           <CardContent className="px-3 py-2.5">
             <div className="flex items-center gap-2">
               <GlobeIcon className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="text-xs font-medium text-foreground">
-                Web results{input?.query ? ` for "${input.query}"` : ""}
+                No results{input?.query ? ` for "${input.query}"` : ""}
               </span>
             </div>
-            <p className="mt-1.5 line-clamp-4 text-xs leading-relaxed text-muted-foreground">
-              {output.slice(0, 500)}
-            </p>
           </CardContent>
         </Card>
       );
@@ -149,28 +222,20 @@ export function ToolSearchResults({ state, input, output }: ToolSearchResultsPro
     return (
       <CollapsibleToolCard
         icon={<GlobeIcon className="size-3.5 shrink-0 text-muted-foreground" />}
-        label={<>Web results{input?.query ? ` for "${input.query}"` : ""} ({results.length})</>}
+        label={
+          <span className="flex items-center gap-1.5">
+            Web results{input?.query ? ` for "${input.query}"` : ""} ({results.length})
+            {displayCategory && (
+              <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
+                {displayCategory}
+              </Badge>
+            )}
+          </span>
+        }
       >
         <div className="flex flex-col gap-1.5">
           {results.slice(0, 5).map((r, i) => (
-            <div
-              key={i}
-              className={cn(
-                "rounded-md bg-muted/30 px-2 py-1.5",
-              )}
-            >
-              <div className="text-xs font-medium text-foreground">{r.title}</div>
-              {r.snippet && (
-                <p className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
-                  {r.snippet}
-                </p>
-              )}
-              {r.domain && (
-                <span className="mt-0.5 block text-[10px] text-muted-foreground/60">
-                  {r.domain}
-                </span>
-              )}
-            </div>
+            <ResultCard key={i} result={r} />
           ))}
         </div>
       </CollapsibleToolCard>

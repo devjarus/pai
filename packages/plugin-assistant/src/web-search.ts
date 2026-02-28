@@ -1,129 +1,70 @@
 /**
- * Web search utility using Brave Search HTML endpoint.
- * No API key required. Uses Node 20+ built-in fetch.
+ * Web search utility using SearXNG JSON API.
+ * Self-hosted, no API key required, no rate limits.
  */
 
 export interface SearchResult {
   title: string;
   url: string;
   snippet: string;
+  thumbnail?: string;
+}
+
+export type SearchCategory =
+  | "general"
+  | "news"
+  | "it"
+  | "images"
+  | "videos"
+  | "social media"
+  | "files";
+
+/**
+ * Resolve the SearXNG base URL from environment.
+ * Priority: PAI_SEARCH_URL > Railway internal > Docker default > localhost.
+ */
+export function resolveSearchUrl(): string {
+  if (process.env.PAI_SEARCH_URL) return process.env.PAI_SEARCH_URL;
+  if (process.env.RAILWAY_VOLUME_MOUNT_PATH) return "http://searxng.railway.internal:8080";
+  if (process.env.PAI_DATA_DIR === "/data") return "http://searxng:8080";
+  return "http://localhost:8080";
 }
 
 /**
- * Fetches search results from Brave Search's HTML endpoint.
+ * Fetches search results from a SearXNG instance.
  * Returns up to `maxResults` results (default 5).
  */
 export async function webSearch(
   query: string,
   maxResults = 5,
+  category: SearchCategory = "general",
 ): Promise<SearchResult[]> {
-  const encoded = encodeURIComponent(query);
-  const url = `https://search.brave.com/search?q=${encoded}`;
+  const baseUrl = resolveSearchUrl();
+  const params = new URLSearchParams({
+    q: query,
+    format: "json",
+    categories: category,
+  });
 
-  const response = await fetch(url, {
+  const response = await fetch(`${baseUrl}/search?${params.toString()}`, {
     method: "GET",
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      Accept: "text/html",
-    },
+    headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(10_000),
   });
 
   if (!response.ok) {
-    throw new Error(`Brave search failed: ${response.status}`);
+    throw new Error(`SearXNG search failed: ${response.status}`);
   }
 
-  const html = await response.text();
-  const results = parseResults(html, maxResults);
+  const data = (await response.json()) as { results?: Array<{ title?: string; url?: string; content?: string; thumbnail?: string; img_src?: string }> };
+  const results = data.results ?? [];
 
-  // Fallback: if primary parsing finds nothing, try a simpler regex for links
-  if (results.length === 0) {
-    return parseFallback(html, maxResults);
-  }
-
-  return results;
-}
-
-/**
- * Parse Brave Search HTML results.
- * Brave wraps web results in <div class="snippet" data-type="web">.
- * Title is in <div class="title ..."> inside an <a> link.
- * Description is in <div class="description ..."> or <div class="content ...">.
- */
-function parseResults(html: string, maxResults: number): SearchResult[] {
-  const results: SearchResult[] = [];
-
-  // Match each web result snippet block
-  const resultBlockRegex =
-    /<div class="snippet[^"]*"[^>]*data-type="web"[^>]*>([\s\S]*?)(?=<div class="snippet|<\/main>|$)/gi;
-
-  let match: RegExpExecArray | null;
-  while ((match = resultBlockRegex.exec(html)) !== null && results.length < maxResults) {
-    const block = match[1] ?? "";
-
-    // Extract URL from first <a href="https://...">
-    const urlMatch = /<a href="(https?:\/\/[^"]+)"/.exec(block);
-    if (!urlMatch) continue;
-    const url = urlMatch[1] ?? "";
-
-    // Skip Brave's own URLs
-    if (url.includes("search.brave.com")) continue;
-
-    // Extract title from <div class="title ...">
-    const titleMatch = /<div class="title[^"]*"[^>]*(?:title="([^"]*)")?[^>]*>([\s\S]*?)<\/div>/.exec(block);
-    const title = titleMatch
-      ? stripHtml(titleMatch[1] || titleMatch[2] || "").trim()
-      : "";
-
-    // Extract description from <div class="content ..."> or <div class="description ...">
-    const descMatch =
-      /<div class="content[^"]*"[^>]*>([\s\S]*?)<\/div>/.exec(block) ||
-      /<div class="description[^"]*"[^>]*>([\s\S]*?)<\/div>/.exec(block);
-    const snippet = descMatch ? stripHtml(descMatch[1] ?? "").trim() : "";
-
-    if (title && url) {
-      results.push({ title, url, snippet });
-    }
-  }
-
-  return results;
-}
-
-/**
- * Fallback parser: extract links and text from any <a> tags with titles.
- * Used when the primary snippet-based parser fails (e.g., HTML structure changed).
- */
-function parseFallback(html: string, maxResults: number): SearchResult[] {
-  const results: SearchResult[] = [];
-  const linkRegex = /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([^<]+)<\/a>/gi;
-  let match: RegExpExecArray | null;
-  const seen = new Set<string>();
-
-  while ((match = linkRegex.exec(html)) !== null && results.length < maxResults) {
-    const url = match[1] ?? "";
-    const title = stripHtml(match[2] ?? "").trim();
-    if (!title || title.length < 5 || url.includes("search.brave.com") || seen.has(url)) continue;
-    seen.add(url);
-    results.push({ title, url, snippet: "" });
-  }
-
-  return results;
-}
-
-/** Strip HTML tags and decode common entities. */
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return results.slice(0, maxResults).map((r) => ({
+    title: r.title ?? "",
+    url: r.url ?? "",
+    snippet: r.content ?? "",
+    ...(r.thumbnail || r.img_src ? { thumbnail: r.thumbnail || r.img_src } : {}),
+  }));
 }
 
 /**
@@ -141,4 +82,3 @@ export function formatSearchResults(results: SearchResult[]): string {
 
   return `## Web Search Results\n\n${formatted}`;
 }
-
