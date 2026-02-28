@@ -386,6 +386,7 @@ See `docs/ARCHITECTURE.md` for full design, data model, and future plugin path.
 |---------|---------|------|-------|
 | PAI Server | `pnpm start` (or `pnpm dev` to build+start) | 3141 | Serves REST API + static UI. SQLite embedded, no external DB needed. |
 | Vite Dev Server | `pnpm dev:ui` | 5173 | HMR for UI development. Proxies `/api/*` to `:3141`. Requires server running first. |
+| SearxNG (Docker) | `sudo docker run -d --name searxng -p 8080:8080 -v $(pwd)/searxng/settings.yml:/etc/searxng/settings.yml:ro searxng/searxng:latest` | 8080 | Web search backend. Set `PAI_SEARCH_URL=http://localhost:8080` when starting PAI server. Uses repo's `searxng/settings.yml`. |
 
 ### Gotchas
 
@@ -394,6 +395,8 @@ See `docs/ARCHITECTURE.md` for full design, data model, and future plugin path.
 - **E2E tests**: `pnpm e2e` auto-starts a mock LLM server (port 11435) and a separate PAI server (port 3199) — no real LLM needed. Requires `pnpm build` first and Playwright Chromium installed (`npx playwright install chromium`).
 - **No LLM needed for unit tests or E2E**: Unit tests mock everything; E2E uses a built-in mock LLM. Only runtime chat requires a real LLM provider.
 - **Data directory**: Defaults to `~/.personal-ai/data/`. The server creates it automatically on first start. Delete `~/.personal-ai/data/personal-ai.db` to reset all state.
+- **SearxNG for web search**: The assistant's web search tool requires a SearxNG instance. Start it with Docker using the repo's `searxng/settings.yml` (mounted read-only). Without it, web search calls fail silently. Pass `PAI_SEARCH_URL=http://localhost:8080` when starting the server.
+- **LLM embed model**: Set `PAI_LLM_EMBED_MODEL=nomic-embed-text` (or appropriate model) when using the CLI for memory/knowledge commands that need embeddings.
 
 ### Standard commands
 
