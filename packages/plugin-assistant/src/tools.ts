@@ -3,9 +3,10 @@ import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
 import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
-import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime, detectResearchDomain } from "@personal-ai/core";
+import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
+import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
 import { createSchedule, listSchedules, deleteSchedule } from "@personal-ai/plugin-schedules";
 import { webSearch, formatSearchResults, type SearchCategory } from "./web-search.js";
@@ -303,17 +304,17 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     research_start: tool({
-      description: "Start a deep research task that runs in the background. Use when the user asks you to research a topic thoroughly, investigate something in depth, or compile a report. The research runs autonomously and delivers results to the Inbox.",
+      description: "Start a deep research task that runs in the background. Use when the user asks you to research a topic thoroughly, investigate something in depth, or compile a report. The research runs autonomously and delivers results to the Inbox. You MUST classify the research type correctly: 'flight' for travel/flight searches, 'stock' for stock/crypto/investment analysis, 'general' for everything else (news, topics, people, tech, etc.).",
       inputSchema: z.object({
         goal: z.string().describe("What to research — be specific about the topic and what kind of information to find"),
-        type: z.enum(["flight", "stock", "general"]).optional().describe("Research domain type — auto-detected if not specified"),
+        type: z.enum(["flight", "stock", "general"]).describe("Research domain: 'flight' = flight/travel search, 'stock' = stock/crypto/investment analysis, 'general' = news, topics, people, tech, or anything else"),
       }),
       execute: async ({ goal, type }) => {
         try {
           // Get thread ID from extended context (set by server route)
           const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
 
-          const resultType = type ?? detectResearchDomain(goal);
+          const resultType = type;
           const jobId = createResearchJob(ctx.storage, {
             goal,
             threadId: threadId ?? null,
@@ -340,6 +341,45 @@ export function createAgentTools(ctx: AgentContext) {
           return `Research started! I'm running a ${domainLabel} for "${goal.slice(0, 80)}". The report will appear in your Inbox when it's done. Use job_status to check progress.`;
         } catch (err) {
           return `Failed to start research: ${err instanceof Error ? err.message : "unknown error"}`;
+        }
+      },
+    }),
+
+    swarm_start: tool({
+      description: "Start a multi-agent swarm analysis that runs in the background. Use when the user asks for a complex analysis involving multiple perspectives, comparisons, or tasks that benefit from parallel investigation. The swarm decomposes the goal into subtasks, runs specialized sub-agents in parallel with a shared blackboard, and synthesizes results into a unified report delivered to the Inbox.",
+      inputSchema: z.object({
+        goal: z.string().describe("What to analyze — be specific about the topic, comparison, or question to investigate"),
+        type: z.enum(["flight", "stock", "crypto", "news", "comparison", "general"]).describe("Research domain: 'flight' = travel/flights, 'stock' = stocks/equities, 'crypto' = cryptocurrency, 'news' = current events, 'comparison' = comparing entities, 'general' = everything else"),
+      }),
+      execute: async ({ goal, type }) => {
+        try {
+          const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
+
+          const jobId = createSwarmJob(ctx.storage, {
+            goal,
+            threadId: threadId ?? null,
+            resultType: type,
+          });
+
+          // Fire and forget
+          runSwarmInBackground(
+            {
+              storage: ctx.storage,
+              llm: ctx.llm,
+              logger: ctx.logger,
+              timezone: ctx.config.timezone,
+              webSearch,
+              formatSearchResults,
+              fetchPage: fetchPageAsMarkdown,
+            },
+            jobId,
+          ).catch((err) => {
+            ctx.logger.error(`Swarm background execution failed: ${err instanceof Error ? err.message : String(err)}`);
+          });
+
+          return `Swarm analysis started! I'm spawning multiple sub-agents for a ${type} analysis of "${goal.slice(0, 80)}" in parallel. The synthesized report will appear in your Inbox when done. Use job_status to check progress.`;
+        } catch (err) {
+          return `Failed to start swarm: ${err instanceof Error ? err.message : "unknown error"}`;
         }
       },
     }),
@@ -400,7 +440,7 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     job_status: tool({
-      description: "Check the status of background jobs (crawl, research). Use when the user asks about crawl progress, research status, or background tasks.",
+      description: "Check the status of background jobs (crawl, research, swarm). Use when the user asks about crawl progress, research status, swarm analysis, or background tasks.",
       inputSchema: z.object({}),
       execute: async () => {
         // Clean up completed jobs older than 10 minutes

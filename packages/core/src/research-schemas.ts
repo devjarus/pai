@@ -90,11 +90,14 @@ export interface StockReport {
 
 // ---- Union type for all research results ----
 
-export type ResearchResultType = "flight" | "stock" | "general";
+export type ResearchResultType = "flight" | "stock" | "crypto" | "news" | "comparison" | "general";
 
 export type ResearchResult =
   | { type: "flight"; data: FlightReport }
   | { type: "stock"; data: StockReport }
+  | { type: "crypto"; data: { markdown: string; structured?: unknown } }
+  | { type: "news"; data: { markdown: string; structured?: unknown } }
+  | { type: "comparison"; data: { markdown: string; structured?: unknown } }
   | { type: "general"; data: { markdown: string } };
 
 /**
@@ -104,38 +107,43 @@ export type ResearchResult =
 export function detectResearchDomain(goal: string): ResearchResultType {
   const lower = goal.toLowerCase();
 
-  // Flight patterns
-  const flightPatterns = [
-    /\bflights?\b/,
-    /\bairfare\b/,
-    /\bairline/,
-    /\bfly\s+(from|to)\b/,
-    /\b[A-Z]{3}\s*(to|→|->)\s*[A-Z]{3}\b/i,
-    /\bround[\s-]?trip\b/,
-    /\bbooking\b.*\b(flight|travel)\b/,
-    /\btravel\b.*\b(from|to)\b.*\b(for|on|in)\b/,
-  ];
+  // Flight: only match unambiguous flight-related keywords
+  if (/\bflights?\b/.test(lower)) return "flight";
+  if (/\bairfares?\b/.test(lower)) return "flight";
+  if (/\bairline/.test(lower)) return "flight";
+  if (/\bfly\s+(from|to)\b/.test(lower)) return "flight";
+  if (/\bround[\s-]?trip\b/.test(lower)) return "flight";
+  // Airport codes: UPPERCASE only (e.g. "JFK to LAX") — no /i flag
+  if (/\b[A-Z]{3}\s*(to|→|->)\s*[A-Z]{3}\b/.test(goal)) return "flight";
 
-  for (const pattern of flightPatterns) {
-    if (pattern.test(lower) || pattern.test(goal)) return "flight";
-  }
+  // Stock: only match unambiguous stock/investment keywords
+  if (/\bstock\b/.test(lower)) return "stock";
+  if (/\bshares?\b/.test(lower)) return "stock";
+  if (/\bticker\b/.test(lower)) return "stock";
+  if (/\bequity\b/.test(lower)) return "stock";
+  // Well-known stock tickers (uppercase only, tested against original goal)
+  if (/\b(NVDA|AAPL|GOOGL|MSFT|TSLA|AMZN|META|AMD|INTC|NFLX)\b/.test(goal)) return "stock";
 
-  // Stock patterns
-  const stockPatterns = [
-    /\bstock\b/,
-    /\bshares?\b/,
-    /\bticker\b/,
-    /\bequity\b/,
-    /\binvest(ing|ment)?\b/,
-    /\b(buy|sell)\b.*\b(stock|share|position)\b/,
-    /\b[A-Z]{1,5}\b.*\b(price|valuation|analysis|earnings|P\/E|market\s*cap)\b/i,
-    /\b(analyze|analysis|research)\b.*\b[A-Z]{1,5}\b.*\b(stock|company|share)\b/i,
-    /\b(NVDA|AAPL|GOOGL|MSFT|TSLA|AMZN|META|AMD|INTC|NFLX)\b/,
-  ];
+  // Crypto: match cryptocurrency keywords and well-known tickers
+  if (/\bcrypto(?:currency)?\b/.test(lower)) return "crypto";
+  if (/\bbitcoin\b/.test(lower)) return "crypto";
+  if (/\bethereum\b/.test(lower)) return "crypto";
+  if (/\bdefi\b/.test(lower)) return "crypto";
+  if (/\btoken\b/.test(lower) && /\bprice\b/.test(lower)) return "crypto";
+  if (/\b(BTC|ETH|SOL|ADA|DOT|DOGE|XRP)\b/.test(goal)) return "crypto";
 
-  for (const pattern of stockPatterns) {
-    if (pattern.test(lower) || pattern.test(goal)) return "stock";
-  }
+  // News: match news/current events keywords
+  if (/\bnews\b/.test(lower)) return "news";
+  if (/\bheadlines?\b/.test(lower)) return "news";
+  if (/\bcurrent events?\b/.test(lower)) return "news";
+  if (/\bbreaking\b/.test(lower)) return "news";
 
+  // Comparison: match comparison keywords
+  if (/\bcompar(e|ison|ing)\b/.test(lower)) return "comparison";
+  if (/\bvs\.?\b/.test(lower)) return "comparison";
+  if (/\bversus\b/.test(lower)) return "comparison";
+  if (/\bhead[\s-]to[\s-]head\b/.test(lower)) return "comparison";
+
+  // Default: let the LLM specify type via the tool's optional `type` parameter
   return "general";
 }

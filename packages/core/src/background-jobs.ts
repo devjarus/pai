@@ -4,14 +4,14 @@ import type { Storage, Migration } from "./types.js";
 
 export interface BackgroundJob {
   id: string;
-  type: "crawl" | "research";
+  type: "crawl" | "research" | "swarm";
   label: string;
   status: "running" | "done" | "error";
   progress: string;
   startedAt: string;
   error?: string;
   result?: string;
-  resultType?: "flight" | "stock" | "general";
+  resultType?: "flight" | "stock" | "crypto" | "news" | "comparison" | "general";
   structuredResult?: string;
 }
 

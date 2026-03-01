@@ -27,8 +27,9 @@ describe("detectResearchDomain", () => {
       expect(detectResearchDomain("booking a flight to Berlin")).toBe("flight");
     });
 
-    it("detects travel pattern with dates", () => {
-      expect(detectResearchDomain("travel from Chicago to Miami for spring break")).toBe("flight");
+    it("does not false-positive on 'travel' without flight keywords", () => {
+      // Ambiguous: could be driving, train, etc. LLM can specify type="flight" if needed.
+      expect(detectResearchDomain("travel from Chicago to Miami for spring break")).toBe("general");
     });
 
     it("detects airline keyword", () => {
@@ -45,8 +46,9 @@ describe("detectResearchDomain", () => {
       expect(detectResearchDomain("Should I buy shares of Apple")).toBe("stock");
     });
 
-    it("detects investment keyword", () => {
-      expect(detectResearchDomain("Good investment opportunities in tech")).toBe("stock");
+    it("does not false-positive on 'investment' without stock keywords", () => {
+      // Ambiguous: could be real estate, crypto, etc. LLM can specify type="stock" if needed.
+      expect(detectResearchDomain("Good investment opportunities in tech")).toBe("general");
     });
 
     it("detects well-known ticker symbols", () => {
@@ -91,6 +93,46 @@ describe("detectResearchDomain", () => {
 
     it("returns general for academic topics", () => {
       expect(detectResearchDomain("Latest research on quantum computing")).toBe("general");
+    });
+
+    it("detects news for breaking news research (regression: was false-positive flight)", () => {
+      expect(detectResearchDomain(
+        "Research and compile a brief summary of the latest breaking news from around the world. Cover major headlines in politics, technology, finance, and world events. Keep it concise and to the point."
+      )).toBe("news");
+    });
+  });
+
+  describe("crypto detection", () => {
+    it("detects 'cryptocurrency' keyword", () => {
+      expect(detectResearchDomain("Research the latest cryptocurrency trends")).toBe("crypto");
+    });
+
+    it("detects 'bitcoin' keyword", () => {
+      expect(detectResearchDomain("What is the current bitcoin price outlook")).toBe("crypto");
+    });
+
+    it("detects crypto tickers", () => {
+      expect(detectResearchDomain("Analyze SOL price action")).toBe("crypto");
+    });
+  });
+
+  describe("news detection", () => {
+    it("detects 'news' keyword", () => {
+      expect(detectResearchDomain("Get me the latest AI news")).toBe("news");
+    });
+
+    it("detects 'headlines' keyword", () => {
+      expect(detectResearchDomain("Show today's tech headlines")).toBe("news");
+    });
+  });
+
+  describe("comparison detection", () => {
+    it("detects 'compare' keyword", () => {
+      expect(detectResearchDomain("Compare React and Vue for web development")).toBe("comparison");
+    });
+
+    it("detects 'vs' keyword", () => {
+      expect(detectResearchDomain("Python vs JavaScript for backend development")).toBe("comparison");
     });
   });
 });
