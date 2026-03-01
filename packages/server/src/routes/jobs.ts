@@ -16,6 +16,7 @@ export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext
       startedAt: j.startedAt,
       error: j.error ?? null,
       result: j.result ?? null,
+      resultType: j.resultType ?? null,
     }));
 
     // Persisted research jobs from DB (with extra detail fields)
@@ -29,6 +30,7 @@ export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext
       completedAt: j.completedAt,
       error: null,
       result: j.report ? j.report.slice(0, 300) : null,
+      resultType: j.resultType ?? null,
     }));
 
     // Merge: active jobs first, then persisted (dedup by id)
