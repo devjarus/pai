@@ -612,19 +612,9 @@ export async function runResearchInBackground(
       ...(structuredResult ? { structuredResult } : {}),
     });
 
-    // Learn the report into the knowledge base so future research builds on it
-    try {
-      const reportUrl = `research://${jobId}`;
-      const reportTitle = `Research Report: ${job.goal.slice(0, 100)}`;
-      await learnFromContent(ctx.storage, ctx.llm, reportUrl, reportTitle, report);
-      ctx.logger.info(`Stored research report in knowledge base`, { jobId, goal: job.goal });
-    } catch (err) {
-      ctx.logger.warn(`Failed to store research report in knowledge: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
     // Create Inbox briefing for the report
+    const briefingId = `research-${jobId}`;
     try {
-      const briefingId = `research-${jobId}`;
       ctx.storage.run(
         "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
         [briefingId, JSON.stringify({ report, goal: job.goal, resultType: job.resultType, ...(structuredResult ? { structuredResult } : {}) })],
@@ -632,6 +622,17 @@ export async function runResearchInBackground(
       updateJob(ctx.storage, jobId, { briefing_id: briefingId });
     } catch (err) {
       ctx.logger.warn(`Failed to create research briefing: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Learn the report into the knowledge base so future research builds on it.
+    // Use the inbox URL so the source link in Knowledge page opens the report.
+    try {
+      const reportUrl = `/inbox/${briefingId}`;
+      const reportTitle = `Research Report: ${job.goal.slice(0, 100)}`;
+      await learnFromContent(ctx.storage, ctx.llm, reportUrl, reportTitle, report);
+      ctx.logger.info(`Stored research report in knowledge base`, { jobId, goal: job.goal });
+    } catch (err) {
+      ctx.logger.warn(`Failed to store research report in knowledge: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // Append summary to originating chat thread
