@@ -11,6 +11,8 @@ export interface BackgroundJob {
   startedAt: string;
   error?: string;
   result?: string;
+  resultType?: "flight" | "stock" | "general";
+  structuredResult?: string;
 }
 
 interface BackgroundJobRow {
@@ -22,6 +24,8 @@ interface BackgroundJobRow {
   started_at: string;
   error: string | null;
   result: string | null;
+  result_type: string | null;
+  structured_result: string | null;
   updated_at: string;
 }
 
@@ -45,6 +49,13 @@ export const backgroundJobMigrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_background_jobs_status ON background_jobs(status);
     `,
   },
+  {
+    version: 2,
+    up: `
+      ALTER TABLE background_jobs ADD COLUMN result_type TEXT;
+      ALTER TABLE background_jobs ADD COLUMN structured_result TEXT;
+    `,
+  },
 ];
 
 // ---- Helpers ----
@@ -59,6 +70,8 @@ function rowToJob(row: BackgroundJobRow): BackgroundJob {
     startedAt: row.started_at,
     ...(row.error ? { error: row.error } : {}),
     ...(row.result ? { result: row.result } : {}),
+    ...(row.result_type ? { resultType: row.result_type as BackgroundJob["resultType"] } : {}),
+    ...(row.structured_result ? { structuredResult: row.structured_result } : {}),
   };
 }
 
@@ -66,15 +79,17 @@ function rowToJob(row: BackgroundJobRow): BackgroundJob {
 
 export function upsertJob(storage: Storage, job: BackgroundJob): void {
   storage.run(
-    `INSERT INTO background_jobs (id, type, label, status, progress, started_at, error, result, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `INSERT INTO background_jobs (id, type, label, status, progress, started_at, error, result, result_type, structured_result, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(id) DO UPDATE SET
        status = excluded.status,
        progress = excluded.progress,
        error = excluded.error,
        result = excluded.result,
+       result_type = excluded.result_type,
+       structured_result = excluded.structured_result,
        updated_at = datetime('now')`,
-    [job.id, job.type, job.label, job.status, job.progress, job.startedAt, job.error ?? null, job.result ?? null],
+    [job.id, job.type, job.label, job.status, job.progress, job.startedAt, job.error ?? null, job.result ?? null, job.resultType ?? null, job.structuredResult ?? null],
   );
 }
 
@@ -97,7 +112,7 @@ export function listJobs(storage: Storage): BackgroundJob[] {
 export function updateJobStatus(
   storage: Storage,
   id: string,
-  updates: Partial<Pick<BackgroundJob, "status" | "progress" | "error" | "result">>,
+  updates: Partial<Pick<BackgroundJob, "status" | "progress" | "error" | "result" | "resultType" | "structuredResult">>,
 ): void {
   const fields: string[] = ["updated_at = datetime('now')"];
   const values: unknown[] = [];
@@ -117,6 +132,14 @@ export function updateJobStatus(
   if (updates.result !== undefined) {
     fields.push("result = ?");
     values.push(updates.result);
+  }
+  if (updates.resultType !== undefined) {
+    fields.push("result_type = ?");
+    values.push(updates.resultType);
+  }
+  if (updates.structuredResult !== undefined) {
+    fields.push("structured_result = ?");
+    values.push(updates.structuredResult);
   }
 
   values.push(id);
