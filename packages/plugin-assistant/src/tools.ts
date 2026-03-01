@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
 import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, learnFromContent, knowledgeSearch, listSources, forgetSource } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
-import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs } from "@personal-ai/core";
+import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
@@ -323,6 +323,7 @@ export function createAgentTools(ctx: AgentContext) {
               storage: ctx.storage,
               llm: ctx.llm,
               logger: ctx.logger,
+              timezone: ctx.config.timezone,
               webSearch,
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,
@@ -359,7 +360,7 @@ export function createAgentTools(ctx: AgentContext) {
             chatId: chatId ?? null,
             threadId: threadId ?? null,
           });
-          return `Schedule created! "${label}" will run every ${schedule.intervalHours} hours. First run at ${new Date(schedule.nextRunAt).toLocaleString()}. Reports will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
+          return `Schedule created! "${label}" will run every ${schedule.intervalHours} hours. First run at ${formatDateTime(ctx.config.timezone, new Date(schedule.nextRunAt)).full}. Reports will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
         } catch (err) {
           return `Failed to create schedule: ${err instanceof Error ? err.message : "unknown error"}`;
         }

@@ -3,7 +3,8 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger } from "@personal-ai/core";
-import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages } from "@personal-ai/core";
+import { formatDateTime } from "@personal-ai/core";
+import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 
 // ---- Types ----
@@ -44,6 +45,8 @@ export interface ResearchContext {
   storage: Storage;
   llm: LLMClient;
   logger: Logger;
+  /** IANA timezone for date formatting (e.g. "America/Los_Angeles") */
+  timezone?: string;
   /** Web search function — injected to avoid circular dependency */
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   /** Format search results for display */
@@ -128,21 +131,27 @@ function updateJob(storage: Storage, id: string, fields: Record<string, unknown>
 
 // ---- Research Agent System Prompt ----
 
-function getResearchSystemPrompt(): string {
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+function getResearchSystemPrompt(timezone?: string): string {
+  const dt = formatDateTime(timezone);
 
   return `You are a Research Agent. Your job is to thoroughly research a topic and produce a structured report.
 
 ## Current Date
-Today is ${dateStr}. When searching for recent information, news, or developments, always include the current year (${now.getFullYear()}) in your search queries to get up-to-date results. Prioritize recent sources over older ones.
+Today is ${dt.date}. When searching for recent information, news, or developments, always include the current year (${dt.year}) in your search queries to get up-to-date results. Prioritize recent sources over older ones.
 
 ## Process
-1. Plan your research approach (which searches to run, what to look for)
-2. Execute searches using web_search — include the year "${now.getFullYear()}" in queries about recent topics
-3. Read important pages using read_page to get detailed content
-4. Check existing knowledge using knowledge_search
-5. Synthesize findings into a structured report
+1. First, check existing knowledge using knowledge_search to see what's already known about this topic
+2. Plan your research approach — focus on what's NEW or CHANGED since previous reports
+3. Execute searches using web_search — include the year "${dt.year}" in queries about recent topics
+4. Read important pages using read_page to get detailed content
+5. Synthesize findings into a structured report with NEW information only
+
+## Building on Previous Research
+When knowledge_search returns previous research reports on the same topic:
+- Do NOT repeat previously known findings — the user already has those
+- Focus on what's NEW, CHANGED, or UPDATED since the last report
+- Reference previous findings briefly ("Previously reported X — now Y")
+- If nothing has changed, say so clearly rather than restating old information
 
 ## Report Format
 Your final response MUST be a structured markdown report:
@@ -274,7 +283,7 @@ export async function runResearchInBackground(
 
     const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
-      system: getResearchSystemPrompt(),
+      system: getResearchSystemPrompt(ctx.timezone),
       messages: [
         { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
       ],
@@ -294,6 +303,16 @@ export async function runResearchInBackground(
     });
 
     updateJobStatus(ctx.storage, jobId, { status: "done", progress: "complete", result: report.slice(0, 200) });
+
+    // Learn the report into the knowledge base so future research builds on it
+    try {
+      const reportUrl = `research://${jobId}`;
+      const reportTitle = `Research Report: ${job.goal.slice(0, 100)}`;
+      await learnFromContent(ctx.storage, ctx.llm, reportUrl, reportTitle, report);
+      ctx.logger.info(`Stored research report in knowledge base`, { jobId, goal: job.goal });
+    } catch (err) {
+      ctx.logger.warn(`Failed to store research report in knowledge: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     // Create Inbox briefing for the report
     try {

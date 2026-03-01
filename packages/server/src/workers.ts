@@ -110,6 +110,7 @@ export class WorkerLoop {
               storage: this.ctx.storage,
               llm: this.ctx.llm,
               logger: this.ctx.logger,
+              timezone: this.ctx.config.timezone,
               webSearch,
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,

@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Timezone localization** — All date/time formatting (system prompts, briefings, research reports, Telegram) now respects a configurable IANA timezone (e.g. `Asia/Kolkata`). Set via Settings UI, `PAI_TIMEZONE` env var, or `config.json`. Defaults to server timezone when unset.
+- **Research report knowledge learning** — Completed research reports are automatically stored in the knowledge base so future research runs can build on previous findings instead of starting from scratch. Research prompt updated to check existing knowledge first and focus on new information.
 - **assistant-ui migration** — Replaced custom Chat.tsx (~1000 lines) with assistant-ui primitives (`<Thread />`, `<Composer />`, `makeAssistantToolUI`). Chat page reduced to ~200 lines. Uses `useExternalStoreRuntime` with existing `DefaultChatTransport` — zero server changes.
 - **TanStack Query migration** — Replaced manual `useState + useEffect + fetch` patterns across all 9 pages with `@tanstack/react-query` hooks. Automatic cache invalidation, optimistic updates, and polling for jobs/schedules. New hooks directory: `src/hooks/use-*.ts`.
 - **Background learning worker** — Passive always-on worker that extracts knowledge from user activity every 2 hours (5-minute initial delay). Gathers signals from chat threads, research reports, completed tasks, and knowledge sources using SQL watermarks, makes one focused LLM call to extract facts, and stores via `remember()`.

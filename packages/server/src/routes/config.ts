@@ -24,7 +24,7 @@ function getWorkerLastRun(storage: Storage): Record<string, string | null> {
 /** Config file location: data dir (persistent volume) on Docker/PaaS, ~/.personal-ai/ locally */
 const configDir = process.env.PAI_DATA_DIR ?? join(homedir(), ".personal-ai");
 
-function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Record<string, unknown>; workers?: Record<string, unknown>; [key: string]: unknown }) {
+function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Record<string, unknown>; workers?: Record<string, unknown>; timezone?: string; [key: string]: unknown }) {
   const { llm, telegram, workers, ...rest } = config;
   return {
     ...rest,
@@ -86,6 +86,7 @@ const updateConfigSchema = z.object({
   dataDir: z.string().optional(),
   telegramToken: z.string().optional(),
   telegramEnabled: z.boolean().optional(),
+  timezone: z.string().optional(),
   backgroundLearning: z.boolean().optional(),
   briefingEnabled: z.boolean().optional(),
 });
@@ -161,6 +162,11 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       update.workers = workersUpdate;
     }
 
+    // Timezone
+    if (body.timezone !== undefined) {
+      update.timezone = body.timezone || undefined;
+    }
+
     // Telegram settings
     if (body.telegramToken !== undefined || body.telegramEnabled !== undefined) {
       const existingTelegram = ctx.config.telegram ?? {};
@@ -198,6 +204,9 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     }
     if (body.dataDir) {
       (serverCtx.ctx.config as unknown as Record<string, unknown>).dataDir = body.dataDir;
+    }
+    if (body.timezone !== undefined) {
+      serverCtx.ctx.config.timezone = body.timezone || undefined;
     }
 
     return sanitizeConfig(serverCtx.ctx.config as never);

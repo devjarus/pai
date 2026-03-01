@@ -34,8 +34,11 @@ export function useUpdateConfig() {
       embedProvider?: string;
       apiKey?: string;
       dataDir?: string;
+      timezone?: string;
       telegramToken?: string;
       telegramEnabled?: boolean;
+      backgroundLearning?: boolean;
+      briefingEnabled?: boolean;
     }) => updateConfig(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: configKeys.all });
