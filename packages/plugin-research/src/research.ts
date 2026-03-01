@@ -242,6 +242,53 @@ Your final response MUST be valid JSON wrapped in a markdown code fence:
 - Cheapest option gets +10 bonus
 - Sort options by score descending
 
+## Render Spec
+After the data JSON block, include a SECOND code fence with a json-render UI spec that describes how to render these results visually:
+
+\`\`\`jsonrender
+{
+  "root": "flight-results",
+  "elements": {
+    "flight-results": {
+      "type": "Section",
+      "props": { "title": "✈ Flight Results", "subtitle": "[origin] → [destination] · [dates]" },
+      "children": ["metrics", "options-table", "sources"]
+    },
+    "metrics": {
+      "type": "Grid",
+      "props": { "columns": 3 },
+      "children": ["cheapest", "fastest", "best-value"]
+    },
+    "cheapest": {
+      "type": "MetricCard",
+      "props": { "label": "Cheapest", "value": "$[price]", "detail": "[airline] · [stops]" }
+    },
+    "fastest": {
+      "type": "MetricCard",
+      "props": { "label": "Fastest", "value": "[duration]", "detail": "[airline] · $[price]" }
+    },
+    "best-value": {
+      "type": "MetricCard",
+      "props": { "label": "Best Value", "value": "[airline]", "detail": "Score [score]/100" }
+    },
+    "options-table": {
+      "type": "DataTable",
+      "props": {
+        "columns": ["Airline", "Flight", "Depart", "Duration", "Stops", "Price", "Score"],
+        "dataPath": "options",
+        "rowFields": ["airline", "flightNo", "departure", "duration", "stops", "price", "score"]
+      }
+    },
+    "sources": {
+      "type": "SourceList",
+      "props": { "dataPath": "sources" }
+    }
+  }
+}
+\`\`\`
+
+Fill in the actual values from your research. Use these available components: Section, Grid, MetricCard, DataTable, Badge, FlightOption, SourceList, BulletList, Text.
+
 ## Budget
 You have limited searches and page reads. Be efficient — focus on the most useful flight aggregator sites.`;
 }
@@ -315,6 +362,79 @@ Your final response MUST be valid JSON wrapped in a markdown code fence:
 - 31-60: Moderate confidence, mixed signals
 - 61-80: Good confidence, clear thesis
 - 81-100: High confidence, strong supporting data
+
+## Render Spec
+After the data JSON block, include a SECOND code fence with a json-render UI spec that describes how to render this analysis visually:
+
+\`\`\`jsonrender
+{
+  "root": "stock-analysis",
+  "elements": {
+    "stock-analysis": {
+      "type": "Section",
+      "props": { "title": "[ticker] — [company]", "subtitle": "[thesis]" },
+      "children": ["verdict-row", "key-metrics", "risks-catalysts", "sources"]
+    },
+    "verdict-row": {
+      "type": "Grid",
+      "props": { "columns": 3 },
+      "children": ["verdict-badge", "confidence-metric", "price-metric"]
+    },
+    "verdict-badge": {
+      "type": "Badge",
+      "props": { "label": "[verdict]", "variant": "verdict" }
+    },
+    "confidence-metric": {
+      "type": "MetricCard",
+      "props": { "label": "Confidence", "value": "[confidence]/100" }
+    },
+    "price-metric": {
+      "type": "MetricCard",
+      "props": { "label": "Price", "value": "$[price]", "detail": "P/E [pe] · MCap [marketCap]" }
+    },
+    "key-metrics": {
+      "type": "Grid",
+      "props": { "columns": 4 },
+      "children": ["metric-52w-high", "metric-52w-low", "metric-ytd", "metric-rev-growth"]
+    },
+    "metric-52w-high": {
+      "type": "MetricCard",
+      "props": { "label": "52W High", "value": "$[high52w]" }
+    },
+    "metric-52w-low": {
+      "type": "MetricCard",
+      "props": { "label": "52W Low", "value": "$[low52w]" }
+    },
+    "metric-ytd": {
+      "type": "MetricCard",
+      "props": { "label": "YTD Return", "value": "[ytdReturn]" }
+    },
+    "metric-rev-growth": {
+      "type": "MetricCard",
+      "props": { "label": "Rev Growth", "value": "[revGrowth]" }
+    },
+    "risks-catalysts": {
+      "type": "Grid",
+      "props": { "columns": 2 },
+      "children": ["risks", "catalysts"]
+    },
+    "risks": {
+      "type": "BulletList",
+      "props": { "title": "⚠ Risks", "dataPath": "risks" }
+    },
+    "catalysts": {
+      "type": "BulletList",
+      "props": { "title": "🚀 Catalysts", "dataPath": "catalysts" }
+    },
+    "sources": {
+      "type": "SourceList",
+      "props": { "dataPath": "sources" }
+    }
+  }
+}
+\`\`\`
+
+Fill in the actual values from your research. Use these available components: Section, Grid, MetricCard, DataTable, Badge, FlightOption, SourceList, BulletList, Text.
 
 ## Budget
 You have limited searches and page reads. Prioritize authoritative financial sources.`;
@@ -550,6 +670,18 @@ export async function runResearchInBackground(
       }
     }
 
+    // Extract json-render UI spec if present
+    let renderSpec: string | undefined;
+    const specMatch = report.match(/```jsonrender\s*([\s\S]*?)```/);
+    if (specMatch?.[1]) {
+      try {
+        JSON.parse(specMatch[1].trim());
+        renderSpec = specMatch[1].trim();
+      } catch {
+        ctx.logger.warn("Failed to parse render spec from research report", { jobId });
+      }
+    }
+
     // Generate charts for stock research via sandbox (if available)
     if (job.resultType === "stock" && structuredResult) {
       try {
@@ -617,7 +749,7 @@ export async function runResearchInBackground(
     try {
       ctx.storage.run(
         "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
-        [briefingId, JSON.stringify({ report, goal: job.goal, resultType: job.resultType, ...(structuredResult ? { structuredResult } : {}) })],
+        [briefingId, JSON.stringify({ report, goal: job.goal, resultType: job.resultType, ...(structuredResult ? { structuredResult } : {}), ...(renderSpec ? { renderSpec } : {}) })],
       );
       updateJob(ctx.storage, jobId, { briefing_id: briefingId });
     } catch (err) {
