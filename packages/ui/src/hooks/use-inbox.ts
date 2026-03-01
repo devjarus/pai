@@ -5,6 +5,7 @@ import {
   refreshInbox,
   clearInbox,
   getResearchBriefings,
+  rerunResearch,
 } from "../api";
 
 export const inboxKeys = {
@@ -51,6 +52,16 @@ export function useClearInbox() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => clearInbox(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inboxKeys.all });
+    },
+  });
+}
+
+export function useRerunResearch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (briefingId: string) => rerunResearch(briefingId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inboxKeys.all });
     },

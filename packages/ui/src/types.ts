@@ -202,3 +202,75 @@ export interface ResearchBriefing {
   status: string;
   type: "research";
 }
+
+// ---- Research Result Types ----
+
+export type ResearchResultType = "flight" | "stock" | "general";
+
+export interface FlightQuery {
+  origin: string;
+  destination: string;
+  departDate: string;
+  returnDate?: string;
+  passengers: number;
+  maxPrice?: number;
+  nonstopOnly?: boolean;
+  cabinClass?: string;
+}
+
+export interface FlightOption {
+  airline: string;
+  flightNo: string;
+  departure: string;
+  arrival: string;
+  duration: string;
+  stops: number;
+  price: number;
+  currency: string;
+  returnDeparture?: string;
+  returnArrival?: string;
+  returnDuration?: string;
+  returnStops?: number;
+  baggage?: string;
+  refundable?: boolean;
+  bookingUrl?: string;
+  score: number;
+  scoreReason: string;
+}
+
+export interface FlightReport {
+  query: FlightQuery;
+  options: FlightOption[];
+  searchedAt: string;
+  sources: string[];
+  disclaimer: string;
+}
+
+export interface StockMetrics {
+  ticker: string;
+  company: string;
+  price: number;
+  currency: string;
+  pe?: number;
+  marketCap?: string;
+  high52w?: number;
+  low52w?: number;
+  ytdReturn?: string;
+  revGrowth?: string;
+  epsActual?: number;
+  epsBeat?: string;
+}
+
+export interface StockReport {
+  ticker: string;
+  company: string;
+  thesis: string;
+  confidence: number;
+  verdict: "strong_buy" | "buy" | "hold" | "sell" | "strong_sell";
+  metrics: StockMetrics;
+  risks: string[];
+  catalysts: string[];
+  sources: Array<{ title: string; url: string }>;
+  charts: Array<{ id: string; type: string; title: string; data?: string; artifactId?: string }>;
+  analyzedAt: string;
+}

@@ -451,6 +451,7 @@ export interface BackgroundJobInfo {
   completedAt?: string | null;
   error?: string | null;
   result?: string | null;
+  resultType?: "flight" | "stock" | "general" | null;
 }
 
 export interface ResearchJobDetail {
@@ -465,6 +466,7 @@ export interface ResearchJobDetail {
   report: string | null;
   createdAt: string;
   completedAt: string | null;
+  resultType?: "flight" | "stock" | "general";
 }
 
 export function getJobs(): Promise<{ jobs: BackgroundJobInfo[] }> {
@@ -477,6 +479,10 @@ export function getJobDetail(id: string): Promise<{ job: ResearchJobDetail }> {
 
 export function clearJobs(): Promise<{ ok: boolean; cleared: number }> {
   return request("/jobs/clear", { method: "POST", body: "{}" });
+}
+
+export function rerunResearch(briefingId: string): Promise<{ ok: boolean; jobId: string }> {
+  return request(`/inbox/${briefingId}/rerun`, { method: "POST", body: "{}" });
 }
 
 // ---------------------------------------------------------------------------

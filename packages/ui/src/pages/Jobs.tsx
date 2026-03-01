@@ -168,6 +168,11 @@ export default function Jobs() {
                             <StatusIcon className={`mr-1 h-2.5 w-2.5 ${isRunning ? "animate-spin" : ""}`} />
                             {job.status}
                           </Badge>
+                          {job.resultType && job.resultType !== "general" && (
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+                              {job.resultType === "flight" ? "✈ flight" : "📊 stock"}
+                            </Badge>
+                          )}
                           <span className="text-[10px] text-muted-foreground">{job.progress}</span>
                           <span className="text-[10px] text-muted-foreground/60">{timeAgo(job.startedAt)}</span>
                         </div>

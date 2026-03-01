@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread } from "@/hooks";
+import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch } from "@/hooks";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import MarkdownContent from "@/components/MarkdownContent";
+import { ToolFlightResults } from "@/components/tools/ToolFlightResults";
+import { ToolStockReport } from "@/components/tools/ToolStockReport";
 import {
   RefreshCwIcon,
   CheckCircle2Icon,
@@ -102,6 +104,7 @@ function InboxDetail({ id }: { id: string }) {
   const [creating, setCreating] = useState(false);
   const { markRead } = useContext(ReadContext);
   const createThreadMut = useCreateThread();
+  const rerunMutation = useRerunResearch();
 
   const { data: briefingData, isLoading: loading } = useInboxBriefing(id);
 
@@ -180,6 +183,23 @@ function InboxDetail({ id }: { id: string }) {
             <ArrowLeftIcon className="h-4 w-4" /> Inbox
           </Button>
           <div className="flex items-center gap-2">
+            {item?.type === "research" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  rerunMutation.mutate(id, {
+                    onSuccess: () => toast.success("Research rerun started"),
+                    onError: () => toast.error("Failed to rerun research"),
+                  });
+                }}
+                disabled={rerunMutation.isPending}
+                className="gap-2"
+              >
+                <RefreshCwIcon className={`h-3 w-3 ${rerunMutation.isPending ? "animate-spin" : ""}`} />
+                Rerun
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -209,7 +229,35 @@ function InboxDetail({ id }: { id: string }) {
 
         <Separator className="mb-4 opacity-30 md:mb-6" />
 
-        {item.type === "research" && sections.report ? (
+        {item.type === "research" && (sections as Record<string, unknown>).resultType === "flight" && (sections as Record<string, unknown>).structuredResult ? (
+          <div className="space-y-4">
+            <ToolFlightResults
+              state="output-available"
+              output={typeof (sections as Record<string, unknown>).structuredResult === "string"
+                ? (sections as Record<string, unknown>).structuredResult as string
+                : JSON.stringify((sections as Record<string, unknown>).structuredResult)}
+            />
+            {sections.report && (
+              <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
+                <MarkdownContent content={sections.report} />
+              </div>
+            )}
+          </div>
+        ) : item.type === "research" && (sections as Record<string, unknown>).resultType === "stock" && (sections as Record<string, unknown>).structuredResult ? (
+          <div className="space-y-4">
+            <ToolStockReport
+              state="output-available"
+              output={typeof (sections as Record<string, unknown>).structuredResult === "string"
+                ? (sections as Record<string, unknown>).structuredResult as string
+                : JSON.stringify((sections as Record<string, unknown>).structuredResult)}
+            />
+            {sections.report && (
+              <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
+                <MarkdownContent content={sections.report} />
+              </div>
+            )}
+          </div>
+        ) : item.type === "research" && sections.report ? (
           <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
             <MarkdownContent content={sections.report} />
           </div>

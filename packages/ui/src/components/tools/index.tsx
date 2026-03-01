@@ -12,3 +12,5 @@ export { ToolCurateMemory } from "./ToolCurateMemory";
 export { ToolCuratorAction } from "./ToolCuratorAction";
 export { ToolResearchStart } from "./ToolResearchStart";
 export { ToolScheduleAction } from "./ToolScheduleAction";
+export { ToolFlightResults } from "./ToolFlightResults";
+export { ToolStockReport } from "./ToolStockReport";
