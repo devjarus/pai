@@ -8,8 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import MarkdownContent from "@/components/MarkdownContent";
-import { ToolFlightResults } from "@/components/tools/ToolFlightResults";
-import { ToolStockReport } from "@/components/tools/ToolStockReport";
+import { ResultRenderer } from "@/components/results/ResultRenderer";
 import {
   RefreshCwIcon,
   CheckCircle2Icon,
@@ -229,43 +228,17 @@ function InboxDetail({ id }: { id: string }) {
 
         <Separator className="mb-4 opacity-30 md:mb-6" />
 
-        {item.type === "research" && (sections as Record<string, unknown>).resultType === "flight" && (sections as Record<string, unknown>).structuredResult ? (
-          <div className="space-y-4">
-            <ToolFlightResults
-              state="output-available"
-              output={typeof (sections as Record<string, unknown>).structuredResult === "string"
-                ? (sections as Record<string, unknown>).structuredResult as string
-                : JSON.stringify((sections as Record<string, unknown>).structuredResult)}
-            />
-            {sections.report && (
-              <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
-                <MarkdownContent content={sections.report} />
-              </div>
-            )}
-          </div>
-        ) : item.type === "research" && (sections as Record<string, unknown>).resultType === "stock" && (sections as Record<string, unknown>).structuredResult ? (
-          <div className="space-y-4">
-            <ToolStockReport
-              state="output-available"
-              output={typeof (sections as Record<string, unknown>).structuredResult === "string"
-                ? (sections as Record<string, unknown>).structuredResult as string
-                : JSON.stringify((sections as Record<string, unknown>).structuredResult)}
-            />
-            {sections.report && (
-              <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
-                <MarkdownContent content={sections.report} />
-              </div>
-            )}
-          </div>
-        ) : item.type === "research" && sections.report ? (
-          <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
-            <MarkdownContent content={sections.report} />
-          </div>
-        ) : item.type === "daily" ? (
+        {item.type === "daily" ? (
           <DailyBriefingDetail sections={item.sections} navigate={navigate} />
         ) : (
           <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
-            <MarkdownContent content={JSON.stringify(item.sections, null, 2)} />
+            <ResultRenderer
+              spec={(sections as Record<string, unknown>).renderSpec}
+              structuredResult={(sections as Record<string, unknown>).structuredResult}
+              markdown={sections.report}
+              resultType={(sections as Record<string, unknown>).resultType as string | undefined}
+              debug={false}
+            />
           </div>
         )}
 
@@ -679,10 +652,19 @@ function DailyBriefingCard({ item, onCardClick, isRead }: { item: InboxItem; onC
   );
 }
 
+const domainBadges: Record<string, { icon: string; label: string; color: string; border: string; bg: string }> = {
+  flight: { icon: "\u2708", label: "Flight", color: "text-blue-400", border: "border-blue-500/20", bg: "bg-blue-500/10" },
+  stock: { icon: "\uD83D\uDCCA", label: "Stock", color: "text-green-400", border: "border-green-500/20", bg: "bg-green-500/10" },
+  crypto: { icon: "\uD83E\uDE99", label: "Crypto", color: "text-orange-400", border: "border-orange-500/20", bg: "bg-orange-500/10" },
+  news: { icon: "\uD83D\uDCF0", label: "News", color: "text-purple-400", border: "border-purple-500/20", bg: "bg-purple-500/10" },
+  comparison: { icon: "\u2696\uFE0F", label: "Comparison", color: "text-cyan-400", border: "border-cyan-500/20", bg: "bg-cyan-500/10" },
+};
+
 function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; onCardClick: (id: string) => void; isRead: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const navigate = useNavigate();
-  const sections = item.sections as { report?: string; goal?: string };
+  const sections = item.sections as { report?: string; goal?: string; resultType?: string };
+  const domain = domainBadges[sections.resultType ?? ""];
 
   return (
     <Card className="relative border-border/30 bg-card/40 transition-all duration-200">
@@ -700,6 +682,11 @@ function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; on
               <Badge variant="outline" className="text-[10px] border-blue-500/20 bg-blue-500/10 text-blue-400">
                 Research Report
               </Badge>
+              {domain && (
+                <Badge variant="outline" className={`text-[10px] ${domain.border} ${domain.bg} ${domain.color}`}>
+                  {domain.icon} {domain.label}
+                </Badge>
+              )}
               <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
             </div>
             <p className="mt-2 text-sm font-medium text-foreground">
@@ -754,7 +741,9 @@ function GenericBriefingCard({ item }: { item: InboxItem }) {
           <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          {JSON.stringify(item.sections).slice(0, 200)}
+          {(item.sections as { greeting?: string }).greeting
+            ?? (item.sections as { goal?: string }).goal
+            ?? "No preview available"}
         </p>
       </CardContent>
     </Card>
