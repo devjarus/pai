@@ -1,13 +1,16 @@
 import {
-  SearchIcon,
+  NetworkIcon,
   AlertCircleIcon,
   LoaderIcon,
   PlaneIcon,
   TrendingUpIcon,
+  BitcoinIcon,
+  NewspaperIcon,
+  GitCompareArrowsIcon,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
-interface ToolResearchStartProps {
+interface ToolSwarmStartProps {
   state: string;
   input?: { goal?: string; type?: string };
   output?: unknown;
@@ -26,19 +29,43 @@ function safeOutputText(output: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Icon for the research domain type */
+/** Icon and color for the swarm domain type */
 function TypeIcon({ type }: { type?: string }) {
   switch (type) {
     case "flight":
-      return <PlaneIcon className="size-3.5 shrink-0 text-green-500" />;
+      return <PlaneIcon className="size-3.5 shrink-0 text-purple-500" />;
     case "stock":
-      return <TrendingUpIcon className="size-3.5 shrink-0 text-green-500" />;
+      return <TrendingUpIcon className="size-3.5 shrink-0 text-purple-500" />;
+    case "crypto":
+      return <BitcoinIcon className="size-3.5 shrink-0 text-purple-500" />;
+    case "news":
+      return <NewspaperIcon className="size-3.5 shrink-0 text-purple-500" />;
+    case "comparison":
+      return <GitCompareArrowsIcon className="size-3.5 shrink-0 text-purple-500" />;
     default:
-      return <SearchIcon className="size-3.5 shrink-0 text-green-500" />;
+      return <NetworkIcon className="size-3.5 shrink-0 text-purple-500" />;
   }
 }
 
-export function ToolResearchStart({ state, input, output }: ToolResearchStartProps) {
+/** Human-readable label for the swarm domain type */
+function typeLabel(type?: string): string {
+  switch (type) {
+    case "flight":
+      return "flight";
+    case "stock":
+      return "stock";
+    case "crypto":
+      return "crypto";
+    case "news":
+      return "news";
+    case "comparison":
+      return "comparison";
+    default:
+      return "swarm";
+  }
+}
+
+export function ToolSwarmStart({ state, input, output }: ToolSwarmStartProps) {
   const goal = input?.goal;
   const type = input?.type;
 
@@ -48,7 +75,7 @@ export function ToolResearchStart({ state, input, output }: ToolResearchStartPro
         <CardContent className="flex items-center gap-2 px-3 py-2.5">
           <LoaderIcon className="size-3.5 shrink-0 animate-spin text-primary" />
           <span className="text-xs text-muted-foreground">
-            Starting research{goal ? `: "${goal.slice(0, 80)}"` : "..."}
+            Starting {typeLabel(type)} analysis{goal ? `: "${goal.slice(0, 80)}"` : "..."}
           </span>
         </CardContent>
       </Card>
@@ -60,16 +87,16 @@ export function ToolResearchStart({ state, input, output }: ToolResearchStartPro
       <Card className="gap-0 rounded-lg border-destructive/50 py-0 shadow-none">
         <CardContent className="flex items-center gap-2 px-3 py-2.5">
           <AlertCircleIcon className="size-3.5 shrink-0 text-destructive" />
-          <span className="text-xs text-destructive">Failed to start research.</span>
+          <span className="text-xs text-destructive">Failed to start {typeLabel(type)} analysis.</span>
         </CardContent>
       </Card>
     );
   }
 
   if (state === "output-available") {
-    const fallback = `Research started${goal ? `: "${goal.slice(0, 60)}"` : ""}`;
+    const fallback = `Swarm ${typeLabel(type)} analysis started${goal ? `: "${goal.slice(0, 60)}"` : ""}`;
     return (
-      <Card className="gap-0 rounded-lg border-green-500/10 py-0 shadow-none">
+      <Card className="gap-0 rounded-lg border-purple-500/10 py-0 shadow-none">
         <CardContent className="flex items-center gap-2 px-3 py-2.5">
           <TypeIcon type={type} />
           <span className="text-xs text-foreground">
