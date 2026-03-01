@@ -451,7 +451,7 @@ export interface BackgroundJobInfo {
   completedAt?: string | null;
   error?: string | null;
   result?: string | null;
-  resultType?: "flight" | "stock" | "general" | null;
+  resultType?: "flight" | "stock" | "crypto" | "news" | "comparison" | "general" | null;
 }
 
 export interface ResearchJobDetail {
@@ -466,12 +466,22 @@ export interface ResearchJobDetail {
   report: string | null;
   createdAt: string;
   completedAt: string | null;
-  resultType?: "flight" | "stock" | "general";
+  resultType?: "flight" | "stock" | "crypto" | "news" | "comparison" | "general";
+  briefingId?: string | null;
   // Swarm-specific fields (present when job is a swarm)
   plan?: unknown[] | null;
   agentCount?: number;
   agentsDone?: number;
   synthesis?: string | null;
+  resultType_swarm?: string;
+}
+
+export interface BlackboardEntry {
+  id: string;
+  agentId: string;
+  type: "finding" | "question" | "answer" | "artifact";
+  content: string;
+  createdAt: string;
 }
 
 export function getJobs(): Promise<{ jobs: BackgroundJobInfo[] }> {
@@ -480,6 +490,10 @@ export function getJobs(): Promise<{ jobs: BackgroundJobInfo[] }> {
 
 export function getJobDetail(id: string): Promise<{ job: ResearchJobDetail }> {
   return request(`/jobs/${id}`);
+}
+
+export function getJobBlackboard(id: string): Promise<{ entries: BlackboardEntry[] }> {
+  return request(`/jobs/${id}/blackboard`);
 }
 
 export function clearJobs(): Promise<{ ok: boolean; cleared: number }> {

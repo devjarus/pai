@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,16 +12,25 @@ import {
   ClockIcon,
   SearchIcon,
   GlobeIcon,
+  NetworkIcon,
   XIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  MessageSquareIcon,
+  HelpCircleIcon,
+  LightbulbIcon,
+  FileTextIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { BackgroundJobInfo } from "../api";
-import { useJobs, useJobDetail, useClearJobs } from "@/hooks";
-import ReactMarkdown from "react-markdown";
+import type { BackgroundJobInfo, BlackboardEntry } from "../api";
+import { useJobs, useJobDetail, useJobBlackboard, useClearJobs } from "@/hooks";
+import { ResultRenderer } from "@/components/results/ResultRenderer";
 
 const statusStyles: Record<string, string> = {
   running: "bg-blue-500/15 text-blue-400 border-blue-500/20",
   pending: "bg-yellow-500/15 text-yellow-400 border-yellow-500/20",
+  planning: "bg-purple-500/15 text-purple-400 border-purple-500/20",
+  synthesizing: "bg-indigo-500/15 text-indigo-400 border-indigo-500/20",
   done: "bg-green-500/15 text-green-400 border-green-500/20",
   error: "bg-red-500/15 text-red-400 border-red-500/20",
   failed: "bg-red-500/15 text-red-400 border-red-500/20",
@@ -30,9 +39,19 @@ const statusStyles: Record<string, string> = {
 const statusIcons: Record<string, typeof LoaderIcon> = {
   running: LoaderIcon,
   pending: ClockIcon,
+  planning: LoaderIcon,
+  synthesizing: LoaderIcon,
   done: CheckCircle2Icon,
   error: AlertCircleIcon,
   failed: AlertCircleIcon,
+};
+
+const resultTypeBadges: Record<string, string> = {
+  flight: "\u2708 flight",
+  stock: "\ud83d\udcca stock",
+  crypto: "\ud83e\ude99 crypto",
+  news: "\ud83d\udcf0 news",
+  comparison: "\u2696 comparison",
 };
 
 function timeAgo(dateStr: string): string {
@@ -45,6 +64,48 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/**
+ * Extract a json-render spec from markdown text (looks for ```jsonrender fences).
+ * Returns the parsed spec object or undefined.
+ */
+function extractRenderSpec(text: string | null | undefined): unknown | undefined {
+  if (!text) return undefined;
+  const match = text.match(/```jsonrender\s*([\s\S]*?)```/);
+  if (match?.[1]) {
+    try {
+      return JSON.parse(match[1].trim());
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Strip jsonrender and json code fences from markdown for cleaner fallback display.
+ */
+function stripCodeFences(text: string | null | undefined): string | undefined {
+  if (!text) return undefined;
+  return text
+    .replace(/```jsonrender\s*[\s\S]*?```/g, "")
+    .replace(/```json\s*[\s\S]*?```/g, "")
+    .trim() || undefined;
+}
+
+const blackboardTypeIcons: Record<string, typeof LightbulbIcon> = {
+  finding: LightbulbIcon,
+  question: HelpCircleIcon,
+  answer: MessageSquareIcon,
+  artifact: FileTextIcon,
+};
+
+const blackboardTypeStyles: Record<string, string> = {
+  finding: "bg-amber-500/15 text-amber-400 border-amber-500/20",
+  question: "bg-blue-500/15 text-blue-400 border-blue-500/20",
+  answer: "bg-green-500/15 text-green-400 border-green-500/20",
+  artifact: "bg-purple-500/15 text-purple-400 border-purple-500/20",
+};
+
 export default function Jobs() {
   const { data: jobsData, isLoading, isRefetching, refetch } = useJobs();
   const jobs = jobsData?.jobs ?? [];
@@ -53,6 +114,12 @@ export default function Jobs() {
   const { data: jobDetailData, isLoading: detailLoading } = useJobDetail(selectedJobId);
   const selectedJob = jobDetailData?.job ?? null;
 
+  const isSwarm = !!(selectedJob?.plan);
+  const { data: blackboardData } = useJobBlackboard(selectedJobId, isSwarm);
+  const blackboard = blackboardData?.entries ?? [];
+
+  const [blackboardOpen, setBlackboardOpen] = useState(false);
+
   const clearJobsMutation = useClearJobs();
 
   useEffect(() => {
@@ -60,9 +127,15 @@ export default function Jobs() {
   }, []);
 
   const handleSelectJob = (job: BackgroundJobInfo) => {
-    if (job.type !== "research") return;
+    if (job.type !== "research" && job.type !== "swarm") return;
     setSelectedJobId(job.id);
+    setBlackboardOpen(false);
   };
+
+  // Extract renderSpec from the report/synthesis text
+  const reportText = selectedJob?.report || selectedJob?.synthesis;
+  const renderSpec = useMemo(() => extractRenderSpec(reportText), [reportText]);
+  const cleanMarkdown = useMemo(() => renderSpec ? stripCodeFences(reportText) : (reportText ?? undefined), [reportText, renderSpec]);
 
   if (isLoading) return <JobsSkeleton />;
 
@@ -138,13 +211,13 @@ export default function Jobs() {
           <div className="space-y-2">
             {jobs.map((job) => {
               const StatusIcon = statusIcons[job.status] ?? ClockIcon;
-              const isResearch = job.type === "research";
-              const isRunning = job.status === "running";
+              const isDetailable = job.type === "research" || job.type === "swarm";
+              const isRunning = job.status === "running" || job.status === "planning" || job.status === "synthesizing";
 
               return (
                 <Card
                   key={job.id}
-                  className={`border-border/30 bg-card/40 transition-all duration-200 hover:-translate-y-0.5 hover:border-border/60 hover:shadow-lg ${isResearch ? "cursor-pointer" : ""}`}
+                  className={`border-border/30 bg-card/40 transition-all duration-200 hover:-translate-y-0.5 hover:border-border/60 hover:shadow-lg ${isDetailable ? "cursor-pointer" : ""}`}
                   onClick={() => handleSelectJob(job)}
                 >
                   <CardContent className="p-4">
@@ -153,6 +226,8 @@ export default function Jobs() {
                         <div className="flex items-center gap-2">
                           {job.type === "crawl" ? (
                             <GlobeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          ) : job.type === "swarm" ? (
+                            <NetworkIcon className="h-3.5 w-3.5 shrink-0 text-purple-400" />
                           ) : (
                             <SearchIcon className="h-3.5 w-3.5 shrink-0 text-blue-400" />
                           )}
@@ -168,9 +243,9 @@ export default function Jobs() {
                             <StatusIcon className={`mr-1 h-2.5 w-2.5 ${isRunning ? "animate-spin" : ""}`} />
                             {job.status}
                           </Badge>
-                          {job.resultType && job.resultType !== "general" && (
+                          {job.resultType && job.resultType !== "general" && resultTypeBadges[job.resultType] && (
                             <Badge variant="outline" className="text-[9px] px-1.5 py-0">
-                              {job.resultType === "flight" ? "✈ flight" : "📊 stock"}
+                              {resultTypeBadges[job.resultType]}
                             </Badge>
                           )}
                           <span className="text-[10px] text-muted-foreground">{job.progress}</span>
@@ -192,7 +267,7 @@ export default function Jobs() {
         </div>
       </div>
 
-      {/* Detail sidebar for research jobs */}
+      {/* Detail sidebar for research/swarm jobs */}
       {selectedJob && (
         <>
           <div
@@ -203,7 +278,9 @@ export default function Jobs() {
             <div className="p-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="font-mono text-sm font-semibold text-foreground">Research Report</h2>
+                  <h2 className="font-mono text-sm font-semibold text-foreground">
+                    {selectedJob.plan ? "Swarm Report" : "Research Report"}
+                  </h2>
                   <p className="mt-1 text-xs text-muted-foreground">{selectedJob.goal}</p>
                 </div>
                 <Button
@@ -219,25 +296,87 @@ export default function Jobs() {
               <Separator className="my-4 opacity-30" />
 
               {/* Stats */}
-              <div className="mb-4 flex gap-4 text-xs text-muted-foreground">
-                <span>Searches: {selectedJob.searchesUsed}/{selectedJob.budgetMaxSearches}</span>
-                <span>Pages: {selectedJob.pagesLearned}/{selectedJob.budgetMaxPages}</span>
+              <div className="mb-4 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                {selectedJob.searchesUsed != null && (
+                  <span>Searches: {selectedJob.searchesUsed}/{selectedJob.budgetMaxSearches}</span>
+                )}
+                {selectedJob.pagesLearned != null && (
+                  <span>Pages: {selectedJob.pagesLearned}/{selectedJob.budgetMaxPages}</span>
+                )}
+                {selectedJob.agentCount != null && (
+                  <span>Agents: {selectedJob.agentsDone ?? 0}/{selectedJob.agentCount}</span>
+                )}
                 <span>Status: {selectedJob.status}</span>
               </div>
 
-              {/* Report */}
+              {/* Report / Synthesis via ResultRenderer */}
               {detailLoading ? (
                 <div className="space-y-3">
                   <Skeleton className="h-4 w-3/4" />
                   <Skeleton className="h-4 w-full" />
                   <Skeleton className="h-4 w-2/3" />
                 </div>
-              ) : selectedJob.report ? (
-                <div className="prose prose-sm prose-invert max-w-none text-sm text-foreground/90">
-                  <ReactMarkdown>{selectedJob.report}</ReactMarkdown>
+              ) : (reportText) ? (
+                <div className="rounded-lg border border-border/20 bg-card/40 p-4">
+                  <ResultRenderer
+                    spec={renderSpec}
+                    markdown={cleanMarkdown}
+                    resultType={selectedJob.resultType}
+                    debug={false}
+                  />
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">No report available yet.</p>
+              )}
+
+              {/* Blackboard entries for swarm jobs */}
+              {isSwarm && blackboard.length > 0 && (
+                <div className="mt-6">
+                  <button
+                    onClick={() => setBlackboardOpen(!blackboardOpen)}
+                    className="flex w-full items-center gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {blackboardOpen ? (
+                      <ChevronDownIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRightIcon className="h-3.5 w-3.5" />
+                    )}
+                    Blackboard ({blackboard.length} entries)
+                  </button>
+
+                  {blackboardOpen && (
+                    <div className="mt-3 space-y-2">
+                      {blackboard.map((entry: BlackboardEntry) => {
+                        const TypeIcon = blackboardTypeIcons[entry.type] ?? LightbulbIcon;
+                        return (
+                          <div
+                            key={entry.id}
+                            className="rounded-lg border border-border/20 bg-card/30 p-3"
+                          >
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <TypeIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] px-1.5 py-0 ${blackboardTypeStyles[entry.type] ?? ""}`}
+                              >
+                                {entry.type}
+                              </Badge>
+                              <span className="text-[10px] text-muted-foreground/60 truncate">
+                                agent: {entry.agentId.slice(0, 8)}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground/40 ml-auto shrink-0">
+                                {timeAgo(entry.createdAt)}
+                              </span>
+                            </div>
+                            <p className="text-xs text-foreground/80 whitespace-pre-wrap">
+                              {entry.content}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
