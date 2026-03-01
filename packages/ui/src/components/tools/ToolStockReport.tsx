@@ -118,6 +118,35 @@ export function ToolStockReport({ state, input, output }: ToolStockReportProps) 
             <MetricItem label="EPS" value={m.epsActual} />
           </div>
 
+          {/* Charts */}
+          {report.charts?.length > 0 && (
+            <div>
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">Charts</p>
+              <div className="space-y-2">
+                {report.charts.map((chart, i) => (
+                  <div key={chart.id || i} className="overflow-hidden rounded-lg border border-border/20">
+                    {chart.artifactId ? (
+                      <img
+                        src={`/api/artifacts/${chart.artifactId}`}
+                        alt={chart.title}
+                        className="w-full"
+                        loading="lazy"
+                      />
+                    ) : chart.data ? (
+                      <img
+                        src={chart.data.startsWith("data:") ? chart.data : `data:image/png;base64,${chart.data}`}
+                        alt={chart.title}
+                        className="w-full"
+                        loading="lazy"
+                      />
+                    ) : null}
+                    <p className="px-2 py-1 text-[10px] text-muted-foreground/60">{chart.title}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Catalysts */}
           {report.catalysts?.length > 0 && (
             <div>
