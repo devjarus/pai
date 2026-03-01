@@ -6,6 +6,7 @@ vi.mock("@personal-ai/core", () => ({
   getMemoryContext: vi.fn(),
   remember: vi.fn(),
   listBeliefs: vi.fn().mockReturnValue([]),
+  resolveSandboxUrl: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock("@personal-ai/plugin-tasks", () => ({

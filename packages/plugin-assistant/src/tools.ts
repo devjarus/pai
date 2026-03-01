@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
-import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, learnFromContent, knowledgeSearch, listSources, forgetSource } from "@personal-ai/core";
+import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime, detectResearchDomain } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
@@ -421,5 +421,50 @@ export function createAgentTools(ctx: AgentContext) {
         }));
       },
     }),
+
+    // Conditionally add sandbox tool
+    ...(resolveSandboxUrl() ? {
+      run_code: tool({
+        description: "Execute Python or JavaScript code in an isolated sandbox. Use for data analysis, chart generation, calculations, or file processing. Files written to the OUTPUT_DIR directory will be saved as artifacts. Available packages: matplotlib, pandas, numpy, plotly, yfinance.",
+        inputSchema: z.object({
+          language: z.enum(["python", "node"]).describe("Programming language to execute"),
+          code: z.string().describe("The code to execute"),
+          purpose: z.string().describe("Brief description of what this code does (for audit logging)"),
+          timeout: z.number().optional().describe("Execution timeout in seconds (default 30, max 120)"),
+        }),
+        execute: async ({ language, code, purpose, timeout }) => {
+          try {
+            ctx.logger.info("Sandbox execution", { purpose, language });
+            const result = await runInSandbox({ language, code, timeout });
+
+            // Store any output files as artifacts
+            const savedArtifacts: Array<{ id: string; name: string; mimeType: string }> = [];
+            if (result.files.length > 0) {
+              const jobId = (ctx as unknown as Record<string, unknown>).threadId as string ?? "sandbox";
+              for (const file of result.files) {
+                const mimeType = guessMimeType(file.name);
+                const artifactId = storeArtifact(ctx.storage, {
+                  jobId,
+                  name: file.name,
+                  mimeType,
+                  data: Buffer.from(file.data, "base64"),
+                });
+                savedArtifacts.push({ id: artifactId, name: file.name, mimeType });
+              }
+            }
+
+            return {
+              stdout: result.stdout,
+              stderr: result.stderr,
+              exitCode: result.exitCode,
+              artifacts: savedArtifacts,
+              ...(result.exitCode !== 0 ? { error: `Code exited with code ${result.exitCode}` } : {}),
+            };
+          } catch (err) {
+            return { error: `Sandbox execution failed: ${err instanceof Error ? err.message : "unknown error"}` };
+          }
+        },
+      }),
+    } : {}),
   };
 }
