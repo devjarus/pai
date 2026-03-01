@@ -791,6 +791,7 @@ describe("agent routes", () => {
       displayName: "Test Assistant",
       description: "A test assistant for unit tests",
       capabilities: ["general", "memory"],
+      dynamic: false,
     });
   });
 

@@ -52,6 +52,7 @@ Do NOT skip memory_recall just because you already called it earlier in the conv
 - **task_add**: Create a new task
 - **task_done**: Mark a task complete
 - **run_code**: Execute Python/JS code in a sandboxed environment — for data analysis, charting, calculations. Output files are saved as artifacts.
+- **create_agent**: Create a new custom AI agent with its own personality, tools, and capabilities. The agent appears in the agent picker.
 
 ## Memory is multi-person aware
 - Memories are tagged with WHO they are about (owner, Alex, Bob, etc.)

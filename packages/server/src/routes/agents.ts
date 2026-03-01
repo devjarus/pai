@@ -92,12 +92,59 @@ function mapMessage(row: ThreadMessageRow) {
 export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: ServerContext): void {
   // List available agents
   app.get("/api/agents", async () => {
-    return agents.map((a) => ({
+    const { listDynamicAgents } = await import("@personal-ai/core");
+    const builtIn = agents.map((a) => ({
       name: a.name,
       displayName: a.agent.displayName,
       description: a.agent.description,
       capabilities: a.agent.capabilities ?? [],
+      dynamic: false,
     }));
+    const dynamic = listDynamicAgents(ctx.storage).map((a) => ({
+      name: a.name,
+      displayName: a.displayName,
+      description: a.description,
+      capabilities: a.capabilities,
+      dynamic: true,
+      id: a.id,
+    }));
+    return [...builtIn, ...dynamic];
+  });
+
+  // Dynamic agent CRUD
+  app.post<{ Body: { name: string; displayName: string; description: string; systemPrompt: string; capabilities?: string[]; tools?: unknown[] } }>(
+    "/api/agents/dynamic",
+    async (request) => {
+      const { createDynamicAgent } = await import("@personal-ai/core");
+      const agent = createDynamicAgent(ctx.storage, {
+        ...request.body,
+        tools: request.body.tools as import("@personal-ai/core").DynamicToolDef[] | undefined,
+      });
+      return { ok: true, agent };
+    },
+  );
+
+  app.get<{ Params: { name: string } }>("/api/agents/dynamic/:name", async (request, reply) => {
+    const { getDynamicAgentByName } = await import("@personal-ai/core");
+    const agent = getDynamicAgentByName(ctx.storage, request.params.name);
+    if (!agent) return reply.status(404).send({ error: "Agent not found" });
+    return { agent };
+  });
+
+  app.put<{ Params: { id: string }; Body: Record<string, unknown> }>(
+    "/api/agents/dynamic/:id",
+    async (request, reply) => {
+      const { updateDynamicAgent } = await import("@personal-ai/core");
+      const agent = updateDynamicAgent(ctx.storage, request.params.id, request.body);
+      if (!agent) return reply.status(404).send({ error: "Agent not found" });
+      return { ok: true, agent };
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>("/api/agents/dynamic/:id", async (request) => {
+    const { deleteDynamicAgent } = await import("@personal-ai/core");
+    const ok = deleteDynamicAgent(ctx.storage, request.params.id);
+    return { ok };
   });
 
   // ---- Threads (SQLite-backed) ----
@@ -194,11 +241,17 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
 
     if (!message) return reply.status(400).send({ error: "message is required" });
 
-    // Find agent
-    const agentPlugin = agentName
+    // Find agent — check built-in plugins first, then dynamic agents
+    let agentPlugin = agentName
       ? agents.find((a) => a.name === agentName)
       : agents[0];
-    if (!agentPlugin) return reply.status(404).send({ error: "Agent not found" });
+    let dynamicAgent: import("@personal-ai/core").DynamicAgent | null = null;
+    if (!agentPlugin && agentName) {
+      const { getDynamicAgentByName } = await import("@personal-ai/core");
+      dynamicAgent = getDynamicAgentByName(ctx.storage, agentName);
+      if (!dynamicAgent) return reply.status(404).send({ error: "Agent not found" });
+    }
+    if (!agentPlugin && !dynamicAgent) return reply.status(404).send({ error: "Agent not found" });
 
     // Ensure a thread exists (auto-create when missing)
     const ensured = ensureThread(ctx.storage, { id: sessionId, agentName });
@@ -217,7 +270,7 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
       : "";
 
     const dt = formatDateTime(ctx.config.timezone);
-    let systemPrompt = agentPlugin.agent.systemPrompt +
+    let systemPrompt = (agentPlugin ? agentPlugin.agent.systemPrompt : dynamicAgent!.systemPrompt) +
       `\n\nCurrent date and time: ${dt.full}. Use this for time-sensitive queries.` +
       `\n\nYour owner's name is ${ownerName}. You are talking to them via the web UI. When they say "my" or "I", it refers to ${ownerName}. Memories tagged "owner" are about this person. Do not confuse ${ownerName} with other people mentioned in memories.` +
       prefsBlock;
@@ -260,10 +313,45 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
             }
           } catch { /* table may not exist */ }
 
-          const tools = agentPlugin.agent.createTools?.(agentCtx) as Record<string, unknown> | undefined;
+          let tools: Record<string, unknown> | undefined;
+          if (agentPlugin) {
+            tools = agentPlugin.agent.createTools?.(agentCtx) as Record<string, unknown> | undefined;
+          } else if (dynamicAgent) {
+            // Build tools from dynamic agent definitions — each tool runs code in sandbox
+            const { runInSandbox, resolveSandboxUrl } = await import("@personal-ai/core");
+            tools = {};
+            if (resolveSandboxUrl()) {
+              for (const toolDef of dynamicAgent.tools) {
+                tools[toolDef.name] = tool({
+                  description: toolDef.description,
+                  inputSchema: z.object(
+                    Object.fromEntries(
+                      Object.entries(toolDef.inputSchema).map(([k, v]) => [
+                        k,
+                        (v as Record<string, unknown>).type === "number" ? z.number().optional().describe(String((v as Record<string, unknown>).description ?? k))
+                          : z.string().optional().describe(String((v as Record<string, unknown>).description ?? k)),
+                      ]),
+                    ),
+                  ),
+                  execute: async (args: Record<string, unknown>) => {
+                    try {
+                      const wrappedCode = toolDef.language === "python"
+                        ? `import json, sys\nargs = json.loads('''${JSON.stringify(args)}''')\n${toolDef.code}`
+                        : `const args = ${JSON.stringify(args)};\n${toolDef.code}`;
+                      const result = await runInSandbox({ language: toolDef.language, code: wrappedCode, timeout: 60 });
+                      if (result.exitCode !== 0) return { error: result.stderr || `Exited with code ${result.exitCode}` };
+                      try { return JSON.parse(result.stdout); } catch { return result.stdout; }
+                    } catch (err) {
+                      return { error: err instanceof Error ? err.message : "Tool execution failed" };
+                    }
+                  },
+                });
+              }
+            }
+          }
 
           // Inject sub-agent delegation tools: let the assistant call other agents
-          if (tools && agentPlugin.name === "assistant") {
+          if (tools && agentPlugin?.name === "assistant") {
             for (const subAgent of agents) {
               if (subAgent.name === agentPlugin.name) continue;
               const subTools = subAgent.agent.createTools?.(agentCtx);
@@ -365,7 +453,7 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                   });
 
                   // afterResponse — fire and forget, but log errors
-                  if (agentPlugin.agent.afterResponse) {
+                  if (agentPlugin?.agent.afterResponse) {
                     agentPlugin.agent.afterResponse(agentCtx, text).catch((err) => {
                       ctx.logger.warn(`afterResponse failed: ${err instanceof Error ? err.message : String(err)}`);
                     });

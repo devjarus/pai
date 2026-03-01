@@ -466,5 +466,46 @@ export function createAgentTools(ctx: AgentContext) {
         },
       }),
     } : {}),
+
+    create_agent: tool({
+      description: "Create a new custom AI agent. Use when the user asks to create a specialized agent, bot, or assistant for a specific task. The agent will appear in the agent picker and can be chatted with separately. If the agent needs custom tools that run code, provide tool definitions with Python or Node code.",
+      inputSchema: z.object({
+        name: z.string().describe("Short slug name for the agent (e.g., 'crypto-tracker', 'expense-logger')"),
+        displayName: z.string().describe("Human-readable display name (e.g., 'Crypto Price Tracker')"),
+        description: z.string().describe("What this agent does — shown in the agent picker"),
+        systemPrompt: z.string().describe("The system prompt that defines the agent's personality, knowledge, and behavior"),
+        capabilities: z.array(z.string()).optional().describe("List of capability tags (e.g., ['finance', 'analysis'])"),
+        tools: z.array(z.object({
+          name: z.string().describe("Tool name (e.g., 'fetch_price')"),
+          description: z.string().describe("What the tool does"),
+          inputSchema: z.record(z.object({
+            type: z.string().describe("'string' or 'number'"),
+            description: z.string().optional(),
+          })).describe("Input parameters as {paramName: {type, description}}"),
+          code: z.string().describe("Python or Node code to execute. Receives `args` dict/object. Print JSON result to stdout."),
+          language: z.enum(["python", "node"]).describe("Language for the tool code"),
+        })).optional().describe("Custom tools that execute code in the sandbox. Each tool gets `args` and must print JSON to stdout."),
+      }),
+      execute: async ({ name, displayName, description, systemPrompt, capabilities, tools: toolDefs }) => {
+        try {
+          const { createDynamicAgent } = await import("@personal-ai/core");
+          const agent = createDynamicAgent(ctx.storage, {
+            name,
+            displayName,
+            description,
+            systemPrompt,
+            capabilities,
+            tools: toolDefs as import("@personal-ai/core").DynamicToolDef[] | undefined,
+          });
+          return {
+            ok: true,
+            message: `Agent "${displayName}" created! You can now chat with it by selecting "${displayName}" from the agent picker in the Chat page.`,
+            agent: { id: agent.id, name: agent.name, displayName: agent.displayName },
+          };
+        } catch (err) {
+          return { error: `Failed to create agent: ${err instanceof Error ? err.message : "unknown error"}` };
+        }
+      },
+    }),
   };
 }

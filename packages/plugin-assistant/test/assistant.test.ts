@@ -85,7 +85,7 @@ describe("createTools", () => {
   it("returns 17 tools total", () => {
     const ctx = createMockCtx();
     const tools = assistantPlugin.agent!.createTools!(ctx);
-    expect(Object.keys(tools)).toHaveLength(17);
+    expect(Object.keys(tools)).toHaveLength(18);
   });
 
   it("each tool has description and execute function", () => {

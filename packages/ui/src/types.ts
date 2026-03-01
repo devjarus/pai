@@ -42,6 +42,9 @@ export interface Agent {
   name: string;
   displayName?: string;
   description?: string;
+  capabilities?: string[];
+  dynamic?: boolean;
+  id?: string;
 }
 
 export interface KnowledgeSource {
