@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Sub-agent swarm system** (`plugin-swarm`) — New plugin that decomposes complex tasks into 2-5 parallel sub-agents with specialized roles (researcher, coder, analyst). Sub-agents communicate via a shared SQLite blackboard and operate with budget-limited tools. An orchestrator plans subtasks via LLM, executes them in parallel with `Promise.allSettled`, then synthesizes results into a unified report delivered to the Inbox. Graceful degradation: falls back to single-agent execution if planning fails. New `swarm_start` tool in the assistant. Jobs page shows swarm jobs with agent progress and synthesis detail. New API endpoints: `GET /api/jobs/:id/agents`, `GET /api/jobs/:id/blackboard`.
+
 - **Domain-specific research agents** — Research jobs now detect flight and stock queries automatically (via `detectResearchDomain()`) and use domain-specific LLM prompts that produce structured JSON results instead of plain markdown. Flight research returns `FlightReport` (scored options with prices, durations, booking links). Stock research returns `StockReport` (verdict, confidence, metrics, catalysts, risks, sources). General research unchanged. New `resultType` field on `BackgroundJob` and `ResearchJob`.
 - **Flight results UI card** (`ToolFlightResults`) — Rich card in Inbox detail view showing ranked flight options with airline, times, duration, baggage, refund policy, score, and booking CTAs. Collapsible with route header. Markdown report rendered below.
 - **Stock report UI card** (`ToolStockReport`) — Rich card with verdict badge (Strong Buy/Buy/Hold/Sell), confidence %, key metrics grid, catalysts, risks, sources with external links, and chart rendering.
@@ -22,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Unified research & swarm system** — Swarm is now domain-aware: supports flight, stock, crypto, news, comparison, and general research types via required `type` parameter. Sub-agents use domain-specific prompts. Results rendered via `@json-render/react` dynamic UI — no raw JSON shown to users. Inbox shows domain badges. Jobs page shows swarm blackboard entries. Debug toggle in Settings for power users.
 - **SearXNG web search** — Replaced Brave Search HTML scraping (broken by 429 rate limits) with self-hosted SearXNG JSON API. No rate limits, supports search categories (general, news, IT, images, videos, social media, files). SearXNG runs as a Docker sidecar (~50-100MB RAM). URL auto-detected in Docker/Railway or set via `PAI_SEARCH_URL`.
 - **Worker extraction** — Extracted 4 inline `setInterval`/`setTimeout` background workers from the 700-line server `index.ts` into a reusable `WorkerLoop` class (`packages/server/src/workers.ts`). Briefing generator (6h), schedule runner (60s), and background learning (2h/5min delay) are now encapsulated with `start()`/`stop()`/`updateContext()`. Migrations extracted to `packages/server/src/migrations.ts`. Telegram research push loop moved to `packages/plugin-telegram/src/push.ts` where it belongs. Added `pai worker` CLI command for standalone worker execution and `packages/server/src/worker.ts` entry point.
 
@@ -62,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Research domain misclassification** — `detectResearchDomain()` regex matched "and to the" as airport codes. Fixed by making `type` required on both `research_start` and `swarm_start` tools.
+- **Raw JSON in UI** — Flight/stock results showed raw JSON when parsing failed. All rendering now goes through `ResultRenderer` with fallback chain.
+- **Sandbox URL auto-detection** — `resolveSandboxUrl()` now auto-detects Railway and Docker environments, matching the pattern used by `resolveSearchUrl()`.
 - **E2E rate limit exhaustion** — Global rate limit (100/min) was being exhausted by SPA page loads across E2E specs, causing chat test 429 errors. Increased global limit to 300/min (appropriate for single-user app), health to 60/min, login to 20/min.
 - **Config save crash** — Wrapped `reinitialize()` in try-catch to prevent server crash on config save failures. UI now surfaces meaningful error messages via JSON error extraction.
 - **Telegram briefing broadcast** — Fixed daily briefings being sent to all Telegram threads instead of only the owner's thread.
