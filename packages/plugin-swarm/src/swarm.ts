@@ -22,6 +22,9 @@ import {
   getCoderPrompt,
   getAnalystPrompt,
   getSynthesizerPrompt,
+  getFlightResearcherPrompt,
+  getStockResearcherPrompt,
+  getCryptoResearcherPrompt,
 } from "./prompts.js";
 
 // ---- Types ----
@@ -34,6 +37,27 @@ export interface SwarmContext {
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   formatSearchResults: (results: Array<{ title: string; url: string; snippet: string }>) => string;
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;
+}
+
+function getSubAgentPrompt(role: string, resultType: string, timezone?: string): string {
+  // Domain-specific roles first
+  if (role === "flight_researcher") return getFlightResearcherPrompt(timezone);
+  if (role === "stock_researcher") return getStockResearcherPrompt(timezone);
+  if (role === "crypto_researcher") return getCryptoResearcherPrompt(timezone);
+  if (role === "chart_generator") return getCoderPrompt(timezone);
+  if (role === "comparator" || role === "fact_checker" || role === "market_analyst" || role === "price_analyst") return getAnalystPrompt(timezone);
+  if (role === "news_researcher") return getResearcherPrompt(timezone);
+
+  // Generic roles — use domain-aware defaults when resultType is specific
+  if (role === "researcher") {
+    if (resultType === "flight") return getFlightResearcherPrompt(timezone);
+    if (resultType === "stock") return getStockResearcherPrompt(timezone);
+    if (resultType === "crypto") return getCryptoResearcherPrompt(timezone);
+    return getResearcherPrompt(timezone);
+  }
+  if (role === "analyst") return getAnalystPrompt(timezone);
+  if (role === "coder") return getCoderPrompt(timezone);
+  return getResearcherPrompt(timezone);
 }
 
 const MAX_AGENTS = 5;
@@ -76,7 +100,7 @@ export async function runSwarmInBackground(
       const fallbackPlan: SwarmPlanItem[] = [
         { role: "researcher", task: job.goal, tools: ["web_search", "read_page", "knowledge_search"] },
       ];
-      await executePlan(ctx, jobId, fallbackPlan);
+      await executePlan(ctx, jobId, fallbackPlan, job.resultType);
     } else {
       const limited = plan.slice(0, MAX_AGENTS);
       updateSwarmJob(ctx.storage, jobId, {
@@ -84,7 +108,7 @@ export async function runSwarmInBackground(
         agent_count: limited.length,
         status: "running",
       });
-      await executePlan(ctx, jobId, limited);
+      await executePlan(ctx, jobId, limited, job.resultType);
     }
 
     // Phase 3: Synthesize
@@ -174,7 +198,7 @@ async function planSwarm(ctx: SwarmContext, goal: string, resultType?: string): 
       : "";
     const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
-      system: getPlannerPrompt(ctx.timezone),
+      system: getPlannerPrompt(resultType, ctx.timezone),
       messages: [
         { role: "user", content: `Decompose this goal into parallel subtasks:\n\n${goal}${domainHint}` },
       ],
@@ -202,7 +226,7 @@ async function planSwarm(ctx: SwarmContext, goal: string, resultType?: string): 
 
 // ---- Phase 2: Parallel Execution ----
 
-async function executePlan(ctx: SwarmContext, jobId: string, plan: SwarmPlanItem[]): Promise<void> {
+async function executePlan(ctx: SwarmContext, jobId: string, plan: SwarmPlanItem[], resultType?: string): Promise<void> {
   // Insert all agent rows
   const agentIds: string[] = [];
   for (const item of plan) {
@@ -223,7 +247,7 @@ async function executePlan(ctx: SwarmContext, jobId: string, plan: SwarmPlanItem
 
   // Execute all agents in parallel
   const promises = plan.map((item, i) =>
-    runSubAgent(ctx, jobId, agentIds[i]!, item).catch((err) => {
+    runSubAgent(ctx, jobId, agentIds[i]!, item, resultType).catch((err) => {
       const errorMsg = err instanceof Error ? err.message : String(err);
       updateSwarmAgent(ctx.storage, agentIds[i]!, {
         status: "failed",
@@ -250,21 +274,12 @@ async function runSubAgent(
   swarmId: string,
   agentId: string,
   plan: SwarmPlanItem,
+  resultType?: string,
 ): Promise<void> {
   updateSwarmAgent(ctx.storage, agentId, { status: "running" });
 
-  // Select system prompt based on role
-  let systemPrompt: string;
-  switch (plan.role) {
-    case "coder":
-      systemPrompt = getCoderPrompt(ctx.timezone);
-      break;
-    case "analyst":
-      systemPrompt = getAnalystPrompt(ctx.timezone);
-      break;
-    default:
-      systemPrompt = getResearcherPrompt(ctx.timezone);
-  }
+  // Select system prompt based on role and domain
+  const systemPrompt = getSubAgentPrompt(plan.role, resultType ?? "general", ctx.timezone);
 
   // Build budget-limited tools
   const tools = createSubAgentTools(ctx, swarmId, agentId, plan.tools);
