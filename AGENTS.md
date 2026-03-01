@@ -377,3 +377,30 @@ Or just send any text message to chat with the assistant.
 ## Architecture Reference
 
 See `docs/ARCHITECTURE.md` for full design, data model, and future plugin path.
+
+## Cursor Cloud specific instructions
+
+### Services
+
+| Service | Command | Port | Notes |
+|---------|---------|------|-------|
+| PAI Server | `pnpm start` (or `pnpm dev` to build+start) | 3141 | Serves REST API + static UI. SQLite embedded, no external DB needed. |
+| Vite Dev Server | `pnpm dev:ui` | 5173 | HMR for UI development. Proxies `/api/*` to `:3141`. Requires server running first. |
+| SearxNG (Docker) | `sudo docker run -d --name searxng -p 8080:8080 -v $(pwd)/searxng/settings.yml:/etc/searxng/settings.yml:ro searxng/searxng:latest` | 8080 | Web search backend. Set `PAI_SEARCH_URL=http://localhost:8080` when starting PAI server. Uses repo's `searxng/settings.yml`. |
+| Sandbox (Docker) | `sudo docker run -d --name pai-sandbox -p 8888:8888 --memory=512m pai-sandbox` (build first: `sudo docker build -t pai-sandbox ./sandbox/`) | 8888 | Code execution sidecar (Python + Node). Set `PAI_SANDBOX_URL=http://localhost:8888` to enable `run_code` tool and chart generation. |
+
+### Gotchas
+
+- **`pnpm typecheck`** runs `tsc --build` but `typescript` is not a root workspace dependency. Use `pnpm --filter @personal-ai/core exec tsc --build /workspace/tsconfig.json` as a workaround, or install typescript at the root temporarily.
+- **Localhost auth bypass**: When the server binds to `127.0.0.1` (default), authentication is not required. Auth is only enforced when binding to `0.0.0.0` (Docker/cloud).
+- **E2E tests**: `pnpm e2e` auto-starts a mock LLM server (port 11435) and a separate PAI server (port 3199) — no real LLM needed. Requires `pnpm build` first and Playwright Chromium installed (`npx playwright install chromium`).
+- **No LLM needed for unit tests or E2E**: Unit tests mock everything; E2E uses a built-in mock LLM. Only runtime chat requires a real LLM provider.
+- **Data directory**: Defaults to `~/.personal-ai/data/`. The server creates it automatically on first start. Delete `~/.personal-ai/data/personal-ai.db` to reset all state.
+- **SearxNG for web search**: The assistant's web search tool requires a SearxNG instance. Start it with Docker using the repo's `searxng/settings.yml` (mounted read-only). Without it, web search calls fail silently. Pass `PAI_SEARCH_URL=http://localhost:8080` when starting the server.
+- **LLM embed model**: Set `PAI_LLM_EMBED_MODEL=nomic-embed-text` (or appropriate model) when using the CLI for memory/knowledge commands that need embeddings.
+- **Domain-specific research**: Flight and stock research are triggered by the `research_start` tool — the LLM must decide to use it. Phrasing like "do a deep research report on..." works better than simple questions. The domain (flight/stock/general) is auto-detected from the goal text.
+- **Sandbox is opt-in**: The `run_code` tool only appears when `PAI_SANDBOX_URL` is set. Without it, stock research works but skips chart generation.
+
+### Standard commands
+
+See `## Build & Run` and `## Test Commands` sections above for all build/test/lint/run commands.

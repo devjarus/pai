@@ -1,6 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
 import { getLatestBriefing, getBriefingById, listBriefings, listAllBriefings, generateBriefing, clearAllBriefings, getResearchBriefings } from "../briefing.js";
+import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
+import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
+import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 
 export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
   app.get("/api/inbox", async () => {
@@ -47,5 +50,50 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext
     const briefing = getBriefingById(ctx.storage, request.params.id);
     if (!briefing) return reply.status(404).send({ error: "Briefing not found" });
     return { briefing };
+  });
+
+  // Rerun a research report — creates a new research job with the same goal
+  app.post<{ Params: { id: string } }>("/api/inbox/:id/rerun", async (request, reply) => {
+    const briefing = getBriefingById(ctx.storage, request.params.id);
+    if (!briefing) return reply.status(404).send({ error: "Briefing not found" });
+
+    // Extract goal from research briefing sections
+    let sections: Record<string, unknown>;
+    try {
+      sections = typeof briefing.sections === "string"
+        ? JSON.parse(briefing.sections)
+        : briefing.sections;
+    } catch {
+      return reply.status(400).send({ error: "Invalid briefing data" });
+    }
+
+    const goal = sections.goal as string | undefined;
+    if (!goal) return reply.status(400).send({ error: "No research goal found in briefing" });
+
+    const resultType = (sections.resultType as string | undefined) ?? "general";
+
+    // Create new research job
+    const jobId = createResearchJob(ctx.storage, {
+      goal,
+      threadId: null,
+      resultType: resultType as "flight" | "stock" | "general",
+    });
+
+    runResearchInBackground(
+      {
+        storage: ctx.storage,
+        llm: ctx.llm,
+        logger: ctx.logger,
+        timezone: ctx.config.timezone,
+        webSearch,
+        formatSearchResults,
+        fetchPage: fetchPageAsMarkdown,
+      },
+      jobId,
+    ).catch((err) => {
+      ctx.logger.error(`Rerun research failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+
+    return { ok: true, jobId };
   });
 }

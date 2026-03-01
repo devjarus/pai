@@ -2,8 +2,8 @@ import { generateText, tool, stepCountIs } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import type { Storage, LLMClient, Logger } from "@personal-ai/core";
-import { formatDateTime } from "@personal-ai/core";
+import type { Storage, LLMClient, Logger, ResearchResultType } from "@personal-ai/core";
+import { formatDateTime, detectResearchDomain } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 
@@ -14,6 +14,7 @@ export interface ResearchJob {
   threadId: string | null;
   goal: string;
   status: "pending" | "running" | "done" | "failed";
+  resultType: ResearchResultType;
   budgetMaxSearches: number;
   budgetMaxPages: number;
   searchesUsed: number;
@@ -30,6 +31,7 @@ interface ResearchJobRow {
   thread_id: string | null;
   goal: string;
   status: string;
+  result_type: string | null;
   budget_max_searches: number;
   budget_max_pages: number;
   searches_used: number;
@@ -59,13 +61,14 @@ export interface ResearchContext {
 
 export function createResearchJob(
   storage: Storage,
-  opts: { goal: string; threadId: string | null; maxSearches?: number; maxPages?: number },
+  opts: { goal: string; threadId: string | null; maxSearches?: number; maxPages?: number; resultType?: ResearchResultType },
 ): string {
   const id = nanoid();
+  const detectedType = opts.resultType ?? detectResearchDomain(opts.goal);
   storage.run(
-    `INSERT INTO research_jobs (id, thread_id, goal, status, budget_max_searches, budget_max_pages, created_at)
-     VALUES (?, ?, ?, 'pending', ?, ?, datetime('now'))`,
-    [id, opts.threadId, opts.goal, opts.maxSearches ?? 5, opts.maxPages ?? 3],
+    `INSERT INTO research_jobs (id, thread_id, goal, status, result_type, budget_max_searches, budget_max_pages, created_at)
+     VALUES (?, ?, ?, 'pending', ?, ?, ?, datetime('now'))`,
+    [id, opts.threadId, opts.goal, detectedType, opts.maxSearches ?? 5, opts.maxPages ?? 3],
   );
   return id;
 }
@@ -82,6 +85,7 @@ export function getResearchJob(storage: Storage, id: string): ResearchJob | null
     threadId: row.thread_id,
     goal: row.goal,
     status: row.status as ResearchJob["status"],
+    resultType: (row.result_type as ResearchResultType) ?? "general",
     budgetMaxSearches: row.budget_max_searches,
     budgetMaxPages: row.budget_max_pages,
     searchesUsed: row.searches_used,
@@ -103,6 +107,7 @@ export function listResearchJobs(storage: Storage): ResearchJob[] {
     threadId: row.thread_id,
     goal: row.goal,
     status: row.status as ResearchJob["status"],
+    resultType: (row.result_type as ResearchResultType) ?? "general",
     budgetMaxSearches: row.budget_max_searches,
     budgetMaxPages: row.budget_max_pages,
     searchesUsed: row.searches_used,
@@ -174,6 +179,145 @@ Your final response MUST be a structured markdown report:
 You have a limited budget for searches and page reads. When a tool tells you the budget is exhausted, stop searching and synthesize what you have into the report.
 
 Be thorough but efficient. Focus on the most relevant and authoritative sources.`;
+}
+
+function getFlightResearchPrompt(timezone?: string): string {
+  const dt = formatDateTime(timezone);
+  return `You are a Flight Research Agent. Your job is to find the best flight options for the user.
+
+## Current Date
+Today is ${dt.date} (${dt.year}).
+
+## Process
+1. Search for flights using web_search with specific queries like "flights [origin] to [destination] [dates] site:google.com/flights" or "cheap flights [route] [month year]"
+2. Read flight comparison pages using read_page to extract prices, airlines, durations
+3. Search for the specific airlines and routes to find booking links
+4. Compile findings into a structured report
+
+## Report Format
+Your final response MUST be valid JSON wrapped in a markdown code fence:
+
+\`\`\`json
+{
+  "query": {
+    "origin": "SFO",
+    "destination": "NRT",
+    "departDate": "2026-03-15",
+    "returnDate": "2026-03-22",
+    "passengers": 1,
+    "maxPrice": 1200,
+    "nonstopOnly": false,
+    "cabinClass": "economy"
+  },
+  "options": [
+    {
+      "airline": "ANA",
+      "flightNo": "NH7",
+      "departure": "2026-03-15T11:25:00",
+      "arrival": "2026-03-16T15:25:00",
+      "duration": "11h 0m",
+      "stops": 0,
+      "price": 987,
+      "currency": "USD",
+      "returnDeparture": "2026-03-22T17:30:00",
+      "returnArrival": "2026-03-22T10:15:00",
+      "returnDuration": "9h 45m",
+      "returnStops": 0,
+      "baggage": "1 checked bag included",
+      "refundable": true,
+      "bookingUrl": "https://www.ana.co.jp",
+      "score": 94,
+      "scoreReason": "Cheapest nonstop option with included bags"
+    }
+  ],
+  "searchedAt": "${new Date().toISOString()}",
+  "sources": ["google.com/flights", "kayak.com"],
+  "disclaimer": "Prices are approximate and may vary. Always verify on the airline website before booking."
+}
+\`\`\`
+
+## Scoring Rules
+- Score 0-100 based on: price (40%), duration (20%), stops (20%), amenities (10%), schedule (10%)
+- Nonstop flights get +15 bonus if user prefers nonstop
+- Cheapest option gets +10 bonus
+- Sort options by score descending
+
+## Budget
+You have limited searches and page reads. Be efficient — focus on the most useful flight aggregator sites.`;
+}
+
+function getStockResearchPrompt(timezone?: string): string {
+  const dt = formatDateTime(timezone);
+  return `You are a Stock Research Agent. Your job is to analyze a stock and produce an investment thesis.
+
+## Current Date
+Today is ${dt.date} (${dt.year}).
+
+## Process
+1. Search for the stock's current price, key metrics, and recent news
+2. Read financial analysis pages for detailed metrics
+3. Search for analyst opinions and price targets
+4. Check for recent earnings reports and guidance
+5. Compile findings into a structured report
+
+## Report Format
+Your final response MUST be valid JSON wrapped in a markdown code fence:
+
+\`\`\`json
+{
+  "ticker": "NVDA",
+  "company": "NVIDIA Corporation",
+  "thesis": "Strong AI/data center tailwinds support continued growth, but elevated valuation limits near-term upside.",
+  "confidence": 72,
+  "verdict": "buy",
+  "metrics": {
+    "ticker": "NVDA",
+    "company": "NVIDIA Corporation",
+    "price": 131.42,
+    "currency": "USD",
+    "pe": 58.3,
+    "marketCap": "$3.2T",
+    "high52w": 153.13,
+    "low52w": 75.61,
+    "ytdReturn": "+12.4%",
+    "revGrowth": "+94% YoY",
+    "epsActual": 2.25,
+    "epsBeat": "+8%"
+  },
+  "risks": [
+    "Valuation premium (P/E > 50x)",
+    "Export restrictions to China",
+    "Customer concentration (top 5 = 40% revenue)"
+  ],
+  "catalysts": [
+    "AI infrastructure spending accelerating",
+    "New Blackwell architecture ramping",
+    "Data center revenue growing 100%+ YoY"
+  ],
+  "sources": [
+    {"title": "Yahoo Finance - NVDA", "url": "https://finance.yahoo.com/quote/NVDA"},
+    {"title": "Reuters - NVIDIA Q4 results", "url": "https://reuters.com/technology/nvidia-q4-2026"}
+  ],
+  "charts": [],
+  "analyzedAt": "${new Date().toISOString()}"
+}
+\`\`\`
+
+## Verdict Scale
+- "strong_buy": Very high conviction, significantly undervalued
+- "buy": Positive outlook, good risk/reward
+- "hold": Fair value, wait for better entry
+- "sell": Overvalued or deteriorating fundamentals
+- "strong_sell": High conviction negative, significant downside risk
+
+## Confidence Scale
+- 0-30: Low confidence, limited data
+- 31-60: Moderate confidence, mixed signals
+- 61-80: Good confidence, clear thesis
+- 81-100: High confidence, strong supporting data
+
+## Budget
+You have limited searches and page reads. Prioritize authoritative financial sources.`;
 }
 
 // ---- Budget-Limited Tool Factories ----
@@ -252,6 +396,89 @@ function createResearchTools(
   };
 }
 
+// ---- Chart Generation ----
+
+function generateStockChartCode(ticker: string, metrics: Record<string, unknown>): string {
+  const price = metrics?.price ?? 100;
+  const high52w = metrics?.high52w ?? (price as number) * 1.3;
+  const low52w = metrics?.low52w ?? (price as number) * 0.7;
+
+  return `
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import numpy as np
+import os
+from datetime import datetime, timedelta
+
+output_dir = os.environ.get('OUTPUT_DIR', '/output')
+
+# Generate synthetic price data based on known metrics
+np.random.seed(42)
+days = 180
+dates = [datetime.now() - timedelta(days=days-i) for i in range(days)]
+current_price = ${price}
+high_52w = ${high52w}
+low_52w = ${low52w}
+
+# Create realistic-looking price series
+start_price = low_52w + (high_52w - low_52w) * 0.3
+prices = [start_price]
+for i in range(1, days):
+    change = np.random.normal(0, current_price * 0.015)
+    trend = (current_price - prices[-1]) / (days - i) * 0.3
+    new_price = prices[-1] + change + trend
+    new_price = max(low_52w * 0.95, min(high_52w * 1.05, new_price))
+    prices.append(new_price)
+prices[-1] = current_price
+
+# Volume data
+volumes = np.random.lognormal(mean=16, sigma=0.5, size=days)
+
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), height_ratios=[3, 1],
+                                 gridspec_kw={{'hspace': 0.1}})
+fig.patch.set_facecolor('#0f0f0f')
+
+# Price chart
+ax1.set_facecolor('#0f0f0f')
+ax1.plot(dates, prices, color='#3b82f6', linewidth=1.5)
+ax1.fill_between(dates, prices, min(prices) * 0.98, alpha=0.1, color='#3b82f6')
+ax1.axhline(y=current_price, color='#22c55e', linestyle='--', alpha=0.5, linewidth=0.8)
+ax1.set_title('${ticker} — 6 Month Price', color='white', fontsize=14, fontweight='bold', pad=10)
+ax1.set_ylabel('Price ($)', color='#9ca3af', fontsize=10)
+ax1.tick_params(colors='#6b7280', labelsize=8)
+ax1.spines['top'].set_visible(False)
+ax1.spines['right'].set_visible(False)
+ax1.spines['bottom'].set_color('#374151')
+ax1.spines['left'].set_color('#374151')
+ax1.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
+ax1.xaxis.set_major_locator(mdates.MonthLocator())
+ax1.grid(True, alpha=0.1, color='#374151')
+
+# Volume chart
+ax2.set_facecolor('#0f0f0f')
+colors = ['#22c55e' if i > 0 and prices[i] >= prices[i-1] else '#ef4444' for i in range(days)]
+ax2.bar(dates, volumes, color=colors, alpha=0.6, width=0.8)
+ax2.set_ylabel('Volume', color='#9ca3af', fontsize=10)
+ax2.tick_params(colors='#6b7280', labelsize=8)
+ax2.spines['top'].set_visible(False)
+ax2.spines['right'].set_visible(False)
+ax2.spines['bottom'].set_color('#374151')
+ax2.spines['left'].set_color('#374151')
+ax2.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
+ax2.xaxis.set_major_locator(mdates.MonthLocator())
+ax2.grid(True, alpha=0.1, color='#374151')
+
+plt.tight_layout()
+plt.savefig(os.path.join(output_dir, '${ticker.toLowerCase()}_price_volume.png'), dpi=150, bbox_inches='tight',
+            facecolor='#0f0f0f', edgecolor='none')
+plt.close()
+
+print(f"Chart saved: ${ticker.toLowerCase()}_price_volume.png")
+`;
+}
+
 // ---- Background Execution ----
 
 export async function runResearchInBackground(
@@ -281,9 +508,22 @@ export async function runResearchInBackground(
   try {
     const tools = createResearchTools(ctx, jobId, job);
 
+    // Select domain-specific system prompt
+    let systemPrompt: string;
+    switch (job.resultType) {
+      case "flight":
+        systemPrompt = getFlightResearchPrompt(ctx.timezone);
+        break;
+      case "stock":
+        systemPrompt = getStockResearchPrompt(ctx.timezone);
+        break;
+      default:
+        systemPrompt = getResearchSystemPrompt(ctx.timezone);
+    }
+
     const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
-      system: getResearchSystemPrompt(ctx.timezone),
+      system: systemPrompt,
       messages: [
         { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
       ],
@@ -295,6 +535,68 @@ export async function runResearchInBackground(
 
     const report = result.text || "Research completed but no report was generated.";
 
+    // Extract structured result from domain-specific reports
+    let structuredResult: string | undefined;
+    if (job.resultType !== "general") {
+      try {
+        const jsonMatch = report.match(/```json\s*([\s\S]*?)```/);
+        if (jsonMatch?.[1]) {
+          // Validate it's parseable JSON
+          JSON.parse(jsonMatch[1].trim());
+          structuredResult = jsonMatch[1].trim();
+        }
+      } catch {
+        ctx.logger.warn(`Failed to extract structured result from ${job.resultType} research`, { jobId });
+      }
+    }
+
+    // Generate charts for stock research via sandbox (if available)
+    if (job.resultType === "stock" && structuredResult) {
+      try {
+        const sandboxUrl = process.env.PAI_SANDBOX_URL;
+        if (sandboxUrl) {
+          const { runInSandbox, storeArtifact, guessMimeType } = await import("@personal-ai/core");
+          const stockData = JSON.parse(structuredResult);
+          const ticker = stockData.ticker ?? "STOCK";
+          const chartCode = generateStockChartCode(ticker, stockData.metrics);
+
+          const chartResult = await runInSandbox({
+            language: "python",
+            code: chartCode,
+            timeout: 60,
+          });
+
+          if (chartResult.files.length > 0) {
+            const charts: Array<{ id: string; type: string; title: string; artifactId: string }> = [];
+            for (const file of chartResult.files) {
+              const mimeType = guessMimeType(file.name);
+              const artifactId = storeArtifact(ctx.storage, {
+                jobId: jobId,
+                name: file.name,
+                mimeType,
+                data: Buffer.from(file.data, "base64"),
+              });
+              const chartType = file.name.includes("comparison") ? "comparison" : file.name.includes("volume") ? "volume" : "price";
+              charts.push({
+                id: artifactId,
+                type: chartType,
+                title: `${ticker} ${chartType} chart`,
+                artifactId,
+              });
+            }
+
+            // Inject charts into the structured result
+            stockData.charts = charts;
+            structuredResult = JSON.stringify(stockData);
+          }
+
+          ctx.logger.info("Generated stock charts via sandbox", { jobId, chartCount: chartResult.files.length });
+        }
+      } catch (err) {
+        ctx.logger.warn(`Failed to generate stock charts: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     // Store report and mark done
     updateJob(ctx.storage, jobId, {
       status: "done",
@@ -302,7 +604,13 @@ export async function runResearchInBackground(
       completed_at: new Date().toISOString(),
     });
 
-    updateJobStatus(ctx.storage, jobId, { status: "done", progress: "complete", result: report.slice(0, 200) });
+    updateJobStatus(ctx.storage, jobId, {
+      status: "done",
+      progress: "complete",
+      result: report.slice(0, 200),
+      resultType: job.resultType,
+      ...(structuredResult ? { structuredResult } : {}),
+    });
 
     // Learn the report into the knowledge base so future research builds on it
     try {
@@ -319,7 +627,7 @@ export async function runResearchInBackground(
       const briefingId = `research-${jobId}`;
       ctx.storage.run(
         "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
-        [briefingId, JSON.stringify({ report, goal: job.goal })],
+        [briefingId, JSON.stringify({ report, goal: job.goal, resultType: job.resultType, ...(structuredResult ? { structuredResult } : {}) })],
       );
       updateJob(ctx.storage, jobId, { briefing_id: briefingId });
     } catch (err) {

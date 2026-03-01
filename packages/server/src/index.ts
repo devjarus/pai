@@ -23,6 +23,7 @@ import { registerTaskRoutes } from "./routes/tasks.js";
 import { listSchedules, createSchedule, deleteSchedule, pauseSchedule, resumeSchedule } from "@personal-ai/plugin-schedules";
 import { registerInboxRoutes } from "./routes/inbox.js";
 import { registerJobRoutes } from "./routes/jobs.js";
+import { registerArtifactRoutes } from "./routes/artifacts.js";
 import { runAllMigrations } from "./migrations.js";
 import { WorkerLoop } from "./workers.js";
 
@@ -375,6 +376,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   registerTaskRoutes(app, serverCtx);
   registerInboxRoutes(app, serverCtx);
   registerJobRoutes(app, serverCtx);
+  registerArtifactRoutes(app, serverCtx);
 
   // --- Schedule REST endpoints ---
   app.get("/api/schedules", async () => {

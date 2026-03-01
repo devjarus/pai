@@ -44,3 +44,15 @@ export type { FormattedDateTime } from "./timezone.js";
 // Auth
 export { authMigrations, createOwner, getOwner, getOwnerByEmail, verifyOwnerPassword, hasOwner, getJwtSecret, resetOwnerPassword } from "./auth.js";
 export type { Owner } from "./auth.js";
+
+// Research schemas
+export { detectResearchDomain } from "./research-schemas.js";
+export type { FlightQuery, FlightOption, FlightReport, StockMetrics, ChartArtifact, StockReport, ResearchResult, ResearchResultType } from "./research-schemas.js";
+
+// Sandbox
+export { resolveSandboxUrl, sandboxHealth, runInSandbox } from "./sandbox.js";
+export type { SandboxResult, SandboxOptions } from "./sandbox.js";
+
+// Artifacts
+export { artifactMigrations, storeArtifact, getArtifact, listArtifacts, deleteJobArtifacts, guessMimeType } from "./artifacts.js";
+export type { Artifact, ArtifactMeta } from "./artifacts.js";
