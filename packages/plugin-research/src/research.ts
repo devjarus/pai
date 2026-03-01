@@ -2,8 +2,8 @@ import { generateText, tool, stepCountIs } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import type { Storage, LLMClient, Logger } from "@personal-ai/core";
-import { formatDateTime } from "@personal-ai/core";
+import type { Storage, LLMClient, Logger, ResearchResultType } from "@personal-ai/core";
+import { formatDateTime, detectResearchDomain } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 
@@ -14,6 +14,7 @@ export interface ResearchJob {
   threadId: string | null;
   goal: string;
   status: "pending" | "running" | "done" | "failed";
+  resultType: ResearchResultType;
   budgetMaxSearches: number;
   budgetMaxPages: number;
   searchesUsed: number;
@@ -30,6 +31,7 @@ interface ResearchJobRow {
   thread_id: string | null;
   goal: string;
   status: string;
+  result_type: string | null;
   budget_max_searches: number;
   budget_max_pages: number;
   searches_used: number;
@@ -59,13 +61,14 @@ export interface ResearchContext {
 
 export function createResearchJob(
   storage: Storage,
-  opts: { goal: string; threadId: string | null; maxSearches?: number; maxPages?: number },
+  opts: { goal: string; threadId: string | null; maxSearches?: number; maxPages?: number; resultType?: ResearchResultType },
 ): string {
   const id = nanoid();
+  const detectedType = opts.resultType ?? detectResearchDomain(opts.goal);
   storage.run(
-    `INSERT INTO research_jobs (id, thread_id, goal, status, budget_max_searches, budget_max_pages, created_at)
-     VALUES (?, ?, ?, 'pending', ?, ?, datetime('now'))`,
-    [id, opts.threadId, opts.goal, opts.maxSearches ?? 5, opts.maxPages ?? 3],
+    `INSERT INTO research_jobs (id, thread_id, goal, status, result_type, budget_max_searches, budget_max_pages, created_at)
+     VALUES (?, ?, ?, 'pending', ?, ?, ?, datetime('now'))`,
+    [id, opts.threadId, opts.goal, detectedType, opts.maxSearches ?? 5, opts.maxPages ?? 3],
   );
   return id;
 }
@@ -82,6 +85,7 @@ export function getResearchJob(storage: Storage, id: string): ResearchJob | null
     threadId: row.thread_id,
     goal: row.goal,
     status: row.status as ResearchJob["status"],
+    resultType: (row.result_type as ResearchResultType) ?? "general",
     budgetMaxSearches: row.budget_max_searches,
     budgetMaxPages: row.budget_max_pages,
     searchesUsed: row.searches_used,
@@ -103,6 +107,7 @@ export function listResearchJobs(storage: Storage): ResearchJob[] {
     threadId: row.thread_id,
     goal: row.goal,
     status: row.status as ResearchJob["status"],
+    resultType: (row.result_type as ResearchResultType) ?? "general",
     budgetMaxSearches: row.budget_max_searches,
     budgetMaxPages: row.budget_max_pages,
     searchesUsed: row.searches_used,
@@ -174,6 +179,145 @@ Your final response MUST be a structured markdown report:
 You have a limited budget for searches and page reads. When a tool tells you the budget is exhausted, stop searching and synthesize what you have into the report.
 
 Be thorough but efficient. Focus on the most relevant and authoritative sources.`;
+}
+
+function getFlightResearchPrompt(timezone?: string): string {
+  const dt = formatDateTime(timezone);
+  return `You are a Flight Research Agent. Your job is to find the best flight options for the user.
+
+## Current Date
+Today is ${dt.date} (${dt.year}).
+
+## Process
+1. Search for flights using web_search with specific queries like "flights [origin] to [destination] [dates] site:google.com/flights" or "cheap flights [route] [month year]"
+2. Read flight comparison pages using read_page to extract prices, airlines, durations
+3. Search for the specific airlines and routes to find booking links
+4. Compile findings into a structured report
+
+## Report Format
+Your final response MUST be valid JSON wrapped in a markdown code fence:
+
+\`\`\`json
+{
+  "query": {
+    "origin": "SFO",
+    "destination": "NRT",
+    "departDate": "2026-03-15",
+    "returnDate": "2026-03-22",
+    "passengers": 1,
+    "maxPrice": 1200,
+    "nonstopOnly": false,
+    "cabinClass": "economy"
+  },
+  "options": [
+    {
+      "airline": "ANA",
+      "flightNo": "NH7",
+      "departure": "2026-03-15T11:25:00",
+      "arrival": "2026-03-16T15:25:00",
+      "duration": "11h 0m",
+      "stops": 0,
+      "price": 987,
+      "currency": "USD",
+      "returnDeparture": "2026-03-22T17:30:00",
+      "returnArrival": "2026-03-22T10:15:00",
+      "returnDuration": "9h 45m",
+      "returnStops": 0,
+      "baggage": "1 checked bag included",
+      "refundable": true,
+      "bookingUrl": "https://www.ana.co.jp",
+      "score": 94,
+      "scoreReason": "Cheapest nonstop option with included bags"
+    }
+  ],
+  "searchedAt": "${new Date().toISOString()}",
+  "sources": ["google.com/flights", "kayak.com"],
+  "disclaimer": "Prices are approximate and may vary. Always verify on the airline website before booking."
+}
+\`\`\`
+
+## Scoring Rules
+- Score 0-100 based on: price (40%), duration (20%), stops (20%), amenities (10%), schedule (10%)
+- Nonstop flights get +15 bonus if user prefers nonstop
+- Cheapest option gets +10 bonus
+- Sort options by score descending
+
+## Budget
+You have limited searches and page reads. Be efficient — focus on the most useful flight aggregator sites.`;
+}
+
+function getStockResearchPrompt(timezone?: string): string {
+  const dt = formatDateTime(timezone);
+  return `You are a Stock Research Agent. Your job is to analyze a stock and produce an investment thesis.
+
+## Current Date
+Today is ${dt.date} (${dt.year}).
+
+## Process
+1. Search for the stock's current price, key metrics, and recent news
+2. Read financial analysis pages for detailed metrics
+3. Search for analyst opinions and price targets
+4. Check for recent earnings reports and guidance
+5. Compile findings into a structured report
+
+## Report Format
+Your final response MUST be valid JSON wrapped in a markdown code fence:
+
+\`\`\`json
+{
+  "ticker": "NVDA",
+  "company": "NVIDIA Corporation",
+  "thesis": "Strong AI/data center tailwinds support continued growth, but elevated valuation limits near-term upside.",
+  "confidence": 72,
+  "verdict": "buy",
+  "metrics": {
+    "ticker": "NVDA",
+    "company": "NVIDIA Corporation",
+    "price": 131.42,
+    "currency": "USD",
+    "pe": 58.3,
+    "marketCap": "$3.2T",
+    "high52w": 153.13,
+    "low52w": 75.61,
+    "ytdReturn": "+12.4%",
+    "revGrowth": "+94% YoY",
+    "epsActual": 2.25,
+    "epsBeat": "+8%"
+  },
+  "risks": [
+    "Valuation premium (P/E > 50x)",
+    "Export restrictions to China",
+    "Customer concentration (top 5 = 40% revenue)"
+  ],
+  "catalysts": [
+    "AI infrastructure spending accelerating",
+    "New Blackwell architecture ramping",
+    "Data center revenue growing 100%+ YoY"
+  ],
+  "sources": [
+    {"title": "Yahoo Finance - NVDA", "url": "https://finance.yahoo.com/quote/NVDA"},
+    {"title": "Reuters - NVIDIA Q4 results", "url": "https://reuters.com/technology/nvidia-q4-2026"}
+  ],
+  "charts": [],
+  "analyzedAt": "${new Date().toISOString()}"
+}
+\`\`\`
+
+## Verdict Scale
+- "strong_buy": Very high conviction, significantly undervalued
+- "buy": Positive outlook, good risk/reward
+- "hold": Fair value, wait for better entry
+- "sell": Overvalued or deteriorating fundamentals
+- "strong_sell": High conviction negative, significant downside risk
+
+## Confidence Scale
+- 0-30: Low confidence, limited data
+- 31-60: Moderate confidence, mixed signals
+- 61-80: Good confidence, clear thesis
+- 81-100: High confidence, strong supporting data
+
+## Budget
+You have limited searches and page reads. Prioritize authoritative financial sources.`;
 }
 
 // ---- Budget-Limited Tool Factories ----
@@ -281,9 +425,22 @@ export async function runResearchInBackground(
   try {
     const tools = createResearchTools(ctx, jobId, job);
 
+    // Select domain-specific system prompt
+    let systemPrompt: string;
+    switch (job.resultType) {
+      case "flight":
+        systemPrompt = getFlightResearchPrompt(ctx.timezone);
+        break;
+      case "stock":
+        systemPrompt = getStockResearchPrompt(ctx.timezone);
+        break;
+      default:
+        systemPrompt = getResearchSystemPrompt(ctx.timezone);
+    }
+
     const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
-      system: getResearchSystemPrompt(ctx.timezone),
+      system: systemPrompt,
       messages: [
         { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
       ],
@@ -295,6 +452,21 @@ export async function runResearchInBackground(
 
     const report = result.text || "Research completed but no report was generated.";
 
+    // Extract structured result from domain-specific reports
+    let structuredResult: string | undefined;
+    if (job.resultType !== "general") {
+      try {
+        const jsonMatch = report.match(/```json\s*([\s\S]*?)```/);
+        if (jsonMatch?.[1]) {
+          // Validate it's parseable JSON
+          JSON.parse(jsonMatch[1].trim());
+          structuredResult = jsonMatch[1].trim();
+        }
+      } catch {
+        ctx.logger.warn(`Failed to extract structured result from ${job.resultType} research`, { jobId });
+      }
+    }
+
     // Store report and mark done
     updateJob(ctx.storage, jobId, {
       status: "done",
@@ -302,7 +474,13 @@ export async function runResearchInBackground(
       completed_at: new Date().toISOString(),
     });
 
-    updateJobStatus(ctx.storage, jobId, { status: "done", progress: "complete", result: report.slice(0, 200) });
+    updateJobStatus(ctx.storage, jobId, {
+      status: "done",
+      progress: "complete",
+      result: report.slice(0, 200),
+      resultType: job.resultType,
+      ...(structuredResult ? { structuredResult } : {}),
+    });
 
     // Learn the report into the knowledge base so future research builds on it
     try {
@@ -319,7 +497,7 @@ export async function runResearchInBackground(
       const briefingId = `research-${jobId}`;
       ctx.storage.run(
         "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
-        [briefingId, JSON.stringify({ report, goal: job.goal })],
+        [briefingId, JSON.stringify({ report, goal: job.goal, resultType: job.resultType, ...(structuredResult ? { structuredResult } : {}) })],
       );
       updateJob(ctx.storage, jobId, { briefing_id: briefingId });
     } catch (err) {

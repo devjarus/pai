@@ -25,6 +25,10 @@ export const researchMigrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_research_jobs_status ON research_jobs(status);
     `,
   },
+  {
+    version: 2,
+    up: `ALTER TABLE research_jobs ADD COLUMN result_type TEXT DEFAULT 'general';`,
+  },
 ];
 
 export const researchPlugin: Plugin = {
