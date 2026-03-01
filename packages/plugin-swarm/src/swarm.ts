@@ -115,8 +115,8 @@ export async function runSwarmInBackground(
     updateSwarmJob(ctx.storage, jobId, { status: "synthesizing" });
     updateJobStatus(ctx.storage, jobId, { progress: "synthesizing results" });
 
-    const synthesis = await synthesize(ctx, jobId, job.goal);
-    const report = synthesis || "Swarm completed but no synthesis was generated.";
+    const { synthesis: rawSynthesis, structuredResult } = await synthesize(ctx, jobId, job.goal, job.resultType);
+    const report = rawSynthesis || "Swarm completed but no synthesis was generated.";
 
     updateSwarmJob(ctx.storage, jobId, {
       synthesis: report,
@@ -133,9 +133,15 @@ export async function runSwarmInBackground(
     // Create Inbox briefing
     const briefingId = `swarm-${jobId}`;
     try {
+      const sections = JSON.stringify({
+        report,
+        goal: job.goal,
+        resultType: job.resultType || "general",
+        structuredResult: structuredResult ?? undefined,
+      });
       ctx.storage.run(
         "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
-        [briefingId, JSON.stringify({ report, goal: job.goal, resultType: job.resultType || "general" })],
+        [briefingId, sections],
       );
       updateSwarmJob(ctx.storage, jobId, { briefing_id: briefingId });
     } catch (err) {
@@ -474,7 +480,12 @@ function createSubAgentTools(
 
 // ---- Phase 3: Synthesis ----
 
-async function synthesize(ctx: SwarmContext, jobId: string, goal: string): Promise<string> {
+async function synthesize(
+  ctx: SwarmContext,
+  jobId: string,
+  goal: string,
+  resultType?: string,
+): Promise<{ synthesis: string; structuredResult: string | null }> {
   const agents = getSwarmAgents(ctx.storage, jobId);
   const blackboard = getBlackboardEntries(ctx.storage, jobId);
 
@@ -490,7 +501,7 @@ async function synthesize(ctx: SwarmContext, jobId: string, goal: string): Promi
 
   const result = await generateText({
     model: ctx.llm.getModel() as LanguageModel,
-    system: getSynthesizerPrompt(ctx.timezone),
+    system: getSynthesizerPrompt(resultType, ctx.timezone),
     messages: [
       {
         role: "user",
@@ -500,5 +511,25 @@ async function synthesize(ctx: SwarmContext, jobId: string, goal: string): Promi
     maxRetries: 1,
   });
 
-  return result.text || "Synthesis produced no output.";
+  const text = result.text || "Synthesis produced no output.";
+
+  // Extract structured JSON from code fence if present
+  let structuredResult: string | null = null;
+  let synthesis = text;
+
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/);
+  if (jsonMatch?.[1]) {
+    try {
+      // Validate it's parseable JSON
+      JSON.parse(jsonMatch[1].trim());
+      structuredResult = jsonMatch[1].trim();
+      // Remove the JSON code fence from the markdown report
+      synthesis = text.replace(/```json\s*[\s\S]*?```/, "").trim();
+    } catch {
+      // Invalid JSON — keep original text, no structured result
+      ctx.logger.warn("Synthesizer produced invalid JSON in code fence, ignoring structured output");
+    }
+  }
+
+  return { synthesis, structuredResult };
 }

@@ -242,8 +242,10 @@ Today is ${dt.date} (${dt.year}). Always include the current year in search quer
 - Budget your searches carefully — you have limited web searches and page reads`;
 }
 
-export function getSynthesizerPrompt(timezone?: string): string {
+export function getSynthesizerPrompt(resultType?: string, timezone?: string): string {
   const dt = formatDateTime(timezone);
+
+  const structuredBlock = getStructuredOutputGuidance(resultType);
 
   return `You are a Synthesis Agent. Your job is to read all sub-agent results and blackboard entries, then produce a unified, well-structured report.
 
@@ -275,10 +277,126 @@ Produce a comprehensive markdown report:
 
 ## Sources
 [URLs and references from all agents]
-
+${structuredBlock}
 ## Rules
 - Synthesize, don't just concatenate — organize by theme, not by agent
 - Resolve contradictions where possible, flag them where not
 - Highlight the most important and actionable findings
 - Keep the report focused and readable`;
+}
+
+function getStructuredOutputGuidance(resultType?: string): string {
+  switch (resultType) {
+    case "flight":
+      return `
+## Structured Data
+After the markdown report above, include a structured data block with the flight options found:
+
+\`\`\`json
+{
+  "type": "flight",
+  "routes": [
+    {
+      "airline": "string",
+      "flightNumber": "string or null",
+      "origin": "string (airport code)",
+      "destination": "string (airport code)",
+      "departure": "string (ISO datetime or description)",
+      "arrival": "string (ISO datetime or description)",
+      "duration": "string",
+      "stops": 0,
+      "price": "string (with currency)",
+      "class": "string (economy/business/first)",
+      "bookingUrl": "string or null"
+    }
+  ],
+  "cheapest": "string (airline + price)",
+  "fastest": "string (airline + duration)",
+  "recommended": "string (brief recommendation)"
+}
+\`\`\`
+
+Include all flight options found. Use null for unknown fields.
+`;
+    case "stock":
+      return `
+## Structured Data
+After the markdown report above, include a structured data block with the stock analysis:
+
+\`\`\`json
+{
+  "type": "stock",
+  "ticker": "string",
+  "companyName": "string",
+  "price": "string (with currency)",
+  "marketCap": "string",
+  "peRatio": "string or null",
+  "eps": "string or null",
+  "dividendYield": "string or null",
+  "yearRange": "string (52-week range)",
+  "revenueGrowth": "string or null",
+  "analystConsensus": "string (buy/hold/sell or null)",
+  "priceTarget": "string or null",
+  "keyMetrics": { "metricName": "value" },
+  "risks": ["string"],
+  "catalysts": ["string"]
+}
+\`\`\`
+
+Use null for metrics that were not found.
+`;
+    case "crypto":
+      return `
+## Structured Data
+After the markdown report above, include a structured data block with the crypto analysis:
+
+\`\`\`json
+{
+  "type": "crypto",
+  "token": "string (symbol)",
+  "name": "string",
+  "price": "string (with currency)",
+  "marketCap": "string",
+  "volume24h": "string",
+  "circulatingSupply": "string or null",
+  "totalSupply": "string or null",
+  "allTimeHigh": "string or null",
+  "tvl": "string or null",
+  "chain": "string or null",
+  "keyMetrics": { "metricName": "value" },
+  "risks": ["string"],
+  "catalysts": ["string"]
+}
+\`\`\`
+
+Use null for metrics that were not found.
+`;
+    case "comparison":
+      return `
+## Structured Data
+After the markdown report above, include a structured data block with the comparison:
+
+\`\`\`json
+{
+  "type": "comparison",
+  "entities": [
+    {
+      "name": "string",
+      "category": "string",
+      "pros": ["string"],
+      "cons": ["string"],
+      "keyFacts": { "factName": "value" }
+    }
+  ],
+  "winner": "string or null (if applicable)",
+  "recommendation": "string (brief recommendation)",
+  "criteria": ["string (comparison dimensions used)"]
+}
+\`\`\`
+
+Include all entities compared. Use null where no clear winner exists.
+`;
+    default:
+      return "";
+  }
 }
