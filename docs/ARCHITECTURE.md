@@ -47,14 +47,18 @@
 
 ```
 packages/
-  core/               Config, Storage (auto-backup + transaction-wrapped migrations), LLM Client (humanizeError), Logger, Memory (classifyRelationship), Knowledge, Threads, Plugin interfaces
+  core/               Config, Storage, LLM Client, Logger, Memory, Knowledge, Threads, Plugin interfaces, Research Schemas, Sandbox Client, Artifacts
   cli/                Commander.js CLI + MCP server (stdio, 19 tools) + `pai init`
   plugin-tasks/       Tasks + Goals with AI prioritization, clearAllTasks
-  plugin-assistant/   Personal Assistant agent — system prompt, AI SDK tools, afterResponse hook
+  plugin-assistant/   Personal Assistant agent — system prompt, AI SDK tools, afterResponse hook, run_code sandbox tool
   plugin-curator/     Memory Curator agent — health analysis, dedup, contradiction resolution
+  plugin-research/    Background research — domain detection (flight/stock/general), domain-specific LLM prompts, structured JSON output, chart generation via sandbox
+  plugin-schedules/   Recurring scheduled research jobs
   plugin-telegram/    Telegram bot — grammY, standalone entry point, chat pipeline
-  server/             Fastify API — REST + SSE + static UI + auth (JWT) + WorkerLoop (briefing, schedules, learning) + server hardening
-  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Inbox, Chat, Memory, Knowledge, Tasks, Jobs, Settings, Timeline)
+  server/             Fastify API — REST + SSE + static UI + auth (JWT) + WorkerLoop + artifacts serving + server hardening
+  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Inbox, Chat, Memory, Knowledge, Tasks, Jobs, Settings, Timeline) + ToolFlightResults + ToolStockReport
+
+sandbox/              Docker sidecar — Python 3.12 + Node.js 20 for isolated code execution (matplotlib, pandas, plotly, yfinance). Opt-in via `docker compose --profile sandbox`.
 ```
 
 ---
@@ -451,9 +455,12 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `GET` | `/api/inbox/history` | List all briefings |
 | `GET` | `/api/inbox/:id` | Specific briefing (detail view) |
 | `POST` | `/api/inbox/clear` | Clear all briefings |
-| `GET` | `/api/jobs` | List background jobs (crawl + research) |
-| `GET` | `/api/jobs/:id` | Job detail |
+| `POST` | `/api/inbox/:id/rerun` | Re-run a research report with same goal and domain type |
+| `GET` | `/api/jobs` | List background jobs (crawl + research) with `resultType` |
+| `GET` | `/api/jobs/:id` | Job detail with `resultType` and `structuredResult` |
 | `POST` | `/api/jobs/clear` | Clear completed jobs |
+| `GET` | `/api/jobs/:jobId/artifacts` | List artifacts for a job |
+| `GET` | `/api/artifacts/:id` | Serve artifact binary (charts, images) with correct MIME type |
 | `GET` | `/api/knowledge/sources` | List knowledge sources |
 | `GET` | `/api/knowledge/search?q=` | Search knowledge base |
 | `POST` | `/api/knowledge/learn` | Learn from URL |
@@ -645,8 +652,10 @@ learning_watermarks (source TEXT PK, last_id TEXT, last_ts TEXT, updated_at TEXT
 
 **Multi-stage Dockerfile:** Builder (Node 20 Alpine + pnpm + build tools) → Runtime (Alpine + dist + prod deps only). Target <400MB.
 
-**docker-compose.yml:** Two services with Docker Compose profiles:
+**docker-compose.yml:** Services with Docker Compose profiles:
 - `pai` — always starts, configurable via env vars (`PAI_LLM_PROVIDER`, `PAI_LLM_BASE_URL`, `PAI_LLM_API_KEY`)
+- `searxng` — always starts, web search backend (SearXNG on port 8080)
+- `sandbox` — `profiles: [sandbox]`, only starts with `--profile sandbox`. Python/Node code execution sidecar for chart generation and data analysis. Set `PAI_SANDBOX_URL=http://sandbox:8888` on the `pai` service.
 - `ollama` — `profiles: [local]`, only starts with `--profile local`
 
 **install.sh:** Interactive installer — checks Docker, asks local vs cloud, configures provider, saves `.env`, starts containers.

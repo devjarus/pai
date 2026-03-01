@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Domain-specific research agents** — Research jobs now detect flight and stock queries automatically (via `detectResearchDomain()`) and use domain-specific LLM prompts that produce structured JSON results instead of plain markdown. Flight research returns `FlightReport` (scored options with prices, durations, booking links). Stock research returns `StockReport` (verdict, confidence, metrics, catalysts, risks, sources). General research unchanged. New `resultType` field on `BackgroundJob` and `ResearchJob`.
+- **Flight results UI card** (`ToolFlightResults`) — Rich card in Inbox detail view showing ranked flight options with airline, times, duration, baggage, refund policy, score, and booking CTAs. Collapsible with route header. Markdown report rendered below.
+- **Stock report UI card** (`ToolStockReport`) — Rich card with verdict badge (Strong Buy/Buy/Hold/Sell), confidence %, key metrics grid, catalysts, risks, sources with external links, and chart rendering.
+- **Sandbox code execution** — Docker sidecar (`sandbox/`) running Python 3.12 + Node.js 20 for isolated code execution. HTTP API on port 8888. Includes matplotlib, pandas, numpy, plotly, yfinance. `run_code` tool in the assistant (gated by `PAI_SANDBOX_URL`). Output files saved as artifacts.
+- **Artifact storage** — SQLite-backed binary blob storage for charts and output files. `GET /api/artifacts/:id` serves artifacts with correct MIME types. `GET /api/jobs/:jobId/artifacts` lists artifacts per job.
+- **Stock chart generation** — When sandbox is available, stock research automatically generates dark-themed matplotlib price+volume charts, stored as artifacts and referenced in the report.
+- **Inbox rerun** — `POST /api/inbox/:id/rerun` re-runs a research report with the same goal and domain type. "Rerun" button in Inbox detail view.
+- **Jobs domain badges** — Jobs page shows "flight" or "stock" badges next to research jobs.
+- **Typed research schemas** (`packages/core/src/research-schemas.ts`) — `FlightQuery`, `FlightOption`, `FlightReport`, `StockMetrics`, `StockReport`, `ResearchResult` types shared across core, plugins, and UI.
+- **Docker sandbox service** — `docker compose --profile sandbox up -d` starts the sandbox sidecar. Opt-in via profile, 512MB memory limit, 1 CPU.
+
 ### Changed
 
 - **SearXNG web search** — Replaced Brave Search HTML scraping (broken by 429 rate limits) with self-hosted SearXNG JSON API. No rate limits, supports search categories (general, news, IT, images, videos, social media, files). SearXNG runs as a Docker sidecar (~50-100MB RAM). URL auto-detected in Docker/Railway or set via `PAI_SEARCH_URL`.
