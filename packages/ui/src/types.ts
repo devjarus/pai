@@ -198,7 +198,7 @@ export interface Briefing {
 export interface ResearchBriefing {
   id: string;
   generatedAt: string;
-  sections: { report: string; goal: string };
+  sections: { report: string; goal: string; resultType?: string; structuredResult?: string; renderSpec?: string };
   status: string;
   type: "research";
 }

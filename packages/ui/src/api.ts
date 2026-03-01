@@ -435,7 +435,7 @@ export function clearInbox(): Promise<{ ok: boolean; cleared: number }> {
   return request("/inbox/clear", { method: "POST", body: "{}" });
 }
 
-export function getResearchBriefings(): Promise<{ briefings: Array<{ id: string; generatedAt: string; sections: { report: string; goal: string }; status: string; type: "research" }> }> {
+export function getResearchBriefings(): Promise<{ briefings: Array<{ id: string; generatedAt: string; sections: { report: string; goal: string; resultType?: string; structuredResult?: string; renderSpec?: string }; status: string; type: "research" }> }> {
   return request("/inbox/research");
 }
 
@@ -443,9 +443,9 @@ export function getResearchBriefings(): Promise<{ briefings: Array<{ id: string;
 
 export interface BackgroundJobInfo {
   id: string;
-  type: "crawl" | "research";
+  type: "crawl" | "research" | "swarm";
   label: string;
-  status: "pending" | "running" | "done" | "error" | "failed";
+  status: "pending" | "running" | "done" | "error" | "failed" | "planning" | "synthesizing";
   progress: string;
   startedAt: string;
   completedAt?: string | null;
@@ -467,6 +467,11 @@ export interface ResearchJobDetail {
   createdAt: string;
   completedAt: string | null;
   resultType?: "flight" | "stock" | "general";
+  // Swarm-specific fields (present when job is a swarm)
+  plan?: unknown[] | null;
+  agentCount?: number;
+  agentsDone?: number;
+  synthesis?: string | null;
 }
 
 export function getJobs(): Promise<{ jobs: BackgroundJobInfo[] }> {

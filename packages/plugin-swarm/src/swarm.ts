@@ -115,7 +115,7 @@ export async function runSwarmInBackground(
     updateSwarmJob(ctx.storage, jobId, { status: "synthesizing" });
     updateJobStatus(ctx.storage, jobId, { progress: "synthesizing results" });
 
-    const { synthesis: rawSynthesis, structuredResult } = await synthesize(ctx, jobId, job.goal, job.resultType);
+    const { synthesis: rawSynthesis, structuredResult, renderSpec } = await synthesize(ctx, jobId, job.goal, job.resultType);
     const report = rawSynthesis || "Swarm completed but no synthesis was generated.";
 
     updateSwarmJob(ctx.storage, jobId, {
@@ -138,6 +138,7 @@ export async function runSwarmInBackground(
         goal: job.goal,
         resultType: job.resultType || "general",
         structuredResult: structuredResult ?? undefined,
+        renderSpec: renderSpec ?? undefined,
       });
       ctx.storage.run(
         "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
@@ -485,7 +486,7 @@ async function synthesize(
   jobId: string,
   goal: string,
   resultType?: string,
-): Promise<{ synthesis: string; structuredResult: string | null }> {
+): Promise<{ synthesis: string; structuredResult: string | null; renderSpec: string | null }> {
   const agents = getSwarmAgents(ctx.storage, jobId);
   const blackboard = getBlackboardEntries(ctx.storage, jobId);
 
@@ -515,6 +516,7 @@ async function synthesize(
 
   // Extract structured JSON from code fence if present
   let structuredResult: string | null = null;
+  let renderSpec: string | null = null;
   let synthesis = text;
 
   const jsonMatch = text.match(/```json\s*([\s\S]*?)```/);
@@ -531,5 +533,18 @@ async function synthesize(
     }
   }
 
-  return { synthesis, structuredResult };
+  // Extract json-render UI spec if present
+  const specMatch = synthesis.match(/```jsonrender\s*([\s\S]*?)```/);
+  if (specMatch?.[1]) {
+    try {
+      JSON.parse(specMatch[1].trim());
+      renderSpec = specMatch[1].trim();
+      // Remove the jsonrender code fence from the markdown report
+      synthesis = synthesis.replace(/```jsonrender\s*[\s\S]*?```/, "").trim();
+    } catch {
+      ctx.logger.warn("Synthesizer produced invalid jsonrender spec, ignoring");
+    }
+  }
+
+  return { synthesis, structuredResult, renderSpec };
 }
