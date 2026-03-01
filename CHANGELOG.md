@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Jobs domain badges** — Jobs page shows "flight" or "stock" badges next to research jobs.
 - **Typed research schemas** (`packages/core/src/research-schemas.ts`) — `FlightQuery`, `FlightOption`, `FlightReport`, `StockMetrics`, `StockReport`, `ResearchResult` types shared across core, plugins, and UI.
 - **Docker sandbox service** — `docker compose --profile sandbox up -d` starts the sandbox sidecar. Opt-in via profile, 512MB memory limit, 1 CPU.
+- **Dynamic agent registry** — User-created agents stored in SQLite (`dynamic_agents` table). Full CRUD API: `POST/GET/PUT/DELETE /api/agents/dynamic/*`. Dynamic agents appear in the agent picker alongside built-in agents (assistant, curator).
+- **`create_agent` tool** — Natural language agent creation via chat. The assistant generates a system prompt, description, and custom tools (with sandbox-executed Python/Node code) from a user's request. Created agents are immediately usable from the agent picker.
+- **Dynamic tool execution** — Custom tools defined as code strings (Python/Node) execute in the sandbox sidecar. Tool input schemas are defined declaratively; arguments are injected into the sandboxed code. Results are parsed from stdout.
 
 ### Changed
 
