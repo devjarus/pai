@@ -6,6 +6,7 @@ import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { threadKeys } from "@/hooks/use-threads";
+import { agentKeys } from "@/hooks/use-agents";
 
 interface ChatRuntimeProviderProps {
   activeThreadId: string | null;
@@ -144,6 +145,7 @@ export function ChatRuntimeProvider({
     if (chatHelpers.status === "ready" && (prev === "streaming" || prev === "submitted") && activeThreadIdRef.current) {
       const t1 = setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: threadKeys.all });
+        queryClient.invalidateQueries({ queryKey: agentKeys.all });
       }, 500);
       const t2 = setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: threadKeys.all });

@@ -75,7 +75,7 @@ export function ChatHeader({
             <option value="">Default Agent</option>
             {agents.map((a) => (
               <option key={a.name} value={a.name}>
-                {a.displayName ?? a.name}
+                {a.displayName ?? a.name}{a.dynamic ? " ✦" : ""}
               </option>
             ))}
           </select>

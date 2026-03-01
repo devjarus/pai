@@ -10,6 +10,6 @@ export function useAgents() {
   return useQuery({
     queryKey: agentKeys.list(),
     queryFn: () => getAgents(),
-    staleTime: Infinity,
+    staleTime: 30_000,
   });
 }
