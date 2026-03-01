@@ -325,6 +325,7 @@ export function updateConfig(updates: {
   dataDir?: string;
   telegramToken?: string;
   telegramEnabled?: boolean;
+  debugResearch?: boolean;
 }): Promise<ConfigInfo> {
   return request<ConfigInfo>("/config", {
     method: "PUT",

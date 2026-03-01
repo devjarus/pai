@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch } from "@/hooks";
+import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig } from "@/hooks";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -104,6 +104,7 @@ function InboxDetail({ id }: { id: string }) {
   const { markRead } = useContext(ReadContext);
   const createThreadMut = useCreateThread();
   const rerunMutation = useRerunResearch();
+  const { data: configData } = useConfig();
 
   const { data: briefingData, isLoading: loading } = useInboxBriefing(id);
 
@@ -237,7 +238,7 @@ function InboxDetail({ id }: { id: string }) {
               structuredResult={(sections as Record<string, unknown>).structuredResult}
               markdown={sections.report}
               resultType={(sections as Record<string, unknown>).resultType as string | undefined}
-              debug={false}
+              debug={configData?.debugResearch ?? false}
             />
           </div>
         )}

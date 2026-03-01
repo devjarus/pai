@@ -39,6 +39,7 @@ export function useUpdateConfig() {
       telegramEnabled?: boolean;
       backgroundLearning?: boolean;
       briefingEnabled?: boolean;
+      debugResearch?: boolean;
     }) => updateConfig(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: configKeys.all });

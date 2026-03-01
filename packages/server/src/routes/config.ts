@@ -44,6 +44,7 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
       backgroundLearning: (workers as Record<string, unknown> | undefined)?.backgroundLearning !== false,
       briefing: (workers as Record<string, unknown> | undefined)?.briefing !== false,
     },
+    debugResearch: !!config.debugResearch,
   };
 }
 
@@ -89,6 +90,7 @@ const updateConfigSchema = z.object({
   timezone: z.string().optional(),
   backgroundLearning: z.boolean().optional(),
   briefingEnabled: z.boolean().optional(),
+  debugResearch: z.boolean().optional(),
 });
 
 export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerContext): void {
@@ -165,6 +167,11 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     // Timezone
     if (body.timezone !== undefined) {
       update.timezone = body.timezone || undefined;
+    }
+
+    // Debug research toggle
+    if (body.debugResearch !== undefined) {
+      update.debugResearch = body.debugResearch;
     }
 
     // Telegram settings

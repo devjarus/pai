@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { BackgroundJobInfo, BlackboardEntry } from "../api";
-import { useJobs, useJobDetail, useJobBlackboard, useClearJobs } from "@/hooks";
+import { useJobs, useJobDetail, useJobBlackboard, useClearJobs, useConfig } from "@/hooks";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
 
 const statusStyles: Record<string, string> = {
@@ -107,6 +107,7 @@ const blackboardTypeStyles: Record<string, string> = {
 };
 
 export default function Jobs() {
+  const { data: configData } = useConfig();
   const { data: jobsData, isLoading, isRefetching, refetch } = useJobs();
   const jobs = jobsData?.jobs ?? [];
 
@@ -322,7 +323,7 @@ export default function Jobs() {
                     spec={renderSpec}
                     markdown={cleanMarkdown}
                     resultType={selectedJob.resultType}
-                    debug={false}
+                    debug={configData?.debugResearch ?? false}
                   />
                 </div>
               ) : (

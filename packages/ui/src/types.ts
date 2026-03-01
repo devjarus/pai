@@ -104,6 +104,7 @@ export interface ConfigInfo {
     briefing?: boolean;
     lastRun?: Record<string, string | null>;
   };
+  debugResearch?: boolean;
   envOverrides?: string[];
 }
 

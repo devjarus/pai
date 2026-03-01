@@ -54,6 +54,9 @@ export default function Settings() {
   const [bgLearningEnabled, setBgLearningEnabled] = useState(true);
   const [briefingEnabled, setBriefingEnabled] = useState(true);
 
+  // Debug settings
+  const [debugResearch, setDebugResearch] = useState(false);
+
   // Env overrides (fields controlled by env vars on the server)
   const [envOverrides, setEnvOverrides] = useState<string[]>([]);
 
@@ -77,6 +80,7 @@ export default function Settings() {
       setTelegramEnabled(config.telegram?.enabled ?? false);
       setBgLearningEnabled(config.workers?.backgroundLearning !== false);
       setBriefingEnabled(config.workers?.briefing !== false);
+      setDebugResearch(config.debugResearch ?? false);
       setEnvOverrides(config.envOverrides ?? []);
     }
   }, [config]);
@@ -97,6 +101,7 @@ export default function Settings() {
       if (timezone !== (config.timezone ?? "")) updates.timezone = timezone;
       if (bgLearningEnabled !== (config.workers?.backgroundLearning !== false)) updates.backgroundLearning = bgLearningEnabled;
       if (briefingEnabled !== (config.workers?.briefing !== false)) updates.briefingEnabled = briefingEnabled;
+      if (debugResearch !== (config.debugResearch ?? false)) updates.debugResearch = debugResearch;
 
       if (Object.keys(updates).length === 0) {
         setEditing(false);
@@ -111,7 +116,7 @@ export default function Settings() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save configuration");
     }
-  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, config, updateConfigMut]);
+  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, debugResearch, config, updateConfigMut]);
 
   const handleCancel = useCallback(() => {
     if (config) {
@@ -128,6 +133,7 @@ export default function Settings() {
     setTelegramEnabled(config?.telegram?.enabled ?? false);
     setBgLearningEnabled(config?.workers?.backgroundLearning !== false);
     setBriefingEnabled(config?.workers?.briefing !== false);
+    setDebugResearch(config?.debugResearch ?? false);
     setEditing(false);
   }, [config]);
 
@@ -565,6 +571,44 @@ export default function Settings() {
                   </span>
                 </div>
               )}
+
+              {/* Debug Research */}
+              <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="flex items-center gap-1 text-xs text-foreground">
+                    Debug Research
+                    <InfoBubble text="Show debug information (render spec, raw data) on research results in Inbox and Jobs pages. Useful for troubleshooting result rendering." side="right" />
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Show debug info on research results
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const next = !debugResearch;
+                    setDebugResearch(next);
+                    try {
+                      await updateConfigMut.mutateAsync({ debugResearch: next });
+                      toast.success(`Debug research ${next ? "enabled" : "disabled"}`);
+                    } catch (err) {
+                      setDebugResearch(!next);
+                      toast.error(err instanceof Error ? err.message : "Failed to update setting");
+                    }
+                  }}
+                  className={cn(
+                    "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                    debugResearch ? "bg-primary" : "bg-muted",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "pointer-events-none block size-4 rounded-full bg-background shadow-lg transition-transform",
+                      debugResearch ? "translate-x-4" : "translate-x-0",
+                    )}
+                  />
+                </button>
+              </div>
             </CardContent>
           </Card>
         )}
