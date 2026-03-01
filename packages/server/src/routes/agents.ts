@@ -316,7 +316,7 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               tools: tools as any,
               toolChoice: tools ? "auto" : undefined,
-              stopWhen: tools ? stepCountIs(3) : undefined,
+              stopWhen: tools ? stepCountIs(8) : undefined,
               onError: ({ error }) => {
                 ctx.logger.error("streamText error (multi-step)", {
                   error: error instanceof Error ? error.message : String(error),
