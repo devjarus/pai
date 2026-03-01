@@ -56,3 +56,7 @@ export type { SandboxResult, SandboxOptions } from "./sandbox.js";
 // Artifacts
 export { artifactMigrations, storeArtifact, getArtifact, listArtifacts, deleteJobArtifacts, guessMimeType } from "./artifacts.js";
 export type { Artifact, ArtifactMeta } from "./artifacts.js";
+
+// Agent Registry
+export { agentRegistryMigrations, createDynamicAgent, getDynamicAgent, getDynamicAgentByName, listDynamicAgents, updateDynamicAgent, deleteDynamicAgent } from "./agent-registry.js";
+export type { DynamicAgent, DynamicToolDef, CreateDynamicAgentOpts } from "./agent-registry.js";
