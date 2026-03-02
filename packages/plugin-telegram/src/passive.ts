@@ -1,5 +1,5 @@
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
-import { semanticSearch, knowledgeSearch } from "@personal-ai/core";
+import { semanticSearch, knowledgeSearch, getContextBudget, getProviderOptions } from "@personal-ai/core";
 import { generateText } from "ai";
 import type { LanguageModel } from "ai";
 import type { Api } from "grammy";
@@ -92,6 +92,7 @@ async function pickReactionEmoji(
   messageText: string,
 ): Promise<string> {
   try {
+    const emojiBudget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
     const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
       system: `You are an emoji picker. Given a message, respond with exactly ONE emoji that best fits as a reaction. Choose from: ${ALLOWED_REACTIONS.join(" ")}
@@ -103,6 +104,8 @@ Rules:
       messages: [{ role: "user", content: messageText }],
       temperature: 0.5,
       maxRetries: 1,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      providerOptions: getProviderOptions(ctx.config.llm.provider, emojiBudget.contextWindow) as any,
     });
     const emoji = result.text.trim();
     // Validate it's an allowed emoji, fallback to 👍
@@ -144,6 +147,7 @@ Rules:
 - Do not repeat what was already said.
 - Match the energy of the conversation — be playful if they're playful, serious if they're serious.`;
 
+  const chimeBudget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
   const result = await generateText({
     model: ctx.llm.getModel() as LanguageModel,
     system: systemPrompt,
@@ -152,6 +156,8 @@ Rules:
     ],
     temperature: 0.5,
     maxRetries: 1,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    providerOptions: getProviderOptions(ctx.config.llm.provider, chimeBudget.contextWindow) as any,
   });
 
   const text = result.text.trim();

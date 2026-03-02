@@ -28,9 +28,13 @@
   "dependencies": {
     "@personal-ai/core": "workspace:*",
     "@personal-ai/plugin-assistant": "workspace:*",
+    "@personal-ai/plugin-curator": "workspace:*",
+    "@personal-ai/plugin-research": "workspace:*",
+    "@personal-ai/plugin-swarm": "workspace:*",
     "@personal-ai/plugin-tasks": "workspace:*",
     "grammy": "^1.31.0",
-    "ai": "^6.0.0"
+    "ai": "^6.0.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

@@ -7,11 +7,16 @@ import {
   deleteThread as coreDeleteThread,
   clearThread as coreClearThread,
   formatDateTime,
+  getContextBudget,
+  estimateTokens,
+  getProviderOptions,
 } from "@personal-ai/core";
-import { generateText, stepCountIs } from "ai";
+import { generateText, stepCountIs, tool } from "ai";
 import type { LanguageModel } from "ai";
+import { z } from "zod";
 
 const MAX_MESSAGES_PER_THREAD = 500;
+
 
 export interface ChatPipelineOptions {
   ctx: PluginContext;
@@ -24,6 +29,8 @@ export interface ChatPipelineOptions {
   chatType?: "private" | "group" | "supergroup" | "channel";
   /** Telegram chat ID — attached to agent context for schedule tools */
   chatId?: number;
+  /** Sub-agents the assistant can delegate to (e.g. curator) */
+  subAgents?: AgentPlugin[];
   /** Called when a preflight operation starts (memory recall, web search) */
   onPreflight?: (action: string) => void;
   onToolCall?: (toolName: string) => void;
@@ -66,12 +73,19 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
   const { ctx, agentPlugin, threadId, message, sender, chatType, chatId, onToolCall } = opts;
   const isGroup = chatType === "group" || chatType === "supergroup";
 
-  // Load conversation history from SQLite (normalized messages)
-  const historyRows = listMessages(ctx.storage, threadId, { limit: 20 });
-  const history: ChatMessage[] = historyRows.map((row) => ({
-    role: row.role,
-    content: row.content,
-  }));
+  // Load conversation history from SQLite with adaptive budget
+  const budget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
+  const historyRows = listMessages(ctx.storage, threadId, { limit: budget.maxMessages });
+  const history: ChatMessage[] = [];
+  let historyTokens = 0;
+  // Iterate newest-first, stop when token budget exceeded
+  for (let i = historyRows.length - 1; i >= 0; i--) {
+    const row = historyRows[i]!;
+    const msgTokens = estimateTokens(row.content);
+    if (historyTokens + msgTokens > budget.historyBudget) break;
+    historyTokens += msgTokens;
+    history.unshift({ role: row.role, content: row.content });
+  }
 
   // Build agent context
   const agentCtx: AgentContext = {
@@ -88,7 +102,36 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
   }
 
   // Build tools from agent plugin
-  const tools = agentPlugin.agent.createTools?.(agentCtx);
+  const tools = agentPlugin.agent.createTools?.(agentCtx) as Record<string, unknown> | undefined;
+
+  // Inject sub-agent delegation tools (same pattern as server/routes/agents.ts)
+  if (tools && opts.subAgents) {
+    for (const sub of opts.subAgents) {
+      if (sub.name === agentPlugin.name) continue;
+      const subTools = sub.agent.createTools?.(agentCtx);
+      if (!subTools) continue;
+      tools[`agent_${sub.name}`] = tool({
+        description: `Delegate to the ${sub.agent.displayName} sub-agent. ${sub.agent.description}`,
+        inputSchema: z.object({
+          task: z.string().describe("What to ask the sub-agent to do"),
+        }),
+        execute: async ({ task }) => {
+          const result = await generateText({
+            model: ctx.llm.getModel() as LanguageModel,
+            system: sub.agent.systemPrompt,
+            messages: [{ role: "user" as const, content: task }],
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            tools: subTools as any,
+            toolChoice: "auto",
+            stopWhen: stepCountIs(5),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
+          });
+          return result.text;
+        },
+      });
+    }
+  }
 
   // Inject current date/time (timezone-aware)
   const dt = formatDateTime(ctx.config.timezone);
@@ -118,9 +161,9 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
     ? `[${sender.displayName ?? sender.username ?? "Unknown"}${sender.username ? ` (@${sender.username})` : ""}]: ${message}`
     : message;
 
-  // Build messages for LLM
+  // Build messages for LLM (already budget-trimmed above)
   const messages: ChatMessage[] = [
-    ...history.slice(-20),
+    ...history,
     { role: "user", content: labeledMessage },
   ];
 
@@ -137,7 +180,9 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tools: tools as any,
     toolChoice: tools ? "auto" : undefined,
-    stopWhen: tools ? stepCountIs(3) : undefined,
+    stopWhen: tools ? stepCountIs(8) : undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
     onStepFinish: ({ toolCalls: stepTools, text: stepText }) => {
       ctx.logger.debug("Telegram step finished", { toolCount: stepTools?.length ?? 0, textLen: stepText?.length ?? 0 });
       if (stepTools) {

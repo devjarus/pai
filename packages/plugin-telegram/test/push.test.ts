@@ -152,6 +152,68 @@ describe("startResearchPushLoop", () => {
     handle.stop();
   });
 
+  it("sends messages for swarm reports with matching chat", async () => {
+    const swarmRow = {
+      id: "swarm-swarmjob456",
+      sections: JSON.stringify({ goal: "Market analysis", report: "Markets are up" }),
+    };
+    const storage = createMockStorage([swarmRow]);
+
+    // Mock chat ID lookup: swarm_jobs -> thread -> telegram_threads
+    (storage.query as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce([swarmRow]) // briefings query
+      .mockReturnValueOnce([{ thread_id: "thread-2" }]) // swarm_jobs query
+      .mockReturnValueOnce([{ chat_id: 67890 }]); // telegram_threads query
+
+    const bot = createMockBot();
+    const logger = createMockLogger();
+
+    const handle = startResearchPushLoop(storage, bot, logger, 1000);
+
+    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(
+      67890,
+      expect.stringContaining("Swarm Report"),
+      { parse_mode: "HTML" },
+    );
+
+    expect(storage.run).toHaveBeenCalledWith(
+      "UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?",
+      ["swarm-swarmjob456"],
+    );
+
+    handle.stop();
+  });
+
+  it("marks unknown-prefix briefings as sent without sending", async () => {
+    const row = {
+      id: "daily-abc123",
+      sections: JSON.stringify({ goal: "Daily briefing", report: "Today's summary" }),
+    };
+    const storage = createMockStorage([row]);
+
+    const bot = createMockBot();
+    const logger = createMockLogger();
+
+    const handle = startResearchPushLoop(storage, bot, logger, 1000);
+
+    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // No Telegram message — unknown prefix returns null chatId
+    expect(bot.api.sendMessage).not.toHaveBeenCalled();
+
+    // Should still mark as sent to avoid re-checking
+    expect(storage.run).toHaveBeenCalledWith(
+      "UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?",
+      ["daily-abc123"],
+    );
+
+    handle.stop();
+  });
+
   it("stop() clears the interval", () => {
     const storage = createMockStorage();
     const bot = createMockBot();

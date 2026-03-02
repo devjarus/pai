@@ -5,6 +5,9 @@ import {
 } from "@personal-ai/core";
 import { taskMigrations } from "@personal-ai/plugin-tasks";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
+import { curatorPlugin } from "@personal-ai/plugin-curator";
+import { researchMigrations } from "@personal-ai/plugin-research";
+import { swarmMigrations } from "@personal-ai/plugin-swarm";
 import { createBot } from "./bot.js";
 import { startResearchPushLoop } from "./push.js";
 
@@ -60,9 +63,11 @@ if (isDirectExecution) {
   storage.migrate("tasks", taskMigrations);
   storage.migrate("threads", threadMigrations);
   storage.migrate("telegram", telegramMigrations);
+  storage.migrate("research", researchMigrations);
+  storage.migrate("swarm", swarmMigrations);
 
   const ctx: PluginContext = { config, storage, llm, logger };
-  const bot = createBot(token, ctx, assistantPlugin);
+  const bot = createBot(token, ctx, assistantPlugin, [curatorPlugin]);
 
   console.log("Starting Telegram bot...");
   bot.start({

@@ -2,6 +2,11 @@ import { Bot } from "grammy";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { listBeliefs, getThread, formatDateTime } from "@personal-ai/core";
 import { listTasks } from "@personal-ai/plugin-tasks";
+import { listResearchJobs, createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
+import type { ResearchContext } from "@personal-ai/plugin-research";
+import { listSwarmJobs } from "@personal-ai/plugin-swarm";
+import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
+import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { runAgentChat, createThread, clearThread as clearThreadMessages } from "./chat.js";
 import { markdownToTelegramHTML, splitMessage } from "./formatter.js";
 import { bufferMessage, passiveProcess } from "./passive.js";
@@ -19,6 +24,17 @@ const TOOL_STATUS: Record<string, string> = {
 
 function toolStatus(toolName: string): string {
   return TOOL_STATUS[toolName] ?? `\u2699\uFE0F Using ${toolName}...`;
+}
+
+function formatRelativeTime(isoDate: string): string {
+  const diffMs = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 /**
@@ -60,7 +76,7 @@ function clearThread(ctx: PluginContext, chatId: number): void {
   }
 }
 
-export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentPlugin): Bot {
+export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentPlugin, subAgents?: AgentPlugin[]): Bot {
   const bot = new Bot(token);
 
   // Register commands with Telegram so they show in the / menu
@@ -71,6 +87,8 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     { command: "tasks", description: "Show open tasks" },
     { command: "memories", description: "Show recent memories" },
     { command: "schedules", description: "Show active schedules" },
+    { command: "jobs", description: "Show recent research & swarm jobs" },
+    { command: "research", description: "Start a research job" },
   ]).catch((err) => {
     ctx.logger.warn(`Failed to register bot commands: ${err instanceof Error ? err.message : String(err)}`);
   });
@@ -86,7 +104,9 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       "/clear — Start a fresh conversation\n" +
       "/tasks — Show your open tasks\n" +
       "/memories — Show recent memories\n" +
-      "/schedules — Show active schedules",
+      "/schedules — Show active schedules\n" +
+      "/jobs — Show recent research &amp; swarm jobs\n" +
+      "/research &lt;query&gt; — Start a research job",
       { parse_mode: "HTML" },
     );
   });
@@ -100,7 +120,9 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       "/clear — Clear conversation history and start fresh\n" +
       "/tasks — List your open tasks\n" +
       "/memories — Show your top 10 memories\n" +
-      "/schedules — Show active recurring research schedules\n\n" +
+      "/schedules — Show active recurring research schedules\n" +
+      "/jobs — Show recent research &amp; swarm jobs\n" +
+      "/research &lt;query&gt; — Start a research job\n\n" +
       "Or just send any message to chat!",
       { parse_mode: "HTML" },
     );
@@ -174,6 +196,76 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     }
   });
 
+  // /jobs — Show recent research & swarm jobs
+  bot.command("jobs", async (tgCtx) => {
+    try {
+      const researchJobs = listResearchJobs(ctx.storage).map((j) => ({ ...j, source: "research" as const }));
+      const swarmJobs = listSwarmJobs(ctx.storage).map((j) => ({ ...j, source: "swarm" as const }));
+      const allJobs = [...researchJobs, ...swarmJobs]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 10);
+
+      if (allJobs.length === 0) {
+        await tgCtx.reply("No recent jobs. Ask me to research something!");
+        return;
+      }
+
+      const statusEmoji: Record<string, string> = {
+        done: "\u2705", running: "\uD83D\uDD04", failed: "\u274C", pending: "\u23F3",
+      };
+      const lines = allJobs.map((j) => {
+        const icon = j.source === "swarm" ? "\uD83D\uDC1D" : "\uD83D\uDD2C";
+        const status = statusEmoji[j.status] ?? "\u2753";
+        const ago = formatRelativeTime(j.createdAt);
+        return `${icon} "${j.goal.slice(0, 50)}" — ${status} ${j.status} (${ago})`;
+      });
+      await tgCtx.reply(`<b>Recent Jobs</b>\n\n${lines.join("\n")}`, { parse_mode: "HTML" });
+    } catch (err) {
+      ctx.logger.error("Failed to list jobs", { error: err instanceof Error ? err.message : String(err) });
+      await tgCtx.reply("Failed to load jobs.");
+    }
+  });
+
+  // /research <query> — Start a research job directly
+  bot.command("research", async (tgCtx) => {
+    const goal = tgCtx.match?.trim();
+    if (!goal) {
+      await tgCtx.reply("Usage: /research <query>\n\nExample: /research latest Bitcoin price analysis");
+      return;
+    }
+
+    try {
+      const threadId = getOrCreateThread(ctx, tgCtx.chat.id, tgCtx.from?.username);
+      const jobId = createResearchJob(ctx.storage, {
+        goal,
+        threadId,
+        resultType: "general",
+      });
+
+      const researchCtx: ResearchContext = {
+        storage: ctx.storage,
+        llm: ctx.llm,
+        logger: ctx.logger,
+        timezone: ctx.config.timezone,
+        provider: ctx.config.llm.provider,
+        model: ctx.config.llm.model,
+        contextWindow: ctx.config.llm.contextWindow,
+        webSearch,
+        formatSearchResults,
+        fetchPage: fetchPageAsMarkdown,
+      };
+
+      runResearchInBackground(researchCtx, jobId).catch((err) => {
+        ctx.logger.error(`Research background execution failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+
+      await tgCtx.reply(`\uD83D\uDD2C Starting research: "${goal.slice(0, 80)}"...\n\nI'll send results when done.`);
+    } catch (err) {
+      ctx.logger.error("Failed to start research", { error: err instanceof Error ? err.message : String(err) });
+      await tgCtx.reply("Failed to start research. Please try again.");
+    }
+  });
+
   // Shared chat handler for private messages, groups, and channels
   async function handleChat(chatId: number, text: string, sender: { username?: string; displayName?: string } | undefined, reply: typeof bot.api.sendMessage, chatType?: "private" | "group" | "supergroup" | "channel") {
     ctx.logger.debug("Telegram handleChat", { chatId });
@@ -191,6 +283,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         sender,
         chatType,
         chatId,
+        subAgents,
         onPreflight: (action) => {
           bot.api.editMessageText(chatId, placeholder.message_id, action)
             .catch(() => { /* ignore edit failures */ });

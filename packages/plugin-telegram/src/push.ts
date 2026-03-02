@@ -6,13 +6,22 @@ function escapeHTMLForTelegram(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function findChatIdForResearchBriefing(storage: Storage, briefingId: string): number | null {
-  // Briefing IDs follow pattern "research-{jobId}"
-  const jobId = briefingId.replace(/^research-/, "");
-  if (jobId === briefingId) return null; // Not a research briefing ID
+function findChatIdForBriefing(storage: Storage, briefingId: string): number | null {
+  let jobId: string | null = null;
+  let table: string | null = null;
+
+  if (briefingId.startsWith("research-")) {
+    jobId = briefingId.slice("research-".length);
+    table = "research_jobs";
+  } else if (briefingId.startsWith("swarm-")) {
+    jobId = briefingId.slice("swarm-".length);
+    table = "swarm_jobs";
+  }
+  if (!jobId || !table) return null;
+
   try {
     const jobRow = storage.query<{ thread_id: string | null }>(
-      "SELECT thread_id FROM research_jobs WHERE id = ?",
+      `SELECT thread_id FROM ${table} WHERE id = ?`,
       [jobId],
     );
     const threadId = jobRow[0]?.thread_id;
@@ -50,10 +59,13 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
       try {
         const parsed = JSON.parse(row.sections) as { goal?: string; report?: string };
         if (!parsed.report) continue;
-        const title = parsed.goal ?? "Research Report";
-        const html = `\uD83D\uDD2C <b>Research Complete: ${escapeHTMLForTelegram(title)}</b>\n\n${markdownToTelegramHTML(parsed.report)}`;
+        const title = parsed.goal ?? "Report";
+        const isSwarm = row.id.startsWith("swarm-");
+        const emoji = isSwarm ? "\uD83D\uDC1D" : "\uD83D\uDD2C";
+        const label = isSwarm ? "Swarm Report" : "Research Complete";
+        const html = `${emoji} <b>${label}: ${escapeHTMLForTelegram(title)}</b>\n\n${markdownToTelegramHTML(parsed.report)}`;
         // Send to the originating Telegram chat, not all chats
-        const chatId = findChatIdForResearchBriefing(storage, row.id);
+        const chatId = findChatIdForBriefing(storage, row.id);
         if (chatId) {
           await sendToTelegramChat(bot, chatId, html, logger);
           storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
