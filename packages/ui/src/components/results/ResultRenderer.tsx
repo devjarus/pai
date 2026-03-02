@@ -1,4 +1,4 @@
-import { Renderer, StateProvider, ActionProvider } from "@json-render/react";
+import { Renderer, StateProvider, ActionProvider, VisibilityProvider } from "@json-render/react";
 import type { Spec, StateModel } from "@json-render/react";
 import { registry, handlers } from "../../lib/render-registry";
 import MarkdownContent from "../MarkdownContent";
@@ -83,9 +83,11 @@ export function ResultRenderer({
   if (parsedSpec) {
     content = (
       <StateProvider initialState={{}} onStateChange={handleStateChange}>
-        <ActionProvider handlers={actionHandlers}>
-          <Renderer spec={parsedSpec} registry={registry} />
-        </ActionProvider>
+        <VisibilityProvider>
+          <ActionProvider handlers={actionHandlers}>
+            <Renderer spec={parsedSpec} registry={registry} />
+          </ActionProvider>
+        </VisibilityProvider>
       </StateProvider>
     );
   } else if (markdown) {

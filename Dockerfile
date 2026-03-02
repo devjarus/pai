@@ -108,7 +108,7 @@ RUN chown -R pai:pai /app
 EXPOSE 3141
 
 # Note: Do not use VOLUME or HEALTHCHECK directives — Railway bans them.
-# Railway manages volumes and healthchecks via railway.toml / dashboard.
+# Railway manages volumes and healthchecks via the dashboard.
 # For local Docker, use: docker run -v pai-data:/data ...
 
 COPY --chown=pai:pai docker-entrypoint.sh /app/docker-entrypoint.sh
