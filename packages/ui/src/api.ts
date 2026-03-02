@@ -15,6 +15,9 @@ import type {
   AuthOwner,
   LoginResponse,
   Briefing,
+  ResearchResultType,
+  SwarmAgent,
+  ArtifactMeta,
 } from "./types";
 
 const BASE = "/api";
@@ -305,7 +308,7 @@ export function deleteKnowledgeSource(id: string): Promise<{ ok: boolean }> {
   return request(`/knowledge/sources/${id}`, { method: "DELETE" });
 }
 
-export function updateKnowledgeSource(id: string, data: { tags: string | null }): Promise<{ ok: boolean }> {
+export function updateKnowledgeSource(id: string, data: { tags?: string | null; maxAgeDays?: number | null }): Promise<{ ok: boolean }> {
   return request(`/knowledge/sources/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } });
 }
 
@@ -325,6 +328,9 @@ export function updateConfig(updates: {
   dataDir?: string;
   telegramToken?: string;
   telegramEnabled?: boolean;
+  knowledgeCleanup?: boolean;
+  knowledgeDefaultTtlDays?: number | null;
+  knowledgeFreshnessDecayDays?: number;
   debugResearch?: boolean;
 }): Promise<ConfigInfo> {
   return request<ConfigInfo>("/config", {
@@ -452,7 +458,7 @@ export interface BackgroundJobInfo {
   completedAt?: string | null;
   error?: string | null;
   result?: string | null;
-  resultType?: "flight" | "stock" | "crypto" | "news" | "comparison" | "general" | null;
+  resultType?: ResearchResultType | null;
 }
 
 export interface ResearchJobDetail {
@@ -467,7 +473,7 @@ export interface ResearchJobDetail {
   report: string | null;
   createdAt: string;
   completedAt: string | null;
-  resultType?: "flight" | "stock" | "crypto" | "news" | "comparison" | "general";
+  resultType?: ResearchResultType;
   briefingId?: string | null;
   // Swarm-specific fields (present when job is a swarm)
   plan?: unknown[] | null;
@@ -497,12 +503,52 @@ export function getJobBlackboard(id: string): Promise<{ entries: BlackboardEntry
   return request(`/jobs/${id}/blackboard`);
 }
 
+export function cancelJob(id: string): Promise<{ ok: boolean; cancelled: boolean }> {
+  return request(`/jobs/${id}/cancel`, { method: "POST", body: "{}" });
+}
+
 export function clearJobs(): Promise<{ ok: boolean; cleared: number }> {
   return request("/jobs/clear", { method: "POST", body: "{}" });
 }
 
+export function getJobAgents(id: string): Promise<{ agents: SwarmAgent[] }> {
+  return request(`/jobs/${id}/agents`);
+}
+
+export function getJobArtifacts(jobId: string): Promise<ArtifactMeta[]> {
+  return request(`/jobs/${jobId}/artifacts`);
+}
+
 export function rerunResearch(briefingId: string): Promise<{ ok: boolean; jobId: string }> {
   return request(`/inbox/${briefingId}/rerun`, { method: "POST", body: "{}" });
+}
+
+// ---------------------------------------------------------------------------
+// Learning Runs
+// ---------------------------------------------------------------------------
+
+export interface LearningRun {
+  id: number;
+  startedAt: string;
+  completedAt: string | null;
+  status: "running" | "done" | "skipped" | "error";
+  skipReason: string | null;
+  threadsCount: number;
+  messagesCount: number;
+  researchCount: number;
+  tasksCount: number;
+  knowledgeCount: number;
+  factsExtracted: number;
+  beliefsCreated: number;
+  beliefsReinforced: number;
+  lowImportanceSkipped: number;
+  factsJson: string | null;
+  durationMs: number | null;
+  error: string | null;
+}
+
+export async function getLearningRuns(): Promise<{ runs: LearningRun[] }> {
+  return request("/learning/runs");
 }
 
 // ---------------------------------------------------------------------------

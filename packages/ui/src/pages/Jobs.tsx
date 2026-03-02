@@ -20,10 +20,20 @@ import {
   HelpCircleIcon,
   LightbulbIcon,
   FileTextIcon,
+  ImageIcon,
+  TableIcon,
+  BracesIcon,
+  FileIcon,
+  DownloadIcon,
+  UserIcon,
+  CodeIcon,
+  WrenchIcon,
+  BanIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { BackgroundJobInfo, BlackboardEntry } from "../api";
-import { useJobs, useJobDetail, useJobBlackboard, useClearJobs, useConfig } from "@/hooks";
+import type { SwarmAgent, ArtifactMeta } from "../types";
+import { useJobs, useJobDetail, useJobBlackboard, useJobAgents, useJobArtifacts, useCancelJob, useClearJobs, useConfig } from "@/hooks";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
 
 const statusStyles: Record<string, string> = {
@@ -54,6 +64,21 @@ const resultTypeBadges: Record<string, string> = {
   comparison: "\u2696 comparison",
 };
 
+const roleStyles: Record<string, string> = {
+  researcher: "bg-blue-500/15 text-blue-400 border-blue-500/20",
+  flight_researcher: "bg-blue-500/15 text-blue-400 border-blue-500/20",
+  stock_researcher: "bg-blue-500/15 text-blue-400 border-blue-500/20",
+  crypto_researcher: "bg-blue-500/15 text-blue-400 border-blue-500/20",
+  news_researcher: "bg-blue-500/15 text-blue-400 border-blue-500/20",
+  coder: "bg-purple-500/15 text-purple-400 border-purple-500/20",
+  chart_generator: "bg-purple-500/15 text-purple-400 border-purple-500/20",
+  analyst: "bg-green-500/15 text-green-400 border-green-500/20",
+  comparator: "bg-green-500/15 text-green-400 border-green-500/20",
+  fact_checker: "bg-green-500/15 text-green-400 border-green-500/20",
+  market_analyst: "bg-green-500/15 text-green-400 border-green-500/20",
+  price_analyst: "bg-green-500/15 text-green-400 border-green-500/20",
+};
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -64,9 +89,31 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function formatDuration(start: string, end: string | null): string {
+  if (!end) return "running...";
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const remainSecs = secs % 60;
+  return `${mins}m ${remainSecs}s`;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getArtifactIcon(mimeType: string) {
+  if (mimeType.startsWith("image/")) return ImageIcon;
+  if (mimeType === "text/csv") return TableIcon;
+  if (mimeType === "application/json") return BracesIcon;
+  return FileIcon;
+}
+
 /**
  * Extract a json-render spec from markdown text (looks for ```jsonrender fences).
- * Returns the parsed spec object or undefined.
  */
 function extractRenderSpec(text: string | null | undefined): unknown | undefined {
   if (!text) return undefined;
@@ -106,6 +153,36 @@ const blackboardTypeStyles: Record<string, string> = {
   artifact: "bg-purple-500/15 text-purple-400 border-purple-500/20",
 };
 
+/** Parse [code_execution] blackboard entries into structured data */
+function parseCodeExecution(content: string) {
+  const headerMatch = content.match(/\[code_execution\] Language: (\w+) \| Exit: (\d+)/);
+  if (!headerMatch) return null;
+  const language = headerMatch[1]!;
+  const exitCode = parseInt(headerMatch[2]!, 10);
+  const codeMatch = content.match(/Code:\n```\w+\n([\s\S]*?)```/);
+  const code = codeMatch?.[1]?.trim() ?? "";
+  const stdoutMatch = content.match(/Stdout: ([\s\S]*?)(?=\nStderr:|$)/);
+  const stdout = stdoutMatch?.[1]?.trim() ?? "";
+  const stderrMatch = content.match(/Stderr: ([\s\S]*?)(?=\nFiles:|$)/);
+  const stderr = stderrMatch?.[1]?.trim() ?? "";
+  const filesMatch = content.match(/Files: (.+)$/m);
+  const artifacts: Array<{ name: string; id: string }> = [];
+  if (filesMatch?.[1]) {
+    const fileRe = /(\S+?) \(artifact:(\S+?)\)/g;
+    let m;
+    while ((m = fileRe.exec(filesMatch[1])) !== null) {
+      artifacts.push({ name: m[1]!, id: m[2]! });
+    }
+  }
+  return { language, exitCode, code, stdout, stderr, artifacts };
+}
+
+/** Sort agents: running first, then done, then failed, then pending */
+function sortAgents(agents: SwarmAgent[]): SwarmAgent[] {
+  const order: Record<string, number> = { running: 0, done: 1, failed: 2, pending: 3 };
+  return [...agents].sort((a, b) => (order[a.status] ?? 4) - (order[b.status] ?? 4));
+}
+
 export default function Jobs() {
   const { data: configData } = useConfig();
   const { data: jobsData, isLoading, isRefetching, refetch } = useJobs();
@@ -119,8 +196,19 @@ export default function Jobs() {
   const { data: blackboardData } = useJobBlackboard(selectedJobId, isSwarm);
   const blackboard = blackboardData?.entries ?? [];
 
-  const [blackboardOpen, setBlackboardOpen] = useState(false);
+  const { data: agentsData } = useJobAgents(selectedJobId, isSwarm);
+  const agents = useMemo(() => sortAgents(agentsData?.agents ?? []), [agentsData]);
 
+  const { data: artifactsData } = useJobArtifacts(selectedJobId, isSwarm);
+  const artifacts: ArtifactMeta[] = artifactsData ?? [];
+
+  const [blackboardOpen, setBlackboardOpen] = useState(false);
+  const [agentsOpen, setAgentsOpen] = useState(true);
+  const [artifactsOpen, setArtifactsOpen] = useState(true);
+  const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
+  const [expandedBlackboard, setExpandedBlackboard] = useState<Set<string>>(new Set());
+
+  const cancelJobMutation = useCancelJob();
   const clearJobsMutation = useClearJobs();
 
   useEffect(() => {
@@ -131,6 +219,26 @@ export default function Jobs() {
     if (job.type !== "research" && job.type !== "swarm") return;
     setSelectedJobId(job.id);
     setBlackboardOpen(false);
+    setAgentsOpen(true);
+    setArtifactsOpen(true);
+    setExpandedAgents(new Set());
+    setExpandedBlackboard(new Set());
+  };
+
+  const toggleExpandedAgent = (id: string) => {
+    setExpandedAgents((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleExpandedBlackboard = (id: string) => {
+    setExpandedBlackboard((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   // Extract renderSpec from the report/synthesis text
@@ -284,14 +392,37 @@ export default function Jobs() {
                   </h2>
                   <p className="mt-1 text-xs text-muted-foreground">{selectedJob.goal}</p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSelectedJobId(null)}
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
-                >
-                  <XIcon className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1 shrink-0">
+                  {(selectedJob.status === "running" || selectedJob.status === "pending" || selectedJob.status === "planning" || selectedJob.status === "synthesizing") && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        cancelJobMutation.mutate(selectedJobId!, {
+                          onSuccess: () => {
+                            toast.success("Job cancelled");
+                          },
+                          onError: () => {
+                            toast.error("Failed to cancel job");
+                          },
+                        });
+                      }}
+                      disabled={cancelJobMutation.isPending}
+                      className="text-xs text-muted-foreground hover:text-destructive"
+                    >
+                      <BanIcon className="mr-1 h-3 w-3" />
+                      Cancel
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSelectedJobId(null)}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <XIcon className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
 
               <Separator className="my-4 opacity-30" />
@@ -309,6 +440,114 @@ export default function Jobs() {
                 )}
                 <span>Status: {selectedJob.status}</span>
               </div>
+
+              {/* Agents section for swarm jobs */}
+              {isSwarm && agents.length > 0 && (
+                <div className="mb-4">
+                  <button
+                    onClick={() => setAgentsOpen(!agentsOpen)}
+                    className="flex w-full items-center gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {agentsOpen ? (
+                      <ChevronDownIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRightIcon className="h-3.5 w-3.5" />
+                    )}
+                    <UserIcon className="h-3.5 w-3.5" />
+                    Agents ({agents.length})
+                  </button>
+
+                  {agentsOpen && (
+                    <div className="mt-3 space-y-2">
+                      {agents.map((agent: SwarmAgent) => {
+                        const AgentStatusIcon = statusIcons[agent.status] ?? ClockIcon;
+                        const isAgentRunning = agent.status === "running";
+                        const isExpanded = expandedAgents.has(agent.id);
+                        const taskPreview = agent.task.length > 200 ? agent.task.slice(0, 200) + "..." : agent.task;
+                        const resultPreview = agent.result && agent.result.length > 300 ? agent.result.slice(0, 300) + "..." : agent.result;
+
+                        return (
+                          <div
+                            key={agent.id}
+                            className="rounded-lg border border-border/20 bg-card/30 p-3"
+                          >
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] px-1.5 py-0 ${roleStyles[agent.role] ?? "bg-gray-500/15 text-gray-400 border-gray-500/20"}`}
+                              >
+                                {agent.role}
+                              </Badge>
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] px-1.5 py-0 ${statusStyles[agent.status] ?? statusStyles.pending}`}
+                              >
+                                <AgentStatusIcon className={`mr-0.5 h-2 w-2 ${isAgentRunning ? "animate-spin" : ""}`} />
+                                {agent.status}
+                              </Badge>
+                              <span className="text-[10px] text-muted-foreground/60">
+                                {agent.stepsUsed} steps
+                              </span>
+                              <span className="text-[10px] text-muted-foreground/40 ml-auto">
+                                {formatDuration(agent.createdAt, agent.completedAt)}
+                              </span>
+                            </div>
+
+                            {/* Task */}
+                            <p
+                              className="text-xs text-foreground/70 mb-1.5 cursor-pointer"
+                              onClick={() => toggleExpandedAgent(agent.id)}
+                            >
+                              {isExpanded ? agent.task : taskPreview}
+                            </p>
+
+                            {/* Tools */}
+                            {agent.tools.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mb-1.5">
+                                {agent.tools.map((t) => (
+                                  <span key={t} className="inline-flex items-center gap-0.5 rounded bg-muted/30 px-1 py-0.5 text-[9px] text-muted-foreground">
+                                    <WrenchIcon className="h-2 w-2" />
+                                    {t}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Result (collapsible) */}
+                            {agent.result && (
+                              <div className="mt-1.5">
+                                <button
+                                  onClick={() => toggleExpandedAgent(agent.id)}
+                                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                  {isExpanded ? "Show less" : "Show result"}
+                                </button>
+                                {isExpanded && (
+                                  <p className="mt-1 text-xs text-foreground/60 whitespace-pre-wrap break-words">
+                                    {agent.result}
+                                  </p>
+                                )}
+                                {!isExpanded && resultPreview && (
+                                  <p className="mt-1 text-xs text-foreground/60 line-clamp-2">
+                                    {resultPreview}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Error */}
+                            {agent.error && (
+                              <p className="mt-1.5 text-xs text-red-400 bg-red-500/10 rounded p-2">
+                                {agent.error}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Report / Synthesis via ResultRenderer */}
               {detailLoading ? (
@@ -330,6 +569,60 @@ export default function Jobs() {
                 <p className="text-xs text-muted-foreground">No report available yet.</p>
               )}
 
+              {/* Artifacts section */}
+              {artifacts.length > 0 && (
+                <div className="mt-6">
+                  <button
+                    onClick={() => setArtifactsOpen(!artifactsOpen)}
+                    className="flex w-full items-center gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {artifactsOpen ? (
+                      <ChevronDownIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRightIcon className="h-3.5 w-3.5" />
+                    )}
+                    <FileIcon className="h-3.5 w-3.5" />
+                    Artifacts ({artifacts.length})
+                  </button>
+
+                  {artifactsOpen && (
+                    <div className="mt-3 space-y-2">
+                      {artifacts.map((artifact: ArtifactMeta) => {
+                        const ArtIcon = getArtifactIcon(artifact.mimeType);
+                        const isImage = artifact.mimeType.startsWith("image/");
+                        return (
+                          <div
+                            key={artifact.id}
+                            className="rounded-lg border border-border/20 bg-card/30 p-3"
+                          >
+                            <div className="flex items-center gap-2">
+                              <ArtIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              <span className="text-xs text-foreground/80 truncate flex-1">{artifact.name}</span>
+                              <span className="text-[10px] text-muted-foreground/60">{formatSize(artifact.size)}</span>
+                              <a
+                                href={`/api/artifacts/${artifact.id}`}
+                                download={artifact.name}
+                                className="text-muted-foreground hover:text-foreground transition-colors"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <DownloadIcon className="h-3 w-3" />
+                              </a>
+                            </div>
+                            {isImage && (
+                              <img
+                                src={`/api/artifacts/${artifact.id}`}
+                                alt={artifact.name}
+                                className="mt-2 max-h-48 rounded border border-border/20 object-contain"
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Blackboard entries for swarm jobs */}
               {isSwarm && blackboard.length > 0 && (
                 <div className="mt-6">
@@ -348,7 +641,92 @@ export default function Jobs() {
                   {blackboardOpen && (
                     <div className="mt-3 space-y-2">
                       {blackboard.map((entry: BlackboardEntry) => {
+                        const codeExec = parseCodeExecution(entry.content);
                         const TypeIcon = blackboardTypeIcons[entry.type] ?? LightbulbIcon;
+                        const isExpanded = expandedBlackboard.has(entry.id);
+
+                        if (codeExec) {
+                          return (
+                            <div
+                              key={entry.id}
+                              className="rounded-lg border border-border/20 bg-card/30 p-3"
+                            >
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <CodeIcon className="h-3 w-3 shrink-0 text-purple-400" />
+                                <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-purple-500/15 text-purple-400 border-purple-500/20">
+                                  {codeExec.language}
+                                </Badge>
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[9px] px-1.5 py-0 ${codeExec.exitCode === 0 ? "bg-green-500/15 text-green-400 border-green-500/20" : "bg-red-500/15 text-red-400 border-red-500/20"}`}
+                                >
+                                  exit: {codeExec.exitCode}
+                                </Badge>
+                                <span className="text-[10px] text-muted-foreground/60 truncate">
+                                  agent: {entry.agentId.slice(0, 8)}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground/40 ml-auto shrink-0">
+                                  {timeAgo(entry.createdAt)}
+                                </span>
+                              </div>
+
+                              {/* Code block */}
+                              {codeExec.code && (
+                                <pre className="mt-1.5 text-[11px] text-foreground/70 bg-black/30 rounded p-2 overflow-x-auto max-h-32">
+                                  <code>{codeExec.code}</code>
+                                </pre>
+                              )}
+
+                              {/* stdout/stderr collapsible */}
+                              {(codeExec.stdout !== "(none)" || codeExec.stderr !== "(none)") && (
+                                <button
+                                  onClick={() => toggleExpandedBlackboard(entry.id)}
+                                  className="mt-1.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                  {isExpanded ? "Hide output" : "Show output"}
+                                </button>
+                              )}
+                              {isExpanded && (
+                                <div className="mt-1.5 space-y-1">
+                                  {codeExec.stdout !== "(none)" && (
+                                    <div>
+                                      <span className="text-[10px] text-muted-foreground">stdout:</span>
+                                      <pre className="text-[11px] text-foreground/60 bg-black/20 rounded p-1.5 overflow-x-auto max-h-24">{codeExec.stdout}</pre>
+                                    </div>
+                                  )}
+                                  {codeExec.stderr !== "(none)" && (
+                                    <div>
+                                      <span className="text-[10px] text-red-400">stderr:</span>
+                                      <pre className="text-[11px] text-red-400/70 bg-red-500/5 rounded p-1.5 overflow-x-auto max-h-24">{codeExec.stderr}</pre>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Artifact links */}
+                              {codeExec.artifacts.length > 0 && (
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                  {codeExec.artifacts.map((a) => {
+                                    const isImg = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(a.name);
+                                    return (
+                                      <a
+                                        key={a.id}
+                                        href={`/api/artifacts/${a.id}`}
+                                        download={a.name}
+                                        className="inline-flex items-center gap-1 rounded bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                                      >
+                                        {isImg ? <ImageIcon className="h-2.5 w-2.5" /> : <FileIcon className="h-2.5 w-2.5" />}
+                                        {a.name}
+                                      </a>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        // Default blackboard entry rendering
                         return (
                           <div
                             key={entry.id}

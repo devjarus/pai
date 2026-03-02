@@ -52,6 +52,9 @@ export default defineConfig({
         navigateFallback: "index.html",
         // Never cache API requests
         navigateFallbackDenylist: [/^\/api\//],
+        // Activate new service worker immediately so rebuilds don't require hard refresh
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
           {
             urlPattern: /^\/api\//,

@@ -39,6 +39,7 @@ export function useUpdateConfig() {
       telegramEnabled?: boolean;
       backgroundLearning?: boolean;
       briefingEnabled?: boolean;
+      knowledgeCleanup?: boolean;
       debugResearch?: boolean;
     }) => updateConfig(updates),
     onSuccess: () => {

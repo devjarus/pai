@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getJobs, getJobDetail, getJobBlackboard, clearJobs } from "../api";
+import { getJobs, getJobDetail, getJobBlackboard, getJobAgents, getJobArtifacts, cancelJob, clearJobs } from "../api";
 
 export const jobKeys = {
   all: ["jobs"] as const,
   list: () => ["jobs", "list"] as const,
   detail: (id: string) => ["jobs", "detail", id] as const,
   blackboard: (id: string) => ["jobs", "blackboard", id] as const,
+  agents: (id: string) => ["jobs", "agents", id] as const,
+  artifacts: (id: string) => ["jobs", "artifacts", id] as const,
 };
 
 export function useJobs() {
@@ -29,6 +31,33 @@ export function useJobBlackboard(id: string | null, isSwarm: boolean) {
     queryKey: jobKeys.blackboard(id!),
     queryFn: () => getJobBlackboard(id!),
     enabled: !!id && isSwarm,
+  });
+}
+
+export function useJobAgents(id: string | null, isSwarm: boolean) {
+  return useQuery({
+    queryKey: jobKeys.agents(id!),
+    queryFn: () => getJobAgents(id!),
+    enabled: !!id && isSwarm,
+    refetchInterval: isSwarm ? 5_000 : false,
+  });
+}
+
+export function useJobArtifacts(id: string | null, isSwarm: boolean) {
+  return useQuery({
+    queryKey: jobKeys.artifacts(id!),
+    queryFn: () => getJobArtifacts(id!),
+    enabled: !!id && isSwarm,
+  });
+}
+
+export function useCancelJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => cancelJob(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: jobKeys.all });
+    },
   });
 }
 

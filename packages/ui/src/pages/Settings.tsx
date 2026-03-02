@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { useConfig, useUpdateConfig, useMemoryStats, useBrowseDir, useHealth } from "@/hooks";
+import { useConfig, useUpdateConfig, useMemoryStats, useBrowseDir, useHealth, useLearningRuns } from "@/hooks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
-import { FolderIcon, FolderOpenIcon, ChevronUpIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon } from "lucide-react";
+import { FolderIcon, FolderOpenIcon, ChevronUpIcon, ChevronDownIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon } from "lucide-react";
+import type { LearningRun } from "@/api";
 
 const isCloudDeployment =
   typeof window !== "undefined" &&
@@ -30,6 +31,7 @@ export default function Settings() {
   const { data: stats, isLoading: statsLoading } = useMemoryStats();
   const updateConfigMut = useUpdateConfig();
   const { data: health, isLoading: healthLoading } = useHealth();
+  const { data: learningData } = useLearningRuns();
 
   const loading = configLoading || statsLoading;
 
@@ -53,9 +55,14 @@ export default function Settings() {
   // Worker settings
   const [bgLearningEnabled, setBgLearningEnabled] = useState(true);
   const [briefingEnabled, setBriefingEnabled] = useState(true);
+  const [knowledgeCleanupEnabled, setKnowledgeCleanupEnabled] = useState(true);
 
   // Debug settings
   const [debugResearch, setDebugResearch] = useState(false);
+
+  // Learning history
+  const [learningHistoryOpen, setLearningHistoryOpen] = useState(false);
+  const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
 
   // Env overrides (fields controlled by env vars on the server)
   const [envOverrides, setEnvOverrides] = useState<string[]>([]);
@@ -67,23 +74,30 @@ export default function Settings() {
 
   useEffect(() => { document.title = "Settings - pai"; }, []);
 
-  // Sync local form state when config loads or changes
+  // Sync local form state when config loads or changes.
+  // Skip sync while editing to avoid resetting unsaved form fields
+  // when instant-save toggles (debug, timezone) invalidate the query.
   useEffect(() => {
-    if (config) {
+    if (!config) return;
+    // Always sync non-form fields
+    setEnvOverrides(config.envOverrides ?? []);
+    setDebugResearch(config.debugResearch ?? false);
+    setTimezone(config.timezone ?? "");
+
+    // Only sync form fields when not editing
+    if (!editing) {
       setProvider(config.llm.provider);
       setModel(config.llm.model);
       setBaseUrl(config.llm.baseUrl ?? "");
       setEmbedModel(config.llm.embedModel ?? "");
       setEmbedProvider(config.llm.embedProvider ?? "auto");
       setDataDir(config.dataDir);
-      setTimezone(config.timezone ?? "");
       setTelegramEnabled(config.telegram?.enabled ?? false);
       setBgLearningEnabled(config.workers?.backgroundLearning !== false);
       setBriefingEnabled(config.workers?.briefing !== false);
-      setDebugResearch(config.debugResearch ?? false);
-      setEnvOverrides(config.envOverrides ?? []);
+      setKnowledgeCleanupEnabled(config.workers?.knowledgeCleanup !== false);
     }
-  }, [config]);
+  }, [config, editing]);
 
   const handleSave = useCallback(async () => {
     if (!config) return;
@@ -101,7 +115,7 @@ export default function Settings() {
       if (timezone !== (config.timezone ?? "")) updates.timezone = timezone;
       if (bgLearningEnabled !== (config.workers?.backgroundLearning !== false)) updates.backgroundLearning = bgLearningEnabled;
       if (briefingEnabled !== (config.workers?.briefing !== false)) updates.briefingEnabled = briefingEnabled;
-      if (debugResearch !== (config.debugResearch ?? false)) updates.debugResearch = debugResearch;
+      if (knowledgeCleanupEnabled !== (config.workers?.knowledgeCleanup !== false)) updates.knowledgeCleanup = knowledgeCleanupEnabled;
 
       if (Object.keys(updates).length === 0) {
         setEditing(false);
@@ -116,7 +130,7 @@ export default function Settings() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save configuration");
     }
-  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, debugResearch, config, updateConfigMut]);
+  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, knowledgeCleanupEnabled, config, updateConfigMut]);
 
   const handleCancel = useCallback(() => {
     if (config) {
@@ -133,6 +147,7 @@ export default function Settings() {
     setTelegramEnabled(config?.telegram?.enabled ?? false);
     setBgLearningEnabled(config?.workers?.backgroundLearning !== false);
     setBriefingEnabled(config?.workers?.briefing !== false);
+    setKnowledgeCleanupEnabled(config?.workers?.knowledgeCleanup !== false);
     setDebugResearch(config?.debugResearch ?? false);
     setEditing(false);
   }, [config]);
@@ -560,6 +575,37 @@ export default function Settings() {
                 )}
               </div>
 
+              {/* Knowledge Cleanup */}
+              <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs text-foreground">Knowledge Cleanup</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Auto-deletes expired knowledge sources (every 24h, default TTL 90 days)
+                  </span>
+                </div>
+                {editing ? (
+                  <button
+                    type="button"
+                    onClick={() => setKnowledgeCleanupEnabled(!knowledgeCleanupEnabled)}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                      knowledgeCleanupEnabled ? "bg-primary" : "bg-muted",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "pointer-events-none block size-4 rounded-full bg-background shadow-lg transition-transform",
+                        knowledgeCleanupEnabled ? "translate-x-4" : "translate-x-0",
+                      )}
+                    />
+                  </button>
+                ) : (
+                  <span className={cn("font-mono text-sm", config.workers?.knowledgeCleanup !== false ? "text-green-500" : "text-muted-foreground")}>
+                    {config.workers?.knowledgeCleanup !== false ? "On" : "Off"}
+                  </span>
+                )}
+              </div>
+
               {/* Last Run Info */}
               {config.workers?.lastRun && (
                 <div className="flex items-center justify-between border-t border-border/30 px-5 py-3">
@@ -569,6 +615,32 @@ export default function Settings() {
                       ? new Date(config.workers.lastRun.threads).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
                       : "Never"}
                   </span>
+                </div>
+              )}
+
+              {/* Learning History (collapsible) */}
+              {learningData && learningData.runs.length > 0 && (
+                <div className="border-t border-border/30">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between px-5 py-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => setLearningHistoryOpen(!learningHistoryOpen)}
+                  >
+                    <span>View history ({learningData.runs.length} runs)</span>
+                    {learningHistoryOpen ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
+                  </button>
+                  {learningHistoryOpen && (
+                    <div className="space-y-2 px-5 pb-4">
+                      {learningData.runs.slice(0, 10).map((run) => (
+                        <LearningRunCard
+                          key={run.id}
+                          run={run}
+                          expanded={expandedRunId === run.id}
+                          onToggle={() => setExpandedRunId(expandedRunId === run.id ? null : run.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -775,6 +847,102 @@ function EditableRow({
         placeholder={placeholder}
         className="w-full max-w-xs rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
       />
+    </div>
+  );
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+function LearningRunCard({
+  run,
+  expanded,
+  onToggle,
+}: {
+  run: LearningRun;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const statusColor: Record<string, string> = {
+    done: "bg-green-500/15 text-green-500",
+    skipped: "bg-yellow-500/15 text-yellow-500",
+    error: "bg-red-500/15 text-red-400",
+    running: "bg-blue-500/15 text-blue-400",
+  };
+
+  const signalParts: string[] = [];
+  if (run.threadsCount > 0) signalParts.push(`${run.threadsCount} thread${run.threadsCount !== 1 ? "s" : ""}`);
+  if (run.messagesCount > 0) signalParts.push(`${run.messagesCount} msg${run.messagesCount !== 1 ? "s" : ""}`);
+  if (run.researchCount > 0) signalParts.push(`${run.researchCount} research`);
+  if (run.tasksCount > 0) signalParts.push(`${run.tasksCount} task${run.tasksCount !== 1 ? "s" : ""}`);
+  if (run.knowledgeCount > 0) signalParts.push(`${run.knowledgeCount} knowledge`);
+
+  const outcomeParts: string[] = [];
+  if (run.beliefsCreated > 0) outcomeParts.push(`${run.beliefsCreated} created`);
+  if (run.beliefsReinforced > 0) outcomeParts.push(`${run.beliefsReinforced} reinforced`);
+  if (run.lowImportanceSkipped > 0) outcomeParts.push(`${run.lowImportanceSkipped} skipped`);
+
+  let facts: Array<{ fact: string; factType: string; importance: number }> = [];
+  if (run.factsJson) {
+    try { facts = JSON.parse(run.factsJson); } catch { /* ignore */ }
+  }
+
+  return (
+    <div className="rounded-md border border-border/30 bg-muted/20">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+        onClick={onToggle}
+      >
+        <Badge variant="secondary" className={cn("shrink-0 text-[10px]", statusColor[run.status])}>
+          {run.status}
+        </Badge>
+        <span className="flex-1 truncate text-[11px] text-muted-foreground">
+          {signalParts.length > 0 ? signalParts.join(", ") : run.skipReason ?? "no signals"}
+        </span>
+        {run.durationMs != null && (
+          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+            {run.durationMs < 1000 ? `${run.durationMs}ms` : `${(run.durationMs / 1000).toFixed(1)}s`}
+          </span>
+        )}
+        <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(run.startedAt)}</span>
+      </button>
+      {expanded && (
+        <div className="space-y-2 border-t border-border/20 px-3 py-2">
+          {outcomeParts.length > 0 && (
+            <div className="text-[11px] text-foreground/70">
+              Beliefs: {outcomeParts.join(", ")}
+            </div>
+          )}
+          {run.error && (
+            <div className="text-[11px] text-red-400">
+              Error: {run.error}
+            </div>
+          )}
+          {facts.length > 0 && (
+            <div className="space-y-1">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Extracted facts ({facts.length})
+              </div>
+              {facts.map((f, i) => (
+                <div key={i} className="flex items-start gap-1.5 text-[11px] text-foreground/70">
+                  <Badge variant="outline" className="shrink-0 text-[9px]">{f.factType}</Badge>
+                  <span>{f.fact}</span>
+                  <span className="ml-auto shrink-0 text-muted-foreground">imp:{f.importance}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

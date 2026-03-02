@@ -51,6 +51,7 @@ export interface KnowledgeSource {
   chunks: number;
   learnedAt: string;
   tags: string | null;
+  maxAgeDays: number | null;
 }
 
 export interface KnowledgeSearchResult {
@@ -102,7 +103,12 @@ export interface ConfigInfo {
   workers?: {
     backgroundLearning?: boolean;
     briefing?: boolean;
+    knowledgeCleanup?: boolean;
     lastRun?: Record<string, string | null>;
+  };
+  knowledge?: {
+    defaultTtlDays?: number | null;
+    freshnessDecayDays?: number;
   };
   debugResearch?: boolean;
   envOverrides?: string[];
@@ -206,7 +212,11 @@ export interface ResearchBriefing {
 
 // ---- Research Result Types ----
 
-export type ResearchResultType = "flight" | "stock" | "general";
+/**
+ * Research result type is an open string — the LLM decides the domain.
+ * Known types get specialized icons; anything else gets a generic fallback.
+ */
+export type ResearchResultType = string;
 
 export interface FlightQuery {
   origin: string;
@@ -274,4 +284,29 @@ export interface StockReport {
   sources: Array<{ title: string; url: string }>;
   charts: Array<{ id: string; type: string; title: string; data?: string; artifactId?: string }>;
   analyzedAt: string;
+}
+
+// ---- Swarm Agent + Artifact Types ----
+
+export interface SwarmAgent {
+  id: string;
+  swarmId: string;
+  role: string;
+  task: string;
+  tools: string[];
+  status: "pending" | "running" | "done" | "failed";
+  result: string | null;
+  error: string | null;
+  stepsUsed: number;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface ArtifactMeta {
+  id: string;
+  jobId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
 }
