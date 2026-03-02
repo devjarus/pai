@@ -9,8 +9,16 @@ import { registerTaskRoutes } from "../src/routes/tasks.js";
 import { registerAuthRoutes } from "../src/routes/auth.js";
 import { registerInboxRoutes } from "../src/routes/inbox.js";
 import { registerJobRoutes } from "../src/routes/jobs.js";
+import { registerLearningRoutes } from "../src/routes/learning.js";
+import { registerArtifactRoutes } from "../src/routes/artifacts.js";
 import type { ServerContext } from "../src/index.js";
 import jwt from "jsonwebtoken";
+
+// ---------------------------------------------------------------------------
+// Artifact mock functions (declared before vi.mock hoisting)
+// ---------------------------------------------------------------------------
+const mockGetArtifact = vi.fn();
+const mockListArtifacts = vi.fn();
 
 // ---------------------------------------------------------------------------
 // Mock @personal-ai/core — isolate route handlers from real storage/LLM
@@ -41,6 +49,8 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     getMemoryContext: vi.fn().mockResolvedValue(""),
     listJobs: (...args: unknown[]) => mockListJobs(...args),
     clearCompletedBackgroundJobs: (...args: unknown[]) => mockClearCompletedBackgroundJobs(...args),
+    cancelBackgroundJob: (...args: unknown[]) => mockCancelBackgroundJob(...args),
+    forceDeleteBackgroundJob: (...args: unknown[]) => mockForceDeleteBackgroundJob(...args),
     hasOwner: (...args: unknown[]) => mockHasOwner(...args),
     createOwner: (...args: unknown[]) => mockCreateOwner(...args),
     getOwner: (...args: unknown[]) => mockGetOwner(...args),
@@ -49,6 +59,8 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     authMigrations: [],
     writeConfig: (...args: unknown[]) => mockWriteConfig(...args),
     loadConfigFile: (...args: unknown[]) => mockLoadConfigFile(...args),
+    getArtifact: (...args: unknown[]) => mockGetArtifact(...args),
+    listArtifacts: (...args: unknown[]) => mockListArtifacts(...args),
   };
 });
 
@@ -72,6 +84,8 @@ const mockLoadConfigFile = vi.fn().mockReturnValue({});
 // ---------------------------------------------------------------------------
 const mockListJobs = vi.fn().mockReturnValue([]);
 const mockClearCompletedBackgroundJobs = vi.fn().mockReturnValue(0);
+const mockCancelBackgroundJob = vi.fn();
+const mockForceDeleteBackgroundJob = vi.fn();
 
 // ---------------------------------------------------------------------------
 // Mock @personal-ai/plugin-tasks — isolate task route handlers
@@ -140,16 +154,63 @@ vi.mock("../src/briefing.js", () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Mock ../src/learning.js — isolate learning route handlers
+// ---------------------------------------------------------------------------
+const mockListLearningRuns = vi.fn();
+
+vi.mock("../src/learning.js", () => ({
+  listLearningRuns: (...args: unknown[]) => mockListLearningRuns(...args),
+  learningMigrations: [],
+}));
+
+// ---------------------------------------------------------------------------
 // Mock @personal-ai/plugin-research — isolate job route handlers
 // ---------------------------------------------------------------------------
 const mockListResearchJobs = vi.fn();
 const mockGetResearchJob = vi.fn();
 const mockClearCompletedJobs = vi.fn();
+const mockCancelResearchJob = vi.fn();
+const mockCreateResearchJob = vi.fn();
+const mockRunResearchInBackground = vi.fn();
 
 vi.mock("@personal-ai/plugin-research", () => ({
   listResearchJobs: (...args: unknown[]) => mockListResearchJobs(...args),
   getResearchJob: (...args: unknown[]) => mockGetResearchJob(...args),
   clearCompletedJobs: (...args: unknown[]) => mockClearCompletedJobs(...args),
+  cancelResearchJob: (...args: unknown[]) => mockCancelResearchJob(...args),
+  createResearchJob: (...args: unknown[]) => mockCreateResearchJob(...args),
+  runResearchInBackground: (...args: unknown[]) => mockRunResearchInBackground(...args),
+}));
+
+// ---------------------------------------------------------------------------
+// Mock @personal-ai/plugin-swarm — isolate swarm job route handlers
+// ---------------------------------------------------------------------------
+const mockListSwarmJobs = vi.fn();
+const mockGetSwarmJob = vi.fn();
+const mockGetSwarmAgents = vi.fn();
+const mockGetBlackboardEntries = vi.fn();
+const mockCancelSwarmJob = vi.fn();
+const mockClearCompletedSwarmJobs = vi.fn();
+
+vi.mock("@personal-ai/plugin-swarm", () => ({
+  listSwarmJobs: (...args: unknown[]) => mockListSwarmJobs(...args),
+  getSwarmJob: (...args: unknown[]) => mockGetSwarmJob(...args),
+  getSwarmAgents: (...args: unknown[]) => mockGetSwarmAgents(...args),
+  getBlackboardEntries: (...args: unknown[]) => mockGetBlackboardEntries(...args),
+  cancelSwarmJob: (...args: unknown[]) => mockCancelSwarmJob(...args),
+  clearCompletedSwarmJobs: (...args: unknown[]) => mockClearCompletedSwarmJobs(...args),
+}));
+
+// ---------------------------------------------------------------------------
+// Mock @personal-ai/plugin-assistant/web-search and page-fetch — used by inbox rerun
+// ---------------------------------------------------------------------------
+vi.mock("@personal-ai/plugin-assistant/web-search", () => ({
+  webSearch: vi.fn(),
+  formatSearchResults: vi.fn(),
+}));
+
+vi.mock("@personal-ai/plugin-assistant/page-fetch", () => ({
+  fetchPageAsMarkdown: vi.fn(),
 }));
 
 /**
@@ -1951,6 +2012,92 @@ describe("Inbox routes", () => {
     expect(body.briefings).toHaveLength(1);
     expect(body.briefings[0].id).toBe("rb1");
   });
+
+  // ---- POST /api/inbox/:id/rerun tests ----
+
+  it("POST /api/inbox/:id/rerun returns 404 when briefing not found", async () => {
+    mockGetBriefingById.mockReturnValue(null);
+    const res = await app.inject({ method: "POST", url: "/api/inbox/nonexistent/rerun", payload: {} });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Briefing not found");
+  });
+
+  it("POST /api/inbox/:id/rerun returns 400 when sections JSON is invalid", async () => {
+    mockGetBriefingById.mockReturnValue({
+      id: "brief_bad",
+      sections: "not-valid-json{{{",
+      status: "ready",
+    });
+    const res = await app.inject({ method: "POST", url: "/api/inbox/brief_bad/rerun", payload: {} });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("Invalid briefing data");
+  });
+
+  it("POST /api/inbox/:id/rerun returns 400 when no goal in sections", async () => {
+    mockGetBriefingById.mockReturnValue({
+      id: "brief_nogoal",
+      sections: JSON.stringify({ resultType: "general" }),
+      status: "ready",
+    });
+    const res = await app.inject({ method: "POST", url: "/api/inbox/brief_nogoal/rerun", payload: {} });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("No research goal found in briefing");
+  });
+
+  it("POST /api/inbox/:id/rerun creates a new research job and returns jobId", async () => {
+    mockGetBriefingById.mockReturnValue({
+      id: "brief_rerun",
+      sections: JSON.stringify({ goal: "Research AI trends", resultType: "news" }),
+      status: "ready",
+    });
+    mockCreateResearchJob.mockReturnValue("new_job_123");
+    mockRunResearchInBackground.mockResolvedValue(undefined);
+
+    const res = await app.inject({ method: "POST", url: "/api/inbox/brief_rerun/rerun", payload: {} });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.jobId).toBe("new_job_123");
+    expect(mockCreateResearchJob).toHaveBeenCalledOnce();
+    expect(mockRunResearchInBackground).toHaveBeenCalledOnce();
+  });
+
+  it("POST /api/inbox/:id/rerun defaults resultType to general when missing", async () => {
+    mockGetBriefingById.mockReturnValue({
+      id: "brief_notype",
+      sections: JSON.stringify({ goal: "Research something" }),
+      status: "ready",
+    });
+    mockCreateResearchJob.mockReturnValue("job_gen");
+    mockRunResearchInBackground.mockResolvedValue(undefined);
+
+    const res = await app.inject({ method: "POST", url: "/api/inbox/brief_notype/rerun", payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    // Verify resultType defaults to "general"
+    expect(mockCreateResearchJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ resultType: "general" }),
+    );
+  });
+
+  it("POST /api/inbox/:id/rerun handles already-parsed sections object", async () => {
+    mockGetBriefingById.mockReturnValue({
+      id: "brief_obj",
+      sections: { goal: "Research parsed", resultType: "stock" },
+      status: "ready",
+    });
+    mockCreateResearchJob.mockReturnValue("job_obj");
+    mockRunResearchInBackground.mockResolvedValue(undefined);
+
+    const res = await app.inject({ method: "POST", url: "/api/inbox/brief_obj/rerun", payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(mockCreateResearchJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ goal: "Research parsed", resultType: "stock" }),
+    );
+  });
 });
 
 // ==========================================================================
@@ -1965,6 +2112,9 @@ describe("jobs routes", () => {
     vi.clearAllMocks();
     mockListJobs.mockReturnValue([]);
     mockClearCompletedBackgroundJobs.mockReturnValue(0);
+    mockListSwarmJobs.mockReturnValue([]);
+    mockGetSwarmJob.mockReturnValue(null);
+    mockClearCompletedSwarmJobs.mockReturnValue(0);
     app = Fastify();
     serverCtx = createMockServerCtx();
     registerJobRoutes(app, serverCtx);
@@ -2083,15 +2233,189 @@ describe("jobs routes", () => {
     expect(res.json().error).toBe("Job not found");
   });
 
-  it("POST /api/jobs/clear clears completed jobs from both tables", async () => {
+  it("POST /api/jobs/clear clears completed jobs from all tables", async () => {
     mockClearCompletedBackgroundJobs.mockReturnValue(2);
     mockClearCompletedJobs.mockReturnValue(3);
+    mockClearCompletedSwarmJobs.mockReturnValue(1);
 
     const res = await app.inject({ method: "POST", url: "/api/jobs/clear", payload: {} });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.ok).toBe(true);
-    expect(body.cleared).toBe(5); // 2 background + 3 research
+    expect(body.cleared).toBe(6); // 2 background + 3 research + 1 swarm
+  });
+
+  // ---- GET /api/jobs with swarm jobs ----
+
+  it("GET /api/jobs returns swarm jobs", async () => {
+    mockListResearchJobs.mockReturnValue([]);
+    mockListSwarmJobs.mockReturnValue([
+      {
+        id: "sw1",
+        goal: "Deep research on AI",
+        status: "done",
+        agentsDone: 3,
+        agentCount: 3,
+        createdAt: "2026-02-25T08:00:00Z",
+        completedAt: "2026-02-25T09:00:00Z",
+        synthesis: "A comprehensive analysis of AI trends...",
+        resultType: "general",
+      },
+    ]);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.jobs).toHaveLength(1);
+    expect(body.jobs[0].id).toBe("sw1");
+    expect(body.jobs[0].type).toBe("swarm");
+    expect(body.jobs[0].label).toBe("Deep research on AI");
+    expect(body.jobs[0].progress).toBe("3/3 agents");
+    expect(body.jobs[0].resultType).toBe("general");
+  });
+
+  it("GET /api/jobs deduplicates swarm jobs with active background jobs", async () => {
+    mockListJobs.mockReturnValue([{
+      id: "sw1",
+      type: "swarm",
+      label: "Deep research (active)",
+      status: "running",
+      progress: "1/3 agents",
+      startedAt: "2026-02-25T08:00:00Z",
+    }]);
+    mockListResearchJobs.mockReturnValue([]);
+    mockListSwarmJobs.mockReturnValue([
+      {
+        id: "sw1",
+        goal: "Deep research on AI",
+        status: "done",
+        agentsDone: 3,
+        agentCount: 3,
+        createdAt: "2026-02-25T08:00:00Z",
+        completedAt: "2026-02-25T09:00:00Z",
+        synthesis: null,
+        resultType: null,
+      },
+    ]);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs" });
+    const body = res.json();
+    expect(body.jobs).toHaveLength(1);
+    expect(body.jobs[0].label).toBe("Deep research (active)");
+  });
+
+  // ---- GET /api/jobs/:id falls through to swarm job ----
+
+  it("GET /api/jobs/:id returns a swarm job when research job not found", async () => {
+    mockGetResearchJob.mockReturnValue(null);
+    mockGetSwarmJob.mockReturnValue({
+      id: "sw1",
+      goal: "Deep research on AI",
+      status: "done",
+      synthesis: "Full swarm report...",
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs/sw1" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.job.id).toBe("sw1");
+    expect(body.job.synthesis).toBe("Full swarm report...");
+  });
+
+  // ---- GET /api/jobs/:id/agents ----
+
+  it("GET /api/jobs/:id/agents returns agents for a swarm job", async () => {
+    mockGetSwarmJob.mockReturnValue({ id: "sw1", goal: "Research AI", status: "done" });
+    mockGetSwarmAgents.mockReturnValue([
+      { id: "agent1", name: "Researcher A", status: "done" },
+      { id: "agent2", name: "Researcher B", status: "done" },
+    ]);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs/sw1/agents" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.agents).toHaveLength(2);
+    expect(body.agents[0].id).toBe("agent1");
+  });
+
+  it("GET /api/jobs/:id/agents returns 404 when swarm job not found", async () => {
+    mockGetSwarmJob.mockReturnValue(null);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs/nonexistent/agents" });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Swarm job not found");
+  });
+
+  // ---- GET /api/jobs/:id/blackboard ----
+
+  it("GET /api/jobs/:id/blackboard returns entries for a swarm job", async () => {
+    mockGetSwarmJob.mockReturnValue({ id: "sw1", goal: "Research AI", status: "done" });
+    mockGetBlackboardEntries.mockReturnValue([
+      { id: "entry1", agentId: "agent1", content: "Found relevant data" },
+      { id: "entry2", agentId: "agent2", content: "Analysis complete" },
+    ]);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs/sw1/blackboard" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.entries).toHaveLength(2);
+    expect(body.entries[0].content).toBe("Found relevant data");
+  });
+
+  it("GET /api/jobs/:id/blackboard returns 404 when swarm job not found", async () => {
+    mockGetSwarmJob.mockReturnValue(null);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs/nonexistent/blackboard" });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Swarm job not found");
+  });
+
+  // ---- POST /api/jobs/:id/cancel ----
+
+  it("POST /api/jobs/:id/cancel cancels a research job", async () => {
+    mockCancelResearchJob.mockReturnValue(true);
+    mockCancelSwarmJob.mockReturnValue(false);
+
+    const res = await app.inject({ method: "POST", url: "/api/jobs/rj1/cancel", payload: {} });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.cancelled).toBe(true);
+    expect(mockCancelBackgroundJob).toHaveBeenCalled();
+  });
+
+  it("POST /api/jobs/:id/cancel cancels a swarm job", async () => {
+    mockCancelResearchJob.mockReturnValue(false);
+    mockCancelSwarmJob.mockReturnValue(true);
+
+    const res = await app.inject({ method: "POST", url: "/api/jobs/sw1/cancel", payload: {} });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.cancelled).toBe(true);
+  });
+
+  it("POST /api/jobs/:id/cancel falls back to forceDeleteBackgroundJob", async () => {
+    mockCancelResearchJob.mockReturnValue(false);
+    mockCancelSwarmJob.mockReturnValue(false);
+    mockForceDeleteBackgroundJob.mockReturnValue(true);
+
+    const res = await app.inject({ method: "POST", url: "/api/jobs/bg1/cancel", payload: {} });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.cancelled).toBe(true);
+    expect(mockForceDeleteBackgroundJob).toHaveBeenCalled();
+  });
+
+  it("POST /api/jobs/:id/cancel returns 404 when job not found anywhere", async () => {
+    mockCancelResearchJob.mockReturnValue(false);
+    mockCancelSwarmJob.mockReturnValue(false);
+    mockForceDeleteBackgroundJob.mockReturnValue(false);
+
+    const res = await app.inject({ method: "POST", url: "/api/jobs/nonexistent/cancel", payload: {} });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Job not found or not cancellable");
   });
 });
 
@@ -2148,5 +2472,119 @@ describe("clear all threads", () => {
     const body = res.json();
     expect(body.ok).toBe(true);
     expect(body.cleared).toBe(0);
+  });
+});
+
+// ==========================================================================
+// Learning Routes
+// ==========================================================================
+
+describe("Learning routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = Fastify();
+    addTestErrorHandler(app);
+    serverCtx = createMockServerCtx();
+    registerLearningRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("GET /api/learning/runs returns runs array", async () => {
+    const mockRuns = [
+      {
+        id: 1,
+        status: "done",
+        startedAt: "2025-01-01",
+        completedAt: "2025-01-01",
+        signalCount: 5,
+        factCount: 2,
+        durationMs: 1000,
+        error: null,
+      },
+    ];
+    mockListLearningRuns.mockReturnValue(mockRuns);
+
+    const res = await app.inject({ method: "GET", url: "/api/learning/runs" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.runs).toHaveLength(1);
+    expect(body.runs[0].id).toBe(1);
+    expect(body.runs[0].status).toBe("done");
+    expect(mockListLearningRuns).toHaveBeenCalledWith(serverCtx.ctx.storage);
+  });
+});
+
+// ==========================================================================
+// Artifact Routes
+// ==========================================================================
+
+describe("Artifact routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  const MOCK_ARTIFACT = {
+    id: "art-1",
+    name: "chart.png",
+    mimeType: "image/png",
+    data: Buffer.from("PNG"),
+    jobId: "job-1",
+    createdAt: "2025-01-01",
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = Fastify();
+    addTestErrorHandler(app);
+    serverCtx = createMockServerCtx();
+    registerArtifactRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("GET /api/artifacts/:id returns 404 when not found", async () => {
+    mockGetArtifact.mockReturnValue(null);
+
+    const res = await app.inject({ method: "GET", url: "/api/artifacts/nonexistent" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Artifact not found");
+  });
+
+  it("GET /api/artifacts/:id returns artifact data with correct headers", async () => {
+    mockGetArtifact.mockReturnValue(MOCK_ARTIFACT);
+
+    const res = await app.inject({ method: "GET", url: "/api/artifacts/art-1" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("image/png");
+    expect(res.headers["content-disposition"]).toBe('inline; filename="chart.png"');
+    expect(res.headers["cache-control"]).toBe("public, max-age=86400");
+    expect(mockGetArtifact).toHaveBeenCalledWith(serverCtx.ctx.storage, "art-1");
+  });
+
+  it("GET /api/jobs/:jobId/artifacts returns artifact list", async () => {
+    const mockArtifactList = [
+      { id: "art-1", name: "chart.png", mimeType: "image/png", jobId: "job-1", createdAt: "2025-01-01" },
+    ];
+    mockListArtifacts.mockReturnValue(mockArtifactList);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs/job-1/artifacts" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.artifacts).toHaveLength(1);
+    expect(body.artifacts[0].id).toBe("art-1");
+    expect(mockListArtifacts).toHaveBeenCalledWith(serverCtx.ctx.storage, "job-1");
   });
 });
