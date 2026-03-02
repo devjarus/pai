@@ -150,7 +150,7 @@ export function createAgentTools(ctx: AgentContext) {
           return "Web search is disabled in settings. Answer based on your existing knowledge.";
         }
         try {
-          const results = await webSearch(query, 5, category as SearchCategory);
+          const results = await webSearch(query, 5, category as SearchCategory, ctx.config.searchUrl);
           if (results.length === 0) return "[empty] No web results found. Answer from your existing knowledge and conversation context.";
           const text = formatSearchResults(results);
           // Return structured JSON string — LLM reads the text field, UI card parses the full object
@@ -331,7 +331,8 @@ export function createAgentTools(ctx: AgentContext) {
               provider: ctx.config.llm.provider,
               model: ctx.config.llm.model,
               contextWindow: ctx.config.llm.contextWindow,
-              webSearch,
+              sandboxUrl: ctx.config.sandboxUrl,
+              webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,
             },
@@ -374,7 +375,8 @@ export function createAgentTools(ctx: AgentContext) {
               provider: ctx.config.llm.provider,
               model: ctx.config.llm.model,
               contextWindow: ctx.config.llm.contextWindow,
-              webSearch,
+              sandboxUrl: ctx.config.sandboxUrl,
+              webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,
             },
@@ -469,7 +471,7 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     // Conditionally add sandbox tool
-    ...(resolveSandboxUrl() ? {
+    ...(resolveSandboxUrl(ctx.config.sandboxUrl) ? {
       run_code: tool({
         description: "Execute Python or JavaScript code in an isolated sandbox. Use for data analysis, chart generation, calculations, or file processing. Files written to the OUTPUT_DIR directory will be saved as artifacts. Available packages: matplotlib, pandas, numpy, plotly, yfinance.",
         inputSchema: z.object({
@@ -481,7 +483,7 @@ export function createAgentTools(ctx: AgentContext) {
         execute: async ({ language, code, purpose, timeout }) => {
           try {
             ctx.logger.info("Sandbox execution", { purpose, language });
-            const result = await runInSandbox({ language, code, timeout }, ctx.logger);
+            const result = await runInSandbox({ language, code, timeout }, ctx.logger, ctx.config.sandboxUrl);
 
             // Store any output files as artifacts
             const savedArtifacts: Array<{ id: string; name: string; mimeType: string }> = [];

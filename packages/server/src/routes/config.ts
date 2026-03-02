@@ -48,6 +48,8 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
     },
     knowledge: config.knowledge ?? {},
     debugResearch: !!config.debugResearch,
+    sandboxUrl: config.sandboxUrl ?? "",
+    searchUrl: config.searchUrl ?? "",
   };
 }
 
@@ -98,6 +100,20 @@ const updateConfigSchema = z.object({
   knowledgeDefaultTtlDays: z.number().int().positive().nullable().optional(),
   knowledgeFreshnessDecayDays: z.number().int().positive().optional(),
   debugResearch: z.boolean().optional(),
+  sandboxUrl: z.string().optional().refine(
+    (v) => {
+      if (v === undefined || v === "") return true;
+      try { return ["http:", "https:"].includes(new URL(v).protocol); } catch { return false; }
+    },
+    "Sandbox URL must be a valid http or https URL",
+  ),
+  searchUrl: z.string().optional().refine(
+    (v) => {
+      if (v === undefined || v === "") return true;
+      try { return ["http:", "https:"].includes(new URL(v).protocol); } catch { return false; }
+    },
+    "Search URL must be a valid http or https URL",
+  ),
 });
 
 export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerContext): void {
@@ -190,6 +206,14 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     // Debug research toggle
     if (body.debugResearch !== undefined) {
       update.debugResearch = body.debugResearch;
+    }
+
+    // Sandbox and search URLs
+    if (body.sandboxUrl !== undefined) {
+      update.sandboxUrl = body.sandboxUrl || undefined;
+    }
+    if (body.searchUrl !== undefined) {
+      update.searchUrl = body.searchUrl || undefined;
     }
 
     // Telegram settings

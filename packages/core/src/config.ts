@@ -164,6 +164,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     workers: dataDirConfig?.workers ?? fileConfig.workers,
     knowledge: dataDirConfig?.knowledge ?? fileConfig.knowledge,
     debugResearch: dataDirConfig?.debugResearch ?? fileConfig.debugResearch,
+    sandboxUrl: dataDirConfig?.sandboxUrl ?? env["PAI_SANDBOX_URL"] ?? fileConfig.sandboxUrl,
+    searchUrl: dataDirConfig?.searchUrl ?? env["PAI_SEARCH_URL"] ?? fileConfig.searchUrl,
   };
 
   // Only add telegram section if any value is set

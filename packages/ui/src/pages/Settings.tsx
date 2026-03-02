@@ -57,6 +57,10 @@ export default function Settings() {
   const [briefingEnabled, setBriefingEnabled] = useState(true);
   const [knowledgeCleanupEnabled, setKnowledgeCleanupEnabled] = useState(true);
 
+  // Sidecar URLs
+  const [sandboxUrl, setSandboxUrl] = useState("");
+  const [searchUrl, setSearchUrl] = useState("");
+
   // Debug settings
   const [debugResearch, setDebugResearch] = useState(false);
 
@@ -96,6 +100,8 @@ export default function Settings() {
       setBgLearningEnabled(config.workers?.backgroundLearning !== false);
       setBriefingEnabled(config.workers?.briefing !== false);
       setKnowledgeCleanupEnabled(config.workers?.knowledgeCleanup !== false);
+      setSandboxUrl(config.sandboxUrl ?? "");
+      setSearchUrl(config.searchUrl ?? "");
     }
   }, [config, editing]);
 
@@ -116,6 +122,8 @@ export default function Settings() {
       if (bgLearningEnabled !== (config.workers?.backgroundLearning !== false)) updates.backgroundLearning = bgLearningEnabled;
       if (briefingEnabled !== (config.workers?.briefing !== false)) updates.briefingEnabled = briefingEnabled;
       if (knowledgeCleanupEnabled !== (config.workers?.knowledgeCleanup !== false)) updates.knowledgeCleanup = knowledgeCleanupEnabled;
+      if (sandboxUrl !== (config.sandboxUrl ?? "")) updates.sandboxUrl = sandboxUrl;
+      if (searchUrl !== (config.searchUrl ?? "")) updates.searchUrl = searchUrl;
 
       if (Object.keys(updates).length === 0) {
         setEditing(false);
@@ -130,7 +138,7 @@ export default function Settings() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save configuration");
     }
-  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, knowledgeCleanupEnabled, config, updateConfigMut]);
+  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, knowledgeCleanupEnabled, sandboxUrl, searchUrl, config, updateConfigMut]);
 
   const handleCancel = useCallback(() => {
     if (config) {
@@ -149,6 +157,8 @@ export default function Settings() {
     setBriefingEnabled(config?.workers?.briefing !== false);
     setKnowledgeCleanupEnabled(config?.workers?.knowledgeCleanup !== false);
     setDebugResearch(config?.debugResearch ?? false);
+    setSandboxUrl(config?.sandboxUrl ?? "");
+    setSearchUrl(config?.searchUrl ?? "");
     setEditing(false);
   }, [config]);
 
@@ -639,6 +649,56 @@ export default function Settings() {
                           onToggle={() => setExpandedRunId(expandedRunId === run.id ? null : run.id)}
                         />
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sidecar URLs */}
+              {editing && (
+                <>
+                  <div className="border-t border-border/30 px-5 py-3 space-y-3">
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                        Sandbox URL
+                        <InfoBubble text="URL for the code execution sandbox (e.g. http://localhost:8888). Auto-detected in Docker/Railway if left empty." side="right" />
+                      </label>
+                      <input
+                        type="text"
+                        value={sandboxUrl}
+                        onChange={(e) => setSandboxUrl(e.target.value)}
+                        placeholder="Auto-detect"
+                        className="w-full rounded-md border border-border/50 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                        Search URL
+                        <InfoBubble text="URL for the SearXNG search engine (e.g. http://localhost:8080). Auto-detected in Docker/Railway if left empty." side="right" />
+                      </label>
+                      <input
+                        type="text"
+                        value={searchUrl}
+                        onChange={(e) => setSearchUrl(e.target.value)}
+                        placeholder="Auto-detect"
+                        className="w-full rounded-md border border-border/50 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+              {!editing && (sandboxUrl || searchUrl) && (
+                <div className="border-t border-border/30 px-5 py-3 space-y-1.5">
+                  {sandboxUrl && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Sandbox URL</span>
+                      <span className="font-mono text-foreground/80">{sandboxUrl}</span>
+                    </div>
+                  )}
+                  {searchUrl && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Search URL</span>
+                      <span className="font-mono text-foreground/80">{searchUrl}</span>
                     </div>
                   )}
                 </div>

@@ -20,12 +20,16 @@ export type SearchCategory =
   | "files";
 
 /**
- * Resolve the SearXNG base URL from environment.
- * Priority: PAI_SEARCH_URL > Railway internal > Docker default > localhost.
+ * Resolve the SearXNG base URL.
+ * Priority: configUrl > PAI_SEARCH_URL env > Railway internal > Docker default > localhost.
+ * Pass `config.searchUrl` when available to avoid needing env vars.
  */
-export function resolveSearchUrl(): string {
+export function resolveSearchUrl(configUrl?: string): string {
+  if (configUrl) return configUrl;
   if (process.env.PAI_SEARCH_URL) return process.env.PAI_SEARCH_URL;
+  // Railway internal networking (service named "searxng", fixed port 8080)
   if (process.env.RAILWAY_VOLUME_MOUNT_PATH) return "http://searxng.railway.internal:8080";
+  // Docker Compose networking (container named "searxng" in docker-compose.yml)
   if (process.env.PAI_DATA_DIR === "/data") return "http://searxng:8080";
   return "http://localhost:8080";
 }
@@ -38,8 +42,9 @@ export async function webSearch(
   query: string,
   maxResults = 5,
   category: SearchCategory = "general",
+  configUrl?: string,
 ): Promise<SearchResult[]> {
-  const baseUrl = resolveSearchUrl();
+  const baseUrl = resolveSearchUrl(configUrl);
   const params = new URLSearchParams({
     q: query,
     format: "json",

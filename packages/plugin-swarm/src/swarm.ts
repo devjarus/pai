@@ -38,6 +38,8 @@ export interface SwarmContext {
   provider?: string;
   model?: string;
   contextWindow?: number;
+  /** Sandbox URL from config (passed through to resolveSandboxUrl) */
+  sandboxUrl?: string;
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   formatSearchResults: (results: Array<{ title: string; url: string; snippet: string }>) => string;
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;
@@ -440,7 +442,7 @@ function createSubAgentTools(
   // Conditionally add run_code if sandbox is available and tools include it
   if (allowed.has("run_code")) {
     try {
-      const sandboxUrl = resolveSandboxUrl();
+      const sandboxUrl = resolveSandboxUrl(ctx.sandboxUrl);
       if (sandboxUrl) {
         allTools.run_code = tool({
           description: "Execute Python or JavaScript code in an isolated sandbox.",
@@ -452,7 +454,7 @@ function createSubAgentTools(
             try {
               ctx.logger.info("Swarm sandbox execution", { agentId, language, codeLength: code.length });
               const { runInSandbox } = await import("@personal-ai/core");
-              const result = await runInSandbox({ language: language as "python" | "node", code, timeout: 30 }, ctx.logger);
+              const result = await runInSandbox({ language: language as "python" | "node", code, timeout: 30 }, ctx.logger, ctx.sandboxUrl);
 
               // Persist each output file as an artifact
               const artifactIds: Array<{ name: string; id: string }> = [];

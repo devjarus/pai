@@ -55,6 +55,8 @@ export interface ResearchContext {
   model?: string;
   /** Optional context window override in tokens */
   contextWindow?: number;
+  /** Sandbox URL from config (passed through to resolveSandboxUrl) */
+  sandboxUrl?: string;
   /** Web search function — injected to avoid circular dependency */
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   /** Format search results for display */
@@ -730,9 +732,9 @@ export async function runResearchInBackground(
     // Generate charts for stock research via sandbox (if available)
     if (job.resultType === "stock" && structuredResult) {
       try {
-        const sandboxUrl = process.env.PAI_SANDBOX_URL;
+        const { resolveSandboxUrl, runInSandbox, storeArtifact, guessMimeType } = await import("@personal-ai/core");
+        const sandboxUrl = resolveSandboxUrl(ctx.sandboxUrl);
         if (sandboxUrl) {
-          const { runInSandbox, storeArtifact, guessMimeType } = await import("@personal-ai/core");
           const stockData = JSON.parse(structuredResult);
           const ticker = stockData.ticker ?? "STOCK";
           const chartCode = generateStockChartCode(ticker, stockData.metrics);
@@ -741,7 +743,7 @@ export async function runResearchInBackground(
             language: "python",
             code: chartCode,
             timeout: 60,
-          });
+          }, ctx.logger, ctx.sandboxUrl);
 
           if (chartResult.files.length > 0) {
             const charts: Array<{ id: string; type: string; title: string; artifactId: string }> = [];

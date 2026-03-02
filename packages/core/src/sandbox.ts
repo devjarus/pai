@@ -19,13 +19,14 @@ export interface SandboxOptions {
 }
 
 /**
- * Resolve sandbox URL from environment.
- * Priority: PAI_SANDBOX_URL > Railway internal > Docker default > null.
- * Returns null only in local dev when no sandbox is running.
+ * Resolve sandbox URL.
+ * Priority: configUrl > PAI_SANDBOX_URL env > Railway internal > Docker default > null.
+ * Pass `config.sandboxUrl` when available to avoid needing env vars.
  */
-export function resolveSandboxUrl(): string | null {
+export function resolveSandboxUrl(configUrl?: string): string | null {
+  if (configUrl) return configUrl;
   if (process.env.PAI_SANDBOX_URL) return process.env.PAI_SANDBOX_URL;
-  // Railway internal networking (service named "sandbox" in Railway project)
+  // Railway internal networking (service named "sandbox", fixed port 8888)
   if (process.env.RAILWAY_VOLUME_MOUNT_PATH) return "http://sandbox.railway.internal:8888";
   // Docker Compose networking (container named "sandbox" in docker-compose.yml)
   if (process.env.PAI_DATA_DIR === "/data") return "http://sandbox:8888";
@@ -52,10 +53,10 @@ export async function sandboxHealth(url?: string): Promise<{ ok: boolean; langua
  * Execute code in the sandbox sidecar.
  * Throws if sandbox is not configured or execution fails catastrophically.
  */
-export async function runInSandbox(options: SandboxOptions, logger?: Logger): Promise<SandboxResult> {
-  const baseUrl = resolveSandboxUrl();
+export async function runInSandbox(options: SandboxOptions, logger?: Logger, configUrl?: string): Promise<SandboxResult> {
+  const baseUrl = resolveSandboxUrl(configUrl);
   if (!baseUrl) {
-    throw new Error("Sandbox not configured. Set PAI_SANDBOX_URL to enable code execution.");
+    throw new Error("Sandbox not configured. Set sandboxUrl in Settings or PAI_SANDBOX_URL env var.");
   }
 
   const timeout = options.timeout ?? 30;

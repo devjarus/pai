@@ -53,6 +53,10 @@ export interface Config {
   };
   /** Show debug info (render spec, raw data) on research results */
   debugResearch?: boolean;
+  /** Sandbox code execution URL (e.g. http://localhost:8888). Auto-detected in Docker/Railway if unset. */
+  sandboxUrl?: string;
+  /** SearXNG web search URL (e.g. http://localhost:8080). Auto-detected in Docker/Railway if unset. */
+  searchUrl?: string;
 }
 
 export interface Migration {
