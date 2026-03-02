@@ -51,6 +51,8 @@ export interface Config {
     reactionCooldownMin?: number;
     proactiveCooldownMin?: number;
   };
+  /** Show debug info (render spec, raw data) on research results */
+  debugResearch?: boolean;
 }
 
 export interface Migration {

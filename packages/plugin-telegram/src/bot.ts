@@ -8,7 +8,7 @@ import { listSwarmJobs } from "@personal-ai/plugin-swarm";
 import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { runAgentChat, createThread, clearThread as clearThreadMessages } from "./chat.js";
-import { markdownToTelegramHTML, splitMessage } from "./formatter.js";
+import { markdownToTelegramHTML, splitMessage, escapeHTML } from "./formatter.js";
 import { bufferMessage, passiveProcess } from "./passive.js";
 
 /** Tool name → human-friendly status emoji */
@@ -146,7 +146,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       const lines = tasks.map((t) => {
         const priority = t.priority === "high" ? "\uD83D\uDD34" : t.priority === "medium" ? "\uD83D\uDFE1" : "\uD83D\uDFE2";
         const due = t.due_date ? ` (due: ${t.due_date})` : "";
-        return `${priority} ${t.title}${due}`;
+        return `${priority} ${escapeHTML(t.title)}${due}`;
       });
       await tgCtx.reply(`<b>Open Tasks</b>\n\n${lines.join("\n")}`, { parse_mode: "HTML" });
     } catch (err) {
@@ -164,7 +164,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         return;
       }
       const top = beliefs.slice(0, 10);
-      const lines = top.map((b, i) => `${i + 1}. ${b.statement}`);
+      const lines = top.map((b, i) => `${i + 1}. ${escapeHTML(b.statement)}`);
       await tgCtx.reply(`<b>Recent Memories</b>\n\n${lines.join("\n")}`, { parse_mode: "HTML" });
     } catch (err) {
       ctx.logger.error("Failed to list beliefs", { error: err instanceof Error ? err.message : String(err) });
@@ -188,7 +188,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       const lines = schedules.map((s) => {
         const interval = s.interval_hours >= 24 ? `${Math.round(s.interval_hours / 24)}d` : `${s.interval_hours}h`;
         const next = formatDateTime(ctx.config.timezone, new Date(s.next_run_at)).full;
-        return `\u{1F504} <b>${s.label}</b> (every ${interval})\n   Next: ${next}\n   ID: <code>${s.id}</code>`;
+        return `\u{1F504} <b>${escapeHTML(s.label)}</b> (every ${interval})\n   Next: ${next}\n   ID: <code>${s.id}</code>`;
       });
       await tgCtx.reply(`<b>Active Schedules</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
     } catch {
@@ -212,12 +212,13 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
 
       const statusEmoji: Record<string, string> = {
         done: "\u2705", running: "\uD83D\uDD04", failed: "\u274C", pending: "\u23F3",
+        planning: "\uD83D\uDCDD", synthesizing: "\uD83E\uDDE9",
       };
       const lines = allJobs.map((j) => {
         const icon = j.source === "swarm" ? "\uD83D\uDC1D" : "\uD83D\uDD2C";
         const status = statusEmoji[j.status] ?? "\u2753";
         const ago = formatRelativeTime(j.createdAt);
-        return `${icon} "${j.goal.slice(0, 50)}" — ${status} ${j.status} (${ago})`;
+        return `${icon} "${escapeHTML(j.goal.slice(0, 50))}" — ${status} ${j.status} (${ago})`;
       });
       await tgCtx.reply(`<b>Recent Jobs</b>\n\n${lines.join("\n")}`, { parse_mode: "HTML" });
     } catch (err) {

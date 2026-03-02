@@ -52,7 +52,7 @@ export function formatBriefingHTML(sections: BriefingSections): string {
 }
 
 /** Escape HTML entities for Telegram */
-function escapeHTML(text: string): string {
+export function escapeHTML(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

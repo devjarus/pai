@@ -14,7 +14,7 @@ import { startResearchPushLoop } from "./push.js";
 // Re-exports
 export { createBot } from "./bot.js";
 export { runAgentChat, createThread, deleteThread, clearThread } from "./chat.js";
-export { markdownToTelegramHTML, splitMessage, formatBriefingHTML } from "./formatter.js";
+export { markdownToTelegramHTML, splitMessage, formatBriefingHTML, escapeHTML } from "./formatter.js";
 export { startResearchPushLoop } from "./push.js";
 
 /** Migrations for telegram_threads mapping table */

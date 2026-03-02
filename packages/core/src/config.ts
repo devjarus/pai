@@ -161,6 +161,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     plugins: env["PAI_PLUGINS"]?.split(",").map((s) => s.trim()) ?? fileConfig.plugins ?? ["memory", "tasks"],
     timezone: env["PAI_TIMEZONE"] ?? dataDirConfig?.timezone ?? fileConfig.timezone,
     webSearchEnabled: env["PAI_WEB_SEARCH"] === "false" ? false : (fileConfig.webSearchEnabled ?? true),
+    workers: dataDirConfig?.workers ?? fileConfig.workers,
+    knowledge: dataDirConfig?.knowledge ?? fileConfig.knowledge,
+    debugResearch: dataDirConfig?.debugResearch ?? fileConfig.debugResearch,
   };
 
   // Only add telegram section if any value is set
