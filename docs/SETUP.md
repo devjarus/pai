@@ -86,6 +86,27 @@ docker compose pull && docker compose up -d
 docker compose down -v
 ```
 
+### Docker Sidecars
+
+pai includes optional Docker sidecars for enhanced functionality:
+
+**SearXNG** (always-on) — Self-hosted web search engine. No API key needed, no rate limits. Starts automatically with `docker compose up -d`.
+
+**Sandbox** (opt-in) — Isolated Python 3.12 + Node.js 20 environment for code execution, chart generation (matplotlib, plotly), and data analysis. Enable with:
+```bash
+docker compose --profile sandbox up -d
+```
+
+**Ollama** (opt-in) — Local LLM inference. Enable with:
+```bash
+docker compose --profile local up -d
+```
+
+**All sidecars together:**
+```bash
+docker compose --profile local --profile sandbox up -d
+```
+
 ### Data persistence
 
 Your data is stored at `~/.personal-ai/data/` on the host, mounted into the container at `/data`. This persists across container restarts and upgrades.
@@ -130,6 +151,20 @@ Railway auto-deploys on push. The `railway.toml` in the repo configures the buil
 
 1. Railway assigns a URL like `https://pai-production-xxxx.up.railway.app`
 2. Or add a custom domain in Railway settings
+
+### Step 5b: Add sidecars (optional)
+
+pai provides scripts to add SearXNG (web search) and Sandbox (code execution) as Railway services:
+
+```bash
+# Add web search (recommended — enables the assistant's web search tool)
+./scripts/railway-add-searxng.sh
+
+# Add code sandbox (enables chart generation in research reports)
+./scripts/railway-add-sandbox.sh
+```
+
+Both scripts use pre-built GHCR images and auto-configure the PAI service via internal Railway networking.
 
 ### Step 6: Create your account
 
@@ -389,6 +424,8 @@ Open your bot in Telegram and send any message. The bot responds using the same 
 | `/clear` | Clear conversation history |
 | `/tasks` | Show open tasks |
 | `/memories` | Show top 10 memories |
+| `/jobs` | Show recent research & swarm job status |
+| `/research <query>` | Start a deep research job |
 
 Or just send any text message to chat naturally.
 
@@ -409,7 +446,7 @@ Each Telegram chat gets its own conversation thread, persisted in the database.
 The **Chat** page is your main interface. Send messages and the assistant will:
 
 - **Recall memories** — automatically searches your memory before answering
-- **Search the web** — uses Brave Search when you ask about current events
+- **Search the web** — uses SearXNG when you ask about current events
 - **Manage tasks** — create, list, complete tasks via natural language
 - **Learn from URLs** — paste a link and ask it to learn from the page
 - **Remember things** — facts you share are automatically extracted and stored

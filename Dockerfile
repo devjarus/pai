@@ -21,6 +21,7 @@ COPY packages/plugin-tasks/package.json packages/plugin-tasks/tsconfig.json pack
 COPY packages/plugin-telegram/package.json packages/plugin-telegram/tsconfig.json packages/plugin-telegram/
 COPY packages/plugin-research/package.json packages/plugin-research/tsconfig.json packages/plugin-research/
 COPY packages/plugin-schedules/package.json packages/plugin-schedules/tsconfig.json packages/plugin-schedules/
+COPY packages/plugin-swarm/package.json packages/plugin-swarm/tsconfig.json packages/plugin-swarm/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
@@ -90,6 +91,10 @@ COPY --from=builder /app/packages/plugin-research/node_modules packages/plugin-r
 
 COPY --from=builder /app/packages/plugin-schedules/dist packages/plugin-schedules/dist
 COPY --from=builder /app/packages/plugin-schedules/package.json packages/plugin-schedules/
+
+COPY --from=builder /app/packages/plugin-swarm/dist packages/plugin-swarm/dist
+COPY --from=builder /app/packages/plugin-swarm/package.json packages/plugin-swarm/
+COPY --from=builder /app/packages/plugin-swarm/node_modules packages/plugin-swarm/node_modules
 
 # Create non-root user for runtime security
 RUN groupadd --gid 1001 pai && useradd --uid 1001 --gid pai --shell /bin/false pai

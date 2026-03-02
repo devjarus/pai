@@ -53,6 +53,7 @@ packages/
   plugin-assistant/   Personal Assistant agent — system prompt, AI SDK tools, afterResponse hook, run_code sandbox tool
   plugin-curator/     Memory Curator agent — health analysis, dedup, contradiction resolution
   plugin-research/    Background research — domain detection (flight/stock/general), domain-specific LLM prompts, structured JSON output, chart generation via sandbox
+  plugin-swarm/       Sub-agent swarm — decomposes tasks into 2-5 parallel domain-specific sub-agents with shared SQLite blackboard, budget-limited tools, and orchestrator synthesis
   plugin-schedules/   Recurring scheduled research jobs
   plugin-telegram/    Telegram bot — grammY, standalone entry point, chat pipeline
   server/             Fastify API — REST + SSE + static UI + auth (JWT) + WorkerLoop + artifacts serving + server hardening
@@ -87,13 +88,13 @@ POST /api/chat { id, messages: [{ role, parts }], sessionId, agent }
           │     + current date/time
           │     + identity ("You are talking to your owner via web UI")
           │
-          ├── streamText({ model, system, messages, tools, stopWhen: stepCountIs(5) })
+          ├── streamText({ model, system, messages, tools, stopWhen: stepCountIs(8) })
           │     │
           │     │  LLM autonomously calls tools (0-5 steps):
           │     │    memory_recall → semantic search + FTS5
           │     │    memory_remember → extract + deduplicate + store beliefs
           │     │    memory_forget → soft-delete belief
-          │     │    web_search → Brave Search
+          │     │    web_search → SearXNG
           │     │    task_list / task_add / task_done
           │     │
           │     └── onFinish:
@@ -132,7 +133,9 @@ User sends message on Telegram
           │     - Owner detection via config.telegram.ownerUsername
           │     - Tool status updates sent as chat actions ("typing...")
           │     - Raw tool call JSON stripped from response (Ollama quirk)
-          │     - stepCountIs(3) instead of 5
+          │     - stepCountIs(8) to match web UI
+          │     - Curator sub-agent delegation via agent_curator tool
+          │     - Commands: /start, /help, /clear, /tasks, /memories, /jobs, /research
           │
           └── Format response:
                 → Markdown → Telegram HTML (<b>, <code>, <pre>, <a>)
@@ -458,6 +461,9 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `POST` | `/api/inbox/:id/rerun` | Re-run a research report with same goal and domain type |
 | `GET` | `/api/jobs` | List background jobs (crawl + research) with `resultType` |
 | `GET` | `/api/jobs/:id` | Job detail with `resultType` and `structuredResult` |
+| `GET` | `/api/jobs/:id/agents` | Swarm sub-agents for a job |
+| `GET` | `/api/jobs/:id/blackboard` | Swarm blackboard entries |
+| `POST` | `/api/jobs/:id/cancel` | Cancel a running job |
 | `POST` | `/api/jobs/clear` | Clear completed jobs |
 | `GET` | `/api/jobs/:jobId/artifacts` | List artifacts for a job |
 | `GET` | `/api/artifacts/:id` | Serve artifact binary (charts, images) with correct MIME type |
@@ -467,6 +473,7 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `DELETE` | `/api/knowledge/sources/:id` | Delete source |
 | `GET` | `/api/config` | Current config (keys sanitized) |
 | `PUT` | `/api/config` | Update config → reinitialize() |
+| `GET` | `/api/learning/runs` | Recent learning run history |
 | `GET` | `/api/browse?path=` | Directory browser |
 
 ### Reinitialize Pattern
@@ -514,7 +521,7 @@ interface AgentContext extends PluginContext {
 - `memory_recall` uses `retrieveContext()` — searches beliefs + knowledge in one embedding call
 - Knowledge-memory bridge: system prompt instructs storing key knowledge takeaways as beliefs
 - `afterResponse`: extracts facts → validates against response → stores via `remember()`
-- Web search: Brave Search HTML endpoint, no API key required
+- Web search: SearXNG (self-hosted, no API key, supports search categories)
 
 ### Memory Curator (`plugin-curator`)
 
@@ -530,9 +537,12 @@ Tasks (status/priority/due date) + Goals. `ai-suggest` feeds tasks + memory to L
 
 - grammY long-polling, standalone entry point
 - `telegram_threads` maps chat_id → thread_id (reuses same thread/message tables)
-- `runAgentChat()` — non-streaming (`generateText`), same tools as web
+- `runAgentChat()` — non-streaming (`generateText`), same tools as web, `stepCountIs(8)`
+- Sub-agent delegation: curator via `agent_curator` tool
+- Commands: `/start`, `/help`, `/clear`, `/tasks`, `/memories`, `/jobs`, `/research`
 - Multi-user: sender identity injected, owner detected via `config.telegram.ownerUsername`
 - Markdown → Telegram HTML conversion, 4096-char splitting
+- Research push loop delivers both research and swarm results to originating Telegram chat
 
 ---
 
@@ -604,8 +614,26 @@ briefings          (id, generated_at, sections TEXT JSON, raw_context TEXT, stat
                     INDEX: (generated_at)
                     -- type: "daily" | "research" (added in v2)
 
--- Learning — migration v1
+-- Learning — migration v1-v2
 learning_watermarks (source TEXT PK, last_id TEXT, last_ts TEXT, updated_at TEXT)
+learning_runs      (id, started_at, completed_at, signals_found INTEGER, facts_extracted INTEGER,
+                    duration_ms INTEGER, error TEXT)
+
+-- Research — plugin migrations
+research_jobs      (id, goal TEXT, status, type TEXT, result TEXT, render_spec TEXT,
+                    created_at, updated_at)
+background_jobs    (id, type TEXT, status, goal TEXT, result TEXT, render_spec TEXT,
+                    progress REAL, created_at, updated_at)
+
+-- Swarm — plugin migrations
+swarm_jobs         (id, goal TEXT, type TEXT, status, result TEXT, render_spec TEXT,
+                    created_at, updated_at)
+swarm_agents       (id, job_id FK, name TEXT, role TEXT, status, result TEXT,
+                    created_at, updated_at)
+swarm_blackboard   (id, job_id FK, agent_id FK, key TEXT, value TEXT, created_at)
+
+-- Artifacts — migration v1
+artifacts          (id, job_id FK, filename TEXT, mime_type TEXT, data BLOB, created_at)
 ```
 
 ---
@@ -636,27 +664,32 @@ learning_watermarks (source TEXT PK, last_id TEXT, last_ts TEXT, updated_at TEXT
 ## Docker Deployment
 
 ```
-┌─────────────────────────────────────────┐
-│              Host Machine               │
-│                                         │
-│  ┌──────────────┐   ┌───────────────┐   │
-│  │  pai         │   │  ollama       │   │
-│  │  :3141       │──▶│  :11434       │   │
-│  │  /data vol   │   │  /models vol  │   │
-│  └──────────────┘   └───────────────┘   │
-│        │              (profile: local)   │
-│        ▼                                │
-│  ~/.personal-ai/data/                   │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      Host Machine                           │
+│                                                             │
+│  ┌──────────────┐   ┌───────────────┐   ┌───────────────┐  │
+│  │  pai         │   │  searxng      │   │  ollama       │  │
+│  │  :3141       │──▶│  :8080        │   │  :11434       │  │
+│  │  /data vol   │   │  (always-on)  │   │  (local only) │  │
+│  └──────┬───────┘   └───────────────┘   └───────────────┘  │
+│         │                                                   │
+│         ├──▶ ┌───────────────┐                              │
+│         │    │  sandbox      │                              │
+│         │    │  :8888        │                              │
+│         │    │  (opt-in)     │                              │
+│         │    └───────────────┘                              │
+│         ▼                                                   │
+│  ~/.personal-ai/data/                                       │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 **Multi-stage Dockerfile:** Builder (Node 20 Alpine + pnpm + build tools) → Runtime (Alpine + dist + prod deps only). Target <400MB.
 
 **docker-compose.yml:** Services with Docker Compose profiles:
 - `pai` — always starts, configurable via env vars (`PAI_LLM_PROVIDER`, `PAI_LLM_BASE_URL`, `PAI_LLM_API_KEY`)
-- `searxng` — always starts, web search backend (SearXNG on port 8080)
-- `sandbox` — `profiles: [sandbox]`, only starts with `--profile sandbox`. Python/Node code execution sidecar for chart generation and data analysis. Set `PAI_SANDBOX_URL=http://sandbox:8888` on the `pai` service.
-- `ollama` — `profiles: [local]`, only starts with `--profile local`
+- `searxng` — always starts, self-hosted web search backend (no API key, no rate limits)
+- `sandbox` — `profiles: [sandbox]`, opt-in code execution sidecar (Python 3.12 + Node.js 20). Set `PAI_SANDBOX_URL=http://sandbox:8888`.
+- `ollama` — `profiles: [local]`, only with `--profile local`
 
 **install.sh:** Interactive installer — checks Docker, asks local vs cloud, configures provider, saves `.env`, starts containers.
 

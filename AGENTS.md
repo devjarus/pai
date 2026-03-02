@@ -366,6 +366,8 @@ PAI_TELEGRAM_TOKEN=<token> node packages/plugin-telegram/dist/index.js
 - `/clear` — Clear conversation history
 - `/tasks` — Show open tasks
 - `/memories` — Show top 10 memories
+- `/jobs` — Show recent research & swarm job status
+- `/research <query>` — Start a deep research job
 
 Or just send any text message to chat with the assistant.
 
@@ -373,9 +375,11 @@ Or just send any text message to chat with the assistant.
 
 - Each Telegram chat gets a unique thread (persisted in `telegram_threads` table)
 - Messages go through `runAgentChat()` which uses `generateText` with the same tools as the web UI
+- Sub-agent delegation: assistant can delegate to the Memory Curator via `agent_curator` tool
 - Tool calls show status updates in the chat ("Searching the web...", "Recalling memories...")
 - Long responses are automatically split at Telegram's 4096-char limit
 - Markdown from the LLM is converted to Telegram-compatible HTML
+- Research push loop delivers completed research and swarm results to originating Telegram chats
 
 ## Architecture Reference
 

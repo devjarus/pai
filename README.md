@@ -13,7 +13,10 @@ Personal AI agent platform. Chat via web UI or Telegram, learn from web pages, m
 - **Telegram bot** — same agent pipeline, multi-user aware (owner vs. others)
 - **Knowledge base** — learn from web pages, FTS5 prefilter + cosine re-ranking
 - **Persistent memory** — beliefs with lifecycle (reinforce, contradict, decay, synthesize), semantic search
-- **Web search** — Brave Search for current information, no API key required
+- **Web search** — SearXNG web search for current information, self-hosted, no rate limits
+- **Background research** — deep research with domain-specific agents (flight, stock, crypto, news)
+- **Sub-agent swarm** — parallel multi-agent task decomposition
+- **Code sandbox** — isolated Python/Node execution for charts and analysis
 - **Task management** — tasks + goals with AI prioritization
 - **MCP server** — 19 tools for Claude Code, Cursor, Windsurf integration
 - **CLI** — `pai` commands with `--json` output and prefix-matched IDs
@@ -40,6 +43,12 @@ docker compose --profile local up -d
 # Cloud only (no Ollama) — configure provider in Settings UI
 docker compose up -d
 
+# With SearXNG web search + code sandbox
+docker compose --profile sandbox up -d
+
+# With everything (Ollama + sandbox)
+docker compose --profile local --profile sandbox up -d
+
 # Or pass provider directly
 PAI_LLM_PROVIDER=openai PAI_LLM_API_KEY=sk-... docker compose up -d
 ```
@@ -64,9 +73,12 @@ Open `http://127.0.0.1:3141` after starting the server:
 
 | Page | Description |
 |------|-------------|
+| **Inbox** (`/`) | AI briefing home screen with research reports, domain badges, and refresh. |
 | **Chat** | Streaming chat with tool cards (memory, search, tasks). Thread sidebar. Responsive mobile. |
+| **Jobs** | Background job tracker for research and swarm jobs with agent progress. |
 | **Memory** | Browse beliefs by type/status, semantic search, detail view with confidence/stability. |
 | **Knowledge** | Browse learned sources, view chunks, search knowledge base, learn from URLs. |
+| **Tasks** | Full CRUD with priorities, due dates, goals, and AI suggestions. |
 | **Settings** | LLM provider, model, API key, data directory, Telegram bot config. |
 | **Timeline** | Chronological episodes and belief changes. |
 
@@ -84,7 +96,7 @@ node packages/plugin-telegram/dist/index.js
 # Option 2: via server (enable Telegram in Settings UI, then pnpm start)
 ```
 
-Commands: `/start`, `/help`, `/clear`, `/tasks`, `/memories` — or just send any message.
+Commands: `/start`, `/help`, `/clear`, `/tasks`, `/memories`, `/jobs`, `/research <query>` — or just send any message.
 
 The bot knows who's talking (owner vs. family/friends) and attributes memories to the correct person.
 
@@ -185,6 +197,9 @@ packages/
   plugin-assistant/   Personal Assistant agent (tools, system prompt, afterResponse)
   plugin-curator/     Memory Curator agent (health analysis, dedup, contradiction resolution)
   plugin-tasks/       Tasks + Goals with AI prioritization
+  plugin-research/    Background research agent (domain-specific: flight, stock, crypto, news)
+  plugin-swarm/       Sub-agent swarm (parallel task decomposition, shared blackboard)
+  plugin-schedules/   Scheduled recurring jobs
   plugin-telegram/    Telegram bot (grammY, standalone or server-managed)
   server/             Fastify API (REST + SSE streaming + static UI)
   ui/                 React + Vite + Tailwind + shadcn/ui
@@ -210,11 +225,15 @@ Environment variables or `~/.personal-ai/config.json` (editable via Settings UI)
 | `PAI_LOG_LEVEL` | `silent` | `silent`, `error`, `warn`, `info`, `debug` |
 | `PAI_JWT_SECRET` | _(auto-generated)_ | Custom JWT signing secret |
 | `PAI_RESET_PASSWORD` | | Set to reset owner password on next boot (remove after use) |
+| `PAI_SEARCH_URL` | _(auto-detected in Docker)_ | SearXNG base URL |
+| `PAI_SANDBOX_URL` | | Code execution sandbox URL (opt-in) |
+| `PAI_TIMEZONE` | | IANA timezone (e.g., `Asia/Kolkata`) |
+| `PAI_CONTEXT_WINDOW` | | Override context window size for unrecognized models |
 
 ## Development
 
 ```bash
-pnpm test                # 374 tests (vitest)
+pnpm test                # 712 tests (vitest)
 pnpm test:watch          # watch mode
 pnpm test:coverage       # v8 coverage with thresholds
 pnpm typecheck           # type-check all packages

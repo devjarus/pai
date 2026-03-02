@@ -136,6 +136,17 @@ install_docker() {
   ok "Docker Compose is available"
 
   ask_llm_provider
+
+  # Ask about code sandbox
+  echo ""
+  echo "Enable code execution sandbox? (Python/Node for charts and analysis)"
+  echo ""
+  echo "  1) No (default — lighter setup)"
+  echo "  2) Yes (adds ~200MB container for chart generation)"
+  echo ""
+  read -rp "Choose [1/2]: " SANDBOX_CHOICE
+  SANDBOX_CHOICE="${SANDBOX_CHOICE:-1}"
+
   clone_or_update
 
   # Write .env for docker compose
@@ -150,6 +161,10 @@ install_docker() {
     compose_profiles="--profile local"
   fi
 
+  if [ "$SANDBOX_CHOICE" = "2" ]; then
+    compose_profiles="$compose_profiles --profile sandbox"
+  fi
+
   cat > "$REPO_DIR/.env" <<EOF
 PAI_HOST_DATA_DIR=$data_dir
 PAI_LLM_PROVIDER=$PROVIDER
@@ -157,6 +172,11 @@ PAI_LLM_BASE_URL=${docker_base_url}
 PAI_LLM_MODEL=${MODEL:-}
 PAI_LLM_API_KEY=${API_KEY:-}
 EOF
+
+  if [ "$SANDBOX_CHOICE" = "2" ]; then
+    echo "PAI_SANDBOX_URL=http://sandbox:8888" >> "$REPO_DIR/.env"
+  fi
+
   chmod 600 "$REPO_DIR/.env"
   ok "Docker env saved"
 
@@ -173,6 +193,13 @@ EOF
   echo -e "${GREEN}════════════════════════════════════════${NC}"
   echo ""
   echo "  Web UI:  http://localhost:3141"
+  echo "  Search:  SearXNG (self-hosted, no API key needed)"
+  if [ "$SANDBOX_CHOICE" = "2" ]; then
+    echo "  Sandbox: Code execution enabled (Python + Node)"
+  fi
+  if [ "$PROVIDER" = "ollama" ]; then
+    echo "  LLM:     Ollama (local inference)"
+  fi
   echo "  Data:    $data_dir"
   echo ""
   echo "  Stop:    cd $REPO_DIR && docker compose down"
