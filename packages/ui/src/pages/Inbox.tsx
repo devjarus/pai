@@ -416,7 +416,8 @@ function InboxFeed() {
           <SparklesIcon className="h-10 w-10 text-primary/60" />
           <h2 className="font-mono text-lg font-semibold text-foreground">Your Inbox</h2>
           <p className="max-w-sm text-sm text-muted-foreground">
-            Your personal AI briefings, research reports, and notifications will appear here.
+            Your daily briefings, research reports, and swarm analyses will appear here.
+            Try asking the assistant to research a topic or run a deep multi-agent swarm report.
           </p>
           <Button
             onClick={handleRefresh}

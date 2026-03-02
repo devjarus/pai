@@ -156,10 +156,10 @@ const ThreadWelcome: FC = () => {
 };
 
 const SUGGESTIONS = [
+  { title: "Do a deep research report on...", description: "Multi-agent swarm research" },
   { title: "What's on my plate?", description: "Review tasks and priorities" },
-  { title: "Recall my preferences", description: "Search your memory" },
-  { title: "Research a topic", description: "Deep-dive into any subject" },
-  { title: "Summarize my knowledge", description: "Review what you've learned" },
+  { title: "Check my memory health", description: "Curator finds duplicates and contradictions" },
+  { title: "Run some Python code for me", description: "Sandboxed code execution" },
 ];
 
 const WelcomeSuggestions: FC = () => {
