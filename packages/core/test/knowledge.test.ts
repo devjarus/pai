@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createStorage } from "../src/storage.js";
 import { memoryMigrations } from "../src/memory/memory.js";
-import { knowledgeMigrations, chunkContent, learnFromContent, knowledgeSearch, hasSource, listSources, forgetSource, stripChunkHeader, reindexSource, reindexAllSources } from "../src/knowledge.js";
+import { knowledgeMigrations, chunkContent, learnFromContent, knowledgeSearch, hasSource, listSources, forgetSource, cleanupExpiredSources, stripChunkHeader, reindexSource, reindexAllSources } from "../src/knowledge.js";
 import type { LLMClient, Storage } from "../src/types.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -308,5 +308,136 @@ describe("reindexAllSources", () => {
   it("returns 0 when no sources exist", async () => {
     const count = await reindexAllSources(storage, llm);
     expect(count).toBe(0);
+  });
+});
+
+describe("cleanupExpiredSources", () => {
+  let storage: Storage;
+  let dir: string;
+  let llm: LLMClient;
+
+  beforeEach(() => {
+    const t = createTestStorage();
+    storage = t.storage;
+    dir = t.dir;
+    llm = createMockLLM();
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("deletes sources past per-source max_age_days", async () => {
+    await learnFromContent(storage, llm, "https://example.com/old", "Old", "Old content.");
+    // Backdate the source to 100 days ago
+    storage.run(
+      "UPDATE knowledge_sources SET fetched_at = datetime('now', '-100 days') WHERE url = ?",
+      ["https://example.com/old"],
+    );
+    // Set per-source TTL to 30 days
+    storage.run(
+      "UPDATE knowledge_sources SET max_age_days = 30 WHERE url = ?",
+      ["https://example.com/old"],
+    );
+
+    const result = cleanupExpiredSources(storage, { defaultTtlDays: null });
+    expect(result.deleted).toBe(1);
+    expect(listSources(storage)).toHaveLength(0);
+  });
+
+  it("respects defaultTtlDays when max_age_days is null", async () => {
+    await learnFromContent(storage, llm, "https://example.com/old2", "Old2", "Old content.");
+    storage.run(
+      "UPDATE knowledge_sources SET fetched_at = datetime('now', '-100 days') WHERE url = ?",
+      ["https://example.com/old2"],
+    );
+
+    const result = cleanupExpiredSources(storage, { defaultTtlDays: 90 });
+    expect(result.deleted).toBe(1);
+  });
+
+  it("does not delete sources within TTL", async () => {
+    await learnFromContent(storage, llm, "https://example.com/fresh", "Fresh", "Fresh content.");
+    // Source was just created (today), TTL is 30 days — should not be deleted
+    storage.run(
+      "UPDATE knowledge_sources SET max_age_days = 30 WHERE url = ?",
+      ["https://example.com/fresh"],
+    );
+
+    const result = cleanupExpiredSources(storage, { defaultTtlDays: 90 });
+    expect(result.deleted).toBe(0);
+    expect(listSources(storage)).toHaveLength(1);
+  });
+
+  it("does not delete when no TTL configured (both null)", async () => {
+    await learnFromContent(storage, llm, "https://example.com/forever", "Forever", "Content.");
+    storage.run(
+      "UPDATE knowledge_sources SET fetched_at = datetime('now', '-500 days') WHERE url = ?",
+      ["https://example.com/forever"],
+    );
+
+    const result = cleanupExpiredSources(storage, { defaultTtlDays: null });
+    expect(result.deleted).toBe(0);
+    expect(listSources(storage)).toHaveLength(1);
+  });
+
+  it("per-source max_age_days overrides defaultTtlDays", async () => {
+    await learnFromContent(storage, llm, "https://example.com/override", "Override", "Content.");
+    // 50 days old
+    storage.run(
+      "UPDATE knowledge_sources SET fetched_at = datetime('now', '-50 days') WHERE url = ?",
+      ["https://example.com/override"],
+    );
+    // Per-source TTL: 200 days (should keep), default: 30 days (would delete)
+    storage.run(
+      "UPDATE knowledge_sources SET max_age_days = 200 WHERE url = ?",
+      ["https://example.com/override"],
+    );
+
+    const result = cleanupExpiredSources(storage, { defaultTtlDays: 30 });
+    expect(result.deleted).toBe(0);
+  });
+});
+
+describe("knowledgeSearch freshness", () => {
+  let storage: Storage;
+  let dir: string;
+  let llm: LLMClient;
+
+  beforeEach(() => {
+    const t = createTestStorage();
+    storage = t.storage;
+    dir = t.dir;
+    llm = createMockLLM();
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("old sources score lower than recent sources for same query", async () => {
+    // Learn two sources with similar content
+    await learnFromContent(storage, llm, "https://example.com/old-react", "Old React Guide", "React hooks let you use state in function components. useState is the most basic hook.");
+    await learnFromContent(storage, llm, "https://example.com/new-react", "New React Guide", "React hooks let you use state in function components. useState is the most basic hook.");
+
+    // Backdate the first source to 300 days ago
+    storage.run(
+      "UPDATE knowledge_sources SET fetched_at = datetime('now', '-300 days') WHERE url = ?",
+      ["https://example.com/old-react"],
+    );
+
+    const results = await knowledgeSearch(storage, llm, "React hooks state", 10, { freshnessDecayDays: 365 });
+    expect(results.length).toBeGreaterThanOrEqual(2);
+
+    // Find results from each source
+    const oldResult = results.find((r) => r.source.url === "https://example.com/old-react");
+    const newResult = results.find((r) => r.source.url === "https://example.com/new-react");
+
+    expect(oldResult).toBeDefined();
+    expect(newResult).toBeDefined();
+    // New source should score higher due to freshness
+    expect(newResult!.score).toBeGreaterThan(oldResult!.score);
   });
 });

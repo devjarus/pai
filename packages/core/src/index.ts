@@ -4,7 +4,7 @@ export type {
 } from "./types.js";
 
 // Background jobs (DB-backed)
-export { backgroundJobMigrations, upsertJob, getJob, listJobs, updateJobStatus, clearCompletedBackgroundJobs } from "./background-jobs.js";
+export { backgroundJobMigrations, upsertJob, getJob, listJobs, updateJobStatus, cancelBackgroundJob, forceDeleteBackgroundJob, recoverStaleBackgroundJobs, cancelAllRunningBackgroundJobs, clearCompletedBackgroundJobs } from "./background-jobs.js";
 export type { BackgroundJob } from "./background-jobs.js";
 export { loadConfig, loadConfigFile, writeConfig, findGitRoot, resolveConfigHome } from "./config.js";
 export { createStorage, backupDatabase, resolveIdPrefix } from "./storage.js";
@@ -29,8 +29,8 @@ export {
 export type { ThreadRow, ThreadMessageRow, ThreadMessageInput, EnsureThreadOptions, ListMessagesOptions, AppendMessagesOptions } from "./threads.js";
 
 // Knowledge
-export { knowledgeMigrations, chunkContent, hasSource, listSources, getSourceChunks, learnFromContent, knowledgeSearch, searchKnowledgeFTS, forgetSource, stripChunkHeader, reindexSource, reindexAllSources } from "./knowledge.js";
-export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult } from "./knowledge.js";
+export { knowledgeMigrations, chunkContent, hasSource, listSources, getSourceChunks, learnFromContent, knowledgeSearch, searchKnowledgeFTS, forgetSource, cleanupExpiredSources, stripChunkHeader, reindexSource, reindexAllSources } from "./knowledge.js";
+export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult, KnowledgeCleanupResult } from "./knowledge.js";
 
 // Memory
 export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, updateBeliefContent, memoryStats, memoryCommands, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, generateMemoryFile, backfillSubjects, consolidateConversation, findContradictions, getCorePreferences } from "./memory/index.js";
@@ -52,6 +52,11 @@ export type { FlightQuery, FlightOption, FlightReport, StockMetrics, ChartArtifa
 // Sandbox
 export { resolveSandboxUrl, sandboxHealth, runInSandbox } from "./sandbox.js";
 export type { SandboxResult, SandboxOptions } from "./sandbox.js";
+
+// Context budget
+export { getContextBudget, estimateTokens, _resetBudgetCache } from "./context-budget.js";
+export type { ContextBudget } from "./context-budget.js";
+export { getProviderOptions } from "./provider-options.js";
 
 // Artifacts
 export { artifactMigrations, storeArtifact, getArtifact, listArtifacts, deleteJobArtifacts, guessMimeType } from "./artifacts.js";

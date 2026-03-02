@@ -27,6 +27,8 @@ export interface Config {
     embedProvider?: "auto" | "ollama" | "openai" | "google" | "local";
     /** @deprecated Not used — embedding fallback handled by embedProvider: "auto" */
     fallbackMode?: "local-first" | "strict";
+    /** Override context window size in tokens. Useful for Ollama models where the catalog can't detect it. */
+    contextWindow?: number;
   };
   plugins: string[];
   /** IANA timezone (e.g. "America/Los_Angeles"). Defaults to server timezone if unset. */
@@ -35,6 +37,11 @@ export interface Config {
   workers?: {
     backgroundLearning?: boolean;  // default true
     briefing?: boolean;            // default true
+    knowledgeCleanup?: boolean;    // default true
+  };
+  knowledge?: {
+    defaultTtlDays?: number | null;  // null = no default expiry; config default 90
+    freshnessDecayDays?: number;     // default 365
   };
   telegram?: {
     token?: string;

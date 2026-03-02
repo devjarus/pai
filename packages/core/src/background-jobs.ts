@@ -1,4 +1,5 @@
 import type { Storage, Migration } from "./types.js";
+import type { ResearchResultType } from "./research-schemas.js";
 
 // ---- Types ----
 
@@ -11,7 +12,7 @@ export interface BackgroundJob {
   startedAt: string;
   error?: string;
   result?: string;
-  resultType?: "flight" | "stock" | "crypto" | "news" | "comparison" | "general";
+  resultType?: ResearchResultType;
   structuredResult?: string;
 }
 
@@ -144,6 +145,47 @@ export function updateJobStatus(
 
   values.push(id);
   storage.run(`UPDATE background_jobs SET ${fields.join(", ")} WHERE id = ?`, values);
+}
+
+export function cancelBackgroundJob(storage: Storage, id: string): boolean {
+  const job = getJob(storage, id);
+  if (!job || job.status !== "running") return false;
+  storage.run(
+    "UPDATE background_jobs SET status = 'error', error = 'Cancelled by user', updated_at = datetime('now') WHERE id = ?",
+    [id],
+  );
+  return true;
+}
+
+export function forceDeleteBackgroundJob(storage: Storage, id: string): boolean {
+  const job = getJob(storage, id);
+  if (!job) return false;
+  storage.run("DELETE FROM background_jobs WHERE id = ?", [id]);
+  return true;
+}
+
+export function recoverStaleBackgroundJobs(storage: Storage): number {
+  const count = storage.query<{ cnt: number }>(
+    "SELECT COUNT(*) as cnt FROM background_jobs WHERE status = 'running'",
+  )[0]?.cnt ?? 0;
+  if (count > 0) {
+    storage.run(
+      "UPDATE background_jobs SET status = 'error', error = 'Server restarted — job interrupted', updated_at = datetime('now') WHERE status = 'running'",
+    );
+  }
+  return count;
+}
+
+export function cancelAllRunningBackgroundJobs(storage: Storage): number {
+  const count = storage.query<{ cnt: number }>(
+    "SELECT COUNT(*) as cnt FROM background_jobs WHERE status = 'running'",
+  )[0]?.cnt ?? 0;
+  if (count > 0) {
+    storage.run(
+      "UPDATE background_jobs SET status = 'error', error = 'Server shutting down', updated_at = datetime('now') WHERE status = 'running'",
+    );
+  }
+  return count;
 }
 
 export function clearCompletedBackgroundJobs(storage: Storage, olderThanMs?: number): number {

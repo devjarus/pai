@@ -46,6 +46,10 @@ export const knowledgeMigrations: Migration[] = [
     version: 3,
     up: `ALTER TABLE knowledge_sources ADD COLUMN tags TEXT;`,
   },
+  {
+    version: 4,
+    up: `ALTER TABLE knowledge_sources ADD COLUMN max_age_days INTEGER;`,
+  },
 ];
 
 // ---- Types ----
@@ -57,6 +61,7 @@ export interface KnowledgeSource {
   fetched_at: string;
   chunk_count: number;
   tags: string | null;
+  max_age_days: number | null;
 }
 
 export interface KnowledgeChunk {
@@ -307,7 +312,7 @@ export async function knowledgeSearch(
   llm: LLMClient,
   query: string,
   limit = 5,
-  options?: { queryEmbedding?: number[] },
+  options?: { queryEmbedding?: number[]; freshnessDecayDays?: number },
 ): Promise<KnowledgeSearchResult[]> {
   // Phase 1: FTS prefilter — get candidate chunk IDs
   const ftsCandidates = searchKnowledgeFTS(storage, query, limit * 10);
@@ -400,10 +405,14 @@ export async function knowledgeSearch(
       if (perSource[sid] <= 2) diverse.push(item);
       if (diverse.length >= limit) break;
     }
-    return attachSources(storage, diverse);
+    const decayDays = options?.freshnessDecayDays ?? 365;
+    const results = attachSources(storage, diverse);
+    return applyFreshnessDecay(results, decayDays).sort((a, b) => b.score - a.score);
   }
 
-  return attachSources(storage, scored.slice(0, limit));
+  const decayDays = options?.freshnessDecayDays ?? 365;
+  const results = attachSources(storage, scored.slice(0, limit));
+  return applyFreshnessDecay(results, decayDays).sort((a, b) => b.score - a.score);
 }
 
 /** Get chunks for a source */
@@ -425,6 +434,59 @@ export function forgetSource(storage: Storage, sourceId: string): boolean {
   storage.run("DELETE FROM knowledge_chunks WHERE source_id = ?", [sourceId]);
   storage.run("DELETE FROM knowledge_sources WHERE id = ?", [sourceId]);
   return true;
+}
+
+// ---- TTL Cleanup ----
+
+export interface KnowledgeCleanupResult {
+  deleted: number;
+  checkedAt: string;
+}
+
+/**
+ * Delete knowledge sources whose age exceeds their TTL.
+ * Per-source `max_age_days` overrides `defaultTtlDays`. If both are null, the source never expires.
+ */
+export function cleanupExpiredSources(
+  storage: Storage,
+  options?: { defaultTtlDays?: number | null },
+): KnowledgeCleanupResult {
+  const sources = listSources(storage);
+  let deleted = 0;
+  const now = Date.now();
+
+  for (const source of sources) {
+    const effectiveTtl = source.max_age_days ?? options?.defaultTtlDays ?? null;
+    if (effectiveTtl == null) continue;
+
+    const fetchedAt = new Date(source.fetched_at).getTime();
+    const ageDays = (now - fetchedAt) / (1000 * 60 * 60 * 24);
+    if (ageDays >= effectiveTtl) {
+      forgetSource(storage, source.id);
+      deleted++;
+    }
+  }
+
+  return { deleted, checkedAt: new Date().toISOString() };
+}
+
+// ---- Freshness Decay ----
+
+/**
+ * Apply freshness decay to search results so newer content ranks higher.
+ * Floor of 0.5 ensures old content is always findable.
+ */
+function applyFreshnessDecay(
+  results: KnowledgeSearchResult[],
+  decayDays: number,
+): KnowledgeSearchResult[] {
+  const now = Date.now();
+  return results.map((r) => {
+    const fetchedAt = new Date(r.source.fetched_at).getTime();
+    const ageDays = (now - fetchedAt) / (1000 * 60 * 60 * 24);
+    const freshness = Math.max(0.5, 1.0 - ageDays / decayDays);
+    return { ...r, score: r.score * freshness };
+  });
 }
 
 // ---- Re-indexing ----

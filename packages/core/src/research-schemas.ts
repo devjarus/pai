@@ -90,21 +90,23 @@ export interface StockReport {
 
 // ---- Union type for all research results ----
 
-export type ResearchResultType = "flight" | "stock" | "crypto" | "news" | "comparison" | "general";
+/**
+ * Research result type is an open string — the LLM decides the domain.
+ * Known types (flight, stock, crypto, etc.) get specialized prompts and icons,
+ * but any string works. "shopping", "real-estate", "sports" — all valid.
+ */
+export type ResearchResultType = string;
 
 export type ResearchResult =
   | { type: "flight"; data: FlightReport }
   | { type: "stock"; data: StockReport }
-  | { type: "crypto"; data: { markdown: string; structured?: unknown } }
-  | { type: "news"; data: { markdown: string; structured?: unknown } }
-  | { type: "comparison"; data: { markdown: string; structured?: unknown } }
-  | { type: "general"; data: { markdown: string } };
+  | { type: string; data: { markdown: string; structured?: unknown } };
 
 /**
  * Detect research domain from the goal text.
  * Returns the domain type and a cleaned goal.
  */
-export function detectResearchDomain(goal: string): ResearchResultType {
+export function detectResearchDomain(goal: string): string {
   const lower = goal.toLowerCase();
 
   // Flight: only match unambiguous flight-related keywords
