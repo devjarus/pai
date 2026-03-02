@@ -21,7 +21,8 @@ const learnSchema = z.object({
 });
 
 const patchSourceSchema = z.object({
-  tags: z.string().nullable(),
+  tags: z.string().nullable().optional(),
+  maxAgeDays: z.number().int().positive().nullable().optional(),
 });
 
 export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
@@ -34,17 +35,27 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
       chunks: s.chunk_count,
       learnedAt: s.fetched_at,
       tags: s.tags ?? null,
+      maxAgeDays: s.max_age_days ?? null,
     }));
   });
 
-  // Update source tags
-  app.patch<{ Params: { id: string }; Body: { tags: string | null } }>("/api/knowledge/sources/:id", async (request, reply) => {
+  // Update source metadata (tags, maxAgeDays)
+  app.patch<{ Params: { id: string }; Body: { tags?: string | null; maxAgeDays?: number | null } }>("/api/knowledge/sources/:id", async (request, reply) => {
     const { id } = request.params;
-    const { tags } = validate(patchSourceSchema, request.body);
+    const body = validate(patchSourceSchema, request.body);
     const sources = listSources(ctx.storage);
     const source = sources.find((s) => s.id === id);
     if (!source) return reply.status(404).send({ error: "Source not found" });
-    ctx.storage.run("UPDATE knowledge_sources SET tags = ? WHERE id = ?", [tags ?? null, id]);
+
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (body.tags !== undefined) { sets.push("tags = ?"); params.push(body.tags ?? null); }
+    if (body.maxAgeDays !== undefined) { sets.push("max_age_days = ?"); params.push(body.maxAgeDays ?? null); }
+
+    if (sets.length > 0) {
+      params.push(id);
+      ctx.storage.run(`UPDATE knowledge_sources SET ${sets.join(", ")} WHERE id = ?`, params);
+    }
     return { ok: true };
   });
 
@@ -53,7 +64,9 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
     const query = request.query.q;
     if (!query) return [];
     try {
-      const results = await knowledgeSearch(ctx.storage, ctx.llm, query);
+      const results = await knowledgeSearch(ctx.storage, ctx.llm, query, 5, {
+        freshnessDecayDays: ctx.config.knowledge?.freshnessDecayDays,
+      });
       return results.map((r) => ({
         content: r.chunk.content.slice(0, 1000),
         source: r.source.title,

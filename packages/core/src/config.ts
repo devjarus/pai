@@ -155,6 +155,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       embedProvider: (savedLlm.embedProvider as Config["llm"]["embedProvider"]) ?? (env["PAI_LLM_EMBED_PROVIDER"] as Config["llm"]["embedProvider"]) ?? (fileLlm.embedProvider as Config["llm"]["embedProvider"]) ?? "auto",
       baseUrl: savedLlm.baseUrl ?? env["PAI_LLM_BASE_URL"] ?? fileLlm.baseUrl ?? "http://127.0.0.1:11434",
       apiKey: savedLlm.apiKey || env["PAI_LLM_API_KEY"] || fileLlm.apiKey,
+      contextWindow: savedLlm.contextWindow ?? (env["PAI_CONTEXT_WINDOW"] ? parseInt(env["PAI_CONTEXT_WINDOW"], 10) : undefined) ?? fileLlm.contextWindow,
     },
     logLevel: (env["PAI_LOG_LEVEL"] as Config["logLevel"]) ?? (fileConfig.logLevel as Config["logLevel"]) ?? "silent",
     plugins: env["PAI_PLUGINS"]?.split(",").map((s) => s.trim()) ?? fileConfig.plugins ?? ["memory", "tasks"],
