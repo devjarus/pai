@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createStorage, threadMigrations } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
-import { learningMigrations, getWatermark, updateWatermark, gatherSignals, buildLearningPrompt, parseLearningResponse, runBackgroundLearning } from "../src/learning.js";
+import { learningMigrations, getWatermark, updateWatermark, gatherSignals, buildLearningPrompt, parseLearningResponse, runBackgroundLearning, insertLearningRun, updateLearningRun, listLearningRuns, recoverStaleLearningRuns } from "../src/learning.js";
 import type { GatheredSignals } from "../src/learning.js";
 import type { PluginContext } from "@personal-ai/core";
 
@@ -200,6 +200,7 @@ describe("runBackgroundLearning", () => {
 
   it("updates watermarks and skips LLM when no signals exist", async () => {
     const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
       storage,
       llm: {
         health: async () => ({ ok: true }),
@@ -225,6 +226,7 @@ describe("runBackgroundLearning", () => {
 
   it("skips when LLM is unhealthy", async () => {
     const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
       storage,
       llm: { health: async () => ({ ok: false }) },
       logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
@@ -252,6 +254,7 @@ describe("runBackgroundLearning", () => {
     mockRemember.mockResolvedValue({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false });
 
     const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
       storage,
       llm: {
         health: async () => ({ ok: true }),
@@ -289,6 +292,7 @@ describe("runBackgroundLearning", () => {
     mockGenerateText.mockRejectedValue(new Error("LLM connection timeout"));
 
     const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
       storage,
       llm: {
         health: async () => ({ ok: true }),
@@ -328,6 +332,7 @@ describe("runBackgroundLearning", () => {
 
     const logInfo = vi.fn();
     const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
       storage,
       llm: {
         health: async () => ({ ok: true }),
@@ -349,5 +354,188 @@ describe("runBackgroundLearning", () => {
       beliefsCreated: 1,
       beliefsReinforced: 1,
     });
+  });
+
+  it("persists a run record with correct counts on success", async () => {
+    storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t4', 'Run record test', datetime('now'), datetime('now'), 1)");
+    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m4', 't4', 'user', 'I use pnpm', datetime('now'), 1)");
+
+    const llmResponse = JSON.stringify([
+      { fact: "User uses pnpm", factType: "procedural", importance: 6, subject: "owner" },
+    ]);
+    mockGenerateText.mockResolvedValue({ text: llmResponse });
+    mockRemember.mockResolvedValue({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false });
+
+    const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
+      storage,
+      llm: { health: async () => ({ ok: true }), getModel: () => ({}) },
+      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    const runs = listLearningRuns(storage);
+    expect(runs.length).toBeGreaterThanOrEqual(1);
+    const latest = runs[0];
+    expect(latest.status).toBe("done");
+    expect(latest.factsExtracted).toBe(1);
+    expect(latest.beliefsCreated).toBe(1);
+    expect(latest.durationMs).toBeGreaterThanOrEqual(0);
+    expect(latest.threadsCount).toBe(1);
+  });
+
+  it("persists a skipped record when signals are empty", async () => {
+    const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
+      storage,
+      llm: { health: async () => ({ ok: true }), getModel: () => ({}) },
+      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    const runs = listLearningRuns(storage);
+    expect(runs.length).toBeGreaterThanOrEqual(1);
+    expect(runs[0].status).toBe("skipped");
+    expect(runs[0].skipReason).toBe("no_signals");
+  });
+
+  it("persists an error record when LLM fails", async () => {
+    storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t5', 'Error test', datetime('now'), datetime('now'), 1)");
+    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m5', 't5', 'user', 'test msg', datetime('now'), 1)");
+
+    mockGenerateText.mockRejectedValue(new Error("Connection refused"));
+
+    const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
+      storage,
+      llm: { health: async () => ({ ok: true }), getModel: () => ({}) },
+      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    const runs = listLearningRuns(storage);
+    expect(runs.length).toBeGreaterThanOrEqual(1);
+    expect(runs[0].status).toBe("error");
+    expect(runs[0].error).toContain("Connection refused");
+  });
+
+  it("skips when a concurrent run is in progress", async () => {
+    // Manually insert a running row
+    insertLearningRun(storage, new Date().toISOString());
+
+    const logInfo = vi.fn();
+    const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
+      storage,
+      llm: { health: async () => ({ ok: true }), getModel: () => ({}) },
+      logger: { info: logInfo, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    // Should have logged the skip
+    const skipLog = logInfo.mock.calls.find(
+      (call: unknown[]) => typeof call[0] === "string" && call[0].includes("already in progress"),
+    );
+    expect(skipLog).toBeDefined();
+    // Should NOT have created another run record
+    const runs = listLearningRuns(storage);
+    expect(runs).toHaveLength(1);
+  });
+});
+
+describe("learning_runs CRUD", () => {
+  let dir: string;
+  let storage: Storage;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-learning-crud-test-"));
+    storage = createStorage(dir);
+    storage.migrate("learning", learningMigrations);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("insertLearningRun creates a row and returns id", () => {
+    const id = insertLearningRun(storage, "2026-01-01T00:00:00Z");
+    expect(id).toBeGreaterThan(0);
+    const runs = listLearningRuns(storage);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].status).toBe("running");
+    expect(runs[0].startedAt).toBe("2026-01-01T00:00:00Z");
+  });
+
+  it("updateLearningRun updates specific fields", () => {
+    const id = insertLearningRun(storage, "2026-01-01T00:00:00Z");
+    updateLearningRun(storage, id, {
+      status: "done",
+      completedAt: "2026-01-01T00:01:00Z",
+      factsExtracted: 3,
+      beliefsCreated: 2,
+      beliefsReinforced: 1,
+      durationMs: 5000,
+    });
+    const runs = listLearningRuns(storage);
+    expect(runs[0].status).toBe("done");
+    expect(runs[0].factsExtracted).toBe(3);
+    expect(runs[0].beliefsCreated).toBe(2);
+    expect(runs[0].durationMs).toBe(5000);
+  });
+
+  it("listLearningRuns returns newest first with limit", () => {
+    insertLearningRun(storage, "2026-01-01T00:00:00Z");
+    insertLearningRun(storage, "2026-01-02T00:00:00Z");
+    insertLearningRun(storage, "2026-01-03T00:00:00Z");
+
+    const all = listLearningRuns(storage);
+    expect(all).toHaveLength(3);
+    expect(all[0].startedAt).toBe("2026-01-03T00:00:00Z");
+
+    const limited = listLearningRuns(storage, 2);
+    expect(limited).toHaveLength(2);
+  });
+});
+
+describe("recoverStaleLearningRuns", () => {
+  let dir: string;
+  let storage: Storage;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-learning-recover-test-"));
+    storage = createStorage(dir);
+    storage.migrate("learning", learningMigrations);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("marks running runs as error and returns count", () => {
+    insertLearningRun(storage, "2026-01-01T00:00:00Z");
+    insertLearningRun(storage, "2026-01-02T00:00:00Z");
+    // Complete one of them
+    const runs = listLearningRuns(storage);
+    updateLearningRun(storage, runs[0].id, { status: "done", completedAt: "2026-01-02T01:00:00Z" });
+
+    const recovered = recoverStaleLearningRuns(storage);
+    expect(recovered).toBe(1); // Only the still-running one
+
+    const after = listLearningRuns(storage);
+    const errorRun = after.find((r) => r.error === "Server restarted");
+    expect(errorRun).toBeDefined();
+    expect(errorRun!.status).toBe("error");
+  });
+
+  it("returns 0 when no running runs exist", () => {
+    insertLearningRun(storage, "2026-01-01T00:00:00Z");
+    updateLearningRun(storage, 1, { status: "done", completedAt: "2026-01-01T01:00:00Z" });
+    expect(recoverStaleLearningRuns(storage)).toBe(0);
   });
 });

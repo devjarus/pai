@@ -34,6 +34,7 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
       baseUrl: llm.baseUrl,
       embedModel: llm.embedModel,
       embedProvider: llm.embedProvider ?? "auto",
+      contextWindow: llm.contextWindow,
       hasApiKey: !!llm.apiKey,
     },
     telegram: {
@@ -43,7 +44,9 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
     workers: {
       backgroundLearning: (workers as Record<string, unknown> | undefined)?.backgroundLearning !== false,
       briefing: (workers as Record<string, unknown> | undefined)?.briefing !== false,
+      knowledgeCleanup: (workers as Record<string, unknown> | undefined)?.knowledgeCleanup !== false,
     },
+    knowledge: config.knowledge ?? {},
     debugResearch: !!config.debugResearch,
   };
 }
@@ -83,6 +86,7 @@ const updateConfigSchema = z.object({
     ),
   embedModel: z.string().optional(),
   embedProvider: z.enum(["auto", "ollama", "openai", "google", "local"]).optional(),
+  contextWindow: z.number().int().positive().optional(),
   apiKey: z.string().optional(),
   dataDir: z.string().optional(),
   telegramToken: z.string().optional(),
@@ -90,6 +94,9 @@ const updateConfigSchema = z.object({
   timezone: z.string().optional(),
   backgroundLearning: z.boolean().optional(),
   briefingEnabled: z.boolean().optional(),
+  knowledgeCleanup: z.boolean().optional(),
+  knowledgeDefaultTtlDays: z.number().int().positive().nullable().optional(),
+  knowledgeFreshnessDecayDays: z.number().int().positive().optional(),
   debugResearch: z.boolean().optional(),
 });
 
@@ -139,6 +146,7 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       llmUpdate.embedProvider = body.embedProvider;
     }
     if (body.apiKey !== undefined) llmUpdate.apiKey = body.apiKey;
+    if (body.contextWindow !== undefined) llmUpdate.contextWindow = body.contextWindow;
 
     // Preserve existing secrets from disk when not explicitly changed.
     // The UI sends apiKey/telegramToken only when the user enters a new value;
@@ -156,12 +164,22 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     }
 
     // Worker settings
-    if (body.backgroundLearning !== undefined || body.briefingEnabled !== undefined) {
+    if (body.backgroundLearning !== undefined || body.briefingEnabled !== undefined || body.knowledgeCleanup !== undefined) {
       const existingWorkers = ctx.config.workers ?? {};
       const workersUpdate: Record<string, unknown> = { ...existingWorkers };
       if (body.backgroundLearning !== undefined) workersUpdate.backgroundLearning = body.backgroundLearning;
       if (body.briefingEnabled !== undefined) workersUpdate.briefing = body.briefingEnabled;
+      if (body.knowledgeCleanup !== undefined) workersUpdate.knowledgeCleanup = body.knowledgeCleanup;
       update.workers = workersUpdate;
+    }
+
+    // Knowledge settings
+    if (body.knowledgeDefaultTtlDays !== undefined || body.knowledgeFreshnessDecayDays !== undefined) {
+      const existingKnowledge = ctx.config.knowledge ?? {};
+      const knowledgeUpdate: Record<string, unknown> = { ...existingKnowledge };
+      if (body.knowledgeDefaultTtlDays !== undefined) knowledgeUpdate.defaultTtlDays = body.knowledgeDefaultTtlDays;
+      if (body.knowledgeFreshnessDecayDays !== undefined) knowledgeUpdate.freshnessDecayDays = body.knowledgeFreshnessDecayDays;
+      update.knowledge = knowledgeUpdate;
     }
 
     // Timezone

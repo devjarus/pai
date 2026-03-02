@@ -3,6 +3,7 @@ import type { Storage, Migration } from "@personal-ai/core";
 import { taskMigrations } from "@personal-ai/plugin-tasks";
 import { telegramMigrations } from "@personal-ai/plugin-telegram";
 import { researchMigrations } from "@personal-ai/plugin-research";
+import { swarmMigrations } from "@personal-ai/plugin-swarm";
 import { briefingMigrations } from "./briefing.js";
 import { learningMigrations } from "./learning.js";
 import { scheduleMigrations } from "@personal-ai/plugin-schedules";
@@ -17,6 +18,7 @@ export const allMigrations: Array<[string, Migration[]]> = [
   ["auth", authMigrations],
   ["inbox", briefingMigrations],
   ["research", researchMigrations],
+  ["swarm", swarmMigrations],
   ["learning", learningMigrations],
   ["schedules", scheduleMigrations],
   ["background_jobs", backgroundJobMigrations],

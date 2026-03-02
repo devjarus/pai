@@ -18,6 +18,9 @@ import {
   getOwner,
   getCorePreferences,
   formatDateTime,
+  getContextBudget,
+  estimateTokens,
+  getProviderOptions,
 } from "@personal-ai/core";
 import { streamText, generateText, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, tool } from "ai";
 
@@ -224,9 +227,13 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         await withThreadLock(sid, async () => {
-          const historyRows = listMessages(ctx.storage, sid, { limit: 20 });
+          const budget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
+          const historyRows = listMessages(ctx.storage, sid, { limit: budget.maxMessages });
           const history: ChatMessage[] = [];
-          for (const row of historyRows) {
+          let historyTokens = 0;
+          // Iterate newest-first, stop when token budget exceeded
+          for (let i = historyRows.length - 1; i >= 0; i--) {
+            const row = historyRows[i]!;
             let content = row.content;
             // Inject tool call summaries so the LLM has context from previous turns
             if (row.role === "assistant" && row.parts_json) {
@@ -238,8 +245,19 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                 }
               } catch { /* ignore parse errors */ }
             }
-            history.push({ role: row.role, content });
+            const msgTokens = estimateTokens(content);
+            if (historyTokens + msgTokens > budget.historyBudget) break;
+            historyTokens += msgTokens;
+            history.unshift({ role: row.role, content });
           }
+
+          ctx.logger.info("Context budget", {
+            model: ctx.config.llm.model,
+            contextWindow: budget.contextWindow,
+            historyBudget: budget.historyBudget,
+            loadedMessages: history.length,
+            estimatedTokens: historyTokens,
+          });
 
           const agentCtx: AgentContext = {
             ...ctx,
@@ -282,6 +300,8 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                     tools: subTools as any,
                     toolChoice: "auto",
                     stopWhen: stepCountIs(5),
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
                   });
                   return result.text;
                 },
@@ -317,6 +337,8 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
               tools: tools as any,
               toolChoice: tools ? "auto" : undefined,
               stopWhen: tools ? stepCountIs(8) : undefined,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
               onError: ({ error }) => {
                 ctx.logger.error("streamText error (multi-step)", {
                   error: error instanceof Error ? error.message : String(error),
@@ -351,10 +373,16 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                       }
                     }
                   }
-                  if (text) {
+                  // If all steps were tool calls with no final text (hit step limit),
+                  // generate a fallback summary so the user always sees a response
+                  const assistantText = text || (toolSummaries.length > 0
+                    ? "I gathered some information but ran out of processing steps. Here's what I found — please ask a follow-up if you need more detail."
+                    : "");
+
+                  if (assistantText) {
                     toPersist.push({
                       role: "assistant",
-                      content: text,
+                      content: assistantText,
                       partsJson: toolSummaries.length > 0 ? JSON.stringify({ toolCalls: toolSummaries }) : undefined,
                     });
                   }

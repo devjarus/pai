@@ -4,6 +4,7 @@ import { getLatestBriefing, getBriefingById, listBriefings, listAllBriefings, ge
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
+import type { ResearchResultType } from "@personal-ai/core";
 
 export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
   app.get("/api/inbox", async () => {
@@ -76,7 +77,7 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext
     const jobId = createResearchJob(ctx.storage, {
       goal,
       threadId: null,
-      resultType: resultType as "flight" | "stock" | "general",
+      resultType: resultType as ResearchResultType,
     });
 
     runResearchInBackground(
@@ -85,6 +86,9 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext
         llm: ctx.llm,
         logger: ctx.logger,
         timezone: ctx.config.timezone,
+        provider: ctx.config.llm.provider,
+        model: ctx.config.llm.model,
+        contextWindow: ctx.config.llm.contextWindow,
         webSearch,
         formatSearchResults,
         fetchPage: fetchPageAsMarkdown,

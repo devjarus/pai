@@ -243,7 +243,7 @@ describe("generateBriefing", () => {
 
   function makeCtx(healthOk = true) {
     return {
-      config: {} as never,
+      config: { llm: { provider: "ollama", model: "test-model" } } as never,
       storage,
       llm: {
         health: vi.fn().mockResolvedValue({ ok: healthOk }),

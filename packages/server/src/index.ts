@@ -9,7 +9,7 @@ import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import jwt from "jsonwebtoken";
-import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword } from "@personal-ai/core";
+import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword, recoverStaleBackgroundJobs, cancelAllRunningBackgroundJobs } from "@personal-ai/core";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
@@ -21,11 +21,15 @@ import { registerConfigRoutes } from "./routes/config.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 import { listSchedules, createSchedule, deleteSchedule, pauseSchedule, resumeSchedule } from "@personal-ai/plugin-schedules";
+import { recoverStaleResearchJobs, cancelAllRunningResearchJobs } from "@personal-ai/plugin-research";
+import { recoverStaleSwarmJobs, cancelAllRunningSwarmJobs } from "@personal-ai/plugin-swarm";
 import { registerInboxRoutes } from "./routes/inbox.js";
 import { registerJobRoutes } from "./routes/jobs.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
+import { registerLearningRoutes } from "./routes/learning.js";
 import { runAllMigrations } from "./migrations.js";
 import { WorkerLoop } from "./workers.js";
+import { recoverStaleLearningRuns } from "./learning.js";
 
 export interface ServerContext {
   ctx: PluginContext;
@@ -100,6 +104,10 @@ export async function createServer(options?: { port?: number; host?: string }) {
 
   runAllMigrations(storage);
 
+  // Recover stale jobs from previous crash/kill
+  const staleCount = recoverStaleBackgroundJobs(storage) + recoverStaleResearchJobs(storage) + recoverStaleSwarmJobs(storage) + recoverStaleLearningRuns(storage);
+  if (staleCount > 0) logger.warn(`Recovered ${staleCount} stale jobs from previous run`);
+
   // Password reset via environment variable
   const resetPassword = process.env.PAI_RESET_PASSWORD;
   if (resetPassword) {
@@ -133,7 +141,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     stopTelegramBot();
 
     try {
-      const bot = createBot(token, ctx, assistantPlugin);
+      const bot = createBot(token, ctx, assistantPlugin, [curatorPlugin]);
       telegramBot = bot;
       bot.start({
         onStart: (botInfo: { username: string }) => {
@@ -377,6 +385,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   registerInboxRoutes(app, serverCtx);
   registerJobRoutes(app, serverCtx);
   registerArtifactRoutes(app, serverCtx);
+  registerLearningRoutes(app, serverCtx);
 
   // --- Schedule REST endpoints ---
   app.get("/api/schedules", async () => {
@@ -506,7 +515,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
 
   // Clean shutdown — drain in-flight requests, clean up timers
   const shutdown = async () => {
-    console.log("Shutting down gracefully...");
+    logger.info("Shutting down gracefully");
     try { unlinkSync(pidFile); } catch { /* ignore */ }
     stopTelegramBot();
     workerLoop.stop();
@@ -517,6 +526,9 @@ export async function createServer(options?: { port?: number; host?: string }) {
         try { pendingCloseStorage.close(); } catch { /* ignore */ }
       }
     }
+    // Mark running jobs as cancelled before closing DB
+    const cancelledCount = cancelAllRunningBackgroundJobs(ctx.storage) + cancelAllRunningResearchJobs(ctx.storage) + cancelAllRunningSwarmJobs(ctx.storage);
+    if (cancelledCount > 0) logger.info(`Cancelled ${cancelledCount} running jobs on shutdown`);
     // Close SQLite FIRST (synchronous — flushes WAL immediately) to prevent data loss
     // if Railway sends SIGKILL while HTTP requests are still draining
     try { ctx.storage.close(); } catch { /* ignore */ }

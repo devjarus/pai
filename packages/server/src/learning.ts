@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import type { LanguageModel } from "ai";
-import { remember } from "@personal-ai/core";
+import { remember, getContextBudget, getProviderOptions } from "@personal-ai/core";
 import type { Migration, PluginContext, Storage } from "@personal-ai/core";
 
 export const learningMigrations: Migration[] = [
@@ -9,6 +9,28 @@ export const learningMigrations: Migration[] = [
     up: `CREATE TABLE IF NOT EXISTS learning_watermarks (
       source TEXT PRIMARY KEY,
       last_processed_at TEXT NOT NULL
+    );`,
+  },
+  {
+    version: 2,
+    up: `CREATE TABLE IF NOT EXISTS learning_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      status TEXT NOT NULL DEFAULT 'running',
+      skip_reason TEXT,
+      threads_count INTEGER NOT NULL DEFAULT 0,
+      messages_count INTEGER NOT NULL DEFAULT 0,
+      research_count INTEGER NOT NULL DEFAULT 0,
+      tasks_count INTEGER NOT NULL DEFAULT 0,
+      knowledge_count INTEGER NOT NULL DEFAULT 0,
+      facts_extracted INTEGER NOT NULL DEFAULT 0,
+      beliefs_created INTEGER NOT NULL DEFAULT 0,
+      beliefs_reinforced INTEGER NOT NULL DEFAULT 0,
+      low_importance_skipped INTEGER NOT NULL DEFAULT 0,
+      facts_json TEXT,
+      duration_ms INTEGER,
+      error TEXT
     );`,
   },
 ];
@@ -33,6 +55,121 @@ export function updateWatermark(storage: Storage, source: string, timestamp: str
     "INSERT OR REPLACE INTO learning_watermarks (source, last_processed_at) VALUES (?, ?)",
     [source, timestamp],
   );
+}
+
+export interface LearningRun {
+  id: number;
+  startedAt: string;
+  completedAt: string | null;
+  status: "running" | "done" | "skipped" | "error";
+  skipReason: string | null;
+  threadsCount: number;
+  messagesCount: number;
+  researchCount: number;
+  tasksCount: number;
+  knowledgeCount: number;
+  factsExtracted: number;
+  beliefsCreated: number;
+  beliefsReinforced: number;
+  lowImportanceSkipped: number;
+  factsJson: string | null;
+  durationMs: number | null;
+  error: string | null;
+}
+
+export function insertLearningRun(storage: Storage, startedAt: string): number {
+  storage.run(
+    "INSERT INTO learning_runs (started_at, status) VALUES (?, 'running')",
+    [startedAt],
+  );
+  const row = storage.query<{ id: number }>("SELECT last_insert_rowid() as id");
+  return row[0]!.id;
+}
+
+export function updateLearningRun(
+  storage: Storage,
+  id: number,
+  fields: Partial<Omit<LearningRun, "id" | "startedAt">>,
+): void {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  const map: Record<string, string> = {
+    completedAt: "completed_at",
+    status: "status",
+    skipReason: "skip_reason",
+    threadsCount: "threads_count",
+    messagesCount: "messages_count",
+    researchCount: "research_count",
+    tasksCount: "tasks_count",
+    knowledgeCount: "knowledge_count",
+    factsExtracted: "facts_extracted",
+    beliefsCreated: "beliefs_created",
+    beliefsReinforced: "beliefs_reinforced",
+    lowImportanceSkipped: "low_importance_skipped",
+    factsJson: "facts_json",
+    durationMs: "duration_ms",
+    error: "error",
+  };
+  for (const [key, col] of Object.entries(map)) {
+    if (key in fields) {
+      sets.push(`${col} = ?`);
+      vals.push((fields as Record<string, unknown>)[key] ?? null);
+    }
+  }
+  if (sets.length === 0) return;
+  vals.push(id);
+  storage.run(`UPDATE learning_runs SET ${sets.join(", ")} WHERE id = ?`, vals);
+}
+
+export function listLearningRuns(storage: Storage, limit = 20): LearningRun[] {
+  return storage.query<{
+    id: number;
+    started_at: string;
+    completed_at: string | null;
+    status: string;
+    skip_reason: string | null;
+    threads_count: number;
+    messages_count: number;
+    research_count: number;
+    tasks_count: number;
+    knowledge_count: number;
+    facts_extracted: number;
+    beliefs_created: number;
+    beliefs_reinforced: number;
+    low_importance_skipped: number;
+    facts_json: string | null;
+    duration_ms: number | null;
+    error: string | null;
+  }>(
+    "SELECT * FROM learning_runs ORDER BY id DESC LIMIT ?",
+    [limit],
+  ).map((r) => ({
+    id: r.id,
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+    status: r.status as LearningRun["status"],
+    skipReason: r.skip_reason,
+    threadsCount: r.threads_count,
+    messagesCount: r.messages_count,
+    researchCount: r.research_count,
+    tasksCount: r.tasks_count,
+    knowledgeCount: r.knowledge_count,
+    factsExtracted: r.facts_extracted,
+    beliefsCreated: r.beliefs_created,
+    beliefsReinforced: r.beliefs_reinforced,
+    lowImportanceSkipped: r.low_importance_skipped,
+    factsJson: r.facts_json,
+    durationMs: r.duration_ms,
+    error: r.error,
+  }));
+}
+
+export function recoverStaleLearningRuns(storage: Storage): number {
+  const result = storage.run(
+    `UPDATE learning_runs SET status = 'error', error = 'Server restarted', completed_at = ? WHERE status = 'running'`,
+    [new Date().toISOString()],
+  );
+  return result.changes;
 }
 
 interface ThreadSignal {
@@ -242,30 +379,65 @@ export function parseLearningResponse(text: string): ExtractedFact[] {
   }
 }
 
-export async function runBackgroundLearning(ctx: PluginContext): Promise<void> {
+export async function runBackgroundLearning(ctx: PluginContext, signal?: AbortSignal): Promise<void> {
   const start = Date.now();
   ctx.logger.info("Background learning: starting");
+
+  // Concurrent-run guard
+  const running = ctx.storage.query<{ count: number }>(
+    "SELECT COUNT(*) as count FROM learning_runs WHERE status = 'running'",
+  );
+  if ((running[0]?.count ?? 0) > 0) {
+    ctx.logger.info("Background learning: skipped (run already in progress)");
+    return;
+  }
+
+  // Insert a running row
+  const startedAt = new Date().toISOString();
+  const runId = insertLearningRun(ctx.storage, startedAt);
 
   // Health check
   try {
     const health = await ctx.llm.health();
     if (!health.ok) {
       ctx.logger.info("Background learning: skipped (LLM unavailable)");
+      updateLearningRun(ctx.storage, runId, {
+        status: "skipped",
+        skipReason: "llm_unavailable",
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - start,
+      });
       return;
     }
   } catch {
     ctx.logger.info("Background learning: skipped (LLM health check failed)");
+    updateLearningRun(ctx.storage, runId, {
+      status: "skipped",
+      skipReason: "llm_unavailable",
+      completedAt: new Date().toISOString(),
+      durationMs: Date.now() - start,
+    });
     return;
   }
 
   // Phase 1: Gather signals
   const signals = gatherSignals(ctx.storage);
+  const messageCount = signals.threads.reduce((acc, t) => acc + t.messages.length, 0);
 
   ctx.logger.info("Background learning: signals gathered", {
     threadCount: signals.threads.length,
-    messageCount: signals.threads.reduce((acc, t) => acc + t.messages.length, 0),
+    messageCount,
     researchCount: signals.research.length,
     taskCount: signals.tasks.length,
+    knowledgeCount: signals.knowledge.length,
+  });
+
+  // Update run with signal counts
+  updateLearningRun(ctx.storage, runId, {
+    threadsCount: signals.threads.length,
+    messagesCount: messageCount,
+    researchCount: signals.research.length,
+    tasksCount: signals.tasks.length,
     knowledgeCount: signals.knowledge.length,
   });
 
@@ -275,9 +447,32 @@ export async function runBackgroundLearning(ctx: PluginContext): Promise<void> {
     updateWatermark(ctx.storage, "research", now);
     updateWatermark(ctx.storage, "tasks", now);
     updateWatermark(ctx.storage, "knowledge", now);
+    updateLearningRun(ctx.storage, runId, {
+      status: "skipped",
+      skipReason: "no_signals",
+      completedAt: now,
+      durationMs: Date.now() - start,
+    });
     ctx.logger.info("Background learning: nothing new, skipped LLM call", {
       durationMs: Date.now() - start,
     });
+    return;
+  }
+
+  // Check abort before LLM call
+  if (signal?.aborted) {
+    const now = new Date().toISOString();
+    updateWatermark(ctx.storage, "threads", now);
+    updateWatermark(ctx.storage, "research", now);
+    updateWatermark(ctx.storage, "tasks", now);
+    updateWatermark(ctx.storage, "knowledge", now);
+    updateLearningRun(ctx.storage, runId, {
+      status: "skipped",
+      skipReason: "shutdown",
+      completedAt: now,
+      durationMs: Date.now() - start,
+    });
+    ctx.logger.info("Background learning: aborted before LLM call");
     return;
   }
 
@@ -287,11 +482,14 @@ export async function runBackgroundLearning(ctx: PluginContext): Promise<void> {
 
   try {
     const llmStart = Date.now();
+    const budget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
     const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
       prompt,
       temperature: 0.3,
       maxRetries: 1,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
     });
     ctx.logger.debug("Background learning: LLM call complete", {
       durationMs: Date.now() - llmStart,
@@ -300,6 +498,12 @@ export async function runBackgroundLearning(ctx: PluginContext): Promise<void> {
   } catch (err) {
     ctx.logger.error("Background learning: LLM extraction failed", {
       error: err instanceof Error ? err.message : String(err),
+    });
+    updateLearningRun(ctx.storage, runId, {
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+      completedAt: new Date().toISOString(),
+      durationMs: Date.now() - start,
     });
     return; // Don't update watermarks on LLM failure
   }
@@ -310,6 +514,11 @@ export async function runBackgroundLearning(ctx: PluginContext): Promise<void> {
   let skipped = 0;
 
   for (const fact of facts) {
+    // Check abort before each remember call
+    if (signal?.aborted) {
+      ctx.logger.info("Background learning: aborted during fact storage");
+      break;
+    }
     // Skip low-importance facts to avoid noise buildup
     if (fact.importance < 4) {
       skipped++;
@@ -337,6 +546,20 @@ export async function runBackgroundLearning(ctx: PluginContext): Promise<void> {
   updateWatermark(ctx.storage, "knowledge", now);
 
   const duration = Date.now() - start;
+
+  // Persist final run outcome
+  updateLearningRun(ctx.storage, runId, {
+    status: signal?.aborted ? "skipped" : "done",
+    skipReason: signal?.aborted ? "shutdown" : undefined,
+    completedAt: now,
+    factsExtracted: facts.length,
+    beliefsCreated: created,
+    beliefsReinforced: reinforced,
+    lowImportanceSkipped: skipped,
+    factsJson: facts.length > 0 ? JSON.stringify(facts) : null,
+    durationMs: duration,
+  });
+
   ctx.logger.info("Background learning: complete", {
     factsExtracted: facts.length,
     beliefsCreated: created,
