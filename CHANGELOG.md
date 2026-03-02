@@ -9,6 +9,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`/jobs` command** — View recent research and swarm job status directly from Telegram with status emojis and relative timestamps
+- **`/research` command** — Start research directly from Telegram with `/research <query>` shortcut
+- **Memory Curator delegation** — Telegram assistant can now delegate to the Memory Curator sub-agent for memory health analysis and fixes
+
+### Changed
+
+- **Telegram tool step limit** — Increased from 3 to 8 to match the web UI, enabling complex multi-tool queries
+- **Swarm result delivery** — Push loop now handles both `research-*` and `swarm-*` briefing IDs, with distinct emoji labels (🔬 research, 🐝 swarm)
+
+### Fixed
+
+- **Swarm results not delivered** — Push loop only handled `research-*` briefing IDs, silently dropping `swarm-*` reports
+- **Group chat research/swarm delivery** — Same root cause as above; both prefixes now resolve to originating chat
+
+### Added
+
+- **Adaptive context window management** — Message history loading now adjusts based on model's actual context window size via TokenLens model registry (supports 337+ models). Small models (4K context) load fewer messages; large models (200K+) load more. Token-based budget enforcement ensures history never overflows the context window. For Ollama or unrecognized models, set `llm.contextWindow` in Settings or `PAI_CONTEXT_WINDOW` env var to override the default (8K).
+- **Provider-specific context management** — Anthropic auto-compaction and tool-use clearing at 85% context usage, OpenAI auto-truncation. Passed via `providerOptions` on all `streamText`/`generateText` calls.
+
+### Changed
+
+- Chat and Telegram no longer hard-code 20-message history limit; context budget is computed per model with 50% allocated to history, clamped to 4–100 messages.
+
+### Added
+
+- **Knowledge TTL** — Sources can have a `max_age_days` (per-source or global default of 90 days). Background worker auto-deletes expired sources every 24 hours. Per-source TTL editable via `PATCH /api/knowledge/sources/:id`.
+- **Freshness-weighted knowledge search** — Newer sources rank higher via decay factor (365-day half-life, 0.5x floor). Configurable via `knowledge.freshnessDecayDays`.
+- **`workers.knowledgeCleanup` config toggle** — Enable/disable auto-cleanup of expired knowledge sources in Settings.
+- **Learning run history** — Background learning now persists each run's outcome, signal counts, extracted facts, and duration to a `learning_runs` table. `GET /api/learning/runs` endpoint returns recent run history.
+- **Learning history UI** — Settings page shows a collapsible "View history" section under Background Workers with last 10 learning runs. Each run shows status badge, signal summary, duration, and expandable extracted facts.
+- **Startup recovery for stale learning runs** — On server restart, in-progress learning runs from a previous crash are marked as error with "Server restarted" message.
+- **Shutdown abort signal for learning** — `WorkerLoop.stop()` aborts in-flight learning runs cleanly via `AbortSignal`, preventing operations against a closing database.
+- **Concurrent learning run guard** — Prevents overlapping learning executions when timers race.
+- **Startup stale job recovery** — On server restart, running background/research/swarm jobs from a previous crash are automatically marked as failed with "Server restarted — job interrupted" error. Stale swarm agents are also cascaded to failed.
+- **Shutdown job cancellation** — Graceful shutdown marks all running jobs as cancelled before closing the database, preventing stuck jobs on intentional stops.
+- **Sandbox execution logging** — `runInSandbox()` now accepts an optional logger and emits structured logs: execution start (language, code length, timeout), completion (exit code, stdout/stderr length, file count, duration), connection errors, and HTTP errors.
+- **Swarm agent observability** — Jobs page now shows individual sub-agent cards with role, task, status, tools, steps used, duration, and expandable results/errors. Agents auto-refetch while job is active. Sorted by status: running first, then done, failed, pending.
+- **Sandbox artifact persistence** — Swarm `run_code` tool now persists sandbox output files as artifacts via `storeArtifact()`. Artifacts section in Jobs detail sidebar shows files with MIME-type icons, human-readable sizes, inline image previews, and download links.
+- **Enhanced blackboard rendering** — Code execution blackboard entries (`[code_execution]`) render with language badge, exit code badge (green/red), syntax-highlighted code block, collapsible stdout/stderr, and clickable artifact links.
+- **Job artifacts API hooks** — New `useJobAgents()` and `useJobArtifacts()` TanStack Query hooks with corresponding `getJobAgents()` and `getJobArtifacts()` API functions.
+
+### Changed
+
+- **Server shutdown** — Uses structured NDJSON logger instead of `console.log` for shutdown messages.
+
+### Fixed
+
+- **Swarm sandbox auto-detection** — Swarm `run_code` tool now uses `resolveSandboxUrl()` for Railway/Docker auto-detection instead of reading `process.env.PAI_SANDBOX_URL` directly.
+- **Swarm domain badges** — Swarm jobs in the job list now show domain badges (flight, stock, crypto, etc.) instead of always being blank. Fixed hardcoded `resultType: null` in swarm job list mapping.
+
 - **Sub-agent swarm system** (`plugin-swarm`) — New plugin that decomposes complex tasks into 2-5 parallel sub-agents with specialized roles (researcher, coder, analyst). Sub-agents communicate via a shared SQLite blackboard and operate with budget-limited tools. An orchestrator plans subtasks via LLM, executes them in parallel with `Promise.allSettled`, then synthesizes results into a unified report delivered to the Inbox. Graceful degradation: falls back to single-agent execution if planning fails. New `swarm_start` tool in the assistant. Jobs page shows swarm jobs with agent progress and synthesis detail. New API endpoints: `GET /api/jobs/:id/agents`, `GET /api/jobs/:id/blackboard`.
 
 - **Domain-specific research agents** — Research jobs now detect flight and stock queries automatically (via `detectResearchDomain()`) and use domain-specific LLM prompts that produce structured JSON results instead of plain markdown. Flight research returns `FlightReport` (scored options with prices, durations, booking links). Stock research returns `StockReport` (verdict, confidence, metrics, catalysts, risks, sources). General research unchanged. New `resultType` field on `BackgroundJob` and `ResearchJob`.
