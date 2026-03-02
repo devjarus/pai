@@ -7,9 +7,6 @@
   },
   "include": ["src/**/*.ts"],
   "references": [
-    { "path": "../core" },
-    { "path": "../plugin-research" },
-    { "path": "../plugin-swarm" },
-    { "path": "../plugin-schedules" }
+    { "path": "../core" }
   ]
 }

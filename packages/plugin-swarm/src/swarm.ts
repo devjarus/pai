@@ -3,8 +3,9 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger } from "@personal-ai/core";
-import { knowledgeSearch, appendMessages, learnFromContent } from "@personal-ai/core";
+import { knowledgeSearch, appendMessages, learnFromContent, resolveSandboxUrl, getContextBudget, getProviderOptions } from "@personal-ai/core";
 import { upsertJob, updateJobStatus } from "@personal-ai/core";
+import { storeArtifact, guessMimeType } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import {
   getSwarmJob,
@@ -34,6 +35,9 @@ export interface SwarmContext {
   llm: LLMClient;
   logger: Logger;
   timezone?: string;
+  provider?: string;
+  model?: string;
+  contextWindow?: number;
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   formatSearchResults: (results: Array<{ title: string; url: string; snippet: string }>) => string;
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;
@@ -203,6 +207,7 @@ async function planSwarm(ctx: SwarmContext, goal: string, resultType?: string): 
     const domainHint = resultType && resultType !== "general"
       ? `\n\nResearch domain: ${resultType}. Tailor subtasks for ${resultType} analysis.`
       : "";
+    const budget = getContextBudget(ctx.provider ?? "ollama", ctx.model ?? "", ctx.contextWindow);
     const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
       system: getPlannerPrompt(resultType, ctx.timezone),
@@ -210,6 +215,8 @@ async function planSwarm(ctx: SwarmContext, goal: string, resultType?: string): 
         { role: "user", content: `Decompose this goal into parallel subtasks:\n\n${goal}${domainHint}` },
       ],
       maxRetries: 1,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
     });
 
     const jsonMatch = result.text.match(/```json\s*([\s\S]*?)```/);
@@ -291,6 +298,7 @@ async function runSubAgent(
   // Build budget-limited tools
   const tools = createSubAgentTools(ctx, swarmId, agentId, plan.tools);
 
+  const agentBudget = getContextBudget(ctx.provider ?? "ollama", ctx.model ?? "", ctx.contextWindow);
   const result = await generateText({
     model: ctx.llm.getModel() as LanguageModel,
     system: systemPrompt,
@@ -301,6 +309,8 @@ async function runSubAgent(
     toolChoice: "auto",
     stopWhen: stepCountIs(AGENT_STEP_LIMIT),
     maxRetries: 1,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    providerOptions: getProviderOptions(ctx.provider ?? "ollama", agentBudget.contextWindow) as any,
   });
 
   const agentResult = result.text || "Agent completed but produced no text output.";
@@ -430,7 +440,7 @@ function createSubAgentTools(
   // Conditionally add run_code if sandbox is available and tools include it
   if (allowed.has("run_code")) {
     try {
-      const sandboxUrl = process.env.PAI_SANDBOX_URL;
+      const sandboxUrl = resolveSandboxUrl();
       if (sandboxUrl) {
         allTools.run_code = tool({
           description: "Execute Python or JavaScript code in an isolated sandbox.",
@@ -440,24 +450,49 @@ function createSubAgentTools(
           }),
           execute: async ({ language, code }: { language: string; code: string }) => {
             try {
+              ctx.logger.info("Swarm sandbox execution", { agentId, language, codeLength: code.length });
               const { runInSandbox } = await import("@personal-ai/core");
-              const result = await runInSandbox({ language: language as "python" | "node", code, timeout: 30 });
-              // Post artifacts to blackboard
-              if (result.files.length > 0) {
-                insertBlackboardEntry(ctx.storage, {
-                  swarmId,
-                  agentId,
-                  type: "artifact",
-                  content: `Generated ${result.files.length} file(s): ${result.files.map((f) => f.name).join(", ")}`,
-                });
+              const result = await runInSandbox({ language: language as "python" | "node", code, timeout: 30 }, ctx.logger);
+
+              // Persist each output file as an artifact
+              const artifactIds: Array<{ name: string; id: string }> = [];
+              for (const f of result.files) {
+                try {
+                  const id = storeArtifact(ctx.storage, {
+                    jobId: swarmId,
+                    name: f.name,
+                    mimeType: guessMimeType(f.name),
+                    data: Buffer.from(f.data, "base64"),
+                  });
+                  artifactIds.push({ name: f.name, id });
+                } catch (err) {
+                  ctx.logger.warn(`Failed to store artifact ${f.name}: ${err instanceof Error ? err.message : String(err)}`);
+                }
               }
+
+              // Post structured blackboard entry
+              const filesLine = artifactIds.length > 0
+                ? `\nFiles: ${artifactIds.map((a) => `${a.name} (artifact:${a.id})`).join(", ")}`
+                : "";
+              insertBlackboardEntry(ctx.storage, {
+                swarmId,
+                agentId,
+                type: "artifact",
+                content: `[code_execution] Language: ${language} | Exit: ${result.exitCode}\nCode:\n\`\`\`${language}\n${code.slice(0, 500)}\n\`\`\`\nStdout: ${(result.stdout || "(none)").slice(0, 1000)}\nStderr: ${(result.stderr || "(none)").slice(0, 1000)}${filesLine}`,
+              });
+
               return {
                 stdout: result.stdout,
                 stderr: result.stderr,
                 exitCode: result.exitCode,
-                files: result.files.map((f) => f.name),
+                files: artifactIds.map((a) => ({ name: a.name, artifactId: a.id })),
               };
             } catch (err) {
+              ctx.logger.error("Swarm sandbox run_code failed", {
+                agentId,
+                language,
+                error: err instanceof Error ? err.message : String(err),
+              });
               return { error: `Sandbox execution failed: ${err instanceof Error ? err.message : "unknown error"}` };
             }
           },
@@ -500,6 +535,7 @@ async function synthesize(
     ? blackboard.map((e) => `- [${e.type}] (agent ${e.agentId.slice(0, 8)}): ${e.content.slice(0, 500)}`).join("\n")
     : "(no blackboard entries)";
 
+  const synthBudget = getContextBudget(ctx.provider ?? "ollama", ctx.model ?? "", ctx.contextWindow);
   const result = await generateText({
     model: ctx.llm.getModel() as LanguageModel,
     system: getSynthesizerPrompt(resultType, ctx.timezone),
@@ -510,6 +546,8 @@ async function synthesize(
       },
     ],
     maxRetries: 1,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    providerOptions: getProviderOptions(ctx.provider ?? "ollama", synthBudget.contextWindow) as any,
   });
 
   const text = result.text || "Synthesis produced no output.";

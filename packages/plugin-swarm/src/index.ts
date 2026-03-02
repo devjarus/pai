@@ -1,4 +1,5 @@
 import type { Plugin, PluginContext, Command, Migration, Storage } from "@personal-ai/core";
+import { detectResearchDomain } from "@personal-ai/core";
 import { nanoid } from "nanoid";
 
 export { runSwarmInBackground } from "./swarm.js";
@@ -150,10 +151,17 @@ export function createSwarmJob(
   opts: { goal: string; threadId: string | null; resultType?: string },
 ): string {
   const id = nanoid();
+  // Cross-validate LLM-provided type against keyword detection to prevent misclassification
+  let resultType = opts.resultType ?? "general";
+  const detected = detectResearchDomain(opts.goal);
+  if (detected !== "general" && resultType !== detected) {
+    // Keyword detection found a specific domain that differs from LLM's choice — prefer detected
+    resultType = detected;
+  }
   storage.run(
     `INSERT INTO swarm_jobs (id, thread_id, goal, result_type, status, created_at)
      VALUES (?, ?, ?, ?, 'pending', datetime('now'))`,
-    [id, opts.threadId, opts.goal, opts.resultType ?? "general"],
+    [id, opts.threadId, opts.goal, resultType],
   );
   return id;
 }
@@ -173,6 +181,53 @@ export function listSwarmJobs(storage: Storage): SwarmJob[] {
     "SELECT * FROM swarm_jobs ORDER BY created_at DESC LIMIT 50",
   );
   return rows.map(rowToSwarmJob);
+}
+
+export function cancelSwarmJob(storage: Storage, id: string): boolean {
+  const job = getSwarmJob(storage, id);
+  if (!job || (job.status !== "running" && job.status !== "pending" && job.status !== "planning" && job.status !== "synthesizing")) return false;
+  storage.run(
+    "UPDATE swarm_jobs SET status = 'failed', completed_at = datetime('now') WHERE id = ?",
+    [id],
+  );
+  // Mark any running agents as failed too
+  storage.run(
+    "UPDATE swarm_agents SET status = 'failed', error = 'Job cancelled by user', completed_at = datetime('now') WHERE swarm_id = ? AND status IN ('pending', 'running')",
+    [id],
+  );
+  return true;
+}
+
+export function recoverStaleSwarmJobs(storage: Storage): number {
+  const activeStatuses = "('pending', 'planning', 'running', 'synthesizing')";
+  const count = storage.query<{ cnt: number }>(
+    `SELECT COUNT(*) as cnt FROM swarm_jobs WHERE status IN ${activeStatuses}`,
+  )[0]?.cnt ?? 0;
+  if (count > 0) {
+    storage.run(
+      `UPDATE swarm_agents SET status = 'failed', error = 'Server restarted — job interrupted', completed_at = datetime('now') WHERE swarm_id IN (SELECT id FROM swarm_jobs WHERE status IN ${activeStatuses}) AND status IN ('pending', 'running')`,
+    );
+    storage.run(
+      `UPDATE swarm_jobs SET status = 'failed', completed_at = datetime('now') WHERE status IN ${activeStatuses}`,
+    );
+  }
+  return count;
+}
+
+export function cancelAllRunningSwarmJobs(storage: Storage): number {
+  const activeStatuses = "('pending', 'planning', 'running', 'synthesizing')";
+  const count = storage.query<{ cnt: number }>(
+    `SELECT COUNT(*) as cnt FROM swarm_jobs WHERE status IN ${activeStatuses}`,
+  )[0]?.cnt ?? 0;
+  if (count > 0) {
+    storage.run(
+      `UPDATE swarm_agents SET status = 'failed', error = 'Server shutting down', completed_at = datetime('now') WHERE swarm_id IN (SELECT id FROM swarm_jobs WHERE status IN ${activeStatuses}) AND status IN ('pending', 'running')`,
+    );
+    storage.run(
+      `UPDATE swarm_jobs SET status = 'failed', completed_at = datetime('now') WHERE status IN ${activeStatuses}`,
+    );
+  }
+  return count;
 }
 
 export function clearCompletedSwarmJobs(storage: Storage): number {

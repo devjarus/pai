@@ -3,7 +3,7 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger, ResearchResultType } from "@personal-ai/core";
-import { formatDateTime, detectResearchDomain } from "@personal-ai/core";
+import { formatDateTime, detectResearchDomain, getContextBudget, getProviderOptions } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 
@@ -49,6 +49,12 @@ export interface ResearchContext {
   logger: Logger;
   /** IANA timezone for date formatting (e.g. "America/Los_Angeles") */
   timezone?: string;
+  /** LLM provider name for context budget (e.g. "ollama", "openai") */
+  provider?: string;
+  /** LLM model name for context budget */
+  model?: string;
+  /** Optional context window override in tokens */
+  contextWindow?: number;
   /** Web search function — injected to avoid circular dependency */
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   /** Format search results for display */
@@ -64,7 +70,9 @@ export function createResearchJob(
   opts: { goal: string; threadId: string | null; maxSearches?: number; maxPages?: number; resultType?: ResearchResultType },
 ): string {
   const id = nanoid();
-  const detectedType = opts.resultType ?? detectResearchDomain(opts.goal);
+  // Cross-validate LLM-provided type against keyword detection to prevent misclassification
+  const detected = detectResearchDomain(opts.goal);
+  const detectedType = detected !== "general" ? detected : (opts.resultType ?? "general");
   storage.run(
     `INSERT INTO research_jobs (id, thread_id, goal, status, result_type, budget_max_searches, budget_max_pages, created_at)
      VALUES (?, ?, ?, 'pending', ?, ?, ?, datetime('now'))`,
@@ -118,6 +126,40 @@ export function listResearchJobs(storage: Storage): ResearchJob[] {
     createdAt: row.created_at,
     completedAt: row.completed_at,
   }));
+}
+
+export function cancelResearchJob(storage: Storage, id: string): boolean {
+  const job = getResearchJob(storage, id);
+  if (!job || (job.status !== "running" && job.status !== "pending")) return false;
+  storage.run(
+    "UPDATE research_jobs SET status = 'failed', completed_at = datetime('now') WHERE id = ?",
+    [id],
+  );
+  return true;
+}
+
+export function recoverStaleResearchJobs(storage: Storage): number {
+  const count = storage.query<{ cnt: number }>(
+    "SELECT COUNT(*) as cnt FROM research_jobs WHERE status IN ('running', 'pending')",
+  )[0]?.cnt ?? 0;
+  if (count > 0) {
+    storage.run(
+      "UPDATE research_jobs SET status = 'failed', completed_at = datetime('now') WHERE status IN ('running', 'pending')",
+    );
+  }
+  return count;
+}
+
+export function cancelAllRunningResearchJobs(storage: Storage): number {
+  const count = storage.query<{ cnt: number }>(
+    "SELECT COUNT(*) as cnt FROM research_jobs WHERE status IN ('running', 'pending')",
+  )[0]?.cnt ?? 0;
+  if (count > 0) {
+    storage.run(
+      "UPDATE research_jobs SET status = 'failed', completed_at = datetime('now') WHERE status IN ('running', 'pending')",
+    );
+  }
+  return count;
 }
 
 export function clearCompletedJobs(storage: Storage): number {
@@ -641,6 +683,7 @@ export async function runResearchInBackground(
         systemPrompt = getResearchSystemPrompt(ctx.timezone);
     }
 
+    const budget = getContextBudget(ctx.provider ?? "ollama", ctx.model ?? "", ctx.contextWindow);
     const result = await generateText({
       model: ctx.llm.getModel() as LanguageModel,
       system: systemPrompt,
@@ -651,6 +694,8 @@ export async function runResearchInBackground(
       toolChoice: "auto",
       stopWhen: stepCountIs(8),
       maxRetries: 1,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
     });
 
     const report = result.text || "Research completed but no report was generated.";

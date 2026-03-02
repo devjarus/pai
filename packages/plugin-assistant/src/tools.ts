@@ -304,10 +304,10 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     research_start: tool({
-      description: "Start a deep research task that runs in the background. Use when the user asks you to research a topic thoroughly, investigate something in depth, or compile a report. The research runs autonomously and delivers results to the Inbox. You MUST classify the research type correctly: 'flight' for travel/flight searches, 'stock' for stock/crypto/investment analysis, 'general' for everything else (news, topics, people, tech, etc.).",
+      description: "Start a deep research task that runs in the background. Use when the user asks you to research a topic thoroughly, investigate something in depth, or compile a report. The research runs autonomously and delivers results to the Inbox. Classify the type based on what the user wants — e.g. 'flight' for travel, 'stock' for equities, 'shopping' for product search, 'news' for current events, or any descriptive label.",
       inputSchema: z.object({
         goal: z.string().describe("What to research — be specific about the topic and what kind of information to find"),
-        type: z.enum(["flight", "stock", "general"]).describe("Research domain: 'flight' = flight/travel search, 'stock' = stock/crypto/investment analysis, 'general' = news, topics, people, tech, or anything else"),
+        type: z.string().describe("Research domain — a short label describing the type of research. Examples: 'flight', 'stock', 'crypto', 'news', 'comparison', 'shopping', 'real-estate', 'sports', 'general'. Use whatever fits best."),
       }),
       execute: async ({ goal, type }) => {
         try {
@@ -328,6 +328,9 @@ export function createAgentTools(ctx: AgentContext) {
               llm: ctx.llm,
               logger: ctx.logger,
               timezone: ctx.config.timezone,
+              provider: ctx.config.llm.provider,
+              model: ctx.config.llm.model,
+              contextWindow: ctx.config.llm.contextWindow,
               webSearch,
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,
@@ -349,7 +352,7 @@ export function createAgentTools(ctx: AgentContext) {
       description: "Start a multi-agent swarm analysis that runs in the background. Use when the user asks for a complex analysis involving multiple perspectives, comparisons, or tasks that benefit from parallel investigation. The swarm decomposes the goal into subtasks, runs specialized sub-agents in parallel with a shared blackboard, and synthesizes results into a unified report delivered to the Inbox.",
       inputSchema: z.object({
         goal: z.string().describe("What to analyze — be specific about the topic, comparison, or question to investigate"),
-        type: z.enum(["flight", "stock", "crypto", "news", "comparison", "general"]).describe("Research domain: 'flight' = travel/flights, 'stock' = stocks/equities, 'crypto' = cryptocurrency, 'news' = current events, 'comparison' = comparing entities, 'general' = everything else"),
+        type: z.string().describe("Research domain — a short label describing the type of analysis. Examples: 'flight', 'stock', 'crypto', 'news', 'comparison', 'shopping', 'real-estate', 'sports', 'general'. Use whatever fits best."),
       }),
       execute: async ({ goal, type }) => {
         try {
@@ -368,6 +371,9 @@ export function createAgentTools(ctx: AgentContext) {
               llm: ctx.llm,
               logger: ctx.logger,
               timezone: ctx.config.timezone,
+              provider: ctx.config.llm.provider,
+              model: ctx.config.llm.model,
+              contextWindow: ctx.config.llm.contextWindow,
               webSearch,
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,
@@ -475,7 +481,7 @@ export function createAgentTools(ctx: AgentContext) {
         execute: async ({ language, code, purpose, timeout }) => {
           try {
             ctx.logger.info("Sandbox execution", { purpose, language });
-            const result = await runInSandbox({ language, code, timeout });
+            const result = await runInSandbox({ language, code, timeout }, ctx.logger);
 
             // Store any output files as artifacts
             const savedArtifacts: Array<{ id: string; name: string; mimeType: string }> = [];
@@ -493,6 +499,14 @@ export function createAgentTools(ctx: AgentContext) {
               }
             }
 
+            if (result.exitCode !== 0) {
+              ctx.logger.warn("Sandbox run_code non-zero exit", {
+                purpose,
+                exitCode: result.exitCode,
+                stderr: result.stderr.slice(0, 500),
+              });
+            }
+
             return {
               stdout: result.stdout,
               stderr: result.stderr,
@@ -501,6 +515,11 @@ export function createAgentTools(ctx: AgentContext) {
               ...(result.exitCode !== 0 ? { error: `Code exited with code ${result.exitCode}` } : {}),
             };
           } catch (err) {
+            ctx.logger.error("Sandbox run_code failed", {
+              purpose,
+              language,
+              error: err instanceof Error ? err.message : String(err),
+            });
             return { error: `Sandbox execution failed: ${err instanceof Error ? err.message : "unknown error"}` };
           }
         },
