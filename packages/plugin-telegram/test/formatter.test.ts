@@ -50,6 +50,21 @@ describe("formatTelegramResponse", () => {
     const input = '{"ticker":"AMZN"';
     expect(formatTelegramResponse(input)).toBe(input);
   });
+
+  it("formats JSON arrays of objects as readable text, not raw JSON", () => {
+    const input = JSON.stringify([
+      { ticker: "AAPL", price: 185.5, change: "+2.3%" },
+      { ticker: "MSFT", price: 412.0, change: "-0.5%" },
+    ]);
+    const output = formatTelegramResponse(input);
+    expect(output).toContain("**Results**");
+    expect(output).toContain("**Ticker:** AAPL");
+    expect(output).toContain("**Price:** 185.5");
+    expect(output).toContain("**Ticker:** MSFT");
+    // Must NOT contain raw JSON
+    expect(output).not.toContain('{"ticker"');
+    expect(output).not.toContain('"price":');
+  });
 });
 describe("formatBriefingHTML", () => {
   it("formats full sections with all fields", () => {

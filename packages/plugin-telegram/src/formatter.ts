@@ -198,7 +198,17 @@ export function formatTelegramResponse(text: string): string {
       if (parsed.length === 0) return text;
       const lines: string[] = ["**Results**"];
       for (const item of parsed) {
-        lines.push(`- ${isRecord(item) ? JSON.stringify(item) : formatPrimitive(item)}`);
+        if (isRecord(item)) {
+          // Format each object as a readable block with key-value pairs
+          const summary = Object.entries(item)
+            .filter(([, v]) => v === null || ["string", "number", "boolean"].includes(typeof v))
+            .slice(0, 6)
+            .map(([k, v]) => `**${humanizeKey(k)}:** ${formatPrimitive(v)}`)
+            .join(" | ");
+          lines.push(`- ${summary || "(complex item)"}`);
+        } else {
+          lines.push(`- ${formatPrimitive(item)}`);
+        }
       }
       return lines.join("\n");
     }
