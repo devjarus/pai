@@ -21,6 +21,7 @@ import {
   getContextBudget,
   estimateTokens,
   getProviderOptions,
+  learnFromContent,
 } from "@personal-ai/core";
 import { streamText, generateText, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, tool } from "ai";
 
@@ -167,25 +168,31 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
   // ---- Chat ----
 
   // Chat with agent — AI SDK createUIMessageStream + streamText
-  app.post("/api/chat", async (request, reply) => {
+  // Increase body limit to support file attachments (up to 5MB)
+  app.post("/api/chat", { bodyLimit: 5_242_880 }, async (request, reply) => {
     // Support both AI SDK DefaultChatTransport and legacy format
     const body = request.body as Record<string, unknown> | undefined;
     let message: string;
     let agentName: string | undefined;
     let sessionId: string | undefined;
+    let fileParts: Array<{ type: string; data?: string; mediaType?: string; mimeType?: string; filename?: string; name?: string }> = [];
 
     if (body?.messages && Array.isArray(body.messages)) {
       // AI SDK DefaultChatTransport format: { id, messages: [{ role, parts: [{ type: "text", text }] }], trigger, sessionId, agent }
-      const lastMsg = (body.messages as Array<{ role: string; parts?: Array<{ type: string; text?: string }> }>).at(-1);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const lastMsg = (body.messages as Array<{ role: string; parts?: Array<Record<string, any>> }>).at(-1);
       const textPart = lastMsg?.parts?.find((p) => p.type === "text");
       message = textPart?.text ?? "";
+      fileParts = (lastMsg?.parts?.filter((p) => p.type === "file") ?? []) as typeof fileParts;
       agentName = body.agent as string | undefined;
       sessionId = (body.sessionId as string | undefined) ?? (body.id as string | undefined);
     } else if (body?.message && typeof body.message === "object" && (body.message as Record<string, unknown>).parts) {
       // Single message with parts: { id, message: { parts: [{ type: "text", text }] }, agent }
-      const parts = ((body.message as Record<string, unknown>).parts as Array<{ type: string; text?: string }>) ?? [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const parts = ((body.message as Record<string, unknown>).parts as Array<Record<string, any>>) ?? [];
       const textPart = parts.find((p) => p.type === "text");
       message = textPart?.text ?? "";
+      fileParts = (parts.filter((p) => p.type === "file") ?? []) as typeof fileParts;
       agentName = body.agent as string | undefined;
       sessionId = body.id as string | undefined;
     } else {
@@ -193,6 +200,61 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
       message = body?.message as string ?? "";
       agentName = body?.agent as string | undefined;
       sessionId = body?.sessionId as string | undefined;
+    }
+
+    // Process file attachments — decode, store in knowledge, and inject into message context
+    const documentSections: string[] = [];
+    const uploadedDocNames: string[] = [];
+    for (const fp of fileParts) {
+      try {
+        const rawData = fp.data ?? "";
+        const mime = fp.mediaType ?? fp.mimeType ?? "text/plain";
+        const fileName = fp.filename ?? fp.name ?? `document-${Date.now()}.txt`;
+
+        // Only process text-based documents
+        const isText = mime.startsWith("text/") ||
+          ["application/json", "application/xml", "application/csv"].includes(mime) ||
+          /\.(txt|md|markdown|csv|json|xml|html|htm|log|yaml|yml|toml|ini|cfg|conf|ts|js|py|sh|sql|css)$/i.test(fileName);
+        if (!isText) continue;
+
+        // Decode content from base64 / data URL
+        let content: string;
+        if (rawData.startsWith("data:")) {
+          const commaIdx = rawData.indexOf(",");
+          content = Buffer.from(rawData.slice(commaIdx + 1), "base64").toString("utf-8");
+        } else if (rawData.length > 0) {
+          content = Buffer.from(rawData, "base64").toString("utf-8");
+        } else {
+          continue;
+        }
+
+        if (content.trim().length === 0) continue;
+
+        // Store in knowledge base for future retrieval
+        const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 120);
+        const sourceUrl = `upload://${Date.now()}-${safeName}`;
+        try {
+          await learnFromContent(ctx.storage, ctx.llm, sourceUrl, fileName, content, { force: true });
+          ctx.logger.info("Chat document uploaded to knowledge", { fileName, chars: content.length });
+        } catch (err) {
+          ctx.logger.warn(`Failed to store chat document in knowledge: ${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        // Inject document content into the LLM context (truncate large files)
+        const snippet = content.length > 12_000 ? content.slice(0, 12_000) + "\n\n[... document truncated — use knowledge_search to query the full content ...]" : content;
+        documentSections.push(`<document name="${fileName}">\n${snippet}\n</document>`);
+        uploadedDocNames.push(fileName);
+      } catch (err) {
+        ctx.logger.warn(`Failed to process chat attachment: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // Prepend document content to the user message so the LLM can reference it
+    if (documentSections.length > 0) {
+      const docPrefix = `The user has uploaded ${documentSections.length} document(s). Here are the contents:\n\n${documentSections.join("\n\n")}\n\n`;
+      message = message
+        ? `${docPrefix}User message: ${message}`
+        : `${docPrefix}Please analyze the uploaded document(s) and provide a summary with key insights.`;
     }
 
     if (!message) return reply.status(400).send({ error: "message is required" });

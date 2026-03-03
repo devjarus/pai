@@ -470,6 +470,41 @@ export function createAgentTools(ctx: AgentContext) {
       },
     }),
 
+    generate_report: tool({
+      description: "Generate a downloadable analysis report as a Markdown file. Use this when the user asks to create a report, analysis document, summary report, or any document they might want to download and share. The report is saved as a downloadable artifact.",
+      inputSchema: z.object({
+        title: z.string().describe("Report title"),
+        content: z.string().describe("Full report content in Markdown format. Include headings, bullet points, tables, and sections as appropriate."),
+      }),
+      execute: async ({ title, content }) => {
+        try {
+          const threadId = (ctx as unknown as Record<string, unknown>).threadId as string ?? "report";
+          const safeName = title.replace(/[^a-zA-Z0-9\-_ ]/g, "").slice(0, 80).trim() || "report";
+          const fileName = `${safeName}.md`;
+
+          // Compose the full report with a title header
+          const fullReport = `# ${title}\n\n_Generated on ${formatDateTime(ctx.config.timezone).full}_\n\n${content}`;
+
+          const artifactId = storeArtifact(ctx.storage, {
+            jobId: threadId,
+            name: fileName,
+            mimeType: "text/markdown",
+            data: Buffer.from(fullReport, "utf-8"),
+          });
+
+          return {
+            ok: true,
+            artifactId,
+            fileName,
+            title,
+            downloadUrl: `/api/artifacts/${artifactId}`,
+          };
+        } catch (err) {
+          return { ok: false, error: `Failed to generate report: ${err instanceof Error ? err.message : "unknown error"}` };
+        }
+      },
+    }),
+
     // Conditionally add sandbox tool
     ...(resolveSandboxUrl(ctx.config.sandboxUrl) ? {
       run_code: tool({

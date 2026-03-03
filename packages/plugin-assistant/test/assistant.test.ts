@@ -82,10 +82,10 @@ describe("createTools", () => {
     expect(toolNames).toContain("task_done");
   });
 
-  it("returns 18 tools total", () => {
+  it("returns 19 tools total", () => {
     const ctx = createMockCtx();
     const tools = assistantPlugin.agent!.createTools!(ctx);
-    expect(Object.keys(tools)).toHaveLength(18);
+    expect(Object.keys(tools)).toHaveLength(19);
   });
 
   it("each tool has description and execute function", () => {
