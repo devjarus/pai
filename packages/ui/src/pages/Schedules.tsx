@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 import {
   PlusIcon,
   Trash2Icon,
@@ -31,18 +32,18 @@ function formatInterval(hours: number): string {
 }
 
 function formatDateTime(iso: string): string {
-  const d = new Date(iso);
+  const d = parseApiDate(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
+  return formatWithTimezone(d, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  });
+  } );
 }
 
 function timeUntil(iso: string): string {
-  const diff = new Date(iso).getTime() - Date.now();
+  const diff = parseApiDate(iso).getTime() - Date.now();
   if (diff < 0) return "due now";
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -319,10 +320,10 @@ function ScheduleRow({
         <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{s.goal}</p>
         <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
           {!isPaused && (
-            <span>Next: {formatDateTime(s.nextRunAt)} ({timeUntil(s.nextRunAt)})</span>
+            <span>Next: {formatDateTime(s.nextRunAt )} ({timeUntil(s.nextRunAt)})</span>
           )}
           {s.lastRunAt && (
-            <span>Last: {formatDateTime(s.lastRunAt)}</span>
+            <span>Last: {formatDateTime(s.lastRunAt )}</span>
           )}
           <span className="font-mono text-[10px] opacity-50">{s.id}</span>
         </div>
