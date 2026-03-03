@@ -14,7 +14,14 @@ export default function Login() {
   const [checking, setChecking] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const navigate = useNavigate();
-  const { refresh, isAuthenticated, loading } = useAuth();
+  const { refresh, isAuthenticated, needsSetup, loading } = useAuth();
+
+  // If no owner exists, redirect to setup
+  useEffect(() => {
+    if (!loading && needsSetup) {
+      navigate("/setup", { replace: true });
+    }
+  }, [loading, needsSetup, navigate]);
 
   // If already authenticated, redirect to chat
   useEffect(() => {
