@@ -76,6 +76,7 @@ export default function Setup() {
     setSaving(true);
     try {
       await setupOwner({ email: email.trim(), password, name: name.trim() });
+      localStorage.removeItem("pai_signed_out");
       await refresh();
       setStep("llm");
     } catch (err) {

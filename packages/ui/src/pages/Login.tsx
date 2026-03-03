@@ -39,6 +39,7 @@ export default function Login() {
 
     try {
       await login(email.trim(), password);
+      localStorage.removeItem("pai_signed_out");
       await refresh();
       navigate("/chat", { replace: true });
     } catch (err) {
