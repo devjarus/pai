@@ -1,6 +1,6 @@
 import { Bot } from "grammy";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
-import { listBeliefs, getThread, formatDateTime } from "@personal-ai/core";
+import { listBeliefs, getThread, formatDateTime, parseTimestamp } from "@personal-ai/core";
 import { listTasks } from "@personal-ai/plugin-tasks";
 import { listResearchJobs, createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import type { ResearchContext } from "@personal-ai/plugin-research";
@@ -27,7 +27,7 @@ function toolStatus(toolName: string): string {
 }
 
 function formatRelativeTime(isoDate: string): string {
-  const diffMs = Date.now() - new Date(isoDate).getTime();
+  const diffMs = Date.now() - parseTimestamp(isoDate).getTime();
   const mins = Math.floor(diffMs / 60_000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
@@ -187,7 +187,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       }
       const lines = schedules.map((s) => {
         const interval = s.interval_hours >= 24 ? `${Math.round(s.interval_hours / 24)}d` : `${s.interval_hours}h`;
-        const next = formatDateTime(ctx.config.timezone, new Date(s.next_run_at)).full;
+        const next = formatDateTime(ctx.config.timezone, parseTimestamp(s.next_run_at)).full;
         return `\u{1F504} <b>${escapeHTML(s.label)}</b> (every ${interval})\n   Next: ${next}\n   ID: <code>${s.id}</code>`;
       });
       await tgCtx.reply(`<b>Active Schedules</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
@@ -202,7 +202,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       const researchJobs = listResearchJobs(ctx.storage).map((j) => ({ ...j, source: "research" as const }));
       const swarmJobs = listSwarmJobs(ctx.storage).map((j) => ({ ...j, source: "swarm" as const }));
       const allJobs = [...researchJobs, ...swarmJobs]
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .sort((a, b) => parseTimestamp(b.createdAt).getTime() - parseTimestamp(a.createdAt).getTime())
         .slice(0, 10);
 
       if (allJobs.length === 0) {

@@ -31,9 +31,10 @@ import {
   ChevronRightIcon,
 } from "lucide-react";
 import type { KnowledgeSource, KnowledgeSearchResult } from "../types";
+import { parseApiDate } from "@/lib/datetime";
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr.replace(" ", "T"));
+  const d = parseApiDate(dateStr);
   return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString();
 }
 

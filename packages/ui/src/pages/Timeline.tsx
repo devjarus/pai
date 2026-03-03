@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
 import { useBeliefs } from "@/hooks";
 import type { Belief, BeliefType } from "../types";
+import { parseApiDate } from "@/lib/datetime";
 
 const TYPES: BeliefType[] = ["factual", "preference", "procedural", "architectural", "insight", "meta"];
 
@@ -49,12 +50,12 @@ export default function Timeline() {
 
   // Sort by updated_at descending
   const beliefs = [...rawBeliefs].sort(
-    (a, b) => new Date(b.updated_at.replace(" ", "T")).getTime() - new Date(a.updated_at.replace(" ", "T")).getTime(),
+    (a, b) => parseApiDate(b.updated_at).getTime() - parseApiDate(a.updated_at).getTime(),
   );
 
   // Group by date
   const grouped = beliefs.reduce<Record<string, Belief[]>>((acc, belief) => {
-    const date = new Date(belief.updated_at.replace(" ", "T")).toLocaleDateString("en-US", {
+    const date = parseApiDate(belief.updated_at).toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",
       month: "long",
@@ -172,7 +173,7 @@ export default function Timeline() {
                                 {belief.type}
                               </Badge>
                               <span className="font-mono text-[10px] text-muted-foreground">
-                                {new Date(belief.updated_at.replace(" ", "T")).toLocaleTimeString([], {
+                                {parseApiDate(belief.updated_at).toLocaleTimeString([], {
                                   hour: "2-digit",
                                   minute: "2-digit",
                                 })}

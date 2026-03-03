@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Debug toggle not persisting** — `loadConfig()` didn't read `debugResearch`, `workers`, or `knowledge` fields from config file, losing them on server restart
 - **Telegram HTML injection** — User content in bot command responses (goals, titles, labels) is now escaped to prevent HTML injection via `escapeHTML()`
 - **Docker missing plugin-swarm** — Dockerfile now includes `plugin-swarm` package in both build and runtime stages
+- **Timezone consistency across UI and Telegram jobs** — SQLite UTC timestamps are now normalized before parsing, preventing hour offsets and mismatched relative times between web UI and Telegram outputs.
 
 ### Added
 

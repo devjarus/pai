@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { InfoBubble } from "../InfoBubble";
+import { parseApiDate } from "@/lib/datetime";
 
 interface ThreadSidebarProps {
   activeThreadId: string | null;
@@ -260,7 +261,7 @@ export function ThreadSidebar({
                         </Badge>
                       )}
                       <span>
-                        {new Date(thread.updatedAt).toLocaleDateString(
+                        {parseApiDate(thread.updatedAt).toLocaleDateString(
                           undefined,
                           { month: "short", day: "numeric" },
                         )}

@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { parseApiDate } from "@/lib/datetime";
 import {
   PlusIcon,
   Trash2Icon,
@@ -31,7 +32,7 @@ function formatInterval(hours: number): string {
 }
 
 function formatDateTime(iso: string): string {
-  const d = new Date(iso);
+  const d = parseApiDate(iso);
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleString(undefined, {
     month: "short",
@@ -42,7 +43,7 @@ function formatDateTime(iso: string): string {
 }
 
 function timeUntil(iso: string): string {
-  const diff = new Date(iso).getTime() - Date.now();
+  const diff = parseApiDate(iso).getTime() - Date.now();
   if (diff < 0) return "due now";
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));

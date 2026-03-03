@@ -34,14 +34,15 @@ import {
   CalendarIcon,
 } from "lucide-react";
 import type { Task, Goal } from "../types";
+import { parseApiDate } from "@/lib/datetime";
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr.replace(" ", "T"));
+  const d = parseApiDate(dateStr);
   return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString();
 }
 
 function isOverdue(dueDateStr: string): boolean {
-  const due = new Date(dueDateStr.replace(" ", "T"));
+  const due = parseApiDate(dueDateStr);
   if (isNaN(due.getTime())) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);

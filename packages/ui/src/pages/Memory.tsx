@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
 import { Trash2Icon, HelpCircleIcon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
 import type { Belief, BeliefType } from "../types";
+import { parseApiDate } from "@/lib/datetime";
 
 const TYPES: BeliefType[] = ["factual", "preference", "procedural", "architectural", "insight", "meta"];
 
@@ -49,7 +50,7 @@ const typeDescriptions: Record<string, string> = {
 };
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr.replace(" ", "T"));
+  const d = parseApiDate(dateStr);
   return isNaN(d.getTime()) ? dateStr : d.toLocaleString();
 }
 
