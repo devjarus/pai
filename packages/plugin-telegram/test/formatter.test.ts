@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatBriefingHTML, escapeHTML } from "../src/formatter.js";
+import { formatBriefingHTML, escapeHTML, formatTelegramResponse } from "../src/formatter.js";
 import type { BriefingSections } from "../src/formatter.js";
 
 describe("escapeHTML", () => {
@@ -29,6 +29,28 @@ describe("escapeHTML", () => {
   });
 });
 
+
+
+describe("formatTelegramResponse", () => {
+  it("formats raw JSON payloads into readable markdown sections", () => {
+    const output = formatTelegramResponse('{"ticker":"AMZN","company":"Amazon","metrics":{"price":208.39},"risks":["Outage","Earnings miss"]}');
+    expect(output).toContain("**AMZN — Amazon**");
+    expect(output).toContain("**Metrics**");
+    expect(output).toContain("- **Price:** 208.39");
+    expect(output).toContain("**Risks**");
+    expect(output).toContain("- Outage");
+  });
+
+  it("returns original text when response is not JSON", () => {
+    const input = "Here is your analysis in markdown.";
+    expect(formatTelegramResponse(input)).toBe(input);
+  });
+
+  it("returns original text for invalid JSON", () => {
+    const input = '{"ticker":"AMZN"';
+    expect(formatTelegramResponse(input)).toBe(input);
+  });
+});
 describe("formatBriefingHTML", () => {
   it("formats full sections with all fields", () => {
     const sections: BriefingSections = {

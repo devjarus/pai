@@ -117,6 +117,104 @@ export function markdownToTelegramHTML(md: string): string {
   return result.trim();
 }
 
+function humanizeKey(key: string): string {
+  const withSpaces = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  if (!withSpaces) return key;
+  return withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatPrimitive(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
+function formatObjectLines(value: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+
+  for (const [key, raw] of Object.entries(value)) {
+    const label = humanizeKey(key);
+
+    if (raw === null || typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+      lines.push(`- **${label}:** ${formatPrimitive(raw)}`);
+      continue;
+    }
+
+    if (Array.isArray(raw)) {
+      if (raw.length === 0) continue;
+      lines.push(`\n**${label}**`);
+      for (const item of raw) {
+        if (isRecord(item)) {
+          const summary = Object.entries(item)
+            .filter(([, v]) => v === null || ["string", "number", "boolean"].includes(typeof v))
+            .slice(0, 4)
+            .map(([k, v]) => `**${humanizeKey(k)}:** ${formatPrimitive(v)}`)
+            .join(" | ");
+          lines.push(`- ${summary || "(complex item)"}`);
+        } else {
+          lines.push(`- ${formatPrimitive(item)}`);
+        }
+      }
+      continue;
+    }
+
+    if (isRecord(raw)) {
+      lines.push(`\n**${label}**`);
+      for (const [childKey, childVal] of Object.entries(raw)) {
+        if (childVal === null || typeof childVal === "string" || typeof childVal === "number" || typeof childVal === "boolean") {
+          lines.push(`- **${humanizeKey(childKey)}:** ${formatPrimitive(childVal)}`);
+        }
+      }
+    }
+  }
+
+  return lines;
+}
+
+/**
+ * Format a model response for Telegram.
+ * If the response is raw JSON, convert it into a human-readable markdown summary.
+ */
+export function formatTelegramResponse(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return text;
+
+  const looksLikeJson = (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"));
+
+  if (!looksLikeJson) return text;
+
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+
+    if (Array.isArray(parsed)) {
+      if (parsed.length === 0) return text;
+      const lines: string[] = ["**Results**"];
+      for (const item of parsed) {
+        lines.push(`- ${isRecord(item) ? JSON.stringify(item) : formatPrimitive(item)}`);
+      }
+      return lines.join("\n");
+    }
+
+    if (!isRecord(parsed)) return text;
+
+    const title = [parsed.ticker, parsed.company].filter((part): part is string => typeof part === "string" && part.length > 0)
+      .join(" — ");
+    const lines = [title ? `**${title}**` : "**Analysis Summary**", ...formatObjectLines(parsed)];
+
+    return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  } catch {
+    return text;
+  }
+}
+
 /**
  * Split a message into chunks that fit Telegram's 4096-char limit.
  * Tries to split at paragraph boundaries, then newlines, then hard-splits.

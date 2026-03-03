@@ -8,7 +8,7 @@ import { listSwarmJobs } from "@personal-ai/plugin-swarm";
 import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { runAgentChat, createThread, clearThread as clearThreadMessages } from "./chat.js";
-import { markdownToTelegramHTML, splitMessage, escapeHTML } from "./formatter.js";
+import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse } from "./formatter.js";
 import { bufferMessage, passiveProcess } from "./passive.js";
 
 /** Tool name → human-friendly status emoji */
@@ -301,13 +301,14 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         return;
       }
 
-      const html = markdownToTelegramHTML(result.text);
+      const formattedText = formatTelegramResponse(result.text);
+      const html = markdownToTelegramHTML(formattedText);
       const parts = splitMessage(html);
 
       try {
         await bot.api.editMessageText(chatId, placeholder.message_id, parts[0]!, { parse_mode: "HTML" });
       } catch {
-        const plainParts = splitMessage(result.text);
+        const plainParts = splitMessage(formattedText);
         await bot.api.editMessageText(chatId, placeholder.message_id, plainParts[0]!);
         for (let i = 1; i < plainParts.length; i++) {
           await bot.api.sendMessage(chatId, plainParts[i]!);
@@ -319,7 +320,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         try {
           await bot.api.sendMessage(chatId, parts[i]!, { parse_mode: "HTML" });
         } catch {
-          await bot.api.sendMessage(chatId, splitMessage(result.text)[i] ?? parts[i]!);
+          await bot.api.sendMessage(chatId, splitMessage(formattedText)[i] ?? parts[i]!);
         }
       }
     } catch (err) {
