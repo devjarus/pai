@@ -3,6 +3,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Belief } from "../types";
+import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
+import { useAppTimezone } from "@/hooks";
 
 const typeColorMap: Record<string, string> = {
   factual: "bg-blue-500/15 text-blue-400 border-blue-500/30",
@@ -20,6 +22,7 @@ interface BeliefCardProps {
 }
 
 export default function BeliefCard({ belief, onForget, onClick }: BeliefCardProps) {
+  const timezone = useAppTimezone();
   const confidencePercent = Math.round(belief.confidence * 100);
   const typeClass = typeColorMap[belief.type] ?? "bg-muted text-muted-foreground border-border";
   const isActive = belief.status === "active";
@@ -72,7 +75,7 @@ export default function BeliefCard({ belief, onForget, onClick }: BeliefCardProp
 
       {/* Footer */}
       <CardFooter className="flex items-center justify-between px-4 py-0 text-[11px] text-muted-foreground">
-        <span>{new Date(belief.created_at.replace(" ", "T")).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+        <span>{formatWithTimezone(parseApiDate(belief.created_at), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }, timezone)}</span>
         <div className="flex items-center gap-2">
           {!isActive && (
             <Badge variant="destructive" className="text-[10px]">

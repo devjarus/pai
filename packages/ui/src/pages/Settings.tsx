@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
 import { FolderIcon, FolderOpenIcon, ChevronUpIcon, ChevronDownIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon } from "lucide-react";
 import type { LearningRun } from "@/api";
+import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
 const isCloudDeployment =
   typeof window !== "undefined" &&
@@ -622,7 +623,7 @@ export default function Settings() {
                   <span className="text-xs text-muted-foreground">Last learning run</span>
                   <span className="font-mono text-xs text-foreground/70">
                     {config.workers.lastRun.threads
-                      ? new Date(config.workers.lastRun.threads).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      ? formatWithTimezone(parseApiDate(config.workers.lastRun.threads), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }, timezone || undefined)
                       : "Never"}
                   </span>
                 </div>
@@ -769,7 +770,7 @@ export default function Settings() {
               {stats.newestBelief && (
                 <StatCard
                   label="Latest Update"
-                  value={new Date(stats.newestBelief).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  value={formatWithTimezone(parseApiDate(stats.newestBelief), { month: "short", day: "numeric" }, timezone || undefined)}
                 />
               )}
             </div>
@@ -912,7 +913,7 @@ function EditableRow({
 }
 
 function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const diff = Date.now() - parseApiDate(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;

@@ -35,6 +35,7 @@ import type { BackgroundJobInfo, BlackboardEntry } from "../api";
 import type { SwarmAgent, ArtifactMeta } from "../types";
 import { useJobs, useJobDetail, useJobBlackboard, useJobAgents, useJobArtifacts, useCancelJob, useClearJobs, useConfig } from "@/hooks";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
+import { parseApiDate } from "@/lib/datetime";
 
 const statusStyles: Record<string, string> = {
   running: "bg-blue-500/15 text-blue-400 border-blue-500/20",
@@ -80,7 +81,7 @@ const roleStyles: Record<string, string> = {
 };
 
 function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const diff = Date.now() - parseApiDate(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
@@ -91,7 +92,7 @@ function timeAgo(dateStr: string): string {
 
 function formatDuration(start: string, end: string | null): string {
   if (!end) return "running...";
-  const ms = new Date(end).getTime() - new Date(start).getTime();
+  const ms = parseApiDate(end).getTime() - parseApiDate(start).getTime();
   const secs = Math.floor(ms / 1000);
   if (secs < 60) return `${secs}s`;
   const mins = Math.floor(secs / 60);

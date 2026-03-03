@@ -40,6 +40,7 @@ export type { Belief, Episode, BeliefChange, MemoryStats, MemoryExport, MemoryEx
 // Timezone
 export { formatDateTime } from "./timezone.js";
 export type { FormattedDateTime } from "./timezone.js";
+export { normalizeTimestamp, parseTimestamp } from "./timezone.js";
 
 // Auth
 export { authMigrations, createOwner, getOwner, getOwnerByEmail, verifyOwnerPassword, hasOwner, getJwtSecret, resetOwnerPassword } from "./auth.js";

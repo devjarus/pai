@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
 import { Trash2Icon, HelpCircleIcon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
 import type { Belief, BeliefType } from "../types";
+import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
 const TYPES: BeliefType[] = ["factual", "preference", "procedural", "architectural", "insight", "meta"];
 
@@ -49,19 +50,19 @@ const typeDescriptions: Record<string, string> = {
 };
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr.replace(" ", "T"));
-  return isNaN(d.getTime()) ? dateStr : d.toLocaleString();
+  const d = parseApiDate(dateStr);
+  return isNaN(d.getTime()) ? dateStr : formatWithTimezone(d, {} );
 }
 
 function sortBeliefs(results: Belief[], sortBy: string): Belief[] {
   return [...results].sort((a, b) => {
     switch (sortBy) {
       case "recent":
-        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+        return parseApiDate(b.updated_at).getTime() - parseApiDate(a.updated_at).getTime();
       case "importance":
         return b.importance - a.importance;
       case "created":
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        return parseApiDate(b.created_at).getTime() - parseApiDate(a.created_at).getTime();
       default:
         return b.confidence - a.confidence;
     }
@@ -672,8 +673,8 @@ function BeliefDetailPanel({
             )}
 
             <div className="space-y-2">
-              <DetailRow label="Created" value={formatDate(belief.created_at)} />
-              <DetailRow label="Updated" value={formatDate(belief.updated_at)} />
+              <DetailRow label="Created" value={formatDate(belief.created_at )} />
+              <DetailRow label="Updated" value={formatDate(belief.updated_at )} />
               <DetailRow label="ID" value={belief.id} mono />
             </div>
 

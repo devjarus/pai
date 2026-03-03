@@ -34,6 +34,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { InfoBubble } from "../InfoBubble";
+import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
+import { useAppTimezone } from "@/hooks";
 
 interface ThreadSidebarProps {
   activeThreadId: string | null;
@@ -58,6 +60,7 @@ export function ThreadSidebar({
   isOpen,
   onToggle,
 }: ThreadSidebarProps) {
+  const timezone = useAppTimezone();
   const { data: threads = [], isLoading: threadsLoading } = useThreads();
   const deleteThreadMut = useDeleteThread();
   const renameThreadMut = useRenameThread();
@@ -260,10 +263,7 @@ export function ThreadSidebar({
                         </Badge>
                       )}
                       <span>
-                        {new Date(thread.updatedAt).toLocaleDateString(
-                          undefined,
-                          { month: "short", day: "numeric" },
-                        )}
+                        {formatWithTimezone(parseApiDate(thread.updatedAt), { month: "short", day: "numeric" }, timezone)}
                       </span>
                     </div>
                   </>
