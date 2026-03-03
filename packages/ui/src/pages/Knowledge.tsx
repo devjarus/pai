@@ -12,6 +12,7 @@ import {
   useCrawlStatus,
   useSourceChunks,
   useLearnFromUrl,
+  useUploadKnowledgeDocument,
   useCrawlSubPages,
   useDeleteKnowledgeSource,
   useReindexKnowledge,
@@ -27,7 +28,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Trash2Icon, ExternalLinkIcon, SearchIcon, PlusIcon, AlertTriangleIcon,
-  RefreshCwIcon, LoaderIcon, EyeIcon, GlobeIcon, TagIcon, CheckIcon,
+  RefreshCwIcon, LoaderIcon, EyeIcon, GlobeIcon, TagIcon, CheckIcon, UploadIcon, FileTextIcon,
   ChevronRightIcon,
 } from "lucide-react";
 import type { KnowledgeSource, KnowledgeSearchResult } from "../types";
@@ -54,6 +55,8 @@ export default function Knowledge() {
   // --- UI toggle / dialog state ---
   const [selectedSource, setSelectedSource] = useState<KnowledgeSource | null>(null);
   const [showLearnDialog, setShowLearnDialog] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [learnUrl, setLearnUrl] = useState("");
   const [learnCrawl, setLearnCrawl] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<KnowledgeSource | null>(null);
@@ -75,6 +78,7 @@ export default function Knowledge() {
 
   // --- Mutations ---
   const learnMutation = useLearnFromUrl();
+  const uploadMutation = useUploadKnowledgeDocument();
   const crawlSubPagesMutation = useCrawlSubPages();
   const deleteMutation = useDeleteKnowledgeSource();
   const reindexMutation = useReindexKnowledge();
@@ -116,6 +120,26 @@ export default function Knowledge() {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to learn from URL");
+    }
+  };
+
+  const handleUploadDocument = async () => {
+    if (!uploadFile) return;
+    try {
+      const content = await uploadFile.text();
+      const result = await uploadMutation.mutateAsync({
+        fileName: uploadFile.name,
+        mimeType: uploadFile.type || undefined,
+        content,
+        analyze: true,
+      });
+      toast.success(`Uploaded "${result.title}" - ${result.chunks} chunks`);
+      if (result.analysis) {
+        toast.info("Document analysis is ready in the upload dialog.");
+      }
+      setShowUploadDialog(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to upload document");
     }
   };
 
@@ -205,6 +229,7 @@ export default function Knowledge() {
   const isCrawling = crawlSubPagesMutation.isPending;
   const isReindexing = reindexMutation.isPending;
   const isLearning = learnMutation.isPending;
+  const isUploading = uploadMutation.isPending;
 
   const allTags = [...new Set(sources.flatMap((s) => parseTags(s.tags)))];
 
@@ -268,6 +293,14 @@ export default function Knowledge() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Learn from URL</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-xs" onClick={() => setShowUploadDialog(true)}>
+                    <UploadIcon className="size-4 text-muted-foreground" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Upload document</TooltipContent>
               </Tooltip>
             </div>
           </div>
@@ -591,6 +624,47 @@ export default function Knowledge() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Upload Document</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Upload a text-based document (.txt, .md, .csv, .json, .xml, .html). We will index it and generate a quick analysis.
+            </p>
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border/60 bg-card/30 px-3 py-6 text-xs text-muted-foreground hover:border-primary/40">
+              <FileTextIcon className="size-4" />
+              <span>{uploadFile ? uploadFile.name : "Choose file"}</span>
+              <input
+                type="file"
+                className="hidden"
+                accept=".txt,.md,.markdown,.csv,.json,.xml,.html"
+                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                disabled={isUploading}
+              />
+            </label>
+            {(uploadMutation.data?.analysis) && (
+              <div className="rounded-lg border border-border/40 bg-card/30 p-3">
+                <p className="mb-2 text-xs font-medium text-foreground">Analysis</p>
+                <ScrollArea className="max-h-48">
+                  <pre className="whitespace-pre-wrap text-xs text-muted-foreground">{uploadMutation.data.analysis}</pre>
+                </ScrollArea>
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowUploadDialog(false)} disabled={isUploading}>
+                Close
+              </Button>
+              <Button size="sm" onClick={handleUploadDocument} disabled={isUploading || !uploadFile}>
+                {isUploading ? "Uploading..." : "Upload & Analyze"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
 
       <Dialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
         <DialogContent className="max-w-sm">

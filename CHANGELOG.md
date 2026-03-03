@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Document upload + analysis** — Added `/api/knowledge/upload` and Knowledge UI flow to upload text-based docs (`.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`), index them into the knowledge base, and generate a quick AI analysis summary
+- **Research export actions** — Research detail view now supports direct export to Markdown/JSON and print-to-PDF for sharing reports
 - **`/jobs` command** — View recent research and swarm job status directly from Telegram with status emojis and relative timestamps
 - **`/research` command** — Start research directly from Telegram with `/research <query>` shortcut
 - **Memory Curator delegation** — Telegram assistant can now delegate to the Memory Curator sub-agent for memory health analysis and fixes

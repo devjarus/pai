@@ -20,12 +20,63 @@ const learnSchema = z.object({
   force: z.boolean().optional(),
 });
 
+const uploadSchema = z.object({
+  fileName: z.string().min(1, "File name is required").max(255, "File name too long"),
+  content: z.string().min(1, "File content is required").max(2_000_000, "File too large (max 2MB text)"),
+  mimeType: z.string().optional(),
+  analyze: z.boolean().optional(),
+});
+
 const patchSourceSchema = z.object({
   tags: z.string().nullable().optional(),
   maxAgeDays: z.number().int().positive().nullable().optional(),
 });
 
 export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
+  // Learn from uploaded plain-text document
+  app.post<{ Body: { fileName: string; content: string; mimeType?: string; analyze?: boolean } }>("/api/knowledge/upload", async (request, reply) => {
+    const { fileName, content, mimeType, analyze } = validate(uploadSchema, request.body);
+    const ext = fileName.split(".").pop()?.toLowerCase();
+    const supported = new Set(["txt", "md", "markdown", "csv", "json", "xml", "html"]);
+    if (ext && !supported.has(ext)) {
+      return reply.status(415).send({
+        error: "Unsupported file type. Please upload a text-based document (.txt, .md, .csv, .json, .xml, .html)",
+      });
+    }
+
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 120);
+    const sourceUrl = `upload://${Date.now()}-${safeName}`;
+
+    try {
+      const result = await learnFromContent(ctx.storage, ctx.llm, sourceUrl, fileName, content, { force: true });
+      let analysis: string | undefined;
+      if (analyze) {
+        const snippet = content.length > 12_000 ? `${content.slice(0, 12_000)}\n\n[truncated]` : content;
+        const response = await ctx.llm.chat([
+          {
+            role: "system",
+            content: "You analyze uploaded documents. Return concise markdown with: Summary, Key points (3-7 bullets), and Suggested follow-up questions.",
+          },
+          {
+            role: "user",
+            content: `Analyze this document. File: ${fileName}. MIME: ${mimeType ?? "unknown"}\n\n${snippet}`,
+          },
+        ]);
+        analysis = response.text;
+      }
+
+      return {
+        ok: true,
+        title: result.source.title,
+        sourceId: result.source.id,
+        chunks: result.chunksStored,
+        analysis,
+      };
+    } catch (err) {
+      return reply.status(500).send({ error: err instanceof Error ? err.message : "Failed to process uploaded document" });
+    }
+  });
+
   // List learned sources
   app.get("/api/knowledge/sources", async () => {
     return listSources(ctx.storage).map((s) => ({

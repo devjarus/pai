@@ -3,6 +3,7 @@ import {
   getKnowledgeSources,
   searchKnowledge,
   learnFromUrl,
+  uploadKnowledgeDocument,
   crawlSubPages,
   getCrawlStatus,
   getSourceChunks,
@@ -59,6 +60,17 @@ export function useLearnFromUrl() {
       url: string;
       options?: { crawl?: boolean; force?: boolean };
     }) => learnFromUrl(input.url, input.options),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: knowledgeKeys.all });
+    },
+  });
+}
+
+
+export function useUploadKnowledgeDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { fileName: string; content: string; mimeType?: string; analyze?: boolean }) => uploadKnowledgeDocument(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: knowledgeKeys.all });
     },

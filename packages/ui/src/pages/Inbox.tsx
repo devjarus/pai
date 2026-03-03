@@ -24,9 +24,50 @@ import {
   ChevronUpIcon,
   LoaderIcon,
   MessageSquarePlusIcon,
+  FileTextIcon,
+  FileJsonIcon,
+  PrinterIcon,
 } from "lucide-react";
 
 const STORAGE_KEY = "pai-inbox-read";
+
+
+function saveBlob(content: string, type: string, filename: string): void {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportResearch(sections: { goal?: string; report?: string }, format: "md" | "txt" | "json"): void {
+  const nameBase = (sections.goal ?? "research-report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "research-report";
+  const report = sections.report ?? "";
+  if (format === "json") {
+    saveBlob(JSON.stringify({ goal: sections.goal ?? "Research Report", report }, null, 2), "application/json", `${nameBase}.json`);
+    return;
+  }
+  if (format === "txt") {
+    saveBlob(`Goal: ${sections.goal ?? "Research Report"}
+
+${report}`, "text/plain;charset=utf-8", `${nameBase}.txt`);
+    return;
+  }
+  saveBlob(`# ${sections.goal ?? "Research Report"}
+
+${report}`, "text/markdown;charset=utf-8", `${nameBase}.md`);
+}
+
+function printResearchAsPdf(sections: { goal?: string; report?: string }): void {
+  const w = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+  if (!w) return;
+  w.document.write(`<html><head><title>${sections.goal ?? "Research Report"}</title></head><body><h1>${sections.goal ?? "Research Report"}</h1><pre style="white-space:pre-wrap;font-family:system-ui">${(sections.report ?? "").replace(/</g, "&lt;")}</pre></body></html>`);
+  w.document.close();
+  w.focus();
+  w.print();
+}
 
 function loadReadIds(): Set<string> {
   try {
@@ -185,21 +226,50 @@ function InboxDetail({ id }: { id: string }) {
           </Button>
           <div className="flex items-center gap-2">
             {item?.type === "research" && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  rerunMutation.mutate(id, {
-                    onSuccess: () => toast.success("Research rerun started"),
-                    onError: () => toast.error("Failed to rerun research"),
-                  });
-                }}
-                disabled={rerunMutation.isPending}
-                className="gap-2"
-              >
-                <RefreshCwIcon className={`h-3 w-3 ${rerunMutation.isPending ? "animate-spin" : ""}`} />
-                Rerun
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportResearch(sections, "md")}
+                  className="gap-2"
+                >
+                  <FileTextIcon className="h-3 w-3" />
+                  .md
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportResearch(sections, "json")}
+                  className="gap-2"
+                >
+                  <FileJsonIcon className="h-3 w-3" />
+                  .json
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => printResearchAsPdf(sections)}
+                  className="gap-2"
+                >
+                  <PrinterIcon className="h-3 w-3" />
+                  PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    rerunMutation.mutate(id, {
+                      onSuccess: () => toast.success("Research rerun started"),
+                      onError: () => toast.error("Failed to rerun research"),
+                    });
+                  }}
+                  disabled={rerunMutation.isPending}
+                  className="gap-2"
+                >
+                  <RefreshCwIcon className={`h-3 w-3 ${rerunMutation.isPending ? "animate-spin" : ""}`} />
+                  Rerun
+                </Button>
+              </>
             )}
             <Button
               variant="outline"

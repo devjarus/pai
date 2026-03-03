@@ -281,6 +281,14 @@ export function learnFromUrl(url: string, options?: { crawl?: boolean; force?: b
   });
 }
 
+
+export function uploadKnowledgeDocument(input: { fileName: string; content: string; mimeType?: string; analyze?: boolean }): Promise<{ ok: boolean; title: string; sourceId: string; chunks: number; analysis?: string }> {
+  return request("/knowledge/upload", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function crawlSubPages(sourceId: string): Promise<{ ok: boolean; subPages: number; crawling?: boolean; message?: string }> {
   return request(`/knowledge/sources/${sourceId}/crawl`, {
     method: "POST",
