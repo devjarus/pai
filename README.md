@@ -1,6 +1,6 @@
 # pai — Personal AI with Persistent Memory
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/devjarus/pai)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/sFecIN?referralCode=g0LiHY&utm_medium=integration&utm_source=template&utm_campaign=generic)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/devjarus/pai)
 
 Personal AI agent platform. Chat via web UI or Telegram, learn from web pages, manage tasks, search the web, and extend with plugins — all running locally on your machine.
