@@ -1,7 +1,9 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Routes, Route, Link, Navigate } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/query-client";
+import { useConfig } from "./hooks";
+import { setConfiguredTimezone } from "./lib/datetime";
 
 const ReactQueryDevtools = lazy(() =>
   import("@tanstack/react-query-devtools").then((mod) => ({
@@ -36,6 +38,16 @@ function NotFound() {
   );
 }
 
+function TimezoneSync() {
+  const { data } = useConfig();
+
+  useEffect(() => {
+    setConfiguredTimezone(data?.timezone);
+  }, [data?.timezone]);
+
+  return null;
+}
+
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { loading, needsSetup, isAuthenticated } = useAuth();
 
@@ -63,6 +75,7 @@ export default function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <TimezoneSync />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/setup" element={<Setup />} />

@@ -34,11 +34,11 @@ import {
   CalendarIcon,
 } from "lucide-react";
 import type { Task, Goal } from "../types";
-import { parseApiDate } from "@/lib/datetime";
+import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
 function formatDate(dateStr: string): string {
   const d = parseApiDate(dateStr);
-  return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString();
+  return isNaN(d.getTime()) ? dateStr : formatWithTimezone(d, { year: "numeric", month: "numeric", day: "numeric" } );
 }
 
 function isOverdue(dueDateStr: string): boolean {
@@ -873,7 +873,7 @@ function TaskRow({
           {isDone && task.completed_at ? (
             <span className="flex items-center gap-1 text-[11px] text-green-500/70">
               <CheckCircle2Icon className="size-3" />
-              Completed {formatDate(task.completed_at)}
+              Completed {formatDate(task.completed_at )}
             </span>
           ) : (
             task.due_date && (
@@ -881,7 +881,7 @@ function TaskRow({
                 className={`flex items-center gap-1 text-[11px] ${isOverdue(task.due_date) ? "text-red-400" : "text-muted-foreground"}`}
               >
                 <CalendarIcon className="size-3" />
-                {formatDate(task.due_date)}
+                {formatDate(task.due_date )}
               </span>
             )
           )}

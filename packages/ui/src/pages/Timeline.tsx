@@ -6,9 +6,9 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
-import { useBeliefs } from "@/hooks";
+import { useBeliefs, useAppTimezone } from "@/hooks";
 import type { Belief, BeliefType } from "../types";
-import { parseApiDate } from "@/lib/datetime";
+import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
 const TYPES: BeliefType[] = ["factual", "preference", "procedural", "architectural", "insight", "meta"];
 
@@ -40,6 +40,7 @@ const cardAccentColors: Record<string, string> = {
 };
 
 export default function Timeline() {
+  const timezone = useAppTimezone();
   const [filterType, setFilterType] = useState<string>("");
 
   useEffect(() => { document.title = "Timeline - pai"; }, []);
@@ -55,12 +56,12 @@ export default function Timeline() {
 
   // Group by date
   const grouped = beliefs.reduce<Record<string, Belief[]>>((acc, belief) => {
-    const date = parseApiDate(belief.updated_at).toLocaleDateString("en-US", {
+    const date = formatWithTimezone(parseApiDate(belief.updated_at), {
       weekday: "long",
       year: "numeric",
       month: "long",
       day: "numeric",
-    });
+    }, timezone);
     if (!acc[date]) acc[date] = [];
     acc[date].push(belief);
     return acc;
@@ -173,7 +174,7 @@ export default function Timeline() {
                                 {belief.type}
                               </Badge>
                               <span className="font-mono text-[10px] text-muted-foreground">
-                                {parseApiDate(belief.updated_at).toLocaleTimeString([], {
+                                {formatWithTimezone(parseApiDate(belief.updated_at), {
                                   hour: "2-digit",
                                   minute: "2-digit",
                                 })}

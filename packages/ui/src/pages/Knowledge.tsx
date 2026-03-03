@@ -31,11 +31,11 @@ import {
   ChevronRightIcon,
 } from "lucide-react";
 import type { KnowledgeSource, KnowledgeSearchResult } from "../types";
-import { parseApiDate } from "@/lib/datetime";
+import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
 function formatDate(dateStr: string): string {
   const d = parseApiDate(dateStr);
-  return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString();
+  return isNaN(d.getTime()) ? dateStr : formatWithTimezone(d, { year: "numeric", month: "numeric", day: "numeric" } );
 }
 
 function parseTags(tags: string | null): string[] {
@@ -645,7 +645,7 @@ function SourceCard({ source: s, onClick }: { source: KnowledgeSource; onClick: 
           </div>
         )}
         <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
-          <span>{formatDate(s.learnedAt)}</span>
+          <span>{formatDate(s.learnedAt )}</span>
           <span className="font-mono">{s.id.slice(0, 8)}</span>
         </div>
       </CardContent>
@@ -736,7 +736,7 @@ function SourceDetailPanel({
               </div>
               <div>
                 <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Learned</span>
-                <span className="text-sm text-foreground">{formatDate(source.learnedAt)}</span>
+                <span className="text-sm text-foreground">{formatDate(source.learnedAt )}</span>
               </div>
             </div>
 

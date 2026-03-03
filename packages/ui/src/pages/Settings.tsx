@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
 import { FolderIcon, FolderOpenIcon, ChevronUpIcon, ChevronDownIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon } from "lucide-react";
 import type { LearningRun } from "@/api";
-import { parseApiDate } from "@/lib/datetime";
+import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
 const isCloudDeployment =
   typeof window !== "undefined" &&
@@ -623,7 +623,7 @@ export default function Settings() {
                   <span className="text-xs text-muted-foreground">Last learning run</span>
                   <span className="font-mono text-xs text-foreground/70">
                     {config.workers.lastRun.threads
-                      ? parseApiDate(config.workers.lastRun.threads).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      ? formatWithTimezone(parseApiDate(config.workers.lastRun.threads), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }, timezone || undefined)
                       : "Never"}
                   </span>
                 </div>
@@ -770,7 +770,7 @@ export default function Settings() {
               {stats.newestBelief && (
                 <StatCard
                   label="Latest Update"
-                  value={parseApiDate(stats.newestBelief).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  value={formatWithTimezone(parseApiDate(stats.newestBelief), { month: "short", day: "numeric" }, timezone || undefined)}
                 />
               )}
             </div>
