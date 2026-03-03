@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { writeConfig, loadConfigFile } from "@personal-ai/core";
+import { writeConfig, loadConfigFile, createLLMClient } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
 import type { ServerContext } from "../index.js";
 import { validate } from "../validate.js";
@@ -259,6 +259,29 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     }
 
     return sanitizeConfig(serverCtx.ctx.config as never);
+  });
+
+  // Test LLM config without saving — used by the setup wizard
+  const testConfigSchema = z.object({
+    provider: z.enum(["ollama", "openai", "anthropic", "google"]),
+    model: z.string().min(1),
+    baseUrl: z.string().url(),
+    apiKey: z.string().optional(),
+    embedModel: z.string().optional(),
+  });
+
+  app.post("/api/config/test", async (request) => {
+    const body = validate(testConfigSchema, request.body);
+    const testLlm = createLLMClient({
+      provider: body.provider,
+      model: body.model,
+      baseUrl: body.baseUrl,
+      apiKey: body.apiKey,
+      embedModel: body.embedModel ?? "nomic-embed-text",
+      fallbackMode: "local-first",
+    });
+    const result = await testLlm.health();
+    return { ok: result.ok, provider: result.provider };
   });
 
   // Directory browser endpoint for the UI — restricted to home directory

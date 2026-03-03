@@ -101,7 +101,7 @@ test.describe("Settings", () => {
     const apiKeyInput = apiKeyRow.locator('input[type="password"]');
     await apiKeyInput.fill("sk-consecutive-test");
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByText(/Configuration saved/i)).toBeVisible({
+    await expect(page.getByText(/Configuration saved/i).first()).toBeVisible({
       timeout: 5_000,
     });
 

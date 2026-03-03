@@ -42,7 +42,7 @@ vi.mock("@personal-ai/plugin-assistant/page-fetch", () => ({
 
 function createMockCtx(): PluginContext {
   return {
-    config: { dataDir: "/tmp", llm: {}, plugins: [], logLevel: "silent" },
+    config: { dataDir: "/tmp", llm: { provider: "ollama" }, plugins: [], logLevel: "silent" },
     storage: {
       query: vi.fn().mockReturnValue([]),
       run: vi.fn(),

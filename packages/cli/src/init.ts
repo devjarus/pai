@@ -7,28 +7,53 @@ import type { Config } from "@personal-ai/core";
 
 type Provider = Config["llm"]["provider"];
 
-const PROVIDER_DEFAULTS: Record<Provider, { model: string; baseUrl: string; embedModel: string }> = {
+interface ProviderPreset {
+  provider: Provider;
+  model: string;
+  baseUrl: string;
+  embedModel: string;
+  needsKey: boolean;
+}
+
+export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
   ollama: {
+    provider: "ollama",
     model: "llama3.2",
     baseUrl: "http://127.0.0.1:11434",
     embedModel: "nomic-embed-text",
+    needsKey: false,
+  },
+  "ollama-cloud": {
+    provider: "openai",
+    model: "glm-5",
+    baseUrl: "https://ollama.com/v1",
+    embedModel: "nomic-embed-text",
+    needsKey: true,
   },
   openai: {
+    provider: "openai",
     model: "gpt-4o",
     baseUrl: "https://api.openai.com/v1",
     embedModel: "text-embedding-3-small",
+    needsKey: true,
   },
   anthropic: {
+    provider: "anthropic",
     model: "claude-sonnet-4-20250514",
     baseUrl: "https://api.anthropic.com",
     embedModel: "text-embedding-3-small",
+    needsKey: true,
   },
   google: {
+    provider: "google",
     model: "gemini-2.0-flash",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     embedModel: "text-embedding-004",
+    needsKey: true,
   },
 };
+
+const VALID_CHOICES = Object.keys(PROVIDER_PRESETS);
 
 function ask(rl: ReturnType<typeof createInterface>, question: string): Promise<string> {
   return new Promise((resolve) => {
@@ -46,22 +71,22 @@ export function createInitCommand(): Command {
         console.log("\n  pai init — Configure your persistent AI memory\n");
 
         // 1. Provider
-        const providerInput = await ask(rl, `  LLM provider (ollama/openai/anthropic/google) [ollama]: `);
-        const provider: Provider = (["ollama", "openai", "anthropic", "google"].includes(providerInput) ? providerInput : "ollama") as Provider;
-        const defaults = PROVIDER_DEFAULTS[provider];
+        const providerInput = await ask(rl, `  LLM provider (${VALID_CHOICES.join("/")}) [ollama]: `);
+        const choice = VALID_CHOICES.includes(providerInput) ? providerInput : "ollama";
+        const preset = PROVIDER_PRESETS[choice]!;
 
         // 2. Model
-        const modelInput = await ask(rl, `  Model name [${defaults.model}]: `);
-        const model = modelInput || defaults.model;
+        const modelInput = await ask(rl, `  Model name [${preset.model}]: `);
+        const model = modelInput || preset.model;
 
         // 3. Base URL
-        const baseUrlInput = await ask(rl, `  Base URL [${defaults.baseUrl}]: `);
-        const baseUrl = baseUrlInput || defaults.baseUrl;
+        const baseUrlInput = await ask(rl, `  Base URL [${preset.baseUrl}]: `);
+        const baseUrl = baseUrlInput || preset.baseUrl;
 
-        // 4. API key (for openai/anthropic)
+        // 4. API key
         let apiKey: string | undefined;
-        if (provider === "openai" || provider === "anthropic") {
-          const keyInput = await ask(rl, `  API key (required for ${provider}): `);
+        if (preset.needsKey) {
+          const keyInput = await ask(rl, `  API key (required for ${choice}): `);
           apiKey = keyInput || undefined;
           if (!apiKey) {
             console.log("\n  Warning: No API key provided. You can set PAI_LLM_API_KEY later.\n");
@@ -69,16 +94,15 @@ export function createInitCommand(): Command {
         }
 
         // 5. Embed model
-        const embedInput = await ask(rl, `  Embedding model [${defaults.embedModel}]: `);
-        const embedModel = embedInput || defaults.embedModel;
+        const embedInput = await ask(rl, `  Embedding model [${preset.embedModel}]: `);
+        const embedModel = embedInput || preset.embedModel;
 
-        // Close readline before health check (so we don't block on input)
         rl.close();
 
         // 6. Validate connection
-        console.log(`\n  Checking ${provider} connection...`);
+        console.log(`\n  Checking ${choice} connection...`);
         const llmConfig: Config["llm"] = {
-          provider,
+          provider: preset.provider,
           model,
           baseUrl,
           apiKey,
@@ -89,17 +113,14 @@ export function createInitCommand(): Command {
         const healthResult = await llm.health();
 
         if (healthResult.ok) {
-          console.log(`  Connected to ${provider} successfully.\n`);
+          console.log(`  Connected to ${choice} successfully.\n`);
         } else {
-          console.log(`  Warning: Could not connect to ${provider}. Config will be saved anyway.\n`);
+          console.log(`  Warning: Could not connect to ${choice}. Config will be saved anyway.\n`);
         }
 
         // 7. Write config file
         const dataDir = join(homedir(), ".personal-ai");
-        const configToWrite: Partial<Config> = {
-          llm: llmConfig,
-        };
-        writeConfig(dataDir, configToWrite);
+        writeConfig(dataDir, { llm: llmConfig } as Partial<Config>);
 
         // 8. Success
         console.log(`  Configuration saved to ${join(dataDir, "config.json")}`);

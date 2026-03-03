@@ -61,6 +61,7 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     loadConfigFile: (...args: unknown[]) => mockLoadConfigFile(...args),
     getArtifact: (...args: unknown[]) => mockGetArtifact(...args),
     listArtifacts: (...args: unknown[]) => mockListArtifacts(...args),
+    createLLMClient: (...args: unknown[]) => mockCreateLLMClient(...args),
   };
 });
 
@@ -78,6 +79,9 @@ const mockGetJwtSecret = vi.fn().mockReturnValue("test-secret-key-for-jwt-testin
 // ---------------------------------------------------------------------------
 const mockWriteConfig = vi.fn();
 const mockLoadConfigFile = vi.fn().mockReturnValue({});
+const mockCreateLLMClient = vi.fn().mockReturnValue({
+  health: vi.fn().mockResolvedValue({ ok: true, provider: "openai" }),
+});
 
 // ---------------------------------------------------------------------------
 // Background jobs mock functions
@@ -1807,6 +1811,93 @@ describe("Config routes", () => {
     const body = res.json();
     expect(body.error).toMatch(/Invalid enum value/);
     // Should not write config or reinitialize on validation error
+    expect(mockWriteConfig).not.toHaveBeenCalled();
+    expect(serverCtx.reinitialize).not.toHaveBeenCalled();
+  });
+
+  // -- POST /api/config/test ------------------------------------------------
+
+  it("POST /api/config/test returns ok for valid config", async () => {
+    mockCreateLLMClient.mockReturnValue({
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "openai" }),
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/config/test",
+      payload: {
+        provider: "openai",
+        model: "glm-5",
+        baseUrl: "https://ollama.com/v1",
+        apiKey: "test-key",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.provider).toBe("openai");
+  });
+
+  it("POST /api/config/test returns not ok for failed health check", async () => {
+    mockCreateLLMClient.mockReturnValue({
+      health: vi.fn().mockResolvedValue({ ok: false, provider: "openai" }),
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/config/test",
+      payload: {
+        provider: "openai",
+        model: "gpt-4o",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "bad-key",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(false);
+  });
+
+  it("POST /api/config/test rejects missing required fields", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/config/test",
+      payload: { provider: "openai" },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("POST /api/config/test rejects invalid provider", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/config/test",
+      payload: {
+        provider: "invalid",
+        model: "test",
+        baseUrl: "https://example.com",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("POST /api/config/test does not write config", async () => {
+    mockCreateLLMClient.mockReturnValue({
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "ollama" }),
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/api/config/test",
+      payload: {
+        provider: "ollama",
+        model: "llama3.2",
+        baseUrl: "http://127.0.0.1:11434",
+      },
+    });
+
     expect(mockWriteConfig).not.toHaveBeenCalled();
     expect(serverCtx.reinitialize).not.toHaveBeenCalled();
   });

@@ -44,21 +44,27 @@ export class WorkerLoop {
     if (this.running) return;
     this.running = true;
 
+    const isLLMConfigured = !!this.ctx.config.llm.apiKey || this.ctx.config.llm.provider === "ollama";
+
     const briefingMs = this.options?.briefingIntervalMs ?? DEFAULT_BRIEFING_INTERVAL_MS;
     const scheduleMs = this.options?.scheduleCheckIntervalMs ?? DEFAULT_SCHEDULE_CHECK_INTERVAL_MS;
     const learningMs = this.options?.learningIntervalMs ?? DEFAULT_LEARNING_INTERVAL_MS;
     const learningDelayMs = this.options?.learningInitialDelayMs ?? DEFAULT_LEARNING_INITIAL_DELAY_MS;
     const generateInitial = this.options?.generateInitialBriefing ?? true;
 
+    if (!isLLMConfigured) {
+      this.ctx.logger.info("LLM not configured — skipping background briefing and learning. Configure in Settings.");
+    }
+
     // --- Briefing generator ---
     this.briefingTimer = setInterval(() => {
-      if (this.ctx.config.workers?.briefing === false) return;
+      if (this.ctx.config.workers?.briefing === false || !isLLMConfigured) return;
       generateBriefing(this.ctx).catch((err) => {
         this.ctx.logger.warn(`Background briefing failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     }, briefingMs);
 
-    if (generateInitial && this.ctx.config.workers?.briefing !== false) {
+    if (generateInitial && isLLMConfigured && this.ctx.config.workers?.briefing !== false) {
       const latest = getLatestBriefing(this.ctx.storage);
       if (!latest) {
         generateBriefing(this.ctx).catch((err) => {
@@ -74,14 +80,14 @@ export class WorkerLoop {
 
     // --- Background learning ---
     this.learningInitTimer = setTimeout(() => {
-      if (this.ctx.config.workers?.backgroundLearning === false) return;
+      if (this.ctx.config.workers?.backgroundLearning === false || !isLLMConfigured) return;
       runBackgroundLearning(this.ctx, this.abortController.signal).catch((err) => {
         this.ctx.logger.warn(`Background learning failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     }, learningDelayMs);
 
     this.learningTimer = setInterval(() => {
-      if (this.ctx.config.workers?.backgroundLearning === false) return;
+      if (this.ctx.config.workers?.backgroundLearning === false || !isLLMConfigured) return;
       runBackgroundLearning(this.ctx, this.abortController.signal).catch((err) => {
         this.ctx.logger.warn(`Background learning failed: ${err instanceof Error ? err.message : String(err)}`);
       });
