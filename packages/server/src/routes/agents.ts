@@ -22,6 +22,8 @@ import {
   estimateTokens,
   getProviderOptions,
   learnFromContent,
+  isBinaryDocument,
+  parseBinaryDocument,
 } from "@personal-ai/core";
 import { streamText, generateText, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, tool } from "ai";
 
@@ -211,21 +213,34 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
         const mime = fp.mediaType ?? fp.mimeType ?? "text/plain";
         const fileName = fp.filename ?? fp.name ?? `document-${Date.now()}.txt`;
 
-        // Only process text-based documents
-        const isText = mime.startsWith("text/") ||
-          ["application/json", "application/xml", "application/csv"].includes(mime) ||
-          /\.(txt|md|markdown|csv|json|xml|html|htm|log|yaml|yml|toml|ini|cfg|conf|ts|js|py|sh|sql|css)$/i.test(fileName);
-        if (!isText) continue;
-
-        // Decode content from base64 / data URL
-        let content: string;
+        // Decode raw bytes from base64 / data URL
+        let rawBuffer: Buffer;
         if (rawData.startsWith("data:")) {
           const commaIdx = rawData.indexOf(",");
-          content = Buffer.from(rawData.slice(commaIdx + 1), "base64").toString("utf-8");
+          rawBuffer = Buffer.from(rawData.slice(commaIdx + 1), "base64");
         } else if (rawData.length > 0) {
-          content = Buffer.from(rawData, "base64").toString("utf-8");
+          rawBuffer = Buffer.from(rawData, "base64");
         } else {
           continue;
+        }
+
+        let content: string;
+
+        if (isBinaryDocument(mime, fileName)) {
+          // PDF, Excel — parse binary format to extract text
+          try {
+            content = await parseBinaryDocument(rawBuffer, mime, fileName);
+          } catch (err) {
+            ctx.logger.warn(`Failed to parse binary document ${fileName}: ${err instanceof Error ? err.message : String(err)}`);
+            continue;
+          }
+        } else {
+          // Text-based documents
+          const isText = mime.startsWith("text/") ||
+            ["application/json", "application/xml", "application/csv"].includes(mime) ||
+            /\.(txt|md|markdown|csv|json|xml|html|htm|log|yaml|yml|toml|ini|cfg|conf|ts|js|py|sh|sql|css)$/i.test(fileName);
+          if (!isText) continue;
+          content = rawBuffer.toString("utf-8");
         }
 
         if (content.trim().length === 0) continue;

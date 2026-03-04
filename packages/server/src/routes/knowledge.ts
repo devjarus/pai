@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ServerContext } from "../index.js";
 import { validate } from "../validate.js";
-import { learnFromContent, knowledgeSearch, listSources, getSourceChunks, forgetSource, reindexSource, reindexAllSources } from "@personal-ai/core";
+import { learnFromContent, knowledgeSearch, listSources, getSourceChunks, forgetSource, reindexSource, reindexAllSources, isBinaryDocument, parseBinaryDocument } from "@personal-ai/core";
 import { fetchPageAsMarkdown, discoverSubPages } from "@personal-ai/plugin-assistant/page-fetch";
 import { runCrawlInBackground } from "@personal-ai/plugin-assistant/tools";
 import { listJobs, clearCompletedBackgroundJobs } from "@personal-ai/core";
@@ -22,7 +22,7 @@ const learnSchema = z.object({
 
 const uploadSchema = z.object({
   fileName: z.string().min(1, "File name is required").max(255, "File name too long"),
-  content: z.string().min(1, "File content is required").max(2_000_000, "File too large (max 2MB text)"),
+  content: z.string().min(1, "File content is required").max(5_000_000, "File too large (max 5MB)"),
   mimeType: z.string().optional(),
   analyze: z.boolean().optional(),
 });
@@ -33,14 +33,15 @@ const patchSourceSchema = z.object({
 });
 
 export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
-  // Learn from uploaded plain-text document
-  app.post<{ Body: { fileName: string; content: string; mimeType?: string; analyze?: boolean } }>("/api/knowledge/upload", async (request, reply) => {
+  // Learn from uploaded document (text, PDF, Excel)
+  app.post<{ Body: { fileName: string; content: string; mimeType?: string; analyze?: boolean } }>("/api/knowledge/upload", { bodyLimit: 5_242_880 }, async (request, reply) => {
     const { fileName, content, mimeType, analyze } = validate(uploadSchema, request.body);
     const ext = fileName.split(".").pop()?.toLowerCase();
-    const supported = new Set(["txt", "md", "markdown", "csv", "json", "xml", "html"]);
-    if (ext && !supported.has(ext)) {
+    const textSupported = new Set(["txt", "md", "markdown", "csv", "json", "xml", "html"]);
+    const binarySupported = new Set(["pdf", "xlsx", "xls", "xlsm", "xlsb"]);
+    if (ext && !textSupported.has(ext) && !binarySupported.has(ext)) {
       return reply.status(415).send({
-        error: "Unsupported file type. Please upload a text-based document (.txt, .md, .csv, .json, .xml, .html)",
+        error: "Unsupported file type. Supported: .txt, .md, .csv, .json, .xml, .html, .pdf, .xlsx, .xls",
       });
     }
 
@@ -48,10 +49,23 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
     const sourceUrl = `upload://${Date.now()}-${safeName}`;
 
     try {
-      const result = await learnFromContent(ctx.storage, ctx.llm, sourceUrl, fileName, content, { force: true });
+      // For binary formats, decode base64 and extract text
+      let textContent: string;
+      const mime = mimeType ?? "text/plain";
+      if (isBinaryDocument(mime, fileName)) {
+        const buffer = Buffer.from(content, "base64");
+        textContent = await parseBinaryDocument(buffer, mime, fileName);
+        if (!textContent.trim()) {
+          return reply.status(422).send({ error: "Could not extract text content from the document" });
+        }
+      } else {
+        textContent = content;
+      }
+
+      const result = await learnFromContent(ctx.storage, ctx.llm, sourceUrl, fileName, textContent, { force: true });
       let analysis: string | undefined;
       if (analyze) {
-        const snippet = content.length > 12_000 ? `${content.slice(0, 12_000)}\n\n[truncated]` : content;
+        const snippet = textContent.length > 12_000 ? `${textContent.slice(0, 12_000)}\n\n[truncated]` : textContent;
         const response = await ctx.llm.chat([
           {
             role: "system",
@@ -59,7 +73,7 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
           },
           {
             role: "user",
-            content: `Analyze this document. File: ${fileName}. MIME: ${mimeType ?? "unknown"}\n\n${snippet}`,
+            content: `Analyze this document. File: ${fileName}. MIME: ${mime}\n\n${snippet}`,
           },
         ]);
         analysis = response.text;

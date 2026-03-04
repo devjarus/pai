@@ -126,7 +126,16 @@ export default function Knowledge() {
   const handleUploadDocument = async () => {
     if (!uploadFile) return;
     try {
-      const content = await uploadFile.text();
+      // Binary formats (PDF, Excel) are sent as base64; text formats as plain text
+      const binaryExts = new Set(["pdf", "xlsx", "xls", "xlsm", "xlsb"]);
+      const ext = uploadFile.name.split(".").pop()?.toLowerCase() ?? "";
+      let content: string;
+      if (binaryExts.has(ext)) {
+        const buf = await uploadFile.arrayBuffer();
+        content = btoa(String.fromCharCode(...new Uint8Array(buf)));
+      } else {
+        content = await uploadFile.text();
+      }
       const result = await uploadMutation.mutateAsync({
         fileName: uploadFile.name,
         mimeType: uploadFile.type || undefined,
@@ -632,7 +641,7 @@ export default function Knowledge() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              Upload a text-based document (.txt, .md, .csv, .json, .xml, .html). We will index it and generate a quick analysis.
+              Upload a document to index and analyze. Supports text (.txt, .md, .csv, .json, .xml, .html), PDF, and Excel (.xlsx, .xls).
             </p>
             <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border/60 bg-card/30 px-3 py-6 text-xs text-muted-foreground hover:border-primary/40">
               <FileTextIcon className="size-4" />
@@ -640,7 +649,7 @@ export default function Knowledge() {
               <input
                 type="file"
                 className="hidden"
-                accept=".txt,.md,.markdown,.csv,.json,.xml,.html"
+                accept=".txt,.md,.markdown,.csv,.json,.xml,.html,.pdf,.xlsx,.xls,.xlsm,.xlsb"
                 onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
                 disabled={isUploading}
               />
