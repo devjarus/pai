@@ -8,10 +8,17 @@ export function registerArtifactRoutes(app: FastifyInstance, serverCtx: ServerCo
     const artifact = getArtifact(serverCtx.ctx.storage, request.params.id);
     if (!artifact) return reply.status(404).send({ error: "Artifact not found" });
 
+    // Sanitize filename to prevent header injection (strip quotes, newlines, control chars)
+    const safeName = artifact.name.replace(/["\r\n\x00-\x1f]/g, "_");
+    // Whitelist safe MIME types for inline display; force download for everything else
+    const safeMimeTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "application/pdf"]);
+    const disposition = safeMimeTypes.has(artifact.mimeType) ? "inline" : "attachment";
+
     return reply
       .header("Content-Type", artifact.mimeType)
-      .header("Content-Disposition", `inline; filename="${artifact.name}"`)
+      .header("Content-Disposition", `${disposition}; filename="${safeName}"`)
       .header("Cache-Control", "public, max-age=86400")
+      .header("X-Content-Type-Options", "nosniff")
       .send(artifact.data);
   });
 

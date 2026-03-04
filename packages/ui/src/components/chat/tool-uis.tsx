@@ -197,6 +197,85 @@ export const GenerateReportToolUI = makeAssistantToolUI({
   ),
 });
 
+export const RunCodeToolUI = makeAssistantToolUI({
+  toolName: "run_code",
+  render: ({ args, result, status }) => {
+    const state = mapStatus(status);
+    const input = args as { language?: string; code?: string };
+    const output = result as { output?: string; error?: string; files?: unknown[] } | undefined;
+
+    if (state === "input-available") {
+      return (
+        <div className="my-2 rounded-lg border border-border/30 bg-card/50 p-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Running {input.language ?? "code"}...
+          </div>
+        </div>
+      );
+    }
+
+    if (state === "output-error" || output?.error) {
+      return (
+        <div className="my-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-2">
+          <div className="text-sm font-medium text-red-400">Code execution failed</div>
+          {input.code && (
+            <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{input.code}</pre>
+          )}
+          {output?.error && (
+            <pre className="overflow-x-auto rounded bg-red-500/10 p-2 text-xs font-mono text-red-400 whitespace-pre-wrap">{output.error}</pre>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="my-2 rounded-lg border border-border/30 bg-card/50 p-3 space-y-2">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{input.language ?? "Code"}</div>
+        {input.code && (
+          <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{input.code}</pre>
+        )}
+        {output?.output && (
+          <>
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Output</div>
+            <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{output.output}</pre>
+          </>
+        )}
+      </div>
+    );
+  },
+});
+
+export const AgentCuratorToolUI = makeAssistantToolUI({
+  toolName: "agent_curator",
+  render: ({ args, result, status }) => {
+    const state = mapStatus(status);
+    const input = args as { task?: string };
+    const output = result as { response?: string } | undefined;
+
+    if (state === "input-available") {
+      return (
+        <div className="my-2 rounded-lg border border-violet-500/30 bg-violet-500/5 p-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Delegating to Memory Curator...
+          </div>
+          {input.task && <p className="mt-1 text-xs text-muted-foreground">{input.task}</p>}
+        </div>
+      );
+    }
+
+    return (
+      <div className="my-2 rounded-lg border border-violet-500/30 bg-violet-500/5 p-3 space-y-2">
+        <div className="text-xs font-medium text-violet-400 uppercase tracking-wide">Memory Curator</div>
+        {output?.response && (
+          <p className="text-sm text-foreground whitespace-pre-wrap">{output.response}</p>
+        )}
+      </div>
+    );
+  },
+});
+
 /**
  * Array of all tool UI components. Render these inside AssistantRuntimeProvider
  * to register them with assistant-ui's tool rendering system.
@@ -225,5 +304,7 @@ export const AllToolUIs = () => (
     <ScheduleListToolUI />
     <ScheduleDeleteToolUI />
     <GenerateReportToolUI />
+    <RunCodeToolUI />
+    <AgentCuratorToolUI />
   </>
 );

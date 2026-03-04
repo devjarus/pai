@@ -23,6 +23,10 @@ export function useJobDetail(id: string | null) {
     queryKey: jobKeys.detail(id!),
     queryFn: () => getJobDetail(id!),
     enabled: !!id,
+    refetchInterval: (query) => {
+      const status = (query.state.data as { status?: string } | undefined)?.status;
+      return status === "running" || status === "pending" ? 5_000 : false;
+    },
   });
 }
 

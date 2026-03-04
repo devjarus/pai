@@ -134,6 +134,8 @@ export async function runSwarmInBackground(
       status: "done",
       progress: "complete",
       result: report.slice(0, 200),
+      resultType: job.resultType || "general",
+      ...(structuredResult ? { structuredResult } : {}),
     });
 
     // Create Inbox briefing

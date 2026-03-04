@@ -130,11 +130,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // ---- Auth ----
 
 export async function getAuthStatus(): Promise<AuthStatus> {
-  const res = await fetch(`/api/auth/status`, {
-    credentials: "include",
-    signal: AbortSignal.timeout(5000),
-  });
-  return res.json();
+  try {
+    const res = await fetch(`/api/auth/status`, {
+      credentials: "include",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      return { setup: false, authenticated: false };
+    }
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) {
+      return { setup: false, authenticated: false };
+    }
+    return await res.json();
+  } catch {
+    return { setup: false, authenticated: false };
+  }
 }
 
 export async function setupOwner(input: {

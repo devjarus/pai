@@ -114,10 +114,15 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
   });
 
   // Create a new thread
+  const createThreadSchema = z.object({
+    title: z.string().max(200).optional(),
+    agentName: z.string().max(100).optional(),
+  });
   app.post<{ Body: { title?: string; agentName?: string } }>("/api/threads", async (request) => {
+    const body = validate(createThreadSchema, request.body ?? {});
     const thread = createThread(ctx.storage, {
-      title: request.body?.title,
-      agentName: request.body?.agentName,
+      title: body.title,
+      agentName: body.agentName,
     });
     return mapThread(thread);
   });

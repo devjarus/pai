@@ -278,6 +278,60 @@ Produce a comprehensive markdown report:
 ## Sources
 [URLs and references from all agents]
 ${structuredBlock}
+## Render Spec
+After the markdown report and structured data block (if any), include a json-render UI spec inside a \`\`\`jsonrender code fence. This spec describes how to render the results visually using these available components:
+
+- **Section**: \`{ title, subtitle?, collapsible?, defaultOpen? }\` — top-level grouping, has children
+- **Grid**: \`{ columns, gap? }\` — grid layout, has children
+- **MetricCard**: \`{ label, value, description?, unit?, trend? }\` — trend is "up"/"down"/"neutral"
+- **DataTable**: \`{ columns: [{key, label, align?}], rows: [{key: value}], highlightFirst? }\` — rows keys MUST match column key values
+- **Badge**: \`{ text, variant }\` — variant is "success"/"warning"/"danger"/"info"/"neutral"
+- **BulletList**: \`{ items: string[], icon?, variant? }\` — icon is "bullet"/"check"/"warning"/"arrow-up"/"arrow-down"
+- **SourceList**: \`{ sources: [{title, url}] }\`
+- **Text**: \`{ content, variant? }\` — variant is "body"/"caption"/"bold"/"muted"
+- **Markdown**: \`{ content }\`
+
+Example:
+\`\`\`jsonrender
+{
+  "root": "report",
+  "elements": {
+    "report": {
+      "type": "Section",
+      "props": { "title": "Analysis Results", "subtitle": "Key findings" },
+      "children": ["metrics", "details", "sources"]
+    },
+    "metrics": {
+      "type": "Grid",
+      "props": { "columns": 3 },
+      "children": ["metric-1", "metric-2", "metric-3"]
+    },
+    "metric-1": {
+      "type": "MetricCard",
+      "props": { "label": "Price", "value": "$100", "trend": "up" }
+    },
+    "metric-2": {
+      "type": "MetricCard",
+      "props": { "label": "Volume", "value": "$5M" }
+    },
+    "metric-3": {
+      "type": "MetricCard",
+      "props": { "label": "Change", "value": "+5.2%", "trend": "up" }
+    },
+    "details": {
+      "type": "BulletList",
+      "props": { "items": ["Key finding 1", "Key finding 2"], "icon": "check", "variant": "success" }
+    },
+    "sources": {
+      "type": "SourceList",
+      "props": { "sources": [{"title": "Source 1", "url": "https://example.com"}] }
+    }
+  }
+}
+\`\`\`
+
+IMPORTANT: Fill in ALL actual values from your analysis — do NOT use placeholders like "[price]" or "[value]". The render spec should be placed AFTER the markdown report and any structured data block.
+
 ## Rules
 - Synthesize, don't just concatenate — organize by theme, not by agent
 - Resolve contradictions where possible, flag them where not

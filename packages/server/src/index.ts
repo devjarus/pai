@@ -21,6 +21,8 @@ import { registerConfigRoutes } from "./routes/config.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 import { listSchedules, createSchedule, deleteSchedule, pauseSchedule, resumeSchedule } from "@personal-ai/plugin-schedules";
+import { z } from "zod";
+import { validate } from "./validate.js";
 import { recoverStaleResearchJobs, cancelAllRunningResearchJobs } from "@personal-ai/plugin-research";
 import { recoverStaleSwarmJobs, cancelAllRunningSwarmJobs } from "@personal-ai/plugin-swarm";
 import { registerInboxRoutes } from "./routes/inbox.js";
@@ -391,29 +393,28 @@ export async function createServer(options?: { port?: number; host?: string }) {
   app.get("/api/schedules", async () => {
     return listSchedules(ctx.storage);
   });
-  app.post("/api/schedules", async (request, reply) => {
-    const body = request.body as { label?: string; goal?: string; intervalHours?: number; startAt?: string };
-    if (!body.label || !body.goal) {
-      return reply.status(400).send({ error: "label and goal are required" });
-    }
-    return createSchedule(ctx.storage, {
-      label: body.label,
-      goal: body.goal,
-      intervalHours: body.intervalHours,
-      startAt: body.startAt,
-    });
+  const createScheduleSchema = z.object({
+    label: z.string().min(1, "label is required").max(200),
+    goal: z.string().min(1, "goal is required").max(2000),
+    intervalHours: z.number().int().positive().max(720).optional(),
+    startAt: z.string().max(30).optional(),
   });
-  app.delete("/api/schedules/:id", async (request) => {
-    const { id } = request.params as { id: string };
-    const ok = deleteSchedule(ctx.storage, id);
+  const patchScheduleSchema = z.object({
+    action: z.enum(["pause", "resume"]),
+  });
+
+  app.post("/api/schedules", async (request) => {
+    const body = validate(createScheduleSchema, request.body);
+    return createSchedule(ctx.storage, body);
+  });
+  app.delete<{ Params: { id: string } }>("/api/schedules/:id", async (request) => {
+    const ok = deleteSchedule(ctx.storage, request.params.id);
     return { ok };
   });
-  app.patch("/api/schedules/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const body = request.body as { action?: string };
-    if (body.action === "pause") return { ok: pauseSchedule(ctx.storage, id) };
-    if (body.action === "resume") return { ok: resumeSchedule(ctx.storage, id) };
-    return reply.status(400).send({ error: "action must be 'pause' or 'resume'" });
+  app.patch<{ Params: { id: string } }>("/api/schedules/:id", async (request) => {
+    const { action } = validate(patchScheduleSchema, request.body);
+    if (action === "pause") return { ok: pauseSchedule(ctx.storage, request.params.id) };
+    return { ok: resumeSchedule(ctx.storage, request.params.id) };
   });
 
   // SPA fallback — serve index.html for non-API routes

@@ -13,6 +13,8 @@ import {
   ArrowUp,
   ArrowDown,
   Plane,
+  FileText,
+  BarChart2,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -306,6 +308,8 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
       >
         {props.icon === "external" && <ExternalLink className="w-3 h-3" />}
         {props.icon === "booking" && <Plane className="w-3 h-3" />}
+        {props.icon === "source" && <FileText className="w-3 h-3" />}
+        {props.icon === "chart" && <BarChart2 className="w-3 h-3" />}
         {props.text}
       </a>
     ),

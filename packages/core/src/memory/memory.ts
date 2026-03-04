@@ -155,7 +155,10 @@ export interface Belief {
 const BASE_HALF_LIFE_DAYS = 30;
 
 function decayConfidence(confidence: number, updatedAt: string, stability = 1.0): number {
-  const ts = new Date(updatedAt + "Z").getTime();
+  // normalizeTimestamp handles both SQLite UTC ("2026-01-01 00:00:00") and ISO ("2026-01-01T00:00:00Z")
+  const normalized = updatedAt.trim().replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/, "$1T$2Z");
+  const ts = new Date(normalized).getTime();
+  if (Number.isNaN(ts)) return confidence; // safety: don't decay if timestamp is unparseable
   const daysSinceUpdate = (Date.now() - ts) / (1000 * 60 * 60 * 24);
   const halfLife = BASE_HALF_LIFE_DAYS * stability;
   return confidence * Math.pow(0.5, daysSinceUpdate / halfLife);

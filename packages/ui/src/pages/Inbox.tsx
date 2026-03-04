@@ -486,6 +486,7 @@ function InboxFeed() {
   };
 
   const handleClear = async () => {
+    if (!confirm("Clear all inbox items? This cannot be undone.")) return;
     try {
       const result = await clearInboxMut.mutateAsync();
       toast.success(`Cleared ${result.cleared} item${result.cleared !== 1 ? "s" : ""}`);
@@ -741,6 +742,14 @@ function DailyBriefingCard({ item, onCardClick, isRead }: { item: InboxItem; onC
   );
 }
 
+/** Strip jsonrender and json code fences from report markdown so they don't render as raw code blocks in previews. */
+function stripCodeFences(md: string): string {
+  return md
+    .replace(/```jsonrender\s*[\s\S]*?```/g, "")
+    .replace(/```json\s*[\s\S]*?```/g, "")
+    .trim();
+}
+
 const domainBadges: Record<string, { icon: string; label: string; color: string; border: string; bg: string }> = {
   flight: { icon: "\u2708", label: "Flight", color: "text-blue-400", border: "border-blue-500/20", bg: "bg-blue-500/10" },
   stock: { icon: "\uD83D\uDCCA", label: "Stock", color: "text-green-400", border: "border-green-500/20", bg: "bg-green-500/10" },
@@ -783,7 +792,7 @@ function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; on
             </p>
             {!expanded && sections.report && (
               <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                {sections.report.slice(0, 200)}
+                {stripCodeFences(sections.report).slice(0, 200)}
               </p>
             )}
           </div>
@@ -801,7 +810,7 @@ function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; on
 
         {expanded && sections.report && (
           <div className="mt-4 rounded-md border border-border/20 bg-background/40 p-4">
-            <MarkdownContent content={sections.report} />
+            <MarkdownContent content={stripCodeFences(sections.report)} />
             <div className="mt-4 flex justify-end">
               <Button
                 variant="outline"
