@@ -178,6 +178,54 @@ function formatObjectLines(value: Record<string, unknown>): string[] {
   return lines;
 }
 
+function formatJsonPayload(parsed: unknown): string | null {
+  if (Array.isArray(parsed)) {
+    if (parsed.length === 0) return null;
+    const lines: string[] = ["**Results**"];
+    for (const item of parsed) {
+      if (isRecord(item)) {
+        const summary = Object.entries(item)
+          .filter(([, v]) => v === null || ["string", "number", "boolean"].includes(typeof v))
+          .slice(0, 6)
+          .map(([k, v]) => `**${humanizeKey(k)}:** ${formatPrimitive(v)}`)
+          .join(" | ");
+        lines.push(`- ${summary || "(complex item)"}`);
+      } else {
+        lines.push(`- ${formatPrimitive(item)}`);
+      }
+    }
+    return lines.join("\n");
+  }
+
+  if (!isRecord(parsed)) return null;
+
+  const title = [parsed.ticker, parsed.company].filter((part): part is string => typeof part === "string" && part.length > 0)
+    .join(" — ");
+  const lines = [title ? `**${title}**` : "**Analysis Summary**", ...formatObjectLines(parsed)];
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function extractTrailingJson(text: string): { prefix: string; parsed: unknown } | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (ch !== "{" && ch !== "[") continue;
+
+    const candidate = trimmed.slice(i);
+    try {
+      const parsed = JSON.parse(candidate);
+      const prefix = trimmed.slice(0, i).trimEnd();
+      return { prefix, parsed };
+    } catch {
+      // continue scanning for the actual JSON start
+    }
+  }
+
+  return null;
+}
+
 /**
  * Format a model response for Telegram.
  * If the response is raw JSON, convert it into a human-readable markdown summary.
@@ -186,43 +234,24 @@ export function formatTelegramResponse(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return text;
 
-  const looksLikeJson = (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-    (trimmed.startsWith("[") && trimmed.endsWith("]"));
-
-  if (!looksLikeJson) return text;
-
-  try {
-    const parsed: unknown = JSON.parse(trimmed);
-
-    if (Array.isArray(parsed)) {
-      if (parsed.length === 0) return text;
-      const lines: string[] = ["**Results**"];
-      for (const item of parsed) {
-        if (isRecord(item)) {
-          // Format each object as a readable block with key-value pairs
-          const summary = Object.entries(item)
-            .filter(([, v]) => v === null || ["string", "number", "boolean"].includes(typeof v))
-            .slice(0, 6)
-            .map(([k, v]) => `**${humanizeKey(k)}:** ${formatPrimitive(v)}`)
-            .join(" | ");
-          lines.push(`- ${summary || "(complex item)"}`);
-        } else {
-          lines.push(`- ${formatPrimitive(item)}`);
-        }
-      }
-      return lines.join("\n");
+  // Convert fenced JSON blocks (```json ... ```) into readable markdown summaries.
+  let normalized = trimmed.replace(/```json\s*([\s\S]*?)```/gi, (match, payload: string) => {
+    try {
+      const formatted = formatJsonPayload(JSON.parse(payload.trim()));
+      return formatted ?? match;
+    } catch {
+      return match;
     }
+  });
 
-    if (!isRecord(parsed)) return text;
+  // Convert full JSON payloads or prose + trailing JSON payloads.
+  const extracted = extractTrailingJson(normalized);
+  if (!extracted) return normalized;
 
-    const title = [parsed.ticker, parsed.company].filter((part): part is string => typeof part === "string" && part.length > 0)
-      .join(" — ");
-    const lines = [title ? `**${title}**` : "**Analysis Summary**", ...formatObjectLines(parsed)];
+  const formatted = formatJsonPayload(extracted.parsed);
+  if (!formatted) return normalized;
 
-    return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-  } catch {
-    return text;
-  }
+  return extracted.prefix ? `${extracted.prefix}\n\n${formatted}` : formatted;
 }
 
 /**

@@ -65,6 +65,33 @@ describe("formatTelegramResponse", () => {
     expect(output).not.toContain('{"ticker"');
     expect(output).not.toContain('"price":');
   });
+
+
+  it("formats prose followed by raw JSON into readable markdown", () => {
+    const input = `Based on my research, here is the result.
+
+{"topic":"Breaking News","summary":"Top story summary","sources":[{"title":"BBC","url":"https://example.com"}]}`;
+    const output = formatTelegramResponse(input);
+    expect(output).toContain("Based on my research, here is the result.");
+    expect(output).toContain("**Analysis Summary**");
+    expect(output).toContain("**Topic:** Breaking News");
+    expect(output).toContain("**Sources**");
+    expect(output).not.toContain('{"topic"');
+  });
+
+  it("formats fenced json blocks in mixed responses", () => {
+    const input = `Research finished.
+
+\`\`\`json
+{"ticker":"AAPL","company":"Apple","metrics":{"price":210}}
+\`\`\``;
+    const output = formatTelegramResponse(input);
+    expect(output).toContain("Research finished.");
+    expect(output).toContain("**AAPL — Apple**");
+    expect(output).toContain("**Metrics**");
+    expect(output).not.toContain("```json");
+  });
+
 });
 describe("formatBriefingHTML", () => {
   it("formats full sections with all fields", () => {

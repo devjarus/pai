@@ -1,6 +1,6 @@
 import type { Bot } from "grammy";
 import type { Storage, Logger } from "@personal-ai/core";
-import { markdownToTelegramHTML, splitMessage, escapeHTML } from "./formatter.js";
+import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse } from "./formatter.js";
 
 function findChatIdForBriefing(storage: Storage, briefingId: string): number | null {
   let jobId: string | null = null;
@@ -59,7 +59,8 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
         const isSwarm = row.id.startsWith("swarm-");
         const emoji = isSwarm ? "\uD83D\uDC1D" : "\uD83D\uDD2C";
         const label = isSwarm ? "Swarm Report" : "Research Complete";
-        const html = `${emoji} <b>${label}: ${escapeHTML(title)}</b>\n\n${markdownToTelegramHTML(parsed.report)}`;
+        const formattedReport = formatTelegramResponse(parsed.report);
+        const html = `${emoji} <b>${label}: ${escapeHTML(title)}</b>\n\n${markdownToTelegramHTML(formattedReport)}`;
         // Send to the originating Telegram chat, not all chats
         const chatId = findChatIdForBriefing(storage, row.id);
         if (chatId) {
