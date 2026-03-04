@@ -326,6 +326,19 @@ export function getConfig(): Promise<ConfigInfo> {
   return request<ConfigInfo>("/config");
 }
 
+export function testConfig(config: {
+  provider: string;
+  model: string;
+  baseUrl: string;
+  apiKey?: string;
+  embedModel?: string;
+}): Promise<{ ok: boolean; provider: string }> {
+  return request<{ ok: boolean; provider: string }>("/config/test", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
 export function updateConfig(updates: {
   provider?: string;
   model?: string;

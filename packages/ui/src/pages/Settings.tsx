@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useConfig, useUpdateConfig, useMemoryStats, useBrowseDir, useHealth, useLearningRuns } from "@/hooks";
+import { useAuth } from "../context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
-import { FolderIcon, FolderOpenIcon, ChevronUpIcon, ChevronDownIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon } from "lucide-react";
+import { FolderIcon, FolderOpenIcon, ChevronUpIcon, ChevronDownIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon, LogOutIcon } from "lucide-react";
 import type { LearningRun } from "@/api";
 import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
@@ -20,7 +22,7 @@ const isCloudDeployment =
   window.location.hostname !== "127.0.0.1";
 
 const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedModel: string }> = {
-  ollama: { baseUrl: isCloudDeployment ? "https://ollama.com" : "http://localhost:11434", model: isCloudDeployment ? "glm-5:cloud" : "llama3.2", embedModel: "nomic-embed-text" },
+  ollama: { baseUrl: isCloudDeployment ? "https://ollama.com/v1" : "http://localhost:11434", model: isCloudDeployment ? "glm-5" : "llama3.2", embedModel: "nomic-embed-text" },
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o", embedModel: "text-embedding-3-small" },
   anthropic: { baseUrl: "https://api.anthropic.com", model: "claude-sonnet-4-20250514", embedModel: "" },
   google: { baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.0-flash", embedModel: "text-embedding-004" },
@@ -33,6 +35,8 @@ export default function Settings() {
   const updateConfigMut = useUpdateConfig();
   const { data: health, isLoading: healthLoading } = useHealth();
   const { data: learningData } = useLearningRuns();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
 
   const loading = configLoading || statsLoading;
 
@@ -783,6 +787,20 @@ export default function Settings() {
           </Card>
         )}
       </div>
+
+      {/* Sign Out */}
+      <Separator className="my-2" />
+      <Button
+        variant="ghost"
+        className="w-full justify-start gap-2 text-xs text-muted-foreground hover:text-destructive"
+        onClick={async () => {
+          await logout();
+          navigate("/login", { replace: true });
+        }}
+      >
+        <LogOutIcon className="size-3.5" />
+        Sign out
+      </Button>
 
       {/* Directory browser dialog */}
       <Dialog open={browseOpen} onOpenChange={setBrowseOpen}>

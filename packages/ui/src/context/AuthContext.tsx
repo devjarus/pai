@@ -32,6 +32,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
+      // If user explicitly signed out on localhost, stay signed out
+      if (localStorage.getItem("pai_signed_out")) {
+        setIsAuthenticated(false);
+        setOwner(null);
+        setNeedsSetup(false);
+        setLoading(false);
+        return;
+      }
+
       const status = await getAuthStatus();
       if (status.setup) {
         setNeedsSetup(true);
@@ -43,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setOwner(me);
           setIsAuthenticated(true);
           setNeedsSetup(false);
+          localStorage.removeItem("pai_signed_out");
         } catch {
           // getMe failed (e.g. token expired between status check and /me call)
           // Try refreshing the token and retry once
@@ -52,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setOwner(me);
             setIsAuthenticated(true);
             setNeedsSetup(false);
+            localStorage.removeItem("pai_signed_out");
           } catch {
             setIsAuthenticated(false);
             setOwner(null);
@@ -68,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setOwner(me);
             setIsAuthenticated(true);
             setNeedsSetup(false);
+            localStorage.removeItem("pai_signed_out");
           } else {
             setIsAuthenticated(false);
             setOwner(null);
@@ -115,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await apiLogout();
+    localStorage.setItem("pai_signed_out", "1");
     setIsAuthenticated(false);
     setOwner(null);
   }, []);
