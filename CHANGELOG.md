@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Chat document upload** — Attach text documents (`.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`, code files) directly in the chat composer via drag-and-drop or the attachment button. Documents are automatically stored in the knowledge base and included in the LLM context for analysis, Q&A, and comparison.
+- **Downloadable analysis reports** — New `generate_report` agent tool creates downloadable Markdown reports from chat conversations. Includes a tool card with a one-click download button. Ask the assistant to "generate a report" or "create an analysis document" to trigger it.
 - **Document upload + analysis** — Added `/api/knowledge/upload` and Knowledge UI flow to upload text-based docs (`.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`), index them into the knowledge base, and generate a quick AI analysis summary
 - **Research export actions** — Research detail view now supports direct export to Markdown/JSON and print-to-PDF for sharing reports
 - **`/jobs` command** — View recent research and swarm job status directly from Telegram with status emojis and relative timestamps

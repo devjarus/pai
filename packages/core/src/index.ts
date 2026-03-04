@@ -62,3 +62,6 @@ export { getProviderOptions } from "./provider-options.js";
 // Artifacts
 export { artifactMigrations, storeArtifact, getArtifact, listArtifacts, deleteJobArtifacts, guessMimeType } from "./artifacts.js";
 export type { Artifact, ArtifactMeta } from "./artifacts.js";
+
+// Document parsing (PDF, Excel)
+export { parseBinaryDocument, isBinaryDocument, parsePdf, parseExcel } from "./document-parser.js";

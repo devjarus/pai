@@ -22,6 +22,7 @@ import { ToolCuratorAction } from "../tools/ToolCuratorAction";
 import { ToolResearchStart } from "../tools/ToolResearchStart";
 import { ToolSwarmStart } from "../tools/ToolSwarmStart";
 import { ToolScheduleAction } from "../tools/ToolScheduleAction";
+import { ToolDocumentReport } from "../tools/ToolDocumentReport";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -189,6 +190,13 @@ export const ScheduleDeleteToolUI = makeAssistantToolUI({
   ),
 });
 
+export const GenerateReportToolUI = makeAssistantToolUI({
+  toolName: "generate_report",
+  render: ({ args, result, status }) => (
+    <ToolDocumentReport state={mapStatus(status)} input={args} output={result as any} />
+  ),
+});
+
 /**
  * Array of all tool UI components. Render these inside AssistantRuntimeProvider
  * to register them with assistant-ui's tool rendering system.
@@ -216,5 +224,6 @@ export const AllToolUIs = () => (
     <ScheduleCreateToolUI />
     <ScheduleListToolUI />
     <ScheduleDeleteToolUI />
+    <GenerateReportToolUI />
   </>
 );
