@@ -55,6 +55,22 @@ curl -fsSL https://raw.githubusercontent.com/devjarus/pai/main/install.sh | bash
 
 The `docker-compose.yml` includes SearXNG as an always-on sidecar for web search (no rate limits, self-hosted). Ollama is in the `local` profile so it only starts when requested. LLM configuration is passed via environment variables (`PAI_LLM_PROVIDER`, `PAI_LLM_BASE_URL`, `PAI_LLM_MODEL`, `PAI_LLM_API_KEY`) or configured in the Settings UI after startup.
 
+### Multi-User Deployment
+
+For hosting multiple users, use `docker-compose.multi.yml` to share SearXNG and Sandbox across all PAI instances (N+2 containers instead of 3N):
+
+```bash
+# Add users (auto-assigns ports starting at 3142)
+./deploy/add-user.sh alice
+./deploy/add-user.sh bob
+
+# Start everything (shared SearXNG + per-user PAI instances)
+docker compose -f docker-compose.multi.yml up -d
+
+# Remove a user
+./deploy/remove-user.sh bob
+```
+
 GitHub Actions (`.github/workflows/docker.yml`) builds and pushes Docker images to GHCR on `v*` tag push.
 
 ## Test Commands

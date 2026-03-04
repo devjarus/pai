@@ -46,6 +46,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PAI_DATA_DIR=/data
+# Constrain V8 heap to 256MB by default (suitable for single-user).
+# Override with docker run -e NODE_OPTIONS="--max-old-space-size=512" for heavier workloads.
+ENV NODE_OPTIONS="--max-old-space-size=256"
 
 # Copy root package files
 COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./

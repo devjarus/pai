@@ -1,0 +1,140 @@
+# docker-compose.multi.yml
+#
+# Multi-user deployment: shares SearXNG and Sandbox across all PAI instances.
+#
+# Instead of 3 containers per user (pai + searxng + sandbox = 3N containers),
+# this setup uses shared infrastructure: N + 2 containers total.
+#
+#   10 users: 30 containers → 12 (60% reduction)
+#  100 users: 300 containers → 102 (66% reduction)
+#
+# Usage:
+#   1. Generate user services:
+#      ./deploy/add-user.sh alice
+#      ./deploy/add-user.sh bob
+#
+#   2. Start everything:
+#      docker compose -f docker-compose.multi.yml up -d
+#
+#   3. Add more users later:
+#      ./deploy/add-user.sh charlie
+#      docker compose -f docker-compose.multi.yml up -d charlie
+#
+# Each user gets:
+#   - Their own PAI server on a unique port (3141 + offset)
+#   - Their own SQLite database in a separate volume
+#   - Shared access to SearXNG (web search) and Sandbox (code execution)
+#
+# Environment variables (set in .env or shell):
+#   PAI_LLM_PROVIDER, PAI_LLM_BASE_URL, PAI_LLM_MODEL, PAI_LLM_API_KEY
+#
+# See also: deploy/add-user.sh
+
+services:
+  # ─── Shared Infrastructure ───────────────────────────────────────
+  # These services are stateless and safely shared across all users.
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: pai-shared-searxng
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - pai-shared
+
+  sandbox:
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile
+    container_name: pai-shared-sandbox
+    profiles:
+      - sandbox
+    mem_limit: 1g
+    cpus: "2.0"
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8888/health')\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - pai-shared
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pai-shared-ollama
+    profiles:
+      - local
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - pai-shared
+
+  # ─── Per-User Services ──────────────────────────────────────────
+  # Add users via: ./deploy/add-user.sh <username>
+  # Generated services are appended below by the script.
+  #
+  # Example (what add-user.sh generates):
+  #
+  #   alice:
+  #     build:
+  #       context: .
+  #       dockerfile: Dockerfile
+  #     container_name: pai-alice
+  #     ports:
+  #       - "3142:3141"
+  #     volumes:
+  #       - pai-alice-data:/data
+  #     environment:
+  #       - PAI_HOST=0.0.0.0
+  #       - PAI_DATA_DIR=/data
+  #       - PAI_LLM_PROVIDER=${PAI_LLM_PROVIDER:-ollama}
+  #       - PAI_LLM_BASE_URL=${PAI_LLM_BASE_URL:-http://ollama:11434}
+  #       - PAI_LLM_MODEL=${PAI_LLM_MODEL:-}
+  #       - PAI_LLM_API_KEY=${PAI_LLM_API_KEY:-}
+  #       - PAI_SEARCH_URL=http://searxng:8080
+  #       - PAI_SANDBOX_URL=http://sandbox:8888
+  #       - NODE_ENV=production
+  #     depends_on:
+  #       searxng:
+  #         condition: service_healthy
+  #     restart: unless-stopped
+  #     networks:
+  #       - pai-shared
+
+  # --- USER SERVICES BELOW (managed by deploy/add-user.sh) ---
+
+networks:
+  pai-shared:
+    driver: bridge
+
+volumes:
+  ollama-models:
+  # Per-user volumes are added by deploy/add-user.sh
