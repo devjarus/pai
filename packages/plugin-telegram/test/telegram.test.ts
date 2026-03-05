@@ -34,6 +34,11 @@ describe("markdownToTelegramHTML", () => {
     expect(markdownToTelegramHTML("[XSS](javascript:alert(1))")).toBe("XSS");
   });
 
+  it("keeps root-relative artifact links", () => {
+    expect(markdownToTelegramHTML("[artifact](/api/artifacts/abc123)"))
+      .toBe('<a href="/api/artifacts/abc123">artifact</a>');
+  });
+
   it("converts headers to bold", () => {
     expect(markdownToTelegramHTML("# Title")).toBe("<b>Title</b>");
     expect(markdownToTelegramHTML("## Subtitle")).toBe("<b>Subtitle</b>");
