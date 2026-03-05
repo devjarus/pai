@@ -27,6 +27,10 @@ import {
   FileTextIcon,
   FileJsonIcon,
   PrinterIcon,
+  MessageCircleIcon,
+  BookOpenIcon,
+  ListTodoIcon,
+  InboxIcon,
 } from "lucide-react";
 
 const STORAGE_KEY = "pai-inbox-read";
@@ -500,21 +504,37 @@ function InboxFeed() {
   if (items.length === 0 && !generating) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-6 p-4 md:p-6">
-        <div className="inbox-fade-in flex flex-col items-center gap-3 text-center">
+        <div className="inbox-fade-in flex w-full max-w-md flex-col items-center gap-5 text-center">
           <SparklesIcon className="h-10 w-10 text-primary/60" />
-          <h2 className="font-mono text-lg font-semibold text-foreground">Your Inbox</h2>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            Your daily briefings, research reports, and swarm analyses will appear here.
-            Try asking the assistant to research a topic or run a deep multi-agent swarm report.
-          </p>
-          <Button
-            onClick={handleRefresh}
-            disabled={generating}
-            className="mt-2 gap-2"
-          >
-            <RefreshCwIcon className="h-4 w-4" />
-            Generate Briefing
+          <div>
+            <h2 className="font-mono text-lg font-semibold text-foreground">Welcome to pai</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Start by chatting — I'll learn about you as we talk.
+            </p>
+          </div>
+          <Button onClick={() => navigate("/chat")} className="gap-2">
+            <MessageCircleIcon className="h-4 w-4" />
+            Start chatting
           </Button>
+          <Separator className="w-full" />
+          <div className="grid w-full gap-3 text-left">
+            {[
+              { icon: MessageCircleIcon, label: "Chat", desc: "Talk to me — I remember what matters" },
+              { icon: BrainIcon, label: "Memory", desc: "What I know about you, always evolving" },
+              { icon: BookOpenIcon, label: "Knowledge", desc: "Teach me web pages to reference later" },
+              { icon: ListTodoIcon, label: "Tasks", desc: "Your to-do list with AI prioritization" },
+              { icon: SearchIcon, label: "Jobs", desc: "Deep research and swarm analyses" },
+              { icon: InboxIcon, label: "Inbox", desc: "Daily briefings appear here as you use the app" },
+            ].map(({ icon: Icon, label, desc }) => (
+              <div key={label} className="flex items-start gap-3 rounded-md border border-border/30 px-3 py-2.5">
+                <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div>
+                  <div className="text-xs font-medium text-foreground">{label}</div>
+                  <div className="text-[11px] text-muted-foreground">{desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );

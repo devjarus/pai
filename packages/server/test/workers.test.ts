@@ -40,6 +40,17 @@ vi.mock("@personal-ai/plugin-assistant/page-fetch", () => ({
   fetchPageAsMarkdown: vi.fn(),
 }));
 
+const mockListBeliefs = vi.fn().mockReturnValue([]);
+const mockListThreads = vi.fn().mockReturnValue([]);
+vi.mock("@personal-ai/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@personal-ai/core")>();
+  return {
+    ...actual,
+    listBeliefs: (...args: unknown[]) => mockListBeliefs(...args),
+    listThreads: (...args: unknown[]) => mockListThreads(...args),
+  };
+});
+
 function createMockCtx(): PluginContext {
   return {
     config: { dataDir: "/tmp", llm: { provider: "ollama" }, plugins: [], logLevel: "silent" },
@@ -112,15 +123,30 @@ describe("WorkerLoop", () => {
     loop.stop(); // should not throw
   });
 
-  it("generates initial briefing when none exists", () => {
+  it("generates initial briefing when none exists and user has data", () => {
     const ctx = createMockCtx();
     mockGetLatestBriefing.mockReturnValue(null);
+    mockListBeliefs.mockReturnValue([{ id: "b1" }]);
 
     const loop = new WorkerLoop(ctx, { generateInitialBriefing: true });
     loop.start();
 
     expect(mockGetLatestBriefing).toHaveBeenCalled();
     expect(mockGenerateBriefing).toHaveBeenCalledTimes(1);
+
+    loop.stop();
+  });
+
+  it("skips initial briefing when no user data exists", () => {
+    const ctx = createMockCtx();
+    mockGetLatestBriefing.mockReturnValue(null);
+    mockListBeliefs.mockReturnValue([]);
+    mockListThreads.mockReturnValue([]);
+
+    const loop = new WorkerLoop(ctx, { generateInitialBriefing: true });
+    loop.start();
+
+    expect(mockGenerateBriefing).not.toHaveBeenCalled();
 
     loop.stop();
   });

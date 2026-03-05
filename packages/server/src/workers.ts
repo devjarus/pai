@@ -1,5 +1,5 @@
 import type { PluginContext } from "@personal-ai/core";
-import { cleanupExpiredSources, cleanupOldArtifacts } from "@personal-ai/core";
+import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads } from "@personal-ai/core";
 import { getDueSchedules, markScheduleRun } from "@personal-ai/plugin-schedules";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
@@ -71,9 +71,15 @@ export class WorkerLoop {
     if (generateInitial && isLLMConfigured && this.ctx.config.workers?.briefing !== false) {
       const latest = getLatestBriefing(this.ctx.storage);
       if (!latest) {
-        generateBriefing(this.ctx).catch((err) => {
-          this.ctx.logger.warn(`Initial briefing failed: ${err instanceof Error ? err.message : String(err)}`);
-        });
+        // Skip if no user data exists yet — avoids a useless "no data" briefing on first boot
+        const hasData =
+          listBeliefs(this.ctx.storage, "active").length > 0 ||
+          listThreads(this.ctx.storage).length > 0;
+        if (hasData) {
+          generateBriefing(this.ctx).catch((err) => {
+            this.ctx.logger.warn(`Initial briefing failed: ${err instanceof Error ? err.message : String(err)}`);
+          });
+        }
       }
     }
 

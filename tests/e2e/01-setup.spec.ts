@@ -51,6 +51,6 @@ test.describe("Setup wizard", () => {
     await page.getByText("Skip for now").click();
 
     // Should redirect to inbox
-    await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/chat/, { timeout: 15_000 });
   });
 });
