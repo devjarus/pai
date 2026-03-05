@@ -2,7 +2,7 @@ import { InputFile } from "grammy";
 import type { Bot } from "grammy";
 import type { Storage, Logger } from "@personal-ai/core";
 import { getArtifact, listArtifacts } from "@personal-ai/core";
-import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse } from "./formatter.js";
+import { markdownToTelegramHTML, markdownToReportHTML, splitMessage, escapeHTML, formatTelegramResponse } from "./formatter.js";
 
 function findChatIdForBriefing(storage: Storage, briefingId: string): number | null {
   let jobId: string | null = null;
@@ -76,8 +76,35 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
         if (chatId) {
           // 1. Send full report as downloadable HTML file
           const fileTitle = title.replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, "_").slice(0, 60) || "report";
-          const htmlBody = markdownToTelegramHTML(formatTelegramResponse(parsed.report));
-          const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHTML(title)}</title><style>body{font-family:system-ui,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;line-height:1.6}pre{background:#f4f4f4;padding:1rem;overflow-x:auto;border-radius:4px}code{background:#f4f4f4;padding:2px 4px;border-radius:2px}</style></head><body><h1>${escapeHTML(title)}</h1>${htmlBody}</body></html>`;
+          const htmlBody = markdownToReportHTML(formattedReport);
+          const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${escapeHTML(title)}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 920px; margin: 2rem auto; padding: 0 1rem; line-height: 1.65; }
+    article { background: color-mix(in srgb, canvas 96%, #3b82f6 4%); border: 1px solid color-mix(in srgb, canvastext 12%, transparent); border-radius: 12px; padding: 1.25rem; }
+    h1, h2, h3, h4 { line-height: 1.25; margin-top: 1.4em; margin-bottom: 0.5em; }
+    h1 { margin-top: 0.2rem; }
+    p { margin: 0.7em 0; }
+    ul, ol { padding-left: 1.35rem; margin: 0.6em 0; }
+    li { margin: 0.35em 0; }
+    pre { background: color-mix(in srgb, canvas 92%, #111827 8%); padding: 0.95rem; overflow-x: auto; border-radius: 8px; border: 1px solid color-mix(in srgb, canvastext 14%, transparent); }
+    code { background: color-mix(in srgb, canvas 92%, #111827 8%); padding: 0.1em 0.35em; border-radius: 6px; }
+    blockquote { border-left: 3px solid #60a5fa; margin: 1em 0; padding: 0.2em 0 0.2em 0.9em; color: color-mix(in srgb, canvastext 80%, transparent); }
+    a { color: #2563eb; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1>${escapeHTML(title)}</h1>
+    ${htmlBody}
+  </article>
+</body>
+</html>`;
           const htmlBuffer = Buffer.from(htmlContent, "utf-8");
           try {
             await bot.api.sendDocument(chatId, new InputFile(htmlBuffer, `${fileTitle}.html`), {

@@ -117,6 +117,141 @@ export function markdownToTelegramHTML(md: string): string {
   return result.trim();
 }
 
+/**
+ * Convert Markdown to regular HTML for downloadable report documents.
+ * This keeps structure (headings, paragraphs, lists, code blocks, blockquotes, links)
+ * so reports render clearly in browsers.
+ */
+export function markdownToReportHTML(md: string): string {
+  let source = md.replace(/\r\n/g, "\n");
+
+  const codeBlocks: string[] = [];
+  source = source.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, lang: string, code: string) => {
+    const idx = codeBlocks.length;
+    const className = lang ? ` class="language-${escapeHTML(lang)}"` : "";
+    codeBlocks.push(`<pre><code${className}>${escapeHTML(code.trimEnd())}</code></pre>`);
+    return `\x00CB${idx}\x00`;
+  });
+
+  const inlineCodes: string[] = [];
+  source = source.replace(/`([^`\n]+)`/g, (_match, code: string) => {
+    const idx = inlineCodes.length;
+    inlineCodes.push(`<code>${escapeHTML(code)}</code>`);
+    return `\x00IC${idx}\x00`;
+  });
+
+  const inline = (text: string): string => {
+    let out = escapeHTML(text);
+    out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/__(.+?)__/g, "<strong>$1</strong>");
+    out = out.replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, "<em>$1</em>");
+    out = out.replace(/(?<!\w)_([^_\n]+)_(?!\w)/g, "<em>$1</em>");
+    out = out.replace(/~~(.+?)~~/g, "<del>$1</del>");
+    out = out.replace(/\x00IC(\d+)\x00/g, (_match, idx: string) => inlineCodes[parseInt(idx, 10)] ?? "");
+    return out;
+  };
+
+  const lines = source.split("\n");
+  const html: string[] = [];
+  let inUl = false;
+  let inOl = false;
+  let inBlockquote = false;
+
+  const closeLists = () => {
+    if (inUl) {
+      html.push("</ul>");
+      inUl = false;
+    }
+    if (inOl) {
+      html.push("</ol>");
+      inOl = false;
+    }
+  };
+
+  const closeBlockquote = () => {
+    if (inBlockquote) {
+      html.push("</blockquote>");
+      inBlockquote = false;
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) {
+      closeLists();
+      closeBlockquote();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      closeLists();
+      closeBlockquote();
+      const [, hashes = "#", title = ""] = heading;
+      const level = hashes.length;
+      html.push(`<h${level}>${inline(title)}</h${level}>`);
+      continue;
+    }
+
+    const ul = line.match(/^[-*]\s+(.+)$/);
+    if (ul) {
+      closeBlockquote();
+      if (inOl) {
+        html.push("</ol>");
+        inOl = false;
+      }
+      if (!inUl) {
+        html.push("<ul>");
+        inUl = true;
+      }
+      const [, item = ""] = ul;
+      html.push(`<li>${inline(item)}</li>`);
+      continue;
+    }
+
+    const ol = line.match(/^\d+\.\s+(.+)$/);
+    if (ol) {
+      closeBlockquote();
+      if (inUl) {
+        html.push("</ul>");
+        inUl = false;
+      }
+      if (!inOl) {
+        html.push("<ol>");
+        inOl = true;
+      }
+      const [, item = ""] = ol;
+      html.push(`<li>${inline(item)}</li>`);
+      continue;
+    }
+
+    const quote = line.match(/^>\s?(.+)$/);
+    if (quote) {
+      closeLists();
+      if (!inBlockquote) {
+        html.push("<blockquote>");
+        inBlockquote = true;
+      }
+      const [, text = ""] = quote;
+      html.push(`<p>${inline(text)}</p>`);
+      continue;
+    }
+
+    closeLists();
+    closeBlockquote();
+    html.push(`<p>${inline(line)}</p>`);
+  }
+
+  closeLists();
+  closeBlockquote();
+
+  return html
+    .join("\n")
+    .replace(/\x00CB(\d+)\x00/g, (_match, idx: string) => codeBlocks[parseInt(idx, 10)] ?? "")
+    .trim();
+}
+
 function humanizeKey(key: string): string {
   const withSpaces = key
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")

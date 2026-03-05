@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatBriefingHTML, escapeHTML, formatTelegramResponse } from "../src/formatter.js";
+import { formatBriefingHTML, escapeHTML, formatTelegramResponse, markdownToReportHTML } from "../src/formatter.js";
 import type { BriefingSections } from "../src/formatter.js";
 
 describe("escapeHTML", () => {
@@ -30,6 +30,43 @@ describe("escapeHTML", () => {
 });
 
 
+
+
+describe("markdownToReportHTML", () => {
+  it("renders headings, paragraphs, lists, links, blockquotes, and code", () => {
+    const md = `# Title
+
+Intro with **bold**, _italic_, ~~strike~~ and [link](https://example.com).
+
+- one
+- two
+
+1. first
+2. second
+
+> quoted line
+
+\`\`\`ts
+const x = 1;
+\`\`\``;
+
+    const html = markdownToReportHTML(md);
+    expect(html).toContain("<h1>Title</h1>");
+    expect(html).toContain("<p>Intro with <strong>bold</strong>, <em>italic</em>, <del>strike</del>");
+    expect(html).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a>');
+    expect(html).toContain("<ul>");
+    expect(html).toContain("<ol>");
+    expect(html).toContain("<blockquote>");
+    expect(html).toContain('<pre><code class="language-ts">const x = 1;</code></pre>');
+  });
+
+  it("escapes unsafe html while preserving markdown formatting", () => {
+    const html = markdownToReportHTML("<script>alert(1)</script> and **safe**");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html).toContain("<strong>safe</strong>");
+    expect(html).not.toContain("<script>");
+  });
+});
 
 describe("formatTelegramResponse", () => {
   it("formats raw JSON payloads into readable markdown sections", () => {

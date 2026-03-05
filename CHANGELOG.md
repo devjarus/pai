@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Filesystem-backed artifacts** — Artifacts (screenshots, charts, reports) are now stored on disk at `{dataDir}/artifacts/` instead of as SQLite BLOBs. Keeps the database lean and makes cleanup trivial. Migration v2 runs automatically on server startup — no manual setup required.
 - **Artifact auto-cleanup** — Background worker deletes artifacts older than 7 days (runs every 24 hours). Also cleans up orphan files on disk that have no matching DB records.
+- **Telegram HTML report readability** — Downloaded Telegram research/swarm report documents now use richer markdown-to-HTML rendering with proper headings, paragraphs, ordered/unordered lists, blockquotes, links, and improved document styling for browser viewing.
 
 ### Added
 
