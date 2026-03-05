@@ -63,13 +63,66 @@ function sanitizeUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
+  // Allow root-relative links (e.g. /api/artifacts/:id) for in-app downloads.
+  if (trimmed.startsWith("/")) {
+    if (trimmed.startsWith("//")) return null;
+    return trimmed.replace(/"/g, "&quot;");
+  }
+
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-    return parsed.toString().replace(/"/g, "&quot;");
+    let safeUrl = parsed.toString();
+    if (parsed.pathname === "/" && !parsed.search && !parsed.hash && !trimmed.endsWith("/")) {
+      safeUrl = safeUrl.replace(/\/$/, "");
+    }
+    return safeUrl.replace(/"/g, "&quot;");
   } catch {
     return null;
   }
+}
+
+function replaceMarkdownLinks(text: string, render: (label: string, rawUrl: string) => string): string {
+  let out = "";
+  let i = 0;
+
+  while (i < text.length) {
+    const openBracket = text.indexOf("[", i);
+    if (openBracket < 0) {
+      out += text.slice(i);
+      break;
+    }
+
+    out += text.slice(i, openBracket);
+
+    const closeBracket = text.indexOf("]", openBracket + 1);
+    if (closeBracket < 0 || text[closeBracket + 1] !== "(") {
+      out += text.slice(openBracket, closeBracket < 0 ? text.length : closeBracket + 1);
+      i = closeBracket < 0 ? text.length : closeBracket + 1;
+      continue;
+    }
+
+    let depth = 1;
+    let cursor = closeBracket + 2;
+    while (cursor < text.length && depth > 0) {
+      if (text[cursor] === "(") depth += 1;
+      if (text[cursor] === ")") depth -= 1;
+      cursor += 1;
+    }
+
+    if (depth !== 0) {
+      out += text.slice(openBracket, cursor);
+      i = cursor;
+      continue;
+    }
+
+    const label = text.slice(openBracket + 1, closeBracket);
+    const rawUrl = text.slice(closeBracket + 2, cursor - 1);
+    out += render(label, rawUrl);
+    i = cursor;
+  }
+
+  return out;
 }
 
 /**
@@ -113,7 +166,7 @@ export function markdownToTelegramHTML(md: string): string {
   result = result.replace(/~~(.+?)~~/g, "<s>$1</s>");
 
   // Links: [text](url)
-  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, rawUrl: string) => {
+  result = replaceMarkdownLinks(result, (label: string, rawUrl: string) => {
     const safeUrl = sanitizeUrl(rawUrl);
     if (!safeUrl) return label;
     return `<a href="${safeUrl}">${label}</a>`;
@@ -159,7 +212,7 @@ export function markdownToReportHTML(md: string): string {
 
   const inline = (text: string): string => {
     let out = escapeHTML(text);
-    out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, rawUrl: string) => {
+    out = replaceMarkdownLinks(out, (label: string, rawUrl: string) => {
       const safeUrl = sanitizeUrl(rawUrl);
       if (!safeUrl) return label;
       return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`;
