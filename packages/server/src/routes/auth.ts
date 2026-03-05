@@ -14,9 +14,11 @@ import {
 const ACCESS_TOKEN_EXPIRY = "15m";
 const REFRESH_TOKEN_EXPIRY = "7d";
 
+const JWT_ALGORITHM = "HS256" as const;
+
 function signTokens(payload: { sub: string; email: string }, secret: string) {
-  const accessToken = jwt.sign(payload, secret, { expiresIn: ACCESS_TOKEN_EXPIRY });
-  const refreshToken = jwt.sign({ ...payload, type: "refresh" }, secret, { expiresIn: REFRESH_TOKEN_EXPIRY });
+  const accessToken = jwt.sign(payload, secret, { algorithm: JWT_ALGORITHM, expiresIn: ACCESS_TOKEN_EXPIRY });
+  const refreshToken = jwt.sign({ ...payload, type: "refresh" }, secret, { algorithm: JWT_ALGORITHM, expiresIn: REFRESH_TOKEN_EXPIRY });
   return { accessToken, refreshToken };
 }
 
@@ -76,7 +78,7 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
     const token = extractToken(request);
     if (token) {
       try {
-        jwt.verify(token, secret);
+        jwt.verify(token, secret, { algorithms: [JWT_ALGORITHM] });
         authenticated = true;
       } catch { /* invalid token */ }
     }
@@ -128,7 +130,7 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
 
     const secret = getJwtSecret(serverCtx.ctx.storage, process.env.PAI_JWT_SECRET);
     try {
-      const decoded = jwt.verify(refreshCookie, secret) as { sub: string; email: string; type?: string };
+      const decoded = jwt.verify(refreshCookie, secret, { algorithms: [JWT_ALGORITHM] }) as { sub: string; email: string; type?: string };
       if (decoded.type !== "refresh") {
         return reply.status(401).send({ error: "Invalid token type" });
       }
@@ -158,7 +160,7 @@ export function registerAuthRoutes(app: FastifyInstance, serverCtx: ServerContex
     if (!token) return reply.status(401).send({ error: "Not authenticated" });
 
     try {
-      const decoded = jwt.verify(token, secret) as { sub: string; email: string };
+      const decoded = jwt.verify(token, secret, { algorithms: [JWT_ALGORITHM] }) as { sub: string; email: string };
       const owner = getOwner(serverCtx.ctx.storage);
       if (!owner || owner.id !== decoded.sub) {
         return reply.status(401).send({ error: "Not authenticated" });

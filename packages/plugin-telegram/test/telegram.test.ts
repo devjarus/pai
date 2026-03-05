@@ -26,11 +26,13 @@ describe("markdownToTelegramHTML", () => {
   });
 
   it("converts links", () => {
+    // sanitizeUrl strips the trailing slash new URL() adds when original didn't have one
     expect(markdownToTelegramHTML("[Google](https://google.com)"))
       .toBe('<a href="https://google.com">Google</a>');
   });
 
   it("drops unsafe link protocols", () => {
+    // sanitizeUrl rejects non-http(s) protocols; link replaced with label only
     expect(markdownToTelegramHTML("[XSS](javascript:alert(1))")).toBe("XSS");
   });
 

@@ -67,7 +67,7 @@ ask_llm_provider() {
         ;;
     esac
 
-    read -rp "API key: " API_KEY
+    read -rsp "API key (input hidden): " API_KEY
     echo ""
     ok "Using $PROVIDER ($MODEL)"
   else

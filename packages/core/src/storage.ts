@@ -49,12 +49,15 @@ function cleanupOldBackups(dbPath: string): void {
   }
 }
 
+// Allowlist of table names permitted in resolveIdPrefix to prevent SQL injection
+const ALLOWED_TABLES = new Set(["beliefs", "tasks", "goals", "episodes"]);
+
 /**
  * Resolve a full ID from a prefix. Tries exact match first, then LIKE prefix.
  * Throws if no match or ambiguous (2+ matches).
  *
  * @param storage - Storage instance
- * @param table - Table name to search
+ * @param table - Table name to search (must be in ALLOWED_TABLES allowlist)
  * @param idOrPrefix - Full ID or prefix (8+ chars)
  * @param where - Optional additional WHERE clause (e.g., "AND status = 'active'")
  * @param params - Optional params for the WHERE clause
@@ -67,6 +70,11 @@ export function resolveIdPrefix(
   where = "",
   params: unknown[] = [],
 ): string {
+  // Validate table name against allowlist to prevent SQL injection
+  if (!ALLOWED_TABLES.has(table)) {
+    throw new Error(`Invalid table name: "${table}"`);
+  }
+
   const exact = storage.query<{ id: string }>(
     `SELECT id FROM ${table} WHERE id = ? ${where} LIMIT 1`,
     [idOrPrefix, ...params],

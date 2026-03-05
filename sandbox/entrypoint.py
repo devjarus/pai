@@ -27,6 +27,9 @@ MAX_OUTPUT_BYTES = 100 * 1024  # 100KB stdout/stderr cap
 MAX_CODE_BYTES = 512 * 1024    # 512KB max code size
 OUTPUT_DIR_NAME = "output"
 
+# Optional shared secret for authentication (set PAI_SANDBOX_SECRET to enable)
+SANDBOX_SECRET = os.environ.get("PAI_SANDBOX_SECRET", "")
+
 # Minimal env vars passed to subprocess — never leak host secrets
 SAFE_ENV = {
     "PATH": "/usr/local/bin:/usr/bin:/bin",
@@ -62,9 +65,22 @@ class SandboxHandler(BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "not found"}, 404)
 
+    def _check_auth(self):
+        """Verify shared secret if PAI_SANDBOX_SECRET is configured."""
+        if not SANDBOX_SECRET:
+            return True
+        auth = self.headers.get("Authorization", "")
+        if auth == f"Bearer {SANDBOX_SECRET}":
+            return True
+        self._send_json({"error": "unauthorized"}, 401)
+        return False
+
     def do_POST(self):
         if self.path != "/run":
             self._send_json({"error": "not found"}, 404)
+            return
+
+        if not self._check_auth():
             return
 
         content_length = int(self.headers.get("Content-Length", 0))

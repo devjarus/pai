@@ -10,9 +10,16 @@ export function registerArtifactRoutes(app: FastifyInstance, serverCtx: ServerCo
 
     // Sanitize filename to prevent header injection (strip quotes, newlines, control chars)
     const safeName = artifact.name.replace(/["\r\n\x00-\x1f]/g, "_");
-    // Whitelist safe MIME types for inline display; force download for everything else
-    const safeMimeTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "application/pdf"]);
+    // Whitelist safe MIME types for inline display; force download for everything else.
+    // NOTE: SVG is excluded — it can contain embedded JavaScript, enabling stored XSS.
+    const safeMimeTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"]);
     const disposition = safeMimeTypes.has(artifact.mimeType) ? "inline" : "attachment";
+
+    // Defense-in-depth: sandbox SVG/HTML content to prevent script execution
+    const needsSandbox = artifact.mimeType.includes("svg") || artifact.mimeType.includes("html");
+    if (needsSandbox) {
+      reply.header("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
+    }
 
     return reply
       .header("Content-Type", artifact.mimeType)

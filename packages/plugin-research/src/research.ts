@@ -176,10 +176,23 @@ export function clearCompletedJobs(storage: Storage): number {
   return count;
 }
 
+// Allowlist of column names that can be updated on research_jobs
+const RESEARCH_JOB_COLUMNS = new Set([
+  "status", "report", "result_type", "error",
+  "searches_used", "pages_learned", "steps_log",
+  "briefing_id", "completed_at",
+]);
+
 function updateJob(storage: Storage, id: string, fields: Record<string, unknown>): void {
-  const sets = Object.keys(fields).map((k) => `${k} = ?`).join(", ");
-  const values = Object.values(fields);
-  storage.run(`UPDATE research_jobs SET ${sets} WHERE id = ?`, [...values, id]);
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (!RESEARCH_JOB_COLUMNS.has(k)) continue;
+    sets.push(`${k} = ?`);
+    values.push(v);
+  }
+  if (sets.length === 0) return;
+  storage.run(`UPDATE research_jobs SET ${sets.join(", ")} WHERE id = ?`, [...values, id]);
 }
 
 // ---- Research Agent System Prompt ----

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **SVG XSS prevention** — Removed `image/svg+xml` from inline display whitelist for artifacts. SVGs are now force-downloaded, preventing stored XSS via embedded JavaScript. Added CSP `sandbox` header as defense-in-depth for SVG/HTML artifacts.
+- **SQL injection hardening** — Added table name allowlist validation to `resolveIdPrefix()` to prevent SQL injection via table name interpolation.
+- **Login brute-force protection** — Reduced auth login rate limit from 20/min to 5/min. Added 3/min rate limit on setup endpoint.
+- **SSRF redirect bypass fix** — Page fetcher now manually follows redirects (up to 5) and re-validates each redirect target against the SSRF blocklist, preventing attackers from redirecting to internal IPs.
+- **Expanded SSRF blocklist** — Added `0.0.0.0`, `[::0]`, `[::]`, full `127.x.x.x` loopback range, and `metadata.internal` to the blocked hosts list.
+- **CSRF protection for DELETE** — DELETE requests now validate Origin/Referer headers to prevent cross-origin state-changing requests.
+- **Sandbox authentication** — Code execution sandbox now supports optional shared-secret authentication via `PAI_SANDBOX_SECRET` environment variable.
+
 ### Changed
 
 - **Filesystem-backed artifacts** — Artifacts (screenshots, charts, reports) are now stored on disk at `{dataDir}/artifacts/` instead of as SQLite BLOBs. Keeps the database lean and makes cleanup trivial. Migration v2 runs automatically on server startup — no manual setup required.
