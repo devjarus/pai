@@ -34,6 +34,8 @@ export function resolveSearchUrl(configUrl?: string): string {
   return "http://localhost:8080";
 }
 
+export type TimeRange = "day" | "week" | "month" | "year" | "";
+
 /**
  * Fetches search results from a SearXNG instance.
  * Returns up to `maxResults` results (default 5).
@@ -43,6 +45,7 @@ export async function webSearch(
   maxResults = 5,
   category: SearchCategory = "general",
   configUrl?: string,
+  timeRange: TimeRange = "",
 ): Promise<SearchResult[]> {
   const baseUrl = resolveSearchUrl(configUrl);
   const params = new URLSearchParams({
@@ -50,6 +53,7 @@ export async function webSearch(
     format: "json",
     categories: category,
   });
+  if (timeRange) params.set("time_range", timeRange);
 
   const response = await fetch(`${baseUrl}/search?${params.toString()}`, {
     method: "GET",

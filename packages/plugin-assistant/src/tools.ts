@@ -9,7 +9,7 @@ import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-
 import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
 import { createSchedule, listSchedules, deleteSchedule } from "@personal-ai/plugin-schedules";
-import { webSearch, formatSearchResults, type SearchCategory } from "./web-search.js";
+import { webSearch, formatSearchResults, type SearchCategory, type TimeRange } from "./web-search.js";
 import { fetchPageAsMarkdown, discoverSubPages } from "./page-fetch.js";
 
 export async function runCrawlInBackground(storage: Storage, llm: LLMClient, rootUrl: string, subPages: string[]): Promise<void> {
@@ -140,17 +140,18 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     web_search: tool({
-      description: "Search the web for current information, news, prices, or facts. Use this when the user asks about recent events, current data, or anything you're unsure about. Pick the best category for the query: 'general' (default), 'news' (recent events, headlines), 'it' (programming, tech docs), 'images', 'videos', 'social media', or 'files'.",
+      description: "Search the web for current information, news, prices, or facts. Use this when the user asks about recent events, current data, or anything you're unsure about. Pick the best category for the query: 'general' (default), 'news' (recent events, headlines), 'it' (programming, tech docs), 'images', 'videos', 'social media', or 'files'. Set time_range to 'day' or 'week' for recent/latest/current queries.",
       inputSchema: z.object({
         query: z.string().describe("The search query"),
         category: z.enum(["general", "news", "it", "images", "videos", "social media", "files"]).default("general").describe("Search category — pick the best fit for the query"),
+        time_range: z.enum(["", "day", "week", "month", "year"]).default("").describe("Time range filter — use 'week' for latest/recent/current queries, 'day' for today only, 'month' for this month. Empty for no filter."),
       }),
-      execute: async ({ query, category }) => {
+      execute: async ({ query, category, time_range }) => {
         if (ctx.config.webSearchEnabled === false) {
           return "Web search is disabled in settings. Answer based on your existing knowledge.";
         }
         try {
-          const results = await webSearch(query, 5, category as SearchCategory, ctx.config.searchUrl);
+          const results = await webSearch(query, 5, category as SearchCategory, ctx.config.searchUrl, time_range as TimeRange);
           if (results.length === 0) return "[empty] No web results found. Answer from your existing knowledge and conversation context.";
           const text = formatSearchResults(results);
           // Return structured JSON string — LLM reads the text field, UI card parses the full object
