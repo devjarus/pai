@@ -43,10 +43,11 @@ RUN apt-get update && \
 # Copy Pinchtab binary from builder stage
 COPY --from=pinchtab-builder /go/bin/pinchtab /usr/local/bin/pinchtab
 
-# Set Chromium path for Pinchtab and bind to all interfaces
+# Configure Pinchtab: Chromium path, bind to all interfaces, headless, auto-launch
 ENV CHROME_PATH=/usr/bin/chromium
-ENV BRIDGE_BIND=0.0.0.0
-ENV BRIDGE_HEADLESS=true
+ENV PINCHTAB_BIND=0.0.0.0
+ENV PINCHTAB_HEADLESS=true
+ENV PINCHTAB_AUTO_LAUNCH=1
 
 # Create non-root user for execution
 RUN useradd -m -s /bin/bash -u 1000 sandbox
