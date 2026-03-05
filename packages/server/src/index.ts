@@ -456,9 +456,28 @@ export async function createServer(options?: { port?: number; host?: string }) {
   }
 
   // --- CSRF protection: require JSON content-type for state-changing API requests ---
+  // DELETE is included because it mutates state and could be triggered cross-origin.
   app.addHook("onRequest", async (request, reply) => {
     if (!request.url.startsWith("/api/")) return;
-    if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS" || request.method === "DELETE") return;
+    if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") return;
+    // DELETE requests typically have no body, so check Origin/Referer instead of Content-Type
+    if (request.method === "DELETE") {
+      const origin = request.headers.origin;
+      const referer = request.headers.referer;
+      // Allow requests with no origin (same-origin, non-browser) or matching origin
+      if (origin && !isAllowedOrigin(origin)) {
+        return reply.status(403).send({ error: "Cross-origin DELETE not allowed" });
+      }
+      if (!origin && referer) {
+        try {
+          const refOrigin = new URL(referer).origin;
+          if (!isAllowedOrigin(refOrigin)) {
+            return reply.status(403).send({ error: "Cross-origin DELETE not allowed" });
+          }
+        } catch { /* invalid referer — allow through */ }
+      }
+      return;
+    }
     const ct = request.headers["content-type"] ?? "";
     if (!ct.includes("application/json") && !ct.includes("text/event-stream")) {
       return reply.status(415).send({ error: "Content-Type must be application/json" });
@@ -475,7 +494,11 @@ export async function createServer(options?: { port?: number; host?: string }) {
     } else if (path === "/api/remember") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: "1 minute" } };
     } else if (path === "/api/auth/login") {
-      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 20, timeWindow: "1 minute" } };
+      // Strict rate limit to prevent brute-force attacks
+      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 5, timeWindow: "1 minute" } };
+    } else if (path === "/api/auth/setup") {
+      // One-time setup — strict limit
+      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 3, timeWindow: "1 minute" } };
     } else if (path === "/api/auth/refresh") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: "1 minute" } };
     } else if (path === "/api/inbox/refresh") {

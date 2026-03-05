@@ -22,17 +22,21 @@ function isAllowedUrl(urlStr: string): boolean {
     const parsed = new URL(urlStr);
     if (!["http:", "https:"].includes(parsed.protocol)) return false;
     const host = parsed.hostname.toLowerCase();
-    // Block loopback
+    // Block loopback and unspecified addresses
     if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") return false;
+    if (host === "0.0.0.0" || host === "[::0]" || host === "[::]") return false;
+    // Block all 127.x.x.x loopback range
+    if (/^127\./.test(host)) return false;
     // Block private RFC1918 ranges
     if (/^10\./.test(host)) return false;
     if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
     if (/^192\.168\./.test(host)) return false;
     // Block link-local
     if (/^169\.254\./.test(host)) return false;
-    // Block cloud metadata endpoints
+    // Block cloud metadata endpoints (AWS, GCP, Azure)
     if (host === "metadata.google.internal") return false;
-    // Block IPv6 private/link-local
+    if (host === "metadata.internal") return false;
+    // Block IPv6 private/link-local/unique local
     if (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) return false;
     return true;
   } catch {
@@ -41,29 +45,52 @@ function isAllowedUrl(urlStr: string): boolean {
 }
 
 /**
- * Fetch raw HTML from a URL.
+ * Fetch raw HTML from a URL with SSRF-safe redirect handling.
+ * Manually follows redirects (up to 5) and re-checks each target against isAllowedUrl.
  */
 async function fetchHTML(url: string): Promise<{ html: string; finalUrl: string } | null> {
   if (!isAllowedUrl(url)) return null;
-  // Use a realistic browser User-Agent to avoid bot detection
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-    },
-    signal: AbortSignal.timeout(15_000),
-    redirect: "follow",
-  });
 
-  if (!response.ok) return null;
+  const MAX_REDIRECTS = 5;
+  let currentUrl = url;
 
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("text/html") && !contentType.includes("application/xhtml")) {
-    return null;
+  for (let i = 0; i <= MAX_REDIRECTS; i++) {
+    const response = await fetch(currentUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(15_000),
+      redirect: "manual",
+    });
+
+    // Handle redirects manually to re-validate each target against SSRF protections
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get("location");
+      if (!location) return null;
+      try {
+        const resolved = new URL(location, currentUrl).toString();
+        if (!isAllowedUrl(resolved)) return null;
+        currentUrl = resolved;
+        continue;
+      } catch {
+        return null;
+      }
+    }
+
+    if (!response.ok) return null;
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/html") && !contentType.includes("application/xhtml")) {
+      return null;
+    }
+
+    return { html: await response.text(), finalUrl: currentUrl };
   }
 
-  return { html: await response.text(), finalUrl: response.url };
+  // Too many redirects
+  return null;
 }
 
 /**
