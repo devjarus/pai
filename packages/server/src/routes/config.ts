@@ -249,10 +249,16 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     try {
       serverCtx.reinitialize();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      ctx.logger.error("reinitialize failed after config update", { error: msg });
+      const rawMsg = err instanceof Error ? err.message : String(err);
+      ctx.logger.error("reinitialize failed after config update", { error: rawMsg });
+      // Redact potential secrets (API keys, tokens, URLs with credentials) from client-facing message
+      const safeMsg = rawMsg
+        .replace(/sk-[a-zA-Z0-9]{10,}/g, "sk-***")
+        .replace(/key[=:]\s*\S+/gi, "key=***")
+        .replace(/token[=:]\s*\S+/gi, "token=***")
+        .replace(/password[=:]\s*\S+/gi, "password=***");
       return reply.status(500).send({
-        error: `Configuration saved but failed to apply: ${msg}. The server is still running with the previous settings. Fix the configuration and try again.`,
+        error: `Configuration saved but failed to apply: ${safeMsg}. The server is still running with the previous settings. Fix the configuration and try again.`,
       });
     }
 

@@ -534,16 +534,24 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
         ctx.logger.error("Chat stream error", {
           error: error instanceof Error ? error.message : String(error),
         });
-        // Don't leak internal error details to the client
+        // Never leak internal details — only expose safe, known error patterns
         const msg = error instanceof Error ? error.message : String(error);
-        const isInternal = /at\s|node_modules|SQL|database|SQLITE/i.test(msg);
-        return isInternal ? "An internal error occurred" : msg;
+        const safePatterns = [
+          /rate limit/i, /too many requests/i, /timeout/i,
+          /model not found/i, /invalid.*api.*key/i, /unauthorized/i,
+          /quota exceeded/i, /content.*filter/i, /context.*length/i,
+        ];
+        const isSafe = safePatterns.some((p) => p.test(msg));
+        return isSafe ? msg : "An internal error occurred";
       },
     });
 
     // Convert Web ReadableStream to Node Readable via createUIMessageStreamResponse
     const response = createUIMessageStreamResponse({ stream });
     reply.header("Content-Type", response.headers.get("content-type") ?? "text/event-stream; charset=utf-8");
+    reply.header("Cache-Control", "no-store, no-cache, must-revalidate");
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("X-Accel-Buffering", "no");
     try {
       const nodeStream = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
 
