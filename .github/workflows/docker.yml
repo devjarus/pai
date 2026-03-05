@@ -12,51 +12,7 @@ env:
   REGISTRY_GHCR: ghcr.io
 
 jobs:
-  # Auto-tag main branch pushes with incrementing alpha versions
-  auto-tag:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      new_tag: ${{ steps.tag.outputs.new_tag }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Compute next alpha tag
-        id: tag
-        run: |
-          # Find latest v*-alpha.* tag
-          LATEST=$(git tag --list 'v*-alpha.*' --sort=-v:refname | head -1)
-          if [ -z "$LATEST" ]; then
-            # No alpha tags exist — start from v0.3.0-alpha.1
-            NEW_TAG="v0.3.0-alpha.1"
-          else
-            # Extract base version and alpha number, increment
-            BASE=$(echo "$LATEST" | sed 's/-alpha\.[0-9]*//')
-            NUM=$(echo "$LATEST" | grep -o 'alpha\.[0-9]*' | cut -d. -f2)
-            NEXT=$((NUM + 1))
-            NEW_TAG="${BASE}-alpha.${NEXT}"
-          fi
-          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
-          echo "Auto-tagging: $NEW_TAG"
-
-      - name: Create and push tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ steps.tag.outputs.new_tag }}" -m "${{ steps.tag.outputs.new_tag }}"
-          git push origin "${{ steps.tag.outputs.new_tag }}"
-
   build-and-push:
-    # On main push: wait for auto-tag. On manual tag push: run directly.
-    # The auto-tag job's git push does NOT re-trigger this workflow because
-    # events from GITHUB_TOKEN don't trigger further workflow runs.
-    needs: [auto-tag]
-    if: always() && (needs.auto-tag.result == 'success' || needs.auto-tag.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -80,27 +36,24 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
 
       - name: Compute image tags
-        id: resolve
+        id: tags
         run: |
           IMAGE="${{ env.REGISTRY_GHCR }}/${{ github.repository }}${{ matrix.image_suffix }}"
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+
           if [ "${{ github.ref_type }}" = "tag" ]; then
+            # Manual release tag (e.g. v0.3.0)
             VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+            MINOR=$(echo "$VERSION" | grep -oE '^[0-9]+\.[0-9]+')
+            TAGS="${IMAGE}:${VERSION},${IMAGE}:${MINOR},${IMAGE}:latest"
           else
-            VERSION="${{ needs.auto-tag.outputs.new_tag }}"
+            # Main branch push — just latest + SHA
+            TAGS="${IMAGE}:latest,${IMAGE}:main-${SHA}"
           fi
-          # Strip leading 'v' for Docker tags
-          VERSION="${VERSION#v}"
-          # Extract major.minor for rolling tag (e.g. 0.3)
-          MINOR=$(echo "$VERSION" | grep -oE '^[0-9]+\.[0-9]+')
-          # Build tag list
-          TAGS="${IMAGE}:${VERSION}"
-          TAGS="${TAGS},${IMAGE}:${MINOR}"
-          TAGS="${TAGS},${IMAGE}:latest"
+
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
           echo "Tags: $TAGS"
 
@@ -129,6 +82,6 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
-          tags: ${{ steps.resolve.outputs.tags }}
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
