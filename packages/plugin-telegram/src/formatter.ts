@@ -63,6 +63,12 @@ function sanitizeUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
+  // Allow root-relative links (e.g. /api/artifacts/:id) for in-app downloads.
+  if (trimmed.startsWith("/")) {
+    if (trimmed.startsWith("//")) return null;
+    return trimmed.replace(/"/g, "&quot;");
+  }
+
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;

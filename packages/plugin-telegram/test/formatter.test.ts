@@ -72,6 +72,11 @@ const x = 1;
     expect(html).toContain("<p>See payload now</p>");
     expect(html).not.toContain("javascript:");
   });
+
+  it("keeps root-relative artifact links", () => {
+    const html = markdownToReportHTML("Download [chart](/api/artifacts/abc123)");
+    expect(html).toContain('<a href="/api/artifacts/abc123" target="_blank" rel="noopener noreferrer">chart</a>');
+  });
 });
 
 describe("formatTelegramResponse", () => {
