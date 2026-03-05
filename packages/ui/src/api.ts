@@ -364,6 +364,7 @@ export function updateConfig(updates: {
   knowledgeDefaultTtlDays?: number | null;
   knowledgeFreshnessDecayDays?: number;
   debugResearch?: boolean;
+  timezone?: string;
 }): Promise<ConfigInfo> {
   return request<ConfigInfo>("/config", {
     method: "PUT",
