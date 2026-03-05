@@ -22,6 +22,7 @@ import {
   ClockIcon,
   CalendarClockIcon,
 } from "lucide-react";
+import { FirstVisitBanner } from "../components/FirstVisitBanner";
 
 function formatInterval(hours: number): string {
   if (hours < 24) return `${hours}h`;
@@ -145,6 +146,7 @@ export default function Schedules() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      <FirstVisitBanner pageKey="schedules" tip="Set up recurring research jobs — daily stock updates, news digests, or any topic you want tracked automatically." />
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between border-b px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">

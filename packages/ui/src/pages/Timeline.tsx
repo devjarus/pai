@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
+import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import { useBeliefs, useAppTimezone } from "@/hooks";
 import type { Belief, BeliefType } from "../types";
 import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
@@ -69,6 +70,7 @@ export default function Timeline() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      <FirstVisitBanner pageKey="timeline" tip="A chronological feed of everything I've learned about you — when beliefs were created or updated." />
       {/* Header */}
       <header className="space-y-4 border-b border-border/40 bg-[#0a0a0a] px-4 py-4 md:px-6">
         <h1 className="flex items-center gap-1.5 font-mono text-sm font-semibold text-foreground">

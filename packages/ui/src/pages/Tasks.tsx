@@ -34,6 +34,7 @@ import {
   CalendarIcon,
 } from "lucide-react";
 import type { Task, Goal } from "../types";
+import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
 function formatDate(dateStr: string): string {
@@ -281,6 +282,7 @@ export default function Tasks() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      <FirstVisitBanner pageKey="tasks" tip="Your to-do list with goals and priorities. Ask me in chat to add tasks, or create them here directly." />
       {/* Top-level tabs */}
       <header className="space-y-2 border-b border-border/40 bg-[#0a0a0a] px-3 py-3 md:space-y-4 md:px-6 md:py-4">
         <Tabs

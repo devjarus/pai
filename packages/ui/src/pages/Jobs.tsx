@@ -35,6 +35,7 @@ import type { BackgroundJobInfo, BlackboardEntry } from "../api";
 import type { SwarmAgent, ArtifactMeta } from "../types";
 import { useJobs, useJobDetail, useJobBlackboard, useJobAgents, useJobArtifacts, useCancelJob, useClearJobs, useConfig } from "@/hooks";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
+import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import { parseApiDate } from "@/lib/datetime";
 
 const statusStyles: Record<string, string> = {
@@ -256,6 +257,7 @@ export default function Jobs() {
       {/* Main list */}
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl space-y-6 p-6">
+          <FirstVisitBanner pageKey="jobs" tip="Deep research and swarm analyses run here. Ask me in chat to research a topic and the results will appear here." />
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">

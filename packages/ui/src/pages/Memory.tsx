@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
+import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import { Trash2Icon, HelpCircleIcon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
 import type { Belief, BeliefType } from "../types";
 import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
@@ -216,6 +217,7 @@ export default function Memory() {
   return (
     <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
+        <FirstVisitBanner pageKey="memory" tip="Everything I know about you — built automatically from our conversations. Beliefs evolve as you share more." />
         <header className="space-y-2 border-b border-border/40 bg-[#0a0a0a] px-3 py-3 md:space-y-4 md:px-6 md:py-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
