@@ -48,6 +48,15 @@ async function sendToTelegramChat(bot: Bot, chatId: number, html: string, logger
   }
 }
 
+/** Create a short preview (first ~500 chars) with a "see full report" note */
+function makePreview(report: string, maxLen = 500): string {
+  if (report.length <= maxLen) return report;
+  // Cut at last newline within budget
+  const cutIdx = report.lastIndexOf("\n", maxLen);
+  const sliced = cutIdx > maxLen * 0.3 ? report.slice(0, cutIdx) : report.slice(0, maxLen);
+  return sliced.trimEnd() + "\n\n<i>Full report attached as document above.</i>";
+}
+
 async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger): Promise<void> {
   try {
     const rows = storage.query<{ id: string; sections: string }>(
@@ -62,13 +71,26 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
         const emoji = isSwarm ? "\uD83D\uDC1D" : "\uD83D\uDD2C";
         const label = isSwarm ? "Swarm Report" : "Research Complete";
         const formattedReport = formatTelegramResponse(parsed.report);
-        const html = `${emoji} <b>${label}: ${escapeHTML(title)}</b>\n\n${markdownToTelegramHTML(formattedReport)}`;
         // Send to the originating Telegram chat, not all chats
         const chatId = findChatIdForBriefing(storage, row.id);
         if (chatId) {
-          await sendToTelegramChat(bot, chatId, html, logger);
+          // 1. Send full report as downloadable .md file
+          const fileTitle = title.replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, "_").slice(0, 60) || "report";
+          const mdContent = `# ${title}\n\n${parsed.report}`;
+          const mdBuffer = Buffer.from(mdContent, "utf-8");
+          try {
+            await bot.api.sendDocument(chatId, new InputFile(mdBuffer, `${fileTitle}.md`), {
+              caption: `${emoji} ${label}: ${title}`,
+            });
+          } catch (err) {
+            logger.warn("Failed to send report document", { error: err instanceof Error ? err.message : String(err) });
+          }
 
-          // Send image artifacts (screenshots, charts) as photos
+          // 2. Send a short preview in chat
+          const previewHtml = `${emoji} <b>${label}: ${escapeHTML(title)}</b>\n\n${markdownToTelegramHTML(makePreview(formattedReport))}`;
+          await sendToTelegramChat(bot, chatId, previewHtml, logger);
+
+          // 3. Send image artifacts (screenshots, charts) as downloadable documents
           const jobId = row.id.startsWith("research-") ? row.id.slice("research-".length)
             : row.id.startsWith("swarm-") ? row.id.slice("swarm-".length)
             : null;
@@ -79,12 +101,14 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
                 if (meta.mimeType.startsWith("image/")) {
                   const artifact = getArtifact(storage, meta.id);
                   if (artifact) {
-                    await bot.api.sendPhoto(chatId, new InputFile(artifact.data, meta.name));
+                    await bot.api.sendDocument(chatId, new InputFile(artifact.data, meta.name), {
+                      caption: meta.name,
+                    });
                   }
                 }
               }
             } catch (err) {
-              logger.warn("Failed to send artifact photos", { jobId, error: err instanceof Error ? err.message : String(err) });
+              logger.warn("Failed to send artifact documents", { jobId, error: err instanceof Error ? err.message : String(err) });
             }
           }
 

@@ -220,7 +220,7 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const tr = step.toolResults[i] as any;
           if (tc && tr) {
-            const raw = tr.result ?? tr.output ?? tr;
+            const raw = tr.output ?? tr.result ?? tr;
             const resultStr = typeof raw === "string"
               ? raw.slice(0, 500)
               : JSON.stringify(raw).slice(0, 500);
@@ -277,7 +277,7 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const tr = step.toolResults[i] as any;
           if (tc?.toolName === "browse_screenshot" && tr) {
-            const res = tr.result ?? tr;
+            const res = tr.output ?? tr.result ?? tr;
             if (res?.ok && res.artifactId) {
               artifacts.push({ id: res.artifactId, name: "screenshot.png" });
             }

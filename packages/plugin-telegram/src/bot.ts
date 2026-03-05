@@ -325,16 +325,18 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         }
       }
 
-      // Send screenshot artifacts as photos
+      // Send screenshot artifacts as downloadable documents (full quality)
       if (result.artifacts?.length) {
         for (const art of result.artifacts) {
           try {
             const artifact = getArtifact(ctx.storage, art.id);
             if (artifact && artifact.mimeType.startsWith("image/")) {
-              await bot.api.sendPhoto(chatId, new InputFile(artifact.data, art.name));
+              await bot.api.sendDocument(chatId, new InputFile(artifact.data, art.name), {
+                caption: art.name,
+              });
             }
           } catch (err) {
-            ctx.logger.warn("Failed to send artifact photo", { artifactId: art.id, error: err instanceof Error ? err.message : String(err) });
+            ctx.logger.warn("Failed to send artifact", { artifactId: art.id, error: err instanceof Error ? err.message : String(err) });
           }
         }
       }

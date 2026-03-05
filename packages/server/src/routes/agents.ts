@@ -445,7 +445,7 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                           const tc = stepAny.toolCalls[i] as { toolName?: string; args?: unknown };
                           const tr = stepAny.toolResults[i] as { result?: unknown; output?: unknown };
                           if (tc) {
-                            const raw = tr?.result ?? tr?.output ?? tr;
+                            const raw = tr?.output ?? tr?.result ?? tr;
                             const resultStr = typeof raw === "string"
                               ? raw.slice(0, 200)
                               : JSON.stringify(raw).slice(0, 200);
