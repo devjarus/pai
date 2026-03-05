@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Telegram raw JSON responses** — Bot now detects JSON-only responses and converts them into Telegram-friendly structured sections and bullet lists for readable delivery.
+- **Telegram report link sanitization** — Telegram markdown rendering now allows only `http`/`https` URLs and strips unsafe protocols (for example `javascript:`), preventing untrusted report content from turning into executable or malformed links.
 - **Swarm results not delivered** — Push loop only handled `research-*` briefing IDs, silently dropping `swarm-*` reports
 - **Group chat research/swarm delivery** — Same root cause as above; both prefixes now resolve to originating chat
 - **Debug toggle not persisting** — `loadConfig()` didn't read `debugResearch`, `workers`, or `knowledge` fields from config file, losing them on server restart

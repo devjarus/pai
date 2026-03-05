@@ -59,6 +59,19 @@ export function escapeHTML(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
+function sanitizeUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString().replace(/"/g, "&quot;");
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Convert Markdown to Telegram HTML format.
  * Supports: bold, italic, code, code blocks, links, headers, strikethrough, blockquotes.
@@ -100,7 +113,11 @@ export function markdownToTelegramHTML(md: string): string {
   result = result.replace(/~~(.+?)~~/g, "<s>$1</s>");
 
   // Links: [text](url)
-  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, rawUrl: string) => {
+    const safeUrl = sanitizeUrl(rawUrl);
+    if (!safeUrl) return label;
+    return `<a href="${safeUrl}">${label}</a>`;
+  });
 
   // Blockquotes: > text (Telegram doesn't support blockquote tag well, use italic)
   result = result.replace(/^&gt;\s?(.+)$/gm, "<i>$1</i>");
@@ -142,7 +159,11 @@ export function markdownToReportHTML(md: string): string {
 
   const inline = (text: string): string => {
     let out = escapeHTML(text);
-    out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, rawUrl: string) => {
+      const safeUrl = sanitizeUrl(rawUrl);
+      if (!safeUrl) return label;
+      return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    });
     out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     out = out.replace(/__(.+?)__/g, "<strong>$1</strong>");
     out = out.replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, "<em>$1</em>");

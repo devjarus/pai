@@ -30,6 +30,10 @@ describe("markdownToTelegramHTML", () => {
       .toBe('<a href="https://google.com">Google</a>');
   });
 
+  it("drops unsafe link protocols", () => {
+    expect(markdownToTelegramHTML("[XSS](javascript:alert(1))")).toBe("XSS");
+  });
+
   it("converts headers to bold", () => {
     expect(markdownToTelegramHTML("# Title")).toBe("<b>Title</b>");
     expect(markdownToTelegramHTML("## Subtitle")).toBe("<b>Subtitle</b>");
