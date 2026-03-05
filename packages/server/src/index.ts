@@ -448,7 +448,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
         return reply.status(401).send({ error: "Authentication required" });
       }
       try {
-        jwt.verify(token, secret);
+        jwt.verify(token, secret, { algorithms: ["HS256"] });
       } catch {
         return reply.status(401).send({ error: "Invalid or expired token" });
       }

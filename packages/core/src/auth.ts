@@ -64,14 +64,20 @@ export async function createOwner(
   return { id, email: input.email, name: input.name ?? null, created_at: new Date().toISOString() };
 }
 
+// Pre-computed dummy hash for constant-time comparison when user is not found.
+// Prevents timing attacks that could enumerate valid email addresses.
+const DUMMY_HASH = hashSync("dummy-password-for-timing-safety", 12);
+
 export async function verifyOwnerPassword(
   storage: Storage,
   email: string,
   password: string,
 ): Promise<boolean> {
   const rows = storage.query<OwnerRow>("SELECT * FROM owner WHERE email = ?", [email]);
-  if (rows.length === 0) return false;
-  return compareSync(password, rows[0]!.password);
+  // Always run bcrypt compare to prevent timing-based user enumeration
+  const hash = rows.length > 0 ? rows[0]!.password : DUMMY_HASH;
+  const valid = compareSync(password, hash);
+  return rows.length > 0 && valid;
 }
 
 export function resetOwnerPassword(storage: Storage, newPassword: string): boolean {
