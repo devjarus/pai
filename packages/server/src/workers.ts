@@ -1,5 +1,5 @@
 import type { PluginContext } from "@personal-ai/core";
-import { cleanupExpiredSources } from "@personal-ai/core";
+import { cleanupExpiredSources, cleanupOldArtifacts } from "@personal-ai/core";
 import { getDueSchedules, markScheduleRun } from "@personal-ai/plugin-schedules";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
@@ -13,6 +13,7 @@ export interface WorkerOptions {
   learningIntervalMs?: number;
   learningInitialDelayMs?: number;
   knowledgeCleanupIntervalMs?: number;
+  artifactCleanupIntervalMs?: number;
   generateInitialBriefing?: boolean;
 }
 
@@ -21,6 +22,8 @@ const DEFAULT_SCHEDULE_CHECK_INTERVAL_MS = 60 * 1000;
 const DEFAULT_LEARNING_INTERVAL_MS = 2 * 60 * 60 * 1000;
 const DEFAULT_LEARNING_INITIAL_DELAY_MS = 5 * 60 * 1000;
 const DEFAULT_KNOWLEDGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_ARTIFACT_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_ARTIFACT_MAX_AGE_DAYS = 7;
 
 export class WorkerLoop {
   private briefingTimer: ReturnType<typeof setInterval> | null = null;
@@ -28,6 +31,7 @@ export class WorkerLoop {
   private learningInitTimer: ReturnType<typeof setTimeout> | null = null;
   private learningTimer: ReturnType<typeof setInterval> | null = null;
   private knowledgeCleanupTimer: ReturnType<typeof setInterval> | null = null;
+  private artifactCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private abortController = new AbortController();
 
@@ -107,6 +111,19 @@ export class WorkerLoop {
         this.ctx.logger.warn(`Knowledge cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }, knowledgeCleanupMs);
+
+    // --- Artifact cleanup ---
+    const artifactCleanupMs = this.options?.artifactCleanupIntervalMs ?? DEFAULT_ARTIFACT_CLEANUP_INTERVAL_MS;
+    this.artifactCleanupTimer = setInterval(() => {
+      try {
+        const deleted = cleanupOldArtifacts(this.ctx.storage, this.ctx.config.dataDir, DEFAULT_ARTIFACT_MAX_AGE_DAYS);
+        if (deleted > 0) {
+          this.ctx.logger.info(`Artifact cleanup: deleted ${deleted} old artifact(s)`);
+        }
+      } catch (err) {
+        this.ctx.logger.warn(`Artifact cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }, artifactCleanupMs);
   }
 
   stop(): void {
@@ -119,6 +136,7 @@ export class WorkerLoop {
     if (this.learningInitTimer) { clearTimeout(this.learningInitTimer); this.learningInitTimer = null; }
     if (this.learningTimer) { clearInterval(this.learningTimer); this.learningTimer = null; }
     if (this.knowledgeCleanupTimer) { clearInterval(this.knowledgeCleanupTimer); this.knowledgeCleanupTimer = null; }
+    if (this.artifactCleanupTimer) { clearInterval(this.artifactCleanupTimer); this.artifactCleanupTimer = null; }
   }
 
   updateContext(newCtx: Partial<PluginContext>): void {
@@ -146,6 +164,7 @@ export class WorkerLoop {
               provider: this.ctx.config.llm.provider,
               model: this.ctx.config.llm.model,
               contextWindow: this.ctx.config.llm.contextWindow,
+              dataDir: this.ctx.config.dataDir,
               webSearch,
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,

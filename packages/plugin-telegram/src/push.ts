@@ -1,5 +1,7 @@
+import { InputFile } from "grammy";
 import type { Bot } from "grammy";
 import type { Storage, Logger } from "@personal-ai/core";
+import { getArtifact, listArtifacts } from "@personal-ai/core";
 import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse } from "./formatter.js";
 
 function findChatIdForBriefing(storage: Storage, briefingId: string): number | null {
@@ -65,6 +67,27 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
         const chatId = findChatIdForBriefing(storage, row.id);
         if (chatId) {
           await sendToTelegramChat(bot, chatId, html, logger);
+
+          // Send image artifacts (screenshots, charts) as photos
+          const jobId = row.id.startsWith("research-") ? row.id.slice("research-".length)
+            : row.id.startsWith("swarm-") ? row.id.slice("swarm-".length)
+            : null;
+          if (jobId) {
+            try {
+              const artifacts = listArtifacts(storage, jobId);
+              for (const meta of artifacts) {
+                if (meta.mimeType.startsWith("image/")) {
+                  const artifact = getArtifact(storage, meta.id);
+                  if (artifact) {
+                    await bot.api.sendPhoto(chatId, new InputFile(artifact.data, meta.name));
+                  }
+                }
+              }
+            } catch (err) {
+              logger.warn("Failed to send artifact photos", { jobId, error: err instanceof Error ? err.message : String(err) });
+            }
+          }
+
           storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
           logger.info("Research report pushed to Telegram", { briefingId: row.id, chatId });
         } else {

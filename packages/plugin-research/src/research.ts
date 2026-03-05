@@ -4,7 +4,7 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger, ResearchResultType } from "@personal-ai/core";
 import { formatDateTime, detectResearchDomain, getContextBudget, getProviderOptions } from "@personal-ai/core";
-import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent } from "@personal-ai/core";
+import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent, createBrowserTools } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 
 // ---- Types ----
@@ -57,6 +57,10 @@ export interface ResearchContext {
   contextWindow?: number;
   /** Sandbox URL from config (passed through to resolveSandboxUrl) */
   sandboxUrl?: string;
+  /** Browser automation URL from config (passed through to resolveBrowserUrl) */
+  browserUrl?: string;
+  /** Data directory for artifact file storage */
+  dataDir?: string;
   /** Web search function — injected to avoid circular dependency */
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   /** Format search results for display */
@@ -967,6 +971,9 @@ function createResearchTools(
         }
       },
     }),
+
+    // Browser tools for JS-rendered pages (no screenshot — research doesn't need artifacts)
+    ...createBrowserTools({ logger: ctx.logger, browserUrl: ctx.browserUrl }),
   };
 }
 
@@ -1168,7 +1175,7 @@ export async function runResearchInBackground(
             const charts: Array<{ id: string; type: string; title: string; artifactId: string }> = [];
             for (const file of chartResult.files) {
               const mimeType = guessMimeType(file.name);
-              const artifactId = storeArtifact(ctx.storage, {
+              const artifactId = storeArtifact(ctx.storage, ctx.dataDir ?? "", {
                 jobId: jobId,
                 name: file.name,
                 mimeType,

@@ -1,6 +1,6 @@
-import { Bot } from "grammy";
+import { Bot, InputFile } from "grammy";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
-import { listBeliefs, getThread, formatDateTime, parseTimestamp } from "@personal-ai/core";
+import { listBeliefs, getThread, formatDateTime, parseTimestamp, getArtifact } from "@personal-ai/core";
 import { listTasks } from "@personal-ai/plugin-tasks";
 import { listResearchJobs, createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import type { ResearchContext } from "@personal-ai/plugin-research";
@@ -252,6 +252,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         model: ctx.config.llm.model,
         contextWindow: ctx.config.llm.contextWindow,
         sandboxUrl: ctx.config.sandboxUrl,
+        dataDir: ctx.config.dataDir,
         webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
         formatSearchResults,
         fetchPage: fetchPageAsMarkdown,
@@ -321,6 +322,20 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
           await bot.api.sendMessage(chatId, parts[i]!, { parse_mode: "HTML" });
         } catch {
           await bot.api.sendMessage(chatId, splitMessage(formattedText)[i] ?? parts[i]!);
+        }
+      }
+
+      // Send screenshot artifacts as photos
+      if (result.artifacts?.length) {
+        for (const art of result.artifacts) {
+          try {
+            const artifact = getArtifact(ctx.storage, art.id);
+            if (artifact && artifact.mimeType.startsWith("image/")) {
+              await bot.api.sendPhoto(chatId, new InputFile(artifact.data, art.name));
+            }
+          } catch (err) {
+            ctx.logger.warn("Failed to send artifact photo", { artifactId: art.id, error: err instanceof Error ? err.message : String(err) });
+          }
         }
       }
     } catch (err) {

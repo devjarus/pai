@@ -1,17 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createStorage } from "../src/storage.js";
 import type { Storage } from "../src/types.js";
-import { artifactMigrations, storeArtifact, getArtifact, listArtifacts, deleteJobArtifacts, guessMimeType } from "../src/artifacts.js";
+import { artifactMigrations, storeArtifact, getArtifact, listArtifacts, deleteJobArtifacts, cleanupOldArtifacts, guessMimeType } from "../src/artifacts.js";
 
 describe("artifacts", () => {
   let storage: Storage;
   let tmpDir: string;
+  let dataDir: string;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "pai-test-"));
+    dataDir = tmpDir;
     storage = createStorage(join(tmpDir, "test.db"));
     storage.migrate("artifacts", artifactMigrations);
   });
@@ -23,7 +25,7 @@ describe("artifacts", () => {
 
   it("stores and retrieves an artifact", () => {
     const data = Buffer.from("hello world");
-    const id = storeArtifact(storage, {
+    const id = storeArtifact(storage, dataDir, {
       jobId: "job-1",
       name: "test.txt",
       mimeType: "text/plain",
@@ -41,14 +43,46 @@ describe("artifacts", () => {
     expect(artifact!.data.toString()).toBe("hello world");
   });
 
+  it("writes file to disk in artifacts directory", () => {
+    const data = Buffer.from("png data");
+    const id = storeArtifact(storage, dataDir, {
+      jobId: "job-1",
+      name: "chart.png",
+      mimeType: "image/png",
+      data,
+    });
+
+    const artifactsDir = join(dataDir, "artifacts");
+    expect(existsSync(artifactsDir)).toBe(true);
+    const files = readdirSync(artifactsDir);
+    expect(files.length).toBe(1);
+    expect(files[0]).toMatch(new RegExp(`^${id}\\.png$`));
+  });
+
   it("returns null for non-existent artifact", () => {
     expect(getArtifact(storage, "nonexistent")).toBeNull();
   });
 
+  it("returns null when file is missing from disk", () => {
+    const id = storeArtifact(storage, dataDir, {
+      jobId: "job-1",
+      name: "test.txt",
+      mimeType: "text/plain",
+      data: Buffer.from("data"),
+    });
+
+    // Delete file from disk
+    const artifactsDir = join(dataDir, "artifacts");
+    const files = readdirSync(artifactsDir);
+    for (const f of files) rmSync(join(artifactsDir, f));
+
+    expect(getArtifact(storage, id)).toBeNull();
+  });
+
   it("lists artifacts for a job", () => {
-    storeArtifact(storage, { jobId: "job-1", name: "a.png", mimeType: "image/png", data: Buffer.from("a") });
-    storeArtifact(storage, { jobId: "job-1", name: "b.png", mimeType: "image/png", data: Buffer.from("b") });
-    storeArtifact(storage, { jobId: "job-2", name: "c.png", mimeType: "image/png", data: Buffer.from("c") });
+    storeArtifact(storage, dataDir, { jobId: "job-1", name: "a.png", mimeType: "image/png", data: Buffer.from("a") });
+    storeArtifact(storage, dataDir, { jobId: "job-1", name: "b.png", mimeType: "image/png", data: Buffer.from("b") });
+    storeArtifact(storage, dataDir, { jobId: "job-2", name: "c.png", mimeType: "image/png", data: Buffer.from("c") });
 
     const list = listArtifacts(storage, "job-1");
     expect(list).toHaveLength(2);
@@ -60,17 +94,50 @@ describe("artifacts", () => {
     expect(listArtifacts(storage, "no-such-job")).toHaveLength(0);
   });
 
-  it("deletes artifacts for a job", () => {
-    storeArtifact(storage, { jobId: "job-1", name: "a.png", mimeType: "image/png", data: Buffer.from("a") });
-    storeArtifact(storage, { jobId: "job-1", name: "b.png", mimeType: "image/png", data: Buffer.from("b") });
+  it("deletes artifacts for a job (files + metadata)", () => {
+    storeArtifact(storage, dataDir, { jobId: "job-1", name: "a.png", mimeType: "image/png", data: Buffer.from("a") });
+    storeArtifact(storage, dataDir, { jobId: "job-1", name: "b.png", mimeType: "image/png", data: Buffer.from("b") });
 
     const deleted = deleteJobArtifacts(storage, "job-1");
     expect(deleted).toBe(2);
     expect(listArtifacts(storage, "job-1")).toHaveLength(0);
+
+    // Files should be gone
+    const artifactsDir = join(dataDir, "artifacts");
+    expect(readdirSync(artifactsDir)).toHaveLength(0);
   });
 
   it("returns 0 when deleting artifacts for empty job", () => {
     expect(deleteJobArtifacts(storage, "no-such-job")).toBe(0);
+  });
+
+  it("cleans up old artifacts", () => {
+    // Store artifact then backdate it in DB
+    const id = storeArtifact(storage, dataDir, {
+      jobId: "job-1",
+      name: "old.png",
+      mimeType: "image/png",
+      data: Buffer.from("old"),
+    });
+
+    storage.run("UPDATE artifacts SET created_at = datetime('now', '-10 days') WHERE id = ?", [id]);
+
+    const cleaned = cleanupOldArtifacts(storage, dataDir, 7);
+    expect(cleaned).toBe(1);
+    expect(listArtifacts(storage, "job-1")).toHaveLength(0);
+  });
+
+  it("does not clean up recent artifacts", () => {
+    storeArtifact(storage, dataDir, {
+      jobId: "job-1",
+      name: "new.png",
+      mimeType: "image/png",
+      data: Buffer.from("new"),
+    });
+
+    const cleaned = cleanupOldArtifacts(storage, dataDir, 7);
+    expect(cleaned).toBe(0);
+    expect(listArtifacts(storage, "job-1")).toHaveLength(1);
   });
 
   describe("guessMimeType", () => {

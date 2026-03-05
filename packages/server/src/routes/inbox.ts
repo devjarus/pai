@@ -89,6 +89,7 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext
         provider: ctx.config.llm.provider,
         model: ctx.config.llm.model,
         contextWindow: ctx.config.llm.contextWindow,
+        dataDir: ctx.config.dataDir,
         webSearch,
         formatSearchResults,
         fetchPage: fetchPageAsMarkdown,

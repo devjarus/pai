@@ -54,13 +54,17 @@ export type { FlightQuery, FlightOption, FlightReport, StockMetrics, ChartArtifa
 export { resolveSandboxUrl, sandboxHealth, runInSandbox } from "./sandbox.js";
 export type { SandboxResult, SandboxOptions } from "./sandbox.js";
 
+// Browser automation (Pinchtab)
+export { resolveBrowserUrl, browserHealth, browserNavigate, browserSnapshot, browserAction, browserText, browserScreenshot, createBrowserTools } from "./browser.js";
+export type { BrowserNavigateOptions, BrowserNavigateResult, BrowserActionOptions, BrowserActionResult, BrowserToolContext } from "./browser.js";
+
 // Context budget
 export { getContextBudget, estimateTokens, _resetBudgetCache } from "./context-budget.js";
 export type { ContextBudget } from "./context-budget.js";
 export { getProviderOptions } from "./provider-options.js";
 
 // Artifacts
-export { artifactMigrations, storeArtifact, getArtifact, listArtifacts, deleteJobArtifacts, guessMimeType } from "./artifacts.js";
+export { artifactMigrations, storeArtifact, getArtifact, listArtifacts, deleteJobArtifacts, cleanupOldArtifacts, guessMimeType } from "./artifacts.js";
 export type { Artifact, ArtifactMeta } from "./artifacts.js";
 
 // Document parsing (PDF, Excel)

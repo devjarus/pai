@@ -3,7 +3,7 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger } from "@personal-ai/core";
-import { knowledgeSearch, appendMessages, learnFromContent, resolveSandboxUrl, getContextBudget, getProviderOptions } from "@personal-ai/core";
+import { knowledgeSearch, appendMessages, learnFromContent, resolveSandboxUrl, getContextBudget, getProviderOptions, createBrowserTools } from "@personal-ai/core";
 import { upsertJob, updateJobStatus } from "@personal-ai/core";
 import { storeArtifact, guessMimeType } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
@@ -40,6 +40,10 @@ export interface SwarmContext {
   contextWindow?: number;
   /** Sandbox URL from config (passed through to resolveSandboxUrl) */
   sandboxUrl?: string;
+  /** Browser automation URL from config (passed through to resolveBrowserUrl) */
+  browserUrl?: string;
+  /** Data directory for artifact file storage */
+  dataDir?: string;
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   formatSearchResults: (results: Array<{ title: string; url: string; snippet: string }>) => string;
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;
@@ -441,6 +445,14 @@ function createSubAgentTools(
     }),
   };
 
+  // Browser tools for JS-rendered pages (with artifact storage for screenshots)
+  const browserTools = createBrowserTools({
+    logger: ctx.logger,
+    browserUrl: ctx.browserUrl,
+    storeArtifact: (name, mimeType, data) => storeArtifact(ctx.storage, ctx.dataDir ?? "", { jobId: swarmId, name, mimeType, data }),
+  });
+  Object.assign(allTools, browserTools);
+
   // Conditionally add run_code if sandbox is available and tools include it
   if (allowed.has("run_code")) {
     try {
@@ -462,7 +474,7 @@ function createSubAgentTools(
               const artifactIds: Array<{ name: string; id: string }> = [];
               for (const f of result.files) {
                 try {
-                  const id = storeArtifact(ctx.storage, {
+                  const id = storeArtifact(ctx.storage, ctx.dataDir ?? "", {
                     jobId: swarmId,
                     name: f.name,
                     mimeType: guessMimeType(f.name),

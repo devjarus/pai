@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
-import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType } from "@personal-ai/core";
+import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType, createBrowserTools } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
@@ -332,6 +332,8 @@ export function createAgentTools(ctx: AgentContext) {
               model: ctx.config.llm.model,
               contextWindow: ctx.config.llm.contextWindow,
               sandboxUrl: ctx.config.sandboxUrl,
+              browserUrl: ctx.config.browserUrl,
+              dataDir: ctx.config.dataDir,
               webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,
@@ -376,6 +378,8 @@ export function createAgentTools(ctx: AgentContext) {
               model: ctx.config.llm.model,
               contextWindow: ctx.config.llm.contextWindow,
               sandboxUrl: ctx.config.sandboxUrl,
+              browserUrl: ctx.config.browserUrl,
+              dataDir: ctx.config.dataDir,
               webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,
@@ -485,7 +489,7 @@ export function createAgentTools(ctx: AgentContext) {
           // Compose the full report with a title header
           const fullReport = `# ${title}\n\n_Generated on ${formatDateTime(ctx.config.timezone).full}_\n\n${content}`;
 
-          const artifactId = storeArtifact(ctx.storage, {
+          const artifactId = storeArtifact(ctx.storage, ctx.config.dataDir, {
             jobId: threadId,
             name: fileName,
             mimeType: "text/markdown",
@@ -502,6 +506,16 @@ export function createAgentTools(ctx: AgentContext) {
         } catch (err) {
           return { ok: false, error: `Failed to generate report: ${err instanceof Error ? err.message : "unknown error"}` };
         }
+      },
+    }),
+
+    // Browser tools (shared from core — conditional on browser availability)
+    ...createBrowserTools({
+      logger: ctx.logger,
+      browserUrl: ctx.config.browserUrl,
+      storeArtifact: (name, mimeType, data) => {
+        const threadId = (ctx as unknown as Record<string, unknown>).threadId as string ?? "browser";
+        return storeArtifact(ctx.storage, ctx.config.dataDir, { jobId: threadId, name, mimeType, data });
       },
     }),
 
@@ -526,7 +540,7 @@ export function createAgentTools(ctx: AgentContext) {
               const jobId = (ctx as unknown as Record<string, unknown>).threadId as string ?? "sandbox";
               for (const file of result.files) {
                 const mimeType = guessMimeType(file.name);
-                const artifactId = storeArtifact(ctx.storage, {
+                const artifactId = storeArtifact(ctx.storage, ctx.config.dataDir, {
                   jobId,
                   name: file.name,
                   mimeType,
