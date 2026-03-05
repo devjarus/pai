@@ -245,10 +245,23 @@ export function clearCompletedSwarmJobs(storage: Storage): number {
   return count;
 }
 
+// Allowlist of column names that can be updated on swarm_jobs
+const SWARM_JOB_COLUMNS = new Set([
+  "status", "result_type", "error",
+  "plan", "agent_count", "agents_done", "synthesis",
+  "briefing_id", "completed_at",
+]);
+
 export function updateSwarmJob(storage: Storage, id: string, fields: Record<string, unknown>): void {
-  const sets = Object.keys(fields).map((k) => `${k} = ?`).join(", ");
-  const values = Object.values(fields);
-  storage.run(`UPDATE swarm_jobs SET ${sets} WHERE id = ?`, [...values, id]);
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (!SWARM_JOB_COLUMNS.has(k)) continue;
+    sets.push(`${k} = ?`);
+    values.push(v);
+  }
+  if (sets.length === 0) return;
+  storage.run(`UPDATE swarm_jobs SET ${sets.join(", ")} WHERE id = ?`, [...values, id]);
 }
 
 export function insertSwarmAgent(
@@ -262,10 +275,21 @@ export function insertSwarmAgent(
   );
 }
 
+// Allowlist of column names that can be updated on swarm_agents
+const SWARM_AGENT_COLUMNS = new Set([
+  "status", "result", "error", "steps_used", "completed_at",
+]);
+
 export function updateSwarmAgent(storage: Storage, id: string, fields: Record<string, unknown>): void {
-  const sets = Object.keys(fields).map((k) => `${k} = ?`).join(", ");
-  const values = Object.values(fields);
-  storage.run(`UPDATE swarm_agents SET ${sets} WHERE id = ?`, [...values, id]);
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (!SWARM_AGENT_COLUMNS.has(k)) continue;
+    sets.push(`${k} = ?`);
+    values.push(v);
+  }
+  if (sets.length === 0) return;
+  storage.run(`UPDATE swarm_agents SET ${sets.join(", ")} WHERE id = ?`, [...values, id]);
 }
 
 export function getSwarmAgents(storage: Storage, swarmId: string): SwarmAgent[] {
