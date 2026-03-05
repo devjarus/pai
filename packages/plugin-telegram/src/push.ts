@@ -74,12 +74,13 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
         // Send to the originating Telegram chat, not all chats
         const chatId = findChatIdForBriefing(storage, row.id);
         if (chatId) {
-          // 1. Send full report as downloadable .md file
+          // 1. Send full report as downloadable HTML file
           const fileTitle = title.replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, "_").slice(0, 60) || "report";
-          const mdContent = `# ${title}\n\n${parsed.report}`;
-          const mdBuffer = Buffer.from(mdContent, "utf-8");
+          const htmlBody = markdownToTelegramHTML(formatTelegramResponse(parsed.report));
+          const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHTML(title)}</title><style>body{font-family:system-ui,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;line-height:1.6}pre{background:#f4f4f4;padding:1rem;overflow-x:auto;border-radius:4px}code{background:#f4f4f4;padding:2px 4px;border-radius:2px}</style></head><body><h1>${escapeHTML(title)}</h1>${htmlBody}</body></html>`;
+          const htmlBuffer = Buffer.from(htmlContent, "utf-8");
           try {
-            await bot.api.sendDocument(chatId, new InputFile(mdBuffer, `${fileTitle}.md`), {
+            await bot.api.sendDocument(chatId, new InputFile(htmlBuffer, `${fileTitle}.html`), {
               caption: `${emoji} ${label}: ${title}`,
             });
           } catch (err) {
