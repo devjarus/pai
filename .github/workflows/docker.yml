@@ -12,7 +12,51 @@ env:
   REGISTRY_GHCR: ghcr.io
 
 jobs:
+  # Auto-tag main branch pushes with incrementing alpha versions
+  auto-tag:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_tag: ${{ steps.tag.outputs.new_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute next alpha tag
+        id: tag
+        run: |
+          # Find latest v*-alpha.* tag
+          LATEST=$(git tag --list 'v*-alpha.*' --sort=-v:refname | head -1)
+          if [ -z "$LATEST" ]; then
+            # No alpha tags exist — start from v0.3.0-alpha.1
+            NEW_TAG="v0.3.0-alpha.1"
+          else
+            # Extract base version and alpha number, increment
+            BASE=$(echo "$LATEST" | sed 's/-alpha\.[0-9]*//')
+            NUM=$(echo "$LATEST" | grep -o 'alpha\.[0-9]*' | cut -d. -f2)
+            NEXT=$((NUM + 1))
+            NEW_TAG="${BASE}-alpha.${NEXT}"
+          fi
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          echo "Auto-tagging: $NEW_TAG"
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.tag.outputs.new_tag }}" -m "${{ steps.tag.outputs.new_tag }}"
+          git push origin "${{ steps.tag.outputs.new_tag }}"
+
   build-and-push:
+    # On main push: wait for auto-tag. On manual tag push: run directly.
+    # The auto-tag job's git push does NOT re-trigger this workflow because
+    # events from GITHUB_TOKEN don't trigger further workflow runs.
+    needs: [auto-tag]
+    if: always() && (needs.auto-tag.result == 'success' || needs.auto-tag.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,6 +80,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve version tag
+        id: resolve
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ needs.auto-tag.outputs.new_tag }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -63,10 +119,9 @@ jobs:
           images: |
             ${{ env.REGISTRY_GHCR }}/${{ github.repository }}${{ matrix.image_suffix }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},value=${{ steps.resolve.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.resolve.outputs.version }}
             type=raw,value=latest
-            type=sha,prefix=main-,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
