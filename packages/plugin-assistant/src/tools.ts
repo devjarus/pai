@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
 import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType, createBrowserTools } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
-import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime } from "@personal-ai/core";
+import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime, sanitizeReportUrls, resolveBlocklist } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
@@ -150,7 +150,7 @@ export function createAgentTools(ctx: AgentContext) {
           return "Web search is disabled in settings. Answer based on your existing knowledge.";
         }
         try {
-          const results = await webSearch(query, 5, category as SearchCategory, ctx.config.searchUrl);
+          const results = await webSearch(query, 5, category as SearchCategory, ctx.config.searchUrl, ctx.config.domainBlocklist);
           if (results.length === 0) return "[empty] No web results found. Answer from your existing knowledge and conversation context.";
           const text = formatSearchResults(results);
           // Return structured JSON string — LLM reads the text field, UI card parses the full object
@@ -334,9 +334,10 @@ export function createAgentTools(ctx: AgentContext) {
               sandboxUrl: ctx.config.sandboxUrl,
               browserUrl: ctx.config.browserUrl,
               dataDir: ctx.config.dataDir,
-              webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
+              webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl, ctx.config.domainBlocklist),
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,
+              domainBlocklist: ctx.config.domainBlocklist,
             },
             jobId,
           ).catch((err) => {
@@ -380,9 +381,10 @@ export function createAgentTools(ctx: AgentContext) {
               sandboxUrl: ctx.config.sandboxUrl,
               browserUrl: ctx.config.browserUrl,
               dataDir: ctx.config.dataDir,
-              webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
+              webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl, ctx.config.domainBlocklist),
               formatSearchResults,
               fetchPage: fetchPageAsMarkdown,
+              domainBlocklist: ctx.config.domainBlocklist,
             },
             jobId,
           ).catch((err) => {
@@ -486,8 +488,12 @@ export function createAgentTools(ctx: AgentContext) {
           const safeName = title.replace(/[^a-zA-Z0-9\-_ ]/g, "").slice(0, 80).trim() || "report";
           const fileName = `${safeName}.md`;
 
+          // Sanitize URLs from blocked domains before saving
+          const blocklist = resolveBlocklist(ctx.config.domainBlocklist);
+          const safeContent = sanitizeReportUrls(content, blocklist);
+
           // Compose the full report with a title header
-          const fullReport = `# ${title}\n\n_Generated on ${formatDateTime(ctx.config.timezone).full}_\n\n${content}`;
+          const fullReport = `# ${title}\n\n_Generated on ${formatDateTime(ctx.config.timezone).full}_\n\n${safeContent}`;
 
           const artifactId = storeArtifact(ctx.storage, ctx.config.dataDir, {
             jobId: threadId,

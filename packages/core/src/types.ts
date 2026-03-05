@@ -59,6 +59,8 @@ export interface Config {
   searchUrl?: string;
   /** Pinchtab browser automation URL (e.g. http://localhost:9867). Auto-detected in Docker/Railway if unset. */
   browserUrl?: string;
+  /** Additional domains to block from web search results and reports (suffix-matched). */
+  domainBlocklist?: string[];
 }
 
 export interface Migration {

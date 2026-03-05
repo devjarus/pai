@@ -3,7 +3,7 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger, ResearchResultType } from "@personal-ai/core";
-import { formatDateTime, detectResearchDomain, getContextBudget, getProviderOptions } from "@personal-ai/core";
+import { formatDateTime, detectResearchDomain, getContextBudget, getProviderOptions, sanitizeReportUrls, resolveBlocklist } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent, createBrowserTools } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 
@@ -67,6 +67,8 @@ export interface ResearchContext {
   formatSearchResults: (results: Array<{ title: string; url: string; snippet: string }>) => string;
   /** Fetch a web page as markdown — injected to avoid circular dependency */
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;
+  /** Additional domains to block from search results and reports */
+  domainBlocklist?: string[];
 }
 
 // ---- Data Access ----
@@ -1126,7 +1128,10 @@ export async function runResearchInBackground(
       providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
     });
 
-    const report = result.text || "Research completed but no report was generated.";
+    const rawReport = result.text || "Research completed but no report was generated.";
+    // Sanitize URLs from blocked domains before storing
+    const blocklist = resolveBlocklist(ctx.domainBlocklist);
+    const report = sanitizeReportUrls(rawReport, blocklist);
 
     // Extract structured result from domain-specific reports
     let structuredResult: string | undefined;

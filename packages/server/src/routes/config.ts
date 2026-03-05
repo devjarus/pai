@@ -51,6 +51,7 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
     sandboxUrl: config.sandboxUrl ?? "",
     searchUrl: config.searchUrl ?? "",
     browserUrl: config.browserUrl ?? "",
+    domainBlocklist: config.domainBlocklist ?? [],
   };
 }
 
@@ -122,6 +123,7 @@ const updateConfigSchema = z.object({
     },
     "Browser URL must be a valid http or https URL",
   ),
+  domainBlocklist: z.array(z.string()).optional(),
 });
 
 export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerContext): void {
@@ -225,6 +227,9 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     }
     if (body.browserUrl !== undefined) {
       update.browserUrl = body.browserUrl || undefined;
+    }
+    if (body.domainBlocklist !== undefined) {
+      update.domainBlocklist = body.domainBlocklist.length > 0 ? body.domainBlocklist : undefined;
     }
 
     // Telegram settings

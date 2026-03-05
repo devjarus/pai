@@ -253,9 +253,10 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         contextWindow: ctx.config.llm.contextWindow,
         sandboxUrl: ctx.config.sandboxUrl,
         dataDir: ctx.config.dataDir,
-        webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
+        webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl, ctx.config.domainBlocklist),
         formatSearchResults,
         fetchPage: fetchPageAsMarkdown,
+        domainBlocklist: ctx.config.domainBlocklist,
       };
 
       runResearchInBackground(researchCtx, jobId).catch((err) => {

@@ -3,7 +3,7 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger } from "@personal-ai/core";
-import { knowledgeSearch, appendMessages, learnFromContent, resolveSandboxUrl, getContextBudget, getProviderOptions, createBrowserTools } from "@personal-ai/core";
+import { knowledgeSearch, appendMessages, learnFromContent, resolveSandboxUrl, getContextBudget, getProviderOptions, createBrowserTools, sanitizeReportUrls, resolveBlocklist } from "@personal-ai/core";
 import { upsertJob, updateJobStatus } from "@personal-ai/core";
 import { storeArtifact, guessMimeType } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
@@ -47,6 +47,8 @@ export interface SwarmContext {
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   formatSearchResults: (results: Array<{ title: string; url: string; snippet: string }>) => string;
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;
+  /** Additional domains to block from search results and reports */
+  domainBlocklist?: string[];
 }
 
 function getSubAgentPrompt(role: string, resultType: string, timezone?: string): string {
@@ -126,7 +128,10 @@ export async function runSwarmInBackground(
     updateJobStatus(ctx.storage, jobId, { progress: "synthesizing results" });
 
     const { synthesis: rawSynthesis, structuredResult, renderSpec } = await synthesize(ctx, jobId, job.goal, job.resultType);
-    const report = rawSynthesis || "Swarm completed but no synthesis was generated.";
+    const unsanitized = rawSynthesis || "Swarm completed but no synthesis was generated.";
+    // Sanitize URLs from blocked domains before storing
+    const blocklist = resolveBlocklist(ctx.domainBlocklist);
+    const report = sanitizeReportUrls(unsanitized, blocklist);
 
     updateSwarmJob(ctx.storage, jobId, {
       synthesis: report,

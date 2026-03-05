@@ -3,6 +3,8 @@
  * Self-hosted, no API key required, no rate limits.
  */
 
+import { filterSearchResults, resolveBlocklist } from "@personal-ai/core";
+
 export interface SearchResult {
   title: string;
   url: string;
@@ -43,6 +45,7 @@ export async function webSearch(
   maxResults = 5,
   category: SearchCategory = "general",
   configUrl?: string,
+  domainBlocklist?: string[],
 ): Promise<SearchResult[]> {
   const baseUrl = resolveSearchUrl(configUrl);
   const params = new URLSearchParams({
@@ -64,12 +67,16 @@ export async function webSearch(
   const data = (await response.json()) as { results?: Array<{ title?: string; url?: string; content?: string; thumbnail?: string; img_src?: string }> };
   const results = data.results ?? [];
 
-  return results.slice(0, maxResults).map((r) => ({
+  const mapped = results.map((r) => ({
     title: r.title ?? "",
     url: r.url ?? "",
     snippet: r.content ?? "",
     ...(r.thumbnail || r.img_src ? { thumbnail: r.thumbnail || r.img_src } : {}),
   }));
+
+  // Filter out blocked domains before the LLM sees them
+  const blocklist = resolveBlocklist(domainBlocklist);
+  return filterSearchResults(mapped, blocklist).slice(0, maxResults);
 }
 
 /**

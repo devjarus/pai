@@ -69,3 +69,6 @@ export type { Artifact, ArtifactMeta } from "./artifacts.js";
 
 // Document parsing (PDF, Excel)
 export { parseBinaryDocument, isBinaryDocument, parsePdf, parseExcel } from "./document-parser.js";
+
+// URL safety — domain filtering for search results and reports
+export { isDomainBlocked, filterSearchResults, sanitizeReportUrls, resolveBlocklist } from "./url-safety.js";
