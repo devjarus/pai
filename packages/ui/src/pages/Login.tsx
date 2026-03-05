@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { login } from "../api";
+import { login, updateConfig } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,9 @@ export default function Login() {
     try {
       await login(email.trim(), password);
       localStorage.removeItem("pai_signed_out");
+      // Sync browser timezone to server on login
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) updateConfig({ timezone: tz }).catch(() => {});
       await refresh();
       navigate("/chat", { replace: true });
     } catch (err) {

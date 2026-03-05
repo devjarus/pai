@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { setupOwner, remember } from "../api";
+import { setupOwner, remember, updateConfig } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -77,6 +77,9 @@ export default function Setup() {
     try {
       await setupOwner({ email: email.trim(), password, name: name.trim() });
       localStorage.removeItem("pai_signed_out");
+      // Auto-detect and save the user's timezone
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) updateConfig({ timezone: tz }).catch(() => {});
       await refresh();
       setStep("llm");
     } catch (err) {
