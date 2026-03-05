@@ -26,14 +26,14 @@ describe("markdownToTelegramHTML", () => {
   });
 
   it("converts links", () => {
-    // new URL() normalizes https://google.com to https://google.com/ (adds trailing slash)
+    // sanitizeUrl strips the trailing slash new URL() adds when original didn't have one
     expect(markdownToTelegramHTML("[Google](https://google.com)"))
-      .toBe('<a href="https://google.com/">Google</a>');
+      .toBe('<a href="https://google.com">Google</a>');
   });
 
   it("drops unsafe link protocols", () => {
-    // The link regex [^)]+ stops at the first ), leaving a stray ) for URLs with parens
-    expect(markdownToTelegramHTML("[XSS](javascript:alert(1))")).toBe("XSS)");
+    // sanitizeUrl rejects non-http(s) protocols; link replaced with label only
+    expect(markdownToTelegramHTML("[XSS](javascript:alert(1))")).toBe("XSS");
   });
 
   it("keeps root-relative artifact links", () => {
