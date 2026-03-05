@@ -2,8 +2,8 @@
 FROM golang:1.25 AS pinchtab-builder
 WORKDIR /src
 RUN git clone --depth 1 https://github.com/pinchtab/pinchtab.git .
-# Add chromedp.NoSandbox to Chrome launch options (required in containers that drop capabilities)
-RUN sed -i '/chromedp.NoFirstRun,/a \\t\tchromedp.NoSandbox,' cmd/pinchtab/main.go
+# Add --no-sandbox to Chrome launch options (required in containers that drop capabilities)
+RUN sed -i '/chromedp.Flag("no-first-run"/a \\t\tchromedp.NoSandbox,' internal/bridge/init.go
 RUN cd cmd/pinchtab && go build -o /go/bin/pinchtab .
 
 # Stage 2: Runtime image with code executor + browser automation
