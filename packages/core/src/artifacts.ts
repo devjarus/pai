@@ -4,7 +4,7 @@
  */
 
 import { nanoid } from "nanoid";
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, readdirSync, lstatSync } from "node:fs";
 import { join, extname } from "node:path";
 import type { Storage, Migration } from "./types.js";
 
@@ -230,8 +230,10 @@ export function cleanupOldArtifacts(storage: Storage, dataDir: string, maxAgeDay
         if (!dbPaths.has(fullPath)) {
           // Only clean up orphans older than 1 hour (avoid race with in-progress writes)
           try {
-            const stat = statSync(fullPath);
-            if (Date.now() - stat.mtimeMs > 60 * 60 * 1000) {
+            const fstat = lstatSync(fullPath);
+            // Skip symlinks to prevent deletion of files outside artifacts directory
+            if (fstat.isSymbolicLink()) continue;
+            if (Date.now() - fstat.mtimeMs > 60 * 60 * 1000) {
               unlinkSync(fullPath);
             }
           } catch { /* ignore */ }

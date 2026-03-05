@@ -98,6 +98,7 @@ async function fetchHTML(url: string): Promise<{ html: string; finalUrl: string 
  * Used as a fallback for client-side rendered pages.
  */
 async function fetchViaJinaReader(url: string): Promise<PageContent | null> {
+  if (!isAllowedUrl(url)) return null;
   try {
     const response = await fetch(`https://r.jina.ai/${url}`, {
       headers: {
