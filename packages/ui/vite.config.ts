@@ -55,6 +55,7 @@ export default defineConfig({
         // Activate new service worker immediately so rebuilds don't require hard refresh
         skipWaiting: true,
         clientsClaim: true,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^\/api\//,

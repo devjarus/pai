@@ -25,6 +25,7 @@ import Schedules from "./pages/Schedules";
 import Login from "./pages/Login";
 import Setup from "./pages/Setup";
 import Onboarding from "./pages/Onboarding";
+import Landing from "./pages/Landing";
 
 function NotFound() {
   return (
@@ -77,6 +78,7 @@ export default function App() {
       <AuthProvider>
         <TimezoneSync />
         <Routes>
+          <Route path="/landing" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/setup" element={<Setup />} />
           <Route path="/onboarding" element={<Onboarding />} />
