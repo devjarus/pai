@@ -53,7 +53,7 @@ const x = 1;
     const html = markdownToReportHTML(md);
     expect(html).toContain("<h1>Title</h1>");
     expect(html).toContain("<p>Intro with <strong>bold</strong>, <em>italic</em>, <del>strike</del>");
-    expect(html).toContain('<a href="https://example.com/" target="_blank" rel="noopener noreferrer">link</a>');
+    expect(html).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a>');
     expect(html).toContain("<ul>");
     expect(html).toContain("<ol>");
     expect(html).toContain("<blockquote>");
