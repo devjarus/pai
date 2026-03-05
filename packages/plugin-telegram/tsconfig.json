@@ -3,14 +3,44 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node", "vitest/globals"]
+    "types": [
+      "node",
+      "vitest/globals"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@personal-ai/*": [
+        "../*/src/index.ts"
+      ],
+      "@personal-ai/plugin-assistant/*": [
+        "../plugin-assistant/src/*"
+      ]
+    }
   },
-  "include": ["src/**/*.ts"],
+  "include": [
+    "src/**/*.ts"
+  ],
   "references": [
-    { "path": "../core" },
-    { "path": "../plugin-assistant" },
-    { "path": "../plugin-curator" },
-    { "path": "../plugin-research" },
-    { "path": "../plugin-swarm" }
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../plugin-tasks"
+    },
+    {
+      "path": "../plugin-assistant"
+    },
+    {
+      "path": "../plugin-curator"
+    },
+    {
+      "path": "../plugin-research"
+    },
+    {
+      "path": "../plugin-swarm"
+    },
+    {
+      "path": "../plugin-schedules"
+    }
   ]
 }

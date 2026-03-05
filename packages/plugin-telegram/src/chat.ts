@@ -266,7 +266,7 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
     });
   }
 
-  // Extract image artifacts from browse_screenshot tool results
+  // Extract image artifacts from tool results (browse_screenshot + run_code)
   const artifacts: Array<{ id: string; name: string }> = [];
   if (result.steps) {
     for (const step of result.steps) {
@@ -280,6 +280,21 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
             const res = tr.output ?? tr.result ?? tr;
             if (res?.ok && res.artifactId) {
               artifacts.push({ id: res.artifactId, name: "screenshot.png" });
+            }
+          }
+
+          if (tc?.toolName === "run_code" && tr) {
+            const res = tr.output ?? tr.result ?? tr;
+            const runCodeArtifacts = Array.isArray(res?.artifacts) ? res.artifacts : [];
+            for (const artifact of runCodeArtifacts) {
+              if (artifact?.id) {
+                artifacts.push({
+                  id: String(artifact.id),
+                  name: typeof artifact.name === "string" && artifact.name.length > 0
+                    ? artifact.name
+                    : "analysis-output",
+                });
+              }
             }
           }
         }

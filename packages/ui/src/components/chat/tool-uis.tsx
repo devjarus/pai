@@ -203,7 +203,13 @@ export const RunCodeToolUI = makeAssistantToolUI({
   render: ({ args, result, status }) => {
     const state = mapStatus(status);
     const input = args as { language?: string; code?: string };
-    const output = result as { output?: string; error?: string; files?: unknown[] } | undefined;
+    const output = result as {
+      stdout?: string;
+      stderr?: string;
+      exitCode?: number;
+      artifacts?: Array<{ id?: string; name?: string }>;
+      error?: string;
+    } | undefined;
 
     if (state === "input-available") {
       return (
@@ -236,10 +242,38 @@ export const RunCodeToolUI = makeAssistantToolUI({
         {input.code && (
           <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{input.code}</pre>
         )}
-        {output?.output && (
+        {output?.stdout && (
           <>
             <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Output</div>
-            <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{output.output}</pre>
+            <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{output.stdout}</pre>
+          </>
+        )}
+        {output?.stderr && (
+          <>
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Stderr</div>
+            <pre className="overflow-x-auto rounded bg-amber-500/10 p-2 text-xs font-mono whitespace-pre-wrap text-amber-300">{output.stderr}</pre>
+          </>
+        )}
+        {Array.isArray(output?.artifacts) && output.artifacts.length > 0 && (
+          <>
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Artifacts</div>
+            <div className="space-y-1">
+              {output.artifacts.map((artifact, idx) => (
+                artifact?.id
+                  ? (
+                    <a
+                      key={`${artifact.id}-${idx}`}
+                      href={`/api/artifacts/${artifact.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block text-xs text-primary underline-offset-2 hover:underline"
+                    >
+                      {artifact.name || "artifact"}
+                    </a>
+                    )
+                  : null
+              ))}
+            </div>
           </>
         )}
       </div>
