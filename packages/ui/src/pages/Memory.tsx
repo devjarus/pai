@@ -218,7 +218,7 @@ export default function Memory() {
     <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
         <FirstVisitBanner pageKey="memory" tip="Everything I know about you — built automatically from our conversations. Beliefs evolve as you share more." />
-        <header className="space-y-2 border-b border-border/40 bg-[#0a0a0a] px-3 py-3 md:space-y-4 md:px-6 md:py-4">
+        <header className="space-y-2 border-b border-border/40 bg-background px-3 py-3 md:space-y-4 md:px-6 md:py-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
               <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
@@ -353,7 +353,7 @@ export default function Memory() {
           )}
         </header>
 
-        <div className="border-b border-border/40 bg-[#0a0a0a] px-4 py-3 md:px-6">
+        <div className="border-b border-border/40 bg-background px-4 py-3 md:px-6">
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -435,7 +435,7 @@ export default function Memory() {
           </SheetContent>
         </Sheet>
       ) : (
-        <aside className="relative z-auto w-80 overflow-hidden border-l border-border/40 bg-[#0a0a0a]">
+        <aside className="relative z-auto w-80 overflow-hidden border-l border-border/40 bg-background">
           <BeliefDetailPanel belief={selectedBelief} onClose={() => { setSelectedBelief(null); setEditingStatement(null); }} editingStatement={editingStatement} setEditingStatement={setEditingStatement} handleSaveEdit={handleSaveEdit} isSavingEdit={isSavingEdit} handleForget={handleForget} />
         </aside>
       ))}

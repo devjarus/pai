@@ -72,7 +72,7 @@ export default function Timeline() {
     <div className="flex h-full flex-col overflow-hidden">
       <FirstVisitBanner pageKey="timeline" tip="A chronological feed of everything I've learned about you — when beliefs were created or updated." />
       {/* Header */}
-      <header className="space-y-4 border-b border-border/40 bg-[#0a0a0a] px-4 py-4 md:px-6">
+      <header className="space-y-4 border-b border-border/40 bg-background px-4 py-4 md:px-6">
         <h1 className="flex items-center gap-1.5 font-mono text-sm font-semibold text-foreground">
           Timeline
           <InfoBubble text="A chronological feed of all beliefs, showing when they were created or updated. Filter by type to focus on specific categories." />
@@ -164,7 +164,7 @@ export default function Timeline() {
                       return (
                         <div key={belief.id} className="relative flex gap-3 py-2">
                           {/* Dot */}
-                          <div className={cn("relative z-10 mt-2 h-[15px] w-[15px] shrink-0 rounded-full border-2 border-[#0f0f0f]", dotClass)} />
+                          <div className={cn("relative z-10 mt-2 h-[15px] w-[15px] shrink-0 rounded-full border-2 border-background", dotClass)} />
 
                           {/* Card */}
                           <Card className={cn("flex-1 gap-2 border-border/50 border-l-2 bg-card/40 py-3 transition-colors hover:bg-card/70", accentClass)}>

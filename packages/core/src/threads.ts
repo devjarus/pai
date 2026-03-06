@@ -109,6 +109,7 @@ export interface ThreadRow {
   created_at: string;
   updated_at: string;
   message_count: number;
+  last_message?: string | null;
 }
 
 export interface ThreadMessageRow {
@@ -171,7 +172,9 @@ export function getThread(storage: Storage, id: string): ThreadRow | null {
 
 export function listThreads(storage: Storage, userId: string = DEFAULT_USER_ID): ThreadRow[] {
   return storage.query<ThreadRow>(
-    "SELECT id, title, agent_name, user_id, created_at, updated_at, message_count FROM threads WHERE user_id = ? ORDER BY updated_at DESC",
+    `SELECT t.id, t.title, t.agent_name, t.user_id, t.created_at, t.updated_at, t.message_count,
+       (SELECT substr(m.content, 1, 1000) FROM thread_messages m WHERE m.thread_id = t.id AND m.role = 'assistant' ORDER BY m.sequence DESC LIMIT 1) AS last_message
+     FROM threads t WHERE t.user_id = ? ORDER BY t.updated_at DESC`,
     [userId],
   );
 }

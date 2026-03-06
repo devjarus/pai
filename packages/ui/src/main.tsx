@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "sonner";
 import { registerSW } from "virtual:pwa-register";
+import { ThemeProvider, useTheme, getEffectiveTheme } from "./context/ThemeContext";
 import App from "./App";
 import "./App.css";
 
@@ -17,23 +18,33 @@ registerSW({
   },
 });
 
+function ThemedToaster() {
+  const { theme } = useTheme();
+  const effectiveTheme = getEffectiveTheme(theme);
+  
+  return (
+    <Toaster
+      theme={effectiveTheme}
+      position="bottom-right"
+      toastOptions={{
+        style: {
+          background: effectiveTheme === "dark" ? "#1a1a1a" : "#ffffff",
+          border: effectiveTheme === "dark" ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)",
+        },
+      }}
+    />
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter>
-      <TooltipProvider delayDuration={300}>
-        <App />
-        <Toaster
-          theme="dark"
-          position="bottom-right"
-          toastOptions={{
-            style: {
-              background: "#1a1a1a",
-              border: "1px solid rgba(255,255,255,0.1)",
-              color: "#e5e5e5",
-            },
-          }}
-        />
-      </TooltipProvider>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <TooltipProvider delayDuration={300}>
+          <App />
+          <ThemedToaster />
+        </TooltipProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   </StrictMode>,
 );

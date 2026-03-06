@@ -21,6 +21,7 @@ import Knowledge from "./pages/Knowledge";
 import Tasks from "./pages/Tasks";
 import Inbox from "./pages/Inbox";
 import Jobs from "./pages/Jobs";
+import Grid from "./pages/Grid";
 import Schedules from "./pages/Schedules";
 import Login from "./pages/Login";
 import Setup from "./pages/Setup";
@@ -85,6 +86,7 @@ export default function App() {
           <Route element={<AuthGate><Layout /></AuthGate>}>
             <Route path="/" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
             <Route path="/inbox/:id" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
+            <Route path="/grid" element={<ErrorBoundary><Grid /></ErrorBoundary>} />
             <Route path="/chat" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
             <Route path="/memory" element={<ErrorBoundary><Memory /></ErrorBoundary>} />
             <Route path="/timeline" element={<ErrorBoundary><Timeline /></ErrorBoundary>} />

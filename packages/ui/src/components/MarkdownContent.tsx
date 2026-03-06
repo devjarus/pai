@@ -19,7 +19,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
     <div className="group/code relative my-3">
       <pre
         ref={preRef}
-        className="overflow-x-auto rounded-lg border border-border/50 bg-[#0a0a0a] p-4 text-[13px] leading-relaxed"
+        className="overflow-x-auto rounded-lg border border-border/50 bg-background p-4 text-[13px] leading-relaxed"
       >
         {children}
       </pre>

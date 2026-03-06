@@ -15,6 +15,7 @@ const primaryTabs = [
 ] as const;
 
 const moreTabs = [
+  { to: "/grid", label: "Grid", icon: TabIconGrid },
   { to: "/knowledge", label: "Knowledge", icon: TabIconKnowledge },
   { to: "/jobs", label: "Jobs", icon: TabIconJobs },
   { to: "/schedules", label: "Schedules", icon: TabIconSchedules },
@@ -49,7 +50,7 @@ export function MobileTabBar({ hasNewBriefing, activeJobCount }: MobileTabBarPro
   );
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border/40 bg-[#0a0a0a] pb-[env(safe-area-inset-bottom)] md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border/40 bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
       <div className="flex items-stretch">
         {primaryTabs.map((tab) => (
           <NavLink
@@ -91,7 +92,7 @@ export function MobileTabBar({ hasNewBriefing, activeJobCount }: MobileTabBarPro
 
           {/* More popover */}
           {moreOpen && (
-            <div className="absolute bottom-full right-0 mb-2 mr-1 w-44 rounded-lg border border-border/50 bg-[#141414] py-1 shadow-xl">
+            <div className="absolute bottom-full right-0 mb-2 mr-1 w-44 rounded-lg border border-border/50 bg-popover py-1 shadow-xl">
               {moreTabs.map((tab) => (
                 <NavLink
                   key={tab.to}
@@ -213,6 +214,17 @@ function TabIconSettings() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
+function TabIconGrid() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
     </svg>
   );
 }

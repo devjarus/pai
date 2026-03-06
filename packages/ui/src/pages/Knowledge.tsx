@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -46,6 +47,7 @@ function parseTags(tags: string | null): string[] {
 }
 
 export default function Knowledge() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
 
   // --- Debounced search state ---
@@ -55,7 +57,7 @@ export default function Knowledge() {
 
   // --- UI toggle / dialog state ---
   const [selectedSource, setSelectedSource] = useState<KnowledgeSource | null>(null);
-  const [showLearnDialog, setShowLearnDialog] = useState(false);
+  const [showLearnDialog, setShowLearnDialog] = useState(searchParams.get("action") === "learn");
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [learnUrl, setLearnUrl] = useState("");
@@ -85,7 +87,7 @@ export default function Knowledge() {
   const reindexMutation = useReindexKnowledge();
   const updateTagsMutation = useUpdateKnowledgeSource();
 
-  useEffect(() => { document.title = "Knowledge Base - pai"; }, []);
+  useEffect(() => { document.title = "Knowledge Base - pai"; if (searchParams.get("action")) setSearchParams({}, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -278,7 +280,7 @@ export default function Knowledge() {
     <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
         <FirstVisitBanner pageKey="knowledge" tip="Teach me web pages, docs, or articles. Paste a URL and I'll learn from it — then reference it when you ask questions." />
-        <header className="space-y-2 border-b border-border/40 bg-[#0a0a0a] px-3 py-3 md:space-y-4 md:px-6 md:py-4">
+        <header className="space-y-2 border-b border-border/40 bg-background px-3 py-3 md:space-y-4 md:px-6 md:py-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
               <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
@@ -535,7 +537,7 @@ export default function Knowledge() {
           </SheetContent>
         </Sheet>
       ) : (
-        <aside className="relative z-auto w-96 overflow-hidden border-l border-border/40 bg-[#0a0a0a]">
+        <aside className="relative z-auto w-96 overflow-hidden border-l border-border/40 bg-background">
           <SourceDetailPanel source={selectedSource} onClose={() => setSelectedSource(null)} editingTags={editingTags} setEditingTags={setEditingTags} tagsInput={tagsInput} setTagsInput={setTagsInput} handleSaveTags={handleSaveTags} setViewChunksSource={setViewChunksSource} handleRefresh={handleRefresh} isRefreshing={isRefreshing} handleCrawlSubPages={handleCrawlSubPages} isCrawling={isCrawling} setShowDeleteConfirm={setShowDeleteConfirm} />
         </aside>
       ))}

@@ -58,7 +58,7 @@ export class ErrorBoundary extends Component<Props, State> {
     const { error, copied } = this.state;
 
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[#0a0a0a] p-6">
+      <div className="flex h-screen w-screen items-center justify-center bg-background p-6">
         <div className="flex max-w-md flex-col items-center gap-6 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
             <AlertTriangleIcon className="h-8 w-8 text-destructive" />

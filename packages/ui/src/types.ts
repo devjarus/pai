@@ -140,6 +140,7 @@ export interface Thread {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  lastMessage?: string;
 }
 
 export interface ThreadMessage {
