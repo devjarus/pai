@@ -27,6 +27,7 @@ export function useCreateSchedule() {
     mutationFn: (data: {
       label: string;
       goal: string;
+      type?: "research" | "analysis";
       intervalHours?: number;
       startAt?: string;
     }) => createScheduleApi(data),

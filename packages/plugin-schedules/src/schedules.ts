@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { Migration, PluginContext } from "@personal-ai/core";
+import type { ReportExecution } from "@personal-ai/core";
 
 // --- Types ---
 
 export interface ScheduledJob {
   id: string;
   label: string;
-  type: string;
+  type: ReportExecution;
   goal: string;
   intervalHours: number;
   chatId: number | null;
@@ -35,7 +36,7 @@ function rowToJob(row: ScheduledJobRow): ScheduledJob {
   return {
     id: row.id,
     label: row.label,
-    type: row.type,
+    type: row.type as ReportExecution,
     goal: row.goal,
     intervalHours: row.interval_hours,
     chatId: row.chat_id,
@@ -81,6 +82,7 @@ export function createSchedule(
   opts: {
     label: string;
     goal: string;
+    type?: ReportExecution;
     intervalHours?: number;
     startAt?: string | null;
     chatId?: number | null;
@@ -88,6 +90,7 @@ export function createSchedule(
   },
 ): ScheduledJob {
   const id = randomUUID().slice(0, 12);
+  const type = opts.type ?? "research";
   const intervalHours = opts.intervalHours ?? 24;
   // First run: at startAt if provided, otherwise interval from now
   const nextRunAt = opts.startAt
@@ -96,14 +99,14 @@ export function createSchedule(
 
   storage.run(
     `INSERT INTO scheduled_jobs (id, label, type, goal, interval_hours, chat_id, thread_id, next_run_at)
-     VALUES (?, ?, 'research', ?, ?, ?, ?, ?)`,
-    [id, opts.label, opts.goal, intervalHours, opts.chatId ?? null, opts.threadId ?? null, nextRunAt],
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, opts.label, type, opts.goal, intervalHours, opts.chatId ?? null, opts.threadId ?? null, nextRunAt],
   );
 
   return {
     id,
     label: opts.label,
-    type: "research",
+    type,
     goal: opts.goal,
     intervalHours,
     chatId: opts.chatId ?? null,

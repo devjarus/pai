@@ -305,7 +305,7 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     research_start: tool({
-      description: "Start a deep research task that runs in the background. Use when the user asks you to research a topic thoroughly, investigate something in depth, or compile a report. The research runs autonomously and delivers results to the Inbox. Classify the type based on what the user wants — e.g. 'flight' for travel, 'stock' for equities, 'shopping' for product search, 'news' for current events, or any descriptive label.",
+      description: "Start a deep research task that runs in the background. Use when the user asks you to research a topic thoroughly, investigate something in depth, or compile a report. Prefer swarm_start instead when the user wants analysis, comparison, trends, forecasts, charts, graphs, visualizations, or quantitative reporting. The research runs autonomously and delivers results to the Inbox.",
       inputSchema: z.object({
         goal: z.string().describe("What to research — be specific about the topic and what kind of information to find"),
         type: z.string().describe("Research domain — a short label describing the type of research. Examples: 'flight', 'stock', 'crypto', 'news', 'comparison', 'shopping', 'real-estate', 'sports', 'general'. Use whatever fits best."),
@@ -353,7 +353,7 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     swarm_start: tool({
-      description: "Start a multi-agent swarm analysis that runs in the background. Use when the user asks for a complex analysis involving multiple perspectives, comparisons, or tasks that benefit from parallel investigation. The swarm decomposes the goal into subtasks, runs specialized sub-agents in parallel with a shared blackboard, and synthesizes results into a unified report delivered to the Inbox.",
+      description: "Start a multi-agent swarm analysis that runs in the background. Prefer this for requests to analyze, compare, trend, forecast, chart, graph, visualize, or produce quantitative reporting. The swarm decomposes the goal into subtasks, runs specialized sub-agents in parallel with a shared blackboard, and synthesizes results into a unified report with visuals delivered to the Inbox.",
       inputSchema: z.object({
         goal: z.string().describe("What to analyze — be specific about the topic, comparison, or question to investigate"),
         type: z.string().describe("Research domain — a short label describing the type of analysis. Examples: 'flight', 'stock', 'crypto', 'news', 'comparison', 'shopping', 'real-estate', 'sports', 'general'. Use whatever fits best."),
@@ -398,26 +398,28 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     schedule_create: tool({
-      description: "Create a recurring scheduled job. Use when the user wants periodic/recurring tasks (e.g., 'research AI news every day at 8am', 'send me a weekly report on crypto'). The schedule will automatically run at the specified interval and deliver results. Use start_at to schedule the first run at a specific date/time (e.g., 'tomorrow at 8am').",
+      description: "Create a recurring scheduled job. Use type='research' for lighter research reports and type='analysis' for deeper multi-agent analysis with visuals. Prefer type='analysis' when the request includes analyze, compare, trend, forecast, chart, graph, visualize, or quantitative reporting. Use start_at to schedule the first run at a specific date/time (e.g., 'tomorrow at 8am').",
       inputSchema: z.object({
         label: z.string().describe("Short name for the schedule (e.g., 'AI news daily')"),
         goal: z.string().describe("Detailed goal — what to do each time the schedule runs"),
+        type: z.enum(["research", "analysis"]).optional().describe("Execution mode. Use 'analysis' for deeper multi-agent analysis with chart visuals; otherwise use 'research'. Defaults to 'research'."),
         interval_hours: z.number().optional().describe("Hours between runs (default: 24 = daily). Use 168 for weekly, 12 for twice daily."),
         start_at: z.string().optional().describe("ISO 8601 date-time for the first run (e.g., '2026-02-27T08:00:00'). If omitted, first run is interval_hours from now."),
       }),
-      execute: async ({ label, goal, interval_hours, start_at }) => {
+      execute: async ({ label, goal, type, interval_hours, start_at }) => {
         try {
           const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
           const chatId = (ctx as unknown as Record<string, unknown>).chatId as number | undefined;
           const schedule = createSchedule(ctx.storage, {
             label,
             goal,
+            type,
             intervalHours: interval_hours,
             startAt: start_at,
             chatId: chatId ?? null,
             threadId: threadId ?? null,
           });
-          return `Schedule created! "${label}" will run every ${schedule.intervalHours} hours. First run at ${formatDateTime(ctx.config.timezone, new Date(schedule.nextRunAt)).full}. Reports will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
+          return `Schedule created! "${label}" will run every ${schedule.intervalHours} hours in ${schedule.type} mode. First run at ${formatDateTime(ctx.config.timezone, new Date(schedule.nextRunAt)).full}. Reports will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
         } catch (err) {
           return `Failed to create schedule: ${err instanceof Error ? err.message : "unknown error"}`;
         }
@@ -433,6 +435,7 @@ export function createAgentTools(ctx: AgentContext) {
         return schedules.map((s) => ({
           id: s.id,
           label: s.label,
+          type: s.type,
           goal: s.goal.slice(0, 100),
           intervalHours: s.intervalHours,
           nextRunAt: s.nextRunAt,

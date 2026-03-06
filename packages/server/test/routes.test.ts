@@ -195,6 +195,8 @@ const mockGetSwarmAgents = vi.fn();
 const mockGetBlackboardEntries = vi.fn();
 const mockCancelSwarmJob = vi.fn();
 const mockClearCompletedSwarmJobs = vi.fn();
+const mockCreateSwarmJob = vi.fn();
+const mockRunSwarmInBackground = vi.fn();
 
 vi.mock("@personal-ai/plugin-swarm", () => ({
   listSwarmJobs: (...args: unknown[]) => mockListSwarmJobs(...args),
@@ -203,6 +205,8 @@ vi.mock("@personal-ai/plugin-swarm", () => ({
   getBlackboardEntries: (...args: unknown[]) => mockGetBlackboardEntries(...args),
   cancelSwarmJob: (...args: unknown[]) => mockCancelSwarmJob(...args),
   clearCompletedSwarmJobs: (...args: unknown[]) => mockClearCompletedSwarmJobs(...args),
+  createSwarmJob: (...args: unknown[]) => mockCreateSwarmJob(...args),
+  runSwarmInBackground: (...args: unknown[]) => mockRunSwarmInBackground(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -219,7 +223,7 @@ vi.mock("@personal-ai/plugin-assistant/page-fetch", () => ({
 
 /**
  * Set up the default AI SDK mocks. `streamText` triggers `onFinish` synchronously
- * so that conversation history is saved, and returns a mock `toUIMessageStream`.
+ * so that conversation history is saved, and returns a mock `fullStream`.
  * `createUIMessageStream` calls the `execute` callback then returns a Node-friendly
  * ReadableStream that Fastify's inject can consume.
  */
@@ -231,14 +235,13 @@ function setupDefaultAIMocks(responseText = "Hello from AI"): void {
       onFinish({ text: responseText, steps: [{}] });
     }
     return {
-      toUIMessageStream: vi.fn().mockReturnValue(
-        new ReadableStream({
-          start(controller) {
-            controller.enqueue(`0:${JSON.stringify(responseText)}\n`);
-            controller.close();
-          },
-        }),
-      ),
+      fullStream: {
+        async *[Symbol.asyncIterator]() {
+          yield { type: "text-start", id: "txt-1" };
+          yield { type: "text-delta", id: "txt-1", text: responseText };
+          yield { type: "text-end", id: "txt-1" };
+        },
+      },
     };
   });
 
@@ -246,7 +249,9 @@ function setupDefaultAIMocks(responseText = "Hello from AI"): void {
     ({ execute, onError }: { execute: (ctx: { writer: { write: unknown; merge: unknown } }) => Promise<void>; onError?: (e: unknown) => string }) => {
       const chunks: string[] = [];
       const mockWriter = {
-        write: vi.fn(),
+        write: vi.fn().mockImplementation((part: unknown) => {
+          chunks.push(`data: ${JSON.stringify(part)}\n\n`);
+        }),
         merge: vi.fn().mockImplementation((stream: ReadableStream) => {
           // Read the stream and collect chunks
           const reader = stream.getReader();
@@ -458,6 +463,8 @@ function createMockServerCtx(): ServerContext {
     ctx: {
       config: {
         dataDir: "/tmp/test",
+        sandboxUrl: "http://sandbox",
+        browserUrl: "http://browser",
         logLevel: "silent" as const,
         llm: {
           provider: "ollama" as const,
@@ -898,6 +905,33 @@ describe("agent routes", () => {
     expect(res.statusCode).toBe(200);
     expect(mockCreateUIMessageStream).toHaveBeenCalled();
     expect(mockStreamText).toHaveBeenCalled();
+  });
+
+  it("POST /api/chat filters raw provider-specific stream chunks", async () => {
+    mockStreamText.mockImplementation((opts: Record<string, unknown>) => {
+      const onFinish = opts?.onFinish as ((result: { text: string; steps: unknown[] }) => void) | undefined;
+      if (onFinish) onFinish({ text: "Report ready", steps: [] });
+      return {
+        fullStream: {
+          async *[Symbol.asyncIterator]() {
+            yield { type: "text-start", id: "txt-1" };
+            yield { type: "raw", rawValue: { type: "item_reference", id: "provider-ref-1" } };
+            yield { type: "text-delta", id: "txt-1", text: "Report ready" };
+            yield { type: "text-end", id: "txt-1" };
+          },
+        },
+      };
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "Generate a report" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload).not.toContain("item_reference");
+    expect(mockCreateUIMessageStream).toHaveBeenCalled();
   });
 
   it("POST /api/chat auto-creates thread and returns X-Thread-Id", async () => {
@@ -2151,6 +2185,14 @@ describe("Inbox routes", () => {
     expect(body.jobId).toBe("new_job_123");
     expect(mockCreateResearchJob).toHaveBeenCalledOnce();
     expect(mockRunResearchInBackground).toHaveBeenCalledOnce();
+    expect(mockRunResearchInBackground).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sandboxUrl: "http://sandbox",
+        browserUrl: "http://browser",
+        dataDir: "/tmp/test",
+      }),
+      "new_job_123",
+    );
   });
 
   it("POST /api/inbox/:id/rerun defaults resultType to general when missing", async () => {
@@ -2189,6 +2231,36 @@ describe("Inbox routes", () => {
       expect.objectContaining({ goal: "Research parsed", resultType: "stock" }),
     );
   });
+
+  it("POST /api/inbox/:id/rerun preserves analysis execution mode", async () => {
+    mockGetBriefingById.mockReturnValue({
+      id: "swarm-brief_analysis",
+      sections: JSON.stringify({
+        goal: "Compare AI model pricing trends",
+        resultType: "comparison",
+        execution: "analysis",
+      }),
+      status: "ready",
+    });
+    mockCreateSwarmJob.mockReturnValue("swarm_job_1");
+    mockRunSwarmInBackground.mockResolvedValue(undefined);
+
+    const res = await app.inject({ method: "POST", url: "/api/inbox/swarm-brief_analysis/rerun", payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().jobId).toBe("swarm_job_1");
+    expect(mockCreateSwarmJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ goal: "Compare AI model pricing trends", resultType: "comparison" }),
+    );
+    expect(mockRunSwarmInBackground).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sandboxUrl: "http://sandbox",
+        browserUrl: "http://browser",
+        dataDir: "/tmp/test",
+      }),
+      "swarm_job_1",
+    );
+  });
 });
 
 // ==========================================================================
@@ -2206,6 +2278,9 @@ describe("jobs routes", () => {
     mockListSwarmJobs.mockReturnValue([]);
     mockGetSwarmJob.mockReturnValue(null);
     mockClearCompletedSwarmJobs.mockReturnValue(0);
+    mockGetBriefingById.mockReturnValue(null);
+    mockListArtifacts.mockReturnValue([]);
+    mockGetArtifact.mockReturnValue(null);
     app = Fastify();
     serverCtx = createMockServerCtx();
     registerJobRoutes(app, serverCtx);
@@ -2307,6 +2382,8 @@ describe("jobs routes", () => {
       goal: "Research AI trends",
       status: "done",
       report: "Full detailed report...",
+      briefingId: null,
+      resultType: "news",
     });
 
     const res = await app.inject({ method: "GET", url: "/api/jobs/rj1" });
@@ -2314,6 +2391,9 @@ describe("jobs routes", () => {
     const body = res.json();
     expect(body.job.id).toBe("rj1");
     expect(body.job.report).toBe("Full detailed report...");
+    expect(body.presentation.report).toBe("Full detailed report...");
+    expect(body.presentation.execution).toBe("research");
+    expect(body.presentation.visuals).toEqual([]);
   });
 
   it("GET /api/jobs/:id returns 404 when job not found", async () => {
@@ -2404,6 +2484,8 @@ describe("jobs routes", () => {
       goal: "Deep research on AI",
       status: "done",
       synthesis: "Full swarm report...",
+      briefingId: null,
+      resultType: "comparison",
     });
 
     const res = await app.inject({ method: "GET", url: "/api/jobs/sw1" });
@@ -2411,6 +2493,46 @@ describe("jobs routes", () => {
     const body = res.json();
     expect(body.job.id).toBe("sw1");
     expect(body.job.synthesis).toBe("Full swarm report...");
+    expect(body.presentation.execution).toBe("analysis");
+    expect(body.presentation.resultType).toBe("comparison");
+  });
+
+  it("GET /api/jobs/:id returns persisted presentation metadata from briefing sections", async () => {
+    mockGetResearchJob.mockReturnValue({
+      id: "rj2",
+      goal: "Research markets",
+      status: "done",
+      report: "Legacy report body",
+      briefingId: "research-rj2",
+      resultType: "stock",
+    });
+    mockGetBriefingById.mockReturnValue({
+      id: "research-rj2",
+      status: "ready",
+      type: "research",
+      sections: {
+        goal: "Research markets",
+        report: "Normalized report body",
+        resultType: "stock",
+        execution: "analysis",
+        visuals: [
+          {
+            artifactId: "art-1",
+            mimeType: "image/png",
+            kind: "chart",
+            title: "Trend",
+            order: 1,
+          },
+        ],
+      },
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs/rj2" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.presentation.report).toBe("Normalized report body");
+    expect(body.presentation.execution).toBe("analysis");
+    expect(body.presentation.visuals[0].artifactId).toBe("art-1");
   });
 
   // ---- GET /api/jobs/:id/agents ----

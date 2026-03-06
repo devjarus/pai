@@ -59,7 +59,13 @@ export default function Schedules() {
   // Add/Edit dialog state (UI-only)
   const [showDialog, setShowDialog] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
-  const [form, setForm] = useState({ label: "", goal: "", intervalHours: "24", startAt: "" });
+  const [form, setForm] = useState({
+    label: "",
+    goal: "",
+    type: "research" as "research" | "analysis",
+    intervalHours: "24",
+    startAt: "",
+  });
 
   // Delete confirmation (UI-only)
   const [deleting, setDeleting] = useState<Schedule | null>(null);
@@ -77,7 +83,7 @@ export default function Schedules() {
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ label: "", goal: "", intervalHours: "24", startAt: "" });
+    setForm({ label: "", goal: "", type: "research", intervalHours: "24", startAt: "" });
     setShowDialog(true);
   };
 
@@ -86,6 +92,7 @@ export default function Schedules() {
     setForm({
       label: s.label,
       goal: s.goal,
+      type: s.type,
       intervalHours: String(s.intervalHours),
       startAt: "",
     });
@@ -97,6 +104,7 @@ export default function Schedules() {
     const payload = {
       label: form.label.trim(),
       goal: form.goal.trim(),
+      type: form.type,
       intervalHours: parseInt(form.intervalHours) || 24,
       ...(form.startAt ? { startAt: new Date(form.startAt).toISOString() } : {}),
     };
@@ -181,10 +189,10 @@ export default function Schedules() {
         ) : schedules.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center text-muted-foreground">
             <CalendarClockIcon className="size-10 opacity-40" />
-            <p className="text-lg font-medium">No scheduled research</p>
+            <p className="text-lg font-medium">No scheduled reports</p>
             <p className="max-w-sm text-sm">
-              Create a schedule to run research automatically at regular intervals.
-              Ask the assistant to "schedule daily research on AI news" or create one here.
+              Create a schedule to run research or deeper analysis automatically at regular intervals.
+              Ask the assistant to "schedule daily analysis of AI news" or create one here.
             </p>
             <Button size="sm" variant="outline" onClick={openAdd} className="mt-2">
               <PlusIcon className="mr-1 size-4" />
@@ -231,6 +239,20 @@ export default function Schedules() {
                 value={form.goal}
                 onChange={(e) => setForm({ ...form, goal: e.target.value })}
               />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Execution Mode</label>
+              <select
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                value={form.type}
+                onChange={(e) => setForm({ ...form, type: e.target.value as "research" | "analysis" })}
+              >
+                <option value="research">Research</option>
+                <option value="analysis">Analysis with visuals</option>
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Analysis uses the deeper multi-agent path and is the right choice for comparisons, trends, forecasts, and charts.
+              </p>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium">Interval</label>
@@ -307,13 +329,16 @@ function ScheduleRow({
   return (
     <div className={`group flex items-start gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/50 ${isPaused ? "opacity-60" : ""}`}>
       <div className="mt-0.5">
-        <ClockIcon className={`size-5 ${isPaused ? "text-muted-foreground" : "text-blue-500"}`} />
+        <ClockIcon className={`size-5 ${isPaused ? "text-muted-foreground" : s.type === "analysis" ? "text-purple-500" : "text-blue-500"}`} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-medium">{s.label}</span>
           <Badge variant={isPaused ? "secondary" : "outline"} className="text-xs">
             {formatInterval(s.intervalHours)}
+          </Badge>
+          <Badge variant="outline" className="text-xs">
+            {s.type === "analysis" ? "Analysis" : "Research"}
           </Badge>
           {isPaused && (
             <Badge variant="secondary" className="text-xs">Paused</Badge>

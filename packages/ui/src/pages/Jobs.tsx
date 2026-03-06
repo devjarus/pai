@@ -21,10 +21,7 @@ import {
   LightbulbIcon,
   FileTextIcon,
   ImageIcon,
-  TableIcon,
-  BracesIcon,
   FileIcon,
-  DownloadIcon,
   UserIcon,
   CodeIcon,
   WrenchIcon,
@@ -35,6 +32,7 @@ import type { BackgroundJobInfo, BlackboardEntry } from "../api";
 import type { SwarmAgent, ArtifactMeta } from "../types";
 import { useJobs, useJobDetail, useJobBlackboard, useJobAgents, useJobArtifacts, useCancelJob, useClearJobs, useConfig } from "@/hooks";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
+import { ArtifactGallery } from "@/components/results/ArtifactGallery";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import { parseApiDate } from "@/lib/datetime";
 
@@ -101,46 +99,6 @@ function formatDuration(start: string, end: string | null): string {
   return `${mins}m ${remainSecs}s`;
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function getArtifactIcon(mimeType: string) {
-  if (mimeType.startsWith("image/")) return ImageIcon;
-  if (mimeType === "text/csv") return TableIcon;
-  if (mimeType === "application/json") return BracesIcon;
-  return FileIcon;
-}
-
-/**
- * Extract a json-render spec from markdown text (looks for ```jsonrender fences).
- */
-function extractRenderSpec(text: string | null | undefined): unknown | undefined {
-  if (!text) return undefined;
-  const match = text.match(/```jsonrender\s*([\s\S]*?)```/);
-  if (match?.[1]) {
-    try {
-      return JSON.parse(match[1].trim());
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Strip jsonrender and json code fences from markdown for cleaner fallback display.
- */
-function stripCodeFences(text: string | null | undefined): string | undefined {
-  if (!text) return undefined;
-  return text
-    .replace(/```jsonrender\s*[\s\S]*?```/g, "")
-    .replace(/```json\s*[\s\S]*?```/g, "")
-    .trim() || undefined;
-}
-
 const blackboardTypeIcons: Record<string, typeof LightbulbIcon> = {
   finding: LightbulbIcon,
   question: HelpCircleIcon,
@@ -193,6 +151,7 @@ export default function Jobs() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const { data: jobDetailData, isLoading: detailLoading } = useJobDetail(selectedJobId);
   const selectedJob = jobDetailData?.job ?? null;
+  const presentation = jobDetailData?.presentation;
 
   const isSwarm = !!(selectedJob?.plan);
   const { data: blackboardData } = useJobBlackboard(selectedJobId, isSwarm);
@@ -201,7 +160,7 @@ export default function Jobs() {
   const { data: agentsData } = useJobAgents(selectedJobId, isSwarm);
   const agents = useMemo(() => sortAgents(agentsData?.agents ?? []), [agentsData]);
 
-  const { data: artifactsData } = useJobArtifacts(selectedJobId, isSwarm);
+  const { data: artifactsData } = useJobArtifacts(selectedJobId);
   const artifacts: ArtifactMeta[] = artifactsData ?? [];
 
   const [blackboardOpen, setBlackboardOpen] = useState(false);
@@ -243,10 +202,7 @@ export default function Jobs() {
     });
   };
 
-  // Extract renderSpec from the report/synthesis text
-  const reportText = selectedJob?.report || selectedJob?.synthesis;
-  const renderSpec = useMemo(() => extractRenderSpec(reportText), [reportText]);
-  const cleanMarkdown = useMemo(() => renderSpec ? stripCodeFences(reportText) : (reportText ?? undefined), [reportText, renderSpec]);
+  const reportText = presentation?.report ?? selectedJob?.report ?? selectedJob?.synthesis ?? undefined;
 
   if (isLoading) return <JobsSkeleton />;
 
@@ -391,7 +347,7 @@ export default function Jobs() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="font-mono text-sm font-semibold text-foreground">
-                    {selectedJob.plan ? "Swarm Report" : "Research Report"}
+                    {presentation?.execution === "analysis" ? "Analysis Report" : "Research Report"}
                   </h2>
                   <p className="mt-1 text-xs text-muted-foreground">{selectedJob.goal}</p>
                 </div>
@@ -562,9 +518,11 @@ export default function Jobs() {
               ) : (reportText) ? (
                 <div className="rounded-lg border border-border/20 bg-card/40 p-4">
                   <ResultRenderer
-                    spec={renderSpec}
-                    markdown={cleanMarkdown}
-                    resultType={selectedJob.resultType}
+                    spec={presentation?.renderSpec}
+                    structuredResult={presentation?.structuredResult}
+                    visuals={presentation?.visuals ?? []}
+                    markdown={reportText}
+                    resultType={presentation?.resultType ?? selectedJob.resultType}
                     debug={configData?.debugResearch ?? false}
                   />
                 </div>
@@ -589,38 +547,8 @@ export default function Jobs() {
                   </button>
 
                   {artifactsOpen && (
-                    <div className="mt-3 space-y-2">
-                      {artifacts.map((artifact: ArtifactMeta) => {
-                        const ArtIcon = getArtifactIcon(artifact.mimeType);
-                        const isImage = artifact.mimeType.startsWith("image/");
-                        return (
-                          <div
-                            key={artifact.id}
-                            className="rounded-lg border border-border/20 bg-card/30 p-3"
-                          >
-                            <div className="flex items-center gap-2">
-                              <ArtIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                              <span className="text-xs text-foreground/80 truncate flex-1">{artifact.name}</span>
-                              <span className="text-[10px] text-muted-foreground/60">{formatSize(artifact.size)}</span>
-                              <a
-                                href={`/api/artifacts/${artifact.id}`}
-                                download={artifact.name}
-                                className="text-muted-foreground hover:text-foreground transition-colors"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <DownloadIcon className="h-3 w-3" />
-                              </a>
-                            </div>
-                            {isImage && (
-                              <img
-                                src={`/api/artifacts/${artifact.id}`}
-                                alt={artifact.name}
-                                className="mt-2 max-h-48 rounded border border-border/20 object-contain"
-                              />
-                            )}
-                          </div>
-                        );
-                      })}
+                    <div className="mt-3">
+                      <ArtifactGallery artifacts={artifacts} title="Artifacts" />
                     </div>
                   )}
                 </div>

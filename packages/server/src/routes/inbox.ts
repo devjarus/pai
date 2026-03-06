@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
 import { getLatestBriefing, getBriefingById, listBriefings, listAllBriefings, generateBriefing, clearAllBriefings, getResearchBriefings } from "../briefing.js";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
+import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
 import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import type { ResearchResultType } from "@personal-ai/core";
@@ -73,31 +74,65 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext
 
     const resultType = (sections.resultType as string | undefined) ?? "general";
 
-    // Create new research job
-    const jobId = createResearchJob(ctx.storage, {
-      goal,
-      threadId: null,
-      resultType: resultType as ResearchResultType,
-    });
+    const execution = sections.execution === "analysis" || briefing.id.startsWith("swarm-")
+      ? "analysis"
+      : "research";
 
-    runResearchInBackground(
-      {
-        storage: ctx.storage,
-        llm: ctx.llm,
-        logger: ctx.logger,
-        timezone: ctx.config.timezone,
-        provider: ctx.config.llm.provider,
-        model: ctx.config.llm.model,
-        contextWindow: ctx.config.llm.contextWindow,
-        dataDir: ctx.config.dataDir,
-        webSearch,
-        formatSearchResults,
-        fetchPage: fetchPageAsMarkdown,
-      },
-      jobId,
-    ).catch((err) => {
-      ctx.logger.error(`Rerun research failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
+    let jobId: string;
+    if (execution === "analysis") {
+      jobId = createSwarmJob(ctx.storage, {
+        goal,
+        threadId: null,
+        resultType,
+      });
+      runSwarmInBackground(
+        {
+          storage: ctx.storage,
+          llm: ctx.llm,
+          logger: ctx.logger,
+          timezone: ctx.config.timezone,
+          provider: ctx.config.llm.provider,
+          model: ctx.config.llm.model,
+          contextWindow: ctx.config.llm.contextWindow,
+          sandboxUrl: ctx.config.sandboxUrl,
+          browserUrl: ctx.config.browserUrl,
+          dataDir: ctx.config.dataDir,
+          webSearch,
+          formatSearchResults,
+          fetchPage: fetchPageAsMarkdown,
+        },
+        jobId,
+      ).catch((err) => {
+        ctx.logger.error(`Rerun analysis failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    } else {
+      jobId = createResearchJob(ctx.storage, {
+        goal,
+        threadId: null,
+        resultType: resultType as ResearchResultType,
+      });
+
+      runResearchInBackground(
+        {
+          storage: ctx.storage,
+          llm: ctx.llm,
+          logger: ctx.logger,
+          timezone: ctx.config.timezone,
+          provider: ctx.config.llm.provider,
+          model: ctx.config.llm.model,
+          contextWindow: ctx.config.llm.contextWindow,
+          sandboxUrl: ctx.config.sandboxUrl,
+          browserUrl: ctx.config.browserUrl,
+          dataDir: ctx.config.dataDir,
+          webSearch,
+          formatSearchResults,
+          fetchPage: fetchPageAsMarkdown,
+        },
+        jobId,
+      ).catch((err) => {
+        ctx.logger.error(`Rerun research failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }
 
     return { ok: true, jobId };
   });

@@ -24,8 +24,10 @@ export function useJobDetail(id: string | null) {
     queryFn: () => getJobDetail(id!),
     enabled: !!id,
     refetchInterval: (query) => {
-      const status = (query.state.data as { status?: string } | undefined)?.status;
-      return status === "running" || status === "pending" ? 5_000 : false;
+      const status = query.state.data?.job?.status;
+      return status === "running" || status === "pending" || status === "planning" || status === "synthesizing"
+        ? 5_000
+        : false;
     },
   });
 }
@@ -47,11 +49,12 @@ export function useJobAgents(id: string | null, isSwarm: boolean) {
   });
 }
 
-export function useJobArtifacts(id: string | null, isSwarm: boolean) {
+export function useJobArtifacts(id: string | null) {
   return useQuery({
     queryKey: jobKeys.artifacts(id!),
     queryFn: () => getJobArtifacts(id!),
-    enabled: !!id && isSwarm,
+    enabled: !!id,
+    select: (data) => data.artifacts,
   });
 }
 

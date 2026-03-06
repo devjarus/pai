@@ -31,6 +31,13 @@ vi.mock("@personal-ai/plugin-research", () => ({
   runResearchInBackground: (...args: unknown[]) => mockRunResearchInBackground(...args),
 }));
 
+const mockCreateSwarmJob = vi.fn().mockReturnValue("swarm-1");
+const mockRunSwarmInBackground = vi.fn().mockResolvedValue(undefined);
+vi.mock("@personal-ai/plugin-swarm", () => ({
+  createSwarmJob: (...args: unknown[]) => mockCreateSwarmJob(...args),
+  runSwarmInBackground: (...args: unknown[]) => mockRunSwarmInBackground(...args),
+}));
+
 vi.mock("@personal-ai/plugin-assistant/web-search", () => ({
   webSearch: vi.fn(),
   formatSearchResults: vi.fn(),
@@ -53,7 +60,14 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
 
 function createMockCtx(): PluginContext {
   return {
-    config: { dataDir: "/tmp", llm: { provider: "ollama" }, plugins: [], logLevel: "silent" },
+    config: {
+      dataDir: "/tmp",
+      sandboxUrl: "http://sandbox",
+      browserUrl: "http://browser",
+      llm: { provider: "ollama" },
+      plugins: [],
+      logLevel: "silent",
+    },
     storage: {
       query: vi.fn().mockReturnValue([]),
       run: vi.fn(),
@@ -270,6 +284,47 @@ describe("WorkerLoop", () => {
       threadId: "t1",
     });
     expect(mockRunResearchInBackground).toHaveBeenCalledTimes(1);
+    expect(mockRunResearchInBackground).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storage: ctx.storage,
+        sandboxUrl: "http://sandbox",
+        browserUrl: "http://browser",
+        dataDir: "/tmp",
+      }),
+      "job-1",
+    );
+
+    loop.stop();
+  });
+
+  it("creates swarm jobs for analysis schedules", () => {
+    const ctx = createMockCtx();
+    mockGetDueSchedules.mockReturnValue([
+      { id: "s2", label: "Weekly analysis", type: "analysis", goal: "Compare revenue trends", threadId: "t2" },
+    ]);
+
+    const loop = new WorkerLoop(ctx, {
+      scheduleCheckIntervalMs: 1000,
+      generateInitialBriefing: false,
+    });
+    loop.start();
+
+    vi.advanceTimersByTime(1000);
+
+    expect(mockMarkScheduleRun).toHaveBeenCalledWith(ctx.storage, "s2");
+    expect(mockCreateSwarmJob).toHaveBeenCalledWith(ctx.storage, {
+      goal: "Compare revenue trends",
+      threadId: "t2",
+    });
+    expect(mockRunSwarmInBackground).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storage: ctx.storage,
+        sandboxUrl: "http://sandbox",
+        browserUrl: "http://browser",
+        dataDir: "/tmp",
+      }),
+      "swarm-1",
+    );
 
     loop.stop();
   });

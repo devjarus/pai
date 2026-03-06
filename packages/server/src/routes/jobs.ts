@@ -1,8 +1,63 @@
 import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
-import { listJobs, cancelBackgroundJob, forceDeleteBackgroundJob, clearCompletedBackgroundJobs } from "@personal-ai/core";
+import {
+  listJobs,
+  cancelBackgroundJob,
+  forceDeleteBackgroundJob,
+  clearCompletedBackgroundJobs,
+  buildReportPresentation,
+  deriveReportVisuals,
+  extractPresentationBlocks,
+} from "@personal-ai/core";
 import { listResearchJobs, getResearchJob, cancelResearchJob, clearCompletedJobs } from "@personal-ai/plugin-research";
 import { listSwarmJobs, getSwarmJob, getSwarmAgents, getBlackboardEntries, cancelSwarmJob, clearCompletedSwarmJobs } from "@personal-ai/plugin-swarm";
+import { getBriefingById } from "../briefing.js";
+
+function getStoredPresentation(
+  serverCtx: ServerContext,
+  jobId: string,
+  briefingId: string | null,
+  reportText: string | null | undefined,
+  resultType: string | null | undefined,
+  execution: "research" | "analysis",
+) {
+  const fallbackVisuals = deriveReportVisuals(serverCtx.ctx.storage, jobId);
+
+  if (briefingId) {
+    const briefing = getBriefingById(serverCtx.ctx.storage, briefingId);
+    const sections = briefing?.sections as Record<string, unknown> | undefined;
+    if (sections && typeof sections === "object") {
+      const extracted = extractPresentationBlocks(
+        typeof sections.report === "string" ? sections.report : reportText ?? "",
+      );
+      const visuals = Array.isArray(sections.visuals)
+        ? sections.visuals as Parameters<typeof buildReportPresentation>[0]["visuals"]
+        : fallbackVisuals;
+      return buildReportPresentation({
+        report: extracted.report,
+        structuredResult: typeof sections.structuredResult === "string"
+          ? sections.structuredResult
+          : extracted.structuredResult,
+        renderSpec: typeof sections.renderSpec === "string"
+          ? sections.renderSpec
+          : extracted.renderSpec,
+        visuals,
+        resultType: typeof sections.resultType === "string" ? sections.resultType : (resultType ?? "general"),
+        execution: sections.execution === "analysis" ? "analysis" : execution,
+      });
+    }
+  }
+
+  const extracted = extractPresentationBlocks(reportText ?? "");
+  return buildReportPresentation({
+    report: extracted.report || reportText || "",
+    structuredResult: extracted.structuredResult,
+    renderSpec: extracted.renderSpec,
+    visuals: fallbackVisuals,
+    resultType: resultType ?? "general",
+    execution,
+  });
+}
 
 export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext): void {
   // List all background jobs — DB-backed active + persisted research jobs
@@ -62,10 +117,34 @@ export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext
   // Get a single research or swarm job with full report
   app.get<{ Params: { id: string } }>("/api/jobs/:id", async (request, reply) => {
     const researchJob = getResearchJob(serverCtx.ctx.storage, request.params.id);
-    if (researchJob) return { job: researchJob };
+    if (researchJob) {
+      return {
+        job: researchJob,
+        presentation: getStoredPresentation(
+          serverCtx,
+          researchJob.id,
+          researchJob.briefingId,
+          researchJob.report,
+          researchJob.resultType,
+          "research",
+        ),
+      };
+    }
 
     const swarmJob = getSwarmJob(serverCtx.ctx.storage, request.params.id);
-    if (swarmJob) return { job: swarmJob };
+    if (swarmJob) {
+      return {
+        job: swarmJob,
+        presentation: getStoredPresentation(
+          serverCtx,
+          swarmJob.id,
+          swarmJob.briefingId,
+          swarmJob.synthesis,
+          swarmJob.resultType,
+          "analysis",
+        ),
+      };
+    }
 
     return reply.status(404).send({ error: "Job not found" });
   });

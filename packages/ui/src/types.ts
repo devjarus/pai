@@ -208,9 +208,37 @@ export interface Briefing {
 export interface ResearchBriefing {
   id: string;
   generatedAt: string;
-  sections: { report: string; goal: string; resultType?: string; structuredResult?: string; renderSpec?: string };
+  sections: {
+    report: string;
+    goal: string;
+    resultType?: string;
+    structuredResult?: string;
+    renderSpec?: string;
+    execution?: ReportExecution;
+    visuals?: ReportVisual[];
+  };
   status: string;
   type: "research";
+}
+
+export type ReportExecution = "research" | "analysis";
+
+export interface ReportVisual {
+  artifactId: string;
+  mimeType: string;
+  kind: "chart" | "image";
+  title: string;
+  caption?: string;
+  order: number;
+}
+
+export interface ReportPresentation {
+  report: string;
+  structuredResult?: string;
+  renderSpec?: string;
+  visuals: ReportVisual[];
+  resultType: ResearchResultType;
+  execution: ReportExecution;
 }
 
 // ---- Research Result Types ----

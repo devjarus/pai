@@ -1,13 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { startResearchPushLoop } from "../src/push.js";
 import type { Bot } from "grammy";
 import type { Storage, Logger } from "@personal-ai/core";
 
 // Mock telegraph module so it doesn't make real HTTP calls
+const mockGetOrCreateAccount = vi.fn().mockResolvedValue(null);
+const mockUploadImage = vi.fn().mockResolvedValue(null);
+const mockCreatePage = vi.fn().mockResolvedValue(null);
 vi.mock("../src/telegraph.js", () => ({
-  getOrCreateAccount: vi.fn().mockResolvedValue(null),
-  uploadImage: vi.fn().mockResolvedValue(null),
-  createPage: vi.fn().mockResolvedValue(null),
+  getOrCreateAccount: (...args: unknown[]) => mockGetOrCreateAccount(...args),
+  uploadImage: (...args: unknown[]) => mockUploadImage(...args),
+  createPage: (...args: unknown[]) => mockCreatePage(...args),
 }));
 
 function createMockStorage(rows: Array<{ id: string; sections: string }> = []): Storage {
@@ -23,6 +29,8 @@ function createMockBot(): Bot {
   return {
     api: {
       sendMessage: vi.fn().mockResolvedValue({ message_id: 1 }),
+      sendPhoto: vi.fn().mockResolvedValue({ message_id: 2 }),
+      sendMediaGroup: vi.fn().mockResolvedValue([]),
     },
   } as unknown as Bot;
 }
@@ -37,12 +45,17 @@ function createMockLogger(): Logger {
 }
 
 describe("startResearchPushLoop", () => {
+  let tempDirs: string[] = [];
+
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.clearAllMocks();
+    tempDirs = [];
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
   });
 
   it("polls on interval and can be stopped", () => {
@@ -78,6 +91,7 @@ describe("startResearchPushLoop", () => {
     // Mock chat ID lookup: research_jobs -> thread -> telegram_threads
     (storage.query as ReturnType<typeof vi.fn>)
       .mockReturnValueOnce([researchRow]) // briefings query
+      .mockReturnValueOnce([]) // deriveReportVisuals -> listArtifacts
       .mockReturnValueOnce([{ thread_id: "thread-1" }]) // research_jobs query
       .mockReturnValueOnce([{ chat_id: 12345 }]); // telegram_threads query
 
@@ -102,6 +116,65 @@ describe("startResearchPushLoop", () => {
     expect(storage.run).toHaveBeenCalledWith(
       "UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?",
       ["research-job123"],
+    );
+
+    handle.stop();
+  });
+
+  it("sends summary, inline chart photo, and Telegraph button when visuals are present", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pai-push-visuals-"));
+    tempDirs.push(dir);
+    const imagePath = join(dir, "trend.png");
+    writeFileSync(imagePath, Buffer.from("png"));
+
+    const researchRow = {
+      id: "research-job-with-visual",
+      sections: JSON.stringify({
+        goal: "AI revenue trends",
+        report: "Revenue is up strongly.",
+        execution: "analysis",
+        visuals: [
+          {
+            artifactId: "art-1",
+            mimeType: "image/png",
+            kind: "chart",
+            title: "Trend",
+            order: 1,
+          },
+        ],
+      }),
+    };
+    const storage = createMockStorage([researchRow]);
+    (storage.query as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce([researchRow]) // briefings query
+      .mockReturnValueOnce([{ thread_id: "thread-1" }]) // research_jobs query
+      .mockReturnValueOnce([{ chat_id: 12345 }]) // telegram_threads query
+      .mockReturnValueOnce([{ id: "art-1", job_id: "job-with-visual", name: "trend.png", mime_type: "image/png", file_path: imagePath, size: 3, created_at: "now" }]) // sendVisuals getArtifact
+      .mockReturnValueOnce([{ id: "art-1", job_id: "job-with-visual", name: "trend.png", mime_type: "image/png", file_path: imagePath, size: 3, created_at: "now" }]); // telegraph image getArtifact
+
+    mockGetOrCreateAccount.mockResolvedValue({ access_token: "token" });
+    mockUploadImage.mockResolvedValue("https://cdn.example.com/trend.png");
+    mockCreatePage.mockResolvedValue({ url: "https://telegra.ph/report" });
+
+    const bot = createMockBot();
+    const logger = createMockLogger();
+
+    const handle = startResearchPushLoop(storage, bot, logger, 1000);
+    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(
+      12345,
+      expect.stringContaining("Analysis Complete"),
+      { parse_mode: "HTML" },
+    );
+    expect(bot.api.sendPhoto).toHaveBeenCalledOnce();
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(
+      12345,
+      "\uD83D\uDCC4 Full report",
+      expect.objectContaining({
+        reply_markup: expect.anything(),
+      }),
     );
 
     handle.stop();
@@ -170,6 +243,7 @@ describe("startResearchPushLoop", () => {
     // Mock chat ID lookup: swarm_jobs -> thread -> telegram_threads
     (storage.query as ReturnType<typeof vi.fn>)
       .mockReturnValueOnce([swarmRow]) // briefings query
+      .mockReturnValueOnce([]) // deriveReportVisuals -> listArtifacts
       .mockReturnValueOnce([{ thread_id: "thread-2" }]) // swarm_jobs query
       .mockReturnValueOnce([{ chat_id: 67890 }]); // telegram_threads query
 
@@ -184,7 +258,7 @@ describe("startResearchPushLoop", () => {
     // Telegraph returns null (mocked) so falls back to text messages
     expect(bot.api.sendMessage).toHaveBeenCalledWith(
       67890,
-      expect.stringContaining("Swarm Report"),
+      expect.stringContaining("Analysis Complete"),
       { parse_mode: "HTML" },
     );
 

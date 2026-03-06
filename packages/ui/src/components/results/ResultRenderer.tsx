@@ -4,6 +4,8 @@ import { registry, handlers } from "../../lib/render-registry";
 import MarkdownContent from "../MarkdownContent";
 import { AlertTriangle } from "lucide-react";
 import { useState, useCallback, useRef, type ReactNode } from "react";
+import type { ReportVisual } from "@/types";
+import { VisualGallery } from "./VisualGallery";
 
 interface ResultRendererProps {
   /** json-render spec from LLM (parsed JSON object or JSON string) */
@@ -14,8 +16,26 @@ interface ResultRendererProps {
   markdown?: string;
   /** Result type for context */
   resultType?: string;
+  /** Persisted chart/image visuals */
+  visuals?: ReportVisual[];
   /** Show debug info */
   debug?: boolean;
+}
+
+function getReferencedArtifactIds(spec: Spec | null): Set<string> {
+  const ids = new Set<string>();
+  if (!spec) return ids;
+
+  for (const element of Object.values(spec.elements)) {
+    const props = (element as { props?: Record<string, unknown> }).props ?? {};
+    for (const candidate of [props.src, props.url]) {
+      if (typeof candidate !== "string") continue;
+      const match = candidate.match(/\/api\/artifacts\/([^/?#]+)/);
+      if (match?.[1]) ids.add(match[1]);
+    }
+  }
+
+  return ids;
 }
 
 /**
@@ -49,6 +69,7 @@ export function ResultRenderer({
   structuredResult,
   markdown,
   resultType,
+  visuals = [],
   debug,
 }: ResultRendererProps) {
   const [showDebug, setShowDebug] = useState(false);
@@ -77,6 +98,8 @@ export function ResultRenderer({
   );
 
   const parsedSpec = parseSpec(spec);
+  const referencedArtifactIds = getReferencedArtifactIds(parsedSpec);
+  const remainingVisuals = visuals.filter((visual) => !referencedArtifactIds.has(visual.artifactId));
 
   // Determine which content to render via the fallback chain
   let content: ReactNode;
@@ -90,6 +113,15 @@ export function ResultRenderer({
         </VisibilityProvider>
       </StateProvider>
     );
+  } else if (visuals.length > 0 && markdown) {
+    content = (
+      <div className="space-y-4">
+        <VisualGallery visuals={visuals} />
+        <MarkdownContent content={markdown} />
+      </div>
+    );
+  } else if (visuals.length > 0) {
+    content = <VisualGallery visuals={visuals} />;
   } else if (markdown) {
     content = <MarkdownContent content={markdown} />;
   } else {
@@ -104,9 +136,12 @@ export function ResultRenderer({
   return (
     <div className="space-y-4">
       {content}
+      {parsedSpec && remainingVisuals.length > 0 && (
+        <VisualGallery visuals={remainingVisuals} title="Additional visuals" />
+      )}
 
       {/* Debug section (only when enabled) */}
-      {debug === true && (structuredResult != null || spec != null) && (
+      {debug === true && (structuredResult != null || spec != null || visuals.length > 0) && (
         <div className="mt-4">
           <button
             onClick={() => setShowDebug(!showDebug)}
@@ -116,7 +151,7 @@ export function ResultRenderer({
           </button>
           {showDebug && (
             <pre className="mt-2 p-3 bg-zinc-900 border border-zinc-700/50 rounded text-xs text-zinc-400 overflow-x-auto max-h-96 overflow-y-auto">
-              {JSON.stringify({ resultType, structuredResult, spec }, null, 2)}
+              {JSON.stringify({ resultType, structuredResult, spec, visuals }, null, 2)}
             </pre>
           )}
         </div>

@@ -3,7 +3,15 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger, ResearchResultType } from "@personal-ai/core";
-import { formatDateTime, detectResearchDomain, getContextBudget, getProviderOptions } from "@personal-ai/core";
+import {
+  formatDateTime,
+  detectResearchDomain,
+  getContextBudget,
+  getProviderOptions,
+  buildReportPresentation,
+  deriveReportVisuals,
+  extractPresentationBlocks,
+} from "@personal-ai/core";
 import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent, createBrowserTools } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 
@@ -1139,34 +1147,8 @@ export async function runResearchInBackground(
       providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
     });
 
-    const report = result.text || "Research completed but no report was generated.";
-
-    // Extract structured result from domain-specific reports
-    let structuredResult: string | undefined;
-    if (job.resultType !== "general") {
-      try {
-        const jsonMatch = report.match(/```json\s*([\s\S]*?)```/);
-        if (jsonMatch?.[1]) {
-          // Validate it's parseable JSON
-          JSON.parse(jsonMatch[1].trim());
-          structuredResult = jsonMatch[1].trim();
-        }
-      } catch {
-        ctx.logger.warn(`Failed to extract structured result from ${job.resultType} research`, { jobId });
-      }
-    }
-
-    // Extract json-render UI spec if present
-    let renderSpec: string | undefined;
-    const specMatch = report.match(/```jsonrender\s*([\s\S]*?)```/);
-    if (specMatch?.[1]) {
-      try {
-        JSON.parse(specMatch[1].trim());
-        renderSpec = specMatch[1].trim();
-      } catch {
-        ctx.logger.warn("Failed to parse render spec from research report", { jobId });
-      }
-    }
+    const rawReport = result.text || "Research completed but no report was generated.";
+    let { report, structuredResult, renderSpec } = extractPresentationBlocks(rawReport);
 
     // Generate charts for stock research via sandbox (if available)
     if (job.resultType === "stock" && structuredResult) {
@@ -1215,17 +1197,27 @@ export async function runResearchInBackground(
       }
     }
 
+    const visuals = deriveReportVisuals(ctx.storage, jobId);
+    const presentation = buildReportPresentation({
+      report,
+      ...(structuredResult ? { structuredResult } : {}),
+      ...(renderSpec ? { renderSpec } : {}),
+      visuals,
+      resultType: job.resultType,
+      execution: "research",
+    });
+
     // Store report and mark done
     updateJob(ctx.storage, jobId, {
       status: "done",
-      report,
+      report: presentation.report,
       completed_at: new Date().toISOString(),
     });
 
     updateJobStatus(ctx.storage, jobId, {
       status: "done",
       progress: "complete",
-      result: report.slice(0, 200),
+      result: presentation.report.slice(0, 200),
       resultType: job.resultType,
       ...(structuredResult ? { structuredResult } : {}),
     });
@@ -1235,7 +1227,15 @@ export async function runResearchInBackground(
     try {
       ctx.storage.run(
         "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
-        [briefingId, JSON.stringify({ report, goal: job.goal, resultType: job.resultType, ...(structuredResult ? { structuredResult } : {}), ...(renderSpec ? { renderSpec } : {}) })],
+        [briefingId, JSON.stringify({
+          report: presentation.report,
+          goal: job.goal,
+          resultType: presentation.resultType,
+          execution: presentation.execution,
+          visuals: presentation.visuals,
+          ...(presentation.structuredResult ? { structuredResult: presentation.structuredResult } : {}),
+          ...(presentation.renderSpec ? { renderSpec: presentation.renderSpec } : {}),
+        })],
       );
       updateJob(ctx.storage, jobId, { briefing_id: briefingId });
     } catch (err) {
@@ -1247,7 +1247,7 @@ export async function runResearchInBackground(
     try {
       const reportUrl = `/inbox/${briefingId}`;
       const reportTitle = `Research Report: ${job.goal.slice(0, 100)}`;
-      await learnFromContent(ctx.storage, ctx.llm, reportUrl, reportTitle, report);
+      await learnFromContent(ctx.storage, ctx.llm, reportUrl, reportTitle, presentation.report);
       ctx.logger.info(`Stored research report in knowledge base`, { jobId, goal: job.goal });
     } catch (err) {
       ctx.logger.warn(`Failed to store research report in knowledge: ${err instanceof Error ? err.message : String(err)}`);
@@ -1256,9 +1256,9 @@ export async function runResearchInBackground(
     // Append summary to originating chat thread
     if (job.threadId) {
       try {
-        const summary = report.length > 500
-          ? report.slice(0, 500) + "\n\n*Full report available in your Inbox.*"
-          : report;
+        const summary = presentation.report.length > 500
+          ? presentation.report.slice(0, 500) + "\n\n*Full report available in your Inbox.*"
+          : presentation.report;
         appendMessages(ctx.storage, job.threadId, [
           { role: "assistant", content: `Research complete: "${job.goal}"\n\n${summary}` },
         ]);

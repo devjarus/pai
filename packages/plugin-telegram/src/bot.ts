@@ -11,6 +11,7 @@ import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { runAgentChat, createThread, clearThread as clearThreadMessages } from "./chat.js";
 import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse } from "./formatter.js";
 import { bufferMessage, passiveProcess } from "./passive.js";
+import { sendArtifactsToTelegram } from "./delivery.js";
 
 /** Tool name → human-friendly status emoji */
 const TOOL_STATUS: Record<string, string> = {
@@ -121,7 +122,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       "/clear — Clear conversation history and start fresh\n" +
       "/tasks — List your open tasks\n" +
       "/memories — Show your top 10 memories\n" +
-      "/schedules — Show active recurring research schedules\n" +
+      "/schedules — Show active recurring research/analysis schedules\n" +
       "/jobs — Show recent research &amp; swarm jobs\n" +
       "/research &lt;query&gt; — Start a research job\n\n" +
       "Or just send any message to chat!",
@@ -177,10 +178,10 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
   bot.command("schedules", async (tgCtx) => {
     try {
       const schedules = ctx.storage.query<{
-        id: string; label: string; interval_hours: number;
+        id: string; label: string; type: "research" | "analysis"; interval_hours: number;
         next_run_at: string; last_run_at: string | null;
       }>(
-        "SELECT id, label, interval_hours, next_run_at, last_run_at FROM scheduled_jobs WHERE status = 'active' ORDER BY created_at DESC",
+        "SELECT id, label, type, interval_hours, next_run_at, last_run_at FROM scheduled_jobs WHERE status = 'active' ORDER BY created_at DESC",
       );
       if (schedules.length === 0) {
         await tgCtx.reply("No active schedules. Ask me to schedule recurring research!");
@@ -189,7 +190,8 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       const lines = schedules.map((s) => {
         const interval = s.interval_hours >= 24 ? `${Math.round(s.interval_hours / 24)}d` : `${s.interval_hours}h`;
         const next = formatDateTime(ctx.config.timezone, parseTimestamp(s.next_run_at)).full;
-        return `\u{1F504} <b>${escapeHTML(s.label)}</b> (every ${interval})\n   Next: ${next}\n   ID: <code>${s.id}</code>`;
+        const mode = s.type === "analysis" ? "analysis" : "research";
+        return `\u{1F504} <b>${escapeHTML(s.label)}</b> (${mode} · every ${interval})\n   Next: ${next}\n   ID: <code>${s.id}</code>`;
       });
       await tgCtx.reply(`<b>Active Schedules</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
     } catch {
@@ -253,6 +255,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         model: ctx.config.llm.model,
         contextWindow: ctx.config.llm.contextWindow,
         sandboxUrl: ctx.config.sandboxUrl,
+        browserUrl: ctx.config.browserUrl,
         dataDir: ctx.config.dataDir,
         webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
         formatSearchResults,
@@ -370,18 +373,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
           }
         }
 
-        // Send non-report artifacts as documents
-        for (const art of others) {
-          try {
-            const artifact = getArtifact(ctx.storage, art.id);
-            if (!artifact) continue;
-            await bot.api.sendDocument(chatId, new InputFile(artifact.data, art.name), {
-              caption: art.name,
-            });
-          } catch (err) {
-            ctx.logger.warn("Failed to send artifact", { artifactId: art.id, error: err instanceof Error ? err.message : String(err) });
-          }
-        }
+        await sendArtifactsToTelegram(ctx.storage, bot, chatId, others, ctx.logger);
       }
     } catch (err) {
       ctx.logger.error("Telegram chat failed", { error: err instanceof Error ? err.message : String(err) });

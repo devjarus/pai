@@ -18,6 +18,8 @@ import type {
   ResearchResultType,
   SwarmAgent,
   ArtifactMeta,
+  ReportPresentation,
+  ReportExecution,
 } from "./types";
 
 const BASE = "/api";
@@ -516,6 +518,11 @@ export interface ResearchJobDetail {
   resultType_swarm?: string;
 }
 
+export interface JobDetailResponse {
+  job: ResearchJobDetail;
+  presentation: ReportPresentation;
+}
+
 export interface BlackboardEntry {
   id: string;
   agentId: string;
@@ -528,7 +535,7 @@ export function getJobs(): Promise<{ jobs: BackgroundJobInfo[] }> {
   return request("/jobs");
 }
 
-export function getJobDetail(id: string): Promise<{ job: ResearchJobDetail }> {
+export function getJobDetail(id: string): Promise<JobDetailResponse> {
   return request(`/jobs/${id}`);
 }
 
@@ -548,7 +555,7 @@ export function getJobAgents(id: string): Promise<{ agents: SwarmAgent[] }> {
   return request(`/jobs/${id}/agents`);
 }
 
-export function getJobArtifacts(jobId: string): Promise<ArtifactMeta[]> {
+export function getJobArtifacts(jobId: string): Promise<{ artifacts: ArtifactMeta[] }> {
   return request(`/jobs/${jobId}/artifacts`);
 }
 
@@ -591,7 +598,7 @@ export async function getLearningRuns(): Promise<{ runs: LearningRun[] }> {
 export interface Schedule {
   id: string;
   label: string;
-  type: string;
+  type: ReportExecution;
   goal: string;
   intervalHours: number;
   chatId: number | null;
@@ -609,6 +616,7 @@ export function getSchedules(): Promise<Schedule[]> {
 export function createScheduleApi(data: {
   label: string;
   goal: string;
+  type?: ReportExecution;
   intervalHours?: number;
   startAt?: string;
 }): Promise<Schedule> {

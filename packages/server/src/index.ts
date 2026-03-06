@@ -396,6 +396,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   const createScheduleSchema = z.object({
     label: z.string().min(1, "label is required").max(200),
     goal: z.string().min(1, "goal is required").max(2000),
+    type: z.enum(["research", "analysis"]).optional(),
     intervalHours: z.number().int().positive().max(720).optional(),
     startAt: z.string().max(30).optional(),
   });

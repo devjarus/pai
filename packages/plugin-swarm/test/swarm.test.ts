@@ -275,6 +275,11 @@ describe("Swarm jobs", () => {
           steps: [{ type: "tool-result" }],
         })
         .mockResolvedValueOnce({
+          // Sub-agent 3 (chart generator)
+          text: "Generated a chart from the collected data.",
+          steps: [{ type: "tool-result" }],
+        })
+        .mockResolvedValueOnce({
           // Synthesizer
           text: "# Swarm Report: Test\n\n## Summary\nCombined findings from both agents.\n\n## Key Findings\n- Topic A data\n- Topic B trends",
           steps: [],
@@ -292,14 +297,14 @@ describe("Swarm jobs", () => {
       expect(job!.status).toBe("done");
       expect(job!.synthesis).toContain("Swarm Report");
       expect(job!.completedAt).not.toBeNull();
-      expect(job!.agentCount).toBe(2);
+      expect(job!.agentCount).toBe(3);
 
       // Verify agents were created
       const agents = getSwarmAgents(storage, id);
-      expect(agents).toHaveLength(2);
+      expect(agents).toHaveLength(3);
     });
 
-    it("falls back to single agent when planning fails", async () => {
+    it("falls back to a default three-role analysis plan when planning fails", async () => {
       const { generateText } = await import("ai");
       (generateText as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce({
@@ -310,6 +315,14 @@ describe("Swarm jobs", () => {
         .mockResolvedValueOnce({
           // Fallback single agent
           text: "Single agent result for the goal.",
+          steps: [{ type: "tool-result" }],
+        })
+        .mockResolvedValueOnce({
+          text: "Analyst synthesized the findings.",
+          steps: [{ type: "tool-result" }],
+        })
+        .mockResolvedValueOnce({
+          text: "Chart generator produced a PNG visual.",
           steps: [{ type: "tool-result" }],
         })
         .mockResolvedValueOnce({
@@ -328,9 +341,8 @@ describe("Swarm jobs", () => {
 
       const job = getSwarmJob(storage, id);
       expect(job!.status).toBe("done");
-      // Should have 1 fallback agent
       const agents = getSwarmAgents(storage, id);
-      expect(agents).toHaveLength(1);
+      expect(agents).toHaveLength(3);
       expect(agents[0]!.role).toBe("researcher");
     });
 
@@ -367,6 +379,14 @@ describe("Swarm jobs", () => {
           steps: [{ type: "tool-result" }],
         })
         .mockResolvedValueOnce({
+          text: "Researcher gathered supporting data.",
+          steps: [{ type: "tool-result" }],
+        })
+        .mockResolvedValueOnce({
+          text: "Analyst summarized the quantitative findings.",
+          steps: [{ type: "tool-result" }],
+        })
+        .mockResolvedValueOnce({
           // Synthesizer
           text: "# Report\nChart generated.",
           steps: [],
@@ -386,10 +406,9 @@ describe("Swarm jobs", () => {
       const job = getSwarmJob(storage, id);
       expect(job!.status).toBe("done");
 
-      // Verify agents were created with run_code tool
       const agents = getSwarmAgents(storage, id);
-      expect(agents).toHaveLength(1);
-      expect(agents[0]!.role).toBe("coder");
+      expect(agents).toHaveLength(3);
+      expect(agents.some((agent) => agent.role === "coder" || agent.role === "chart_generator")).toBe(true);
 
       // Artifacts are persisted when run_code executes inside generateText,
       // which is mocked — so we verify the blackboard has at least the final finding
@@ -407,6 +426,8 @@ describe("Swarm jobs", () => {
           steps: [],
         })
         .mockResolvedValueOnce({ text: "Done.", steps: [] })
+        .mockResolvedValueOnce({ text: "Analyst review.", steps: [] })
+        .mockResolvedValueOnce({ text: "Chart created.", steps: [] })
         .mockResolvedValueOnce({ text: "# Report\nDone.", steps: [] });
 
       const ctx = makeCtx();

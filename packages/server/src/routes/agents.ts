@@ -39,6 +39,103 @@ const TITLE_REFRESH_EVERY = 5; // Re-check title every N user turns after that
 const STREAM_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;  // 30 seconds
 
+type SafeUIChunk =
+  | { type: "text-start"; id: string; providerMetadata?: unknown }
+  | { type: "text-delta"; id: string; delta: string; providerMetadata?: unknown }
+  | { type: "text-end"; id: string; providerMetadata?: unknown }
+  | { type: "tool-input-start"; toolCallId: string; toolName: string; providerExecuted?: boolean; providerMetadata?: unknown; dynamic?: boolean; title?: string }
+  | { type: "tool-input-available"; toolCallId: string; toolName: string; input: unknown; providerExecuted?: boolean; providerMetadata?: unknown; dynamic?: boolean; title?: string }
+  | { type: "tool-input-error"; toolCallId: string; toolName: string; input: unknown; errorText: string; providerExecuted?: boolean; providerMetadata?: unknown; dynamic?: boolean; title?: string }
+  | { type: "tool-output-available"; toolCallId: string; output: unknown; providerExecuted?: boolean; dynamic?: boolean; preliminary?: boolean }
+  | { type: "tool-output-error"; toolCallId: string; errorText: string; providerExecuted?: boolean; dynamic?: boolean }
+  | { type: "tool-output-denied"; toolCallId: string };
+
+function getErrorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function forwardSafeUIMessageChunks(
+  writer: { write: (chunk: SafeUIChunk) => void },
+  fullStream: AsyncIterable<{
+    type: string;
+    [key: string]: unknown;
+  }>,
+): Promise<void> {
+  for await (const chunk of fullStream) {
+    switch (chunk.type) {
+      case "text-start":
+        writer.write({ type: "text-start", id: String(chunk.id), ...(chunk.providerMetadata ? { providerMetadata: chunk.providerMetadata } : {}) });
+        break;
+      case "text-delta":
+        writer.write({
+          type: "text-delta",
+          id: String(chunk.id),
+          delta: typeof chunk.text === "string" ? chunk.text : "",
+          ...(chunk.providerMetadata ? { providerMetadata: chunk.providerMetadata } : {}),
+        });
+        break;
+      case "text-end":
+        writer.write({ type: "text-end", id: String(chunk.id), ...(chunk.providerMetadata ? { providerMetadata: chunk.providerMetadata } : {}) });
+        break;
+      case "tool-input-start":
+        writer.write({
+          type: "tool-input-start",
+          toolCallId: String(chunk.id),
+          toolName: String(chunk.toolName),
+          ...(typeof chunk.providerExecuted === "boolean" ? { providerExecuted: chunk.providerExecuted } : {}),
+          ...(chunk.providerMetadata ? { providerMetadata: chunk.providerMetadata } : {}),
+          ...(typeof chunk.dynamic === "boolean" ? { dynamic: chunk.dynamic } : {}),
+          ...(typeof chunk.title === "string" ? { title: chunk.title } : {}),
+        });
+        break;
+      case "tool-call":
+        writer.write({
+          type: "tool-input-available",
+          toolCallId: String(chunk.toolCallId),
+          toolName: String(chunk.toolName),
+          input: chunk.input,
+          ...(typeof chunk.providerExecuted === "boolean" ? { providerExecuted: chunk.providerExecuted } : {}),
+          ...(chunk.providerMetadata ? { providerMetadata: chunk.providerMetadata } : {}),
+          ...(typeof chunk.dynamic === "boolean" ? { dynamic: chunk.dynamic } : {}),
+          ...(typeof chunk.title === "string" ? { title: chunk.title } : {}),
+        });
+        break;
+      case "tool-error":
+        writer.write({
+          type: "tool-input-error",
+          toolCallId: String(chunk.toolCallId),
+          toolName: String(chunk.toolName),
+          input: chunk.input,
+          errorText: getErrorText(chunk.error),
+          ...(typeof chunk.providerExecuted === "boolean" ? { providerExecuted: chunk.providerExecuted } : {}),
+          ...(chunk.providerMetadata ? { providerMetadata: chunk.providerMetadata } : {}),
+          ...(typeof chunk.dynamic === "boolean" ? { dynamic: chunk.dynamic } : {}),
+          ...(typeof chunk.title === "string" ? { title: chunk.title } : {}),
+        });
+        break;
+      case "tool-result":
+        writer.write({
+          type: "tool-output-available",
+          toolCallId: String(chunk.toolCallId),
+          output: chunk.output,
+          ...(typeof chunk.providerExecuted === "boolean" ? { providerExecuted: chunk.providerExecuted } : {}),
+          ...(typeof chunk.dynamic === "boolean" ? { dynamic: chunk.dynamic } : {}),
+          ...(typeof chunk.preliminary === "boolean" ? { preliminary: chunk.preliminary } : {}),
+        });
+        break;
+      case "tool-output-denied":
+        writer.write({
+          type: "tool-output-denied",
+          toolCallId: String(chunk.toolCallId),
+        });
+        break;
+      default:
+        // Drop provider-specific and unsupported chunk types (for example raw item references)
+        break;
+    }
+  }
+}
+
 const renameThreadSchema = z.object({
   title: z.string().min(1, "title is required").transform((s) => s.trim().replace(/<[^>]*>/g, "").slice(0, 255)),
 });
@@ -522,11 +619,10 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
             throw err;
           }
 
-          writer.merge(result.toUIMessageStream({ sendStart: false }));
-          result.consumeStream().then(undefined, (err: unknown) => {
-            ctx.logger.warn(`consumeStream failed: ${err instanceof Error ? err.message : String(err)}`);
-          });
-
+          await forwardSafeUIMessageChunks(
+            writer as { write: (chunk: SafeUIChunk) => void },
+            result.fullStream as AsyncIterable<{ type: string; [key: string]: unknown }>,
+          );
           await lockPromise;
         });
       },

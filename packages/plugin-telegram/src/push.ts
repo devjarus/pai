@@ -1,9 +1,10 @@
-import { InputFile, InlineKeyboard } from "grammy";
+import { InlineKeyboard } from "grammy";
 import type { Bot } from "grammy";
 import type { Storage, Logger } from "@personal-ai/core";
-import { getArtifact, listArtifacts } from "@personal-ai/core";
+import { buildReportPresentation, deriveReportVisuals, extractPresentationBlocks, getArtifact, listArtifacts } from "@personal-ai/core";
 import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse } from "./formatter.js";
 import { getOrCreateAccount, uploadImage, createPage } from "./telegraph.js";
+import { sendVisualsToTelegram } from "./delivery.js";
 
 function findChatIdForBriefing(storage: Storage, briefingId: string): number | null {
   let jobId: string | null = null;
@@ -64,32 +65,52 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
     );
     for (const row of rows) {
       try {
-        const parsed = JSON.parse(row.sections) as { goal?: string; report?: string };
-        if (!parsed.report) continue;
-        const title = parsed.goal ?? "Report";
-        const isSwarm = row.id.startsWith("swarm-");
-        const emoji = isSwarm ? "\uD83D\uDC1D" : "\uD83D\uDD2C";
-        const label = isSwarm ? "Swarm Report" : "Research Complete";
-        const formattedReport = formatTelegramResponse(parsed.report);
+        const parsed = JSON.parse(row.sections) as Record<string, unknown>;
+        const jobId = row.id.startsWith("research-") ? row.id.slice("research-".length)
+          : row.id.startsWith("swarm-") ? row.id.slice("swarm-".length)
+          : null;
+        const extracted = extractPresentationBlocks(typeof parsed.report === "string" ? parsed.report : "");
+        const presentation = buildReportPresentation({
+          report: extracted.report,
+          structuredResult: typeof parsed.structuredResult === "string" ? parsed.structuredResult : extracted.structuredResult,
+          renderSpec: typeof parsed.renderSpec === "string" ? parsed.renderSpec : extracted.renderSpec,
+          visuals: Array.isArray(parsed.visuals)
+            ? parsed.visuals as Parameters<typeof buildReportPresentation>[0]["visuals"]
+            : (jobId ? deriveReportVisuals(storage, jobId) : []),
+          resultType: typeof parsed.resultType === "string" ? parsed.resultType : "general",
+          execution: parsed.execution === "analysis" || row.id.startsWith("swarm-") ? "analysis" : "research",
+        });
+        if (!presentation.report) continue;
+
+        const title = typeof parsed.goal === "string" ? parsed.goal : "Report";
+        const isAnalysis = presentation.execution === "analysis";
+        const emoji = isAnalysis ? "\uD83D\uDC1D" : "\uD83D\uDD2C";
+        const label = isAnalysis ? "Analysis Complete" : "Research Complete";
+        const formattedReport = formatTelegramResponse(presentation.report);
         // Send to the originating Telegram chat, not all chats
         const chatId = findChatIdForBriefing(storage, row.id);
         if (chatId) {
+          const preview = makePreview(formattedReport);
+          const previewHtml = `${emoji} <b>${label}: ${escapeHTML(title)}</b>\n\n${markdownToTelegramHTML(preview)}`;
+          await sendToTelegramChat(bot, chatId, previewHtml, logger);
+          await sendVisualsToTelegram(storage, bot, chatId, presentation.visuals, logger);
+
           // Collect image artifacts for embedding in Telegraph
-          const jobId = row.id.startsWith("research-") ? row.id.slice("research-".length)
-            : row.id.startsWith("swarm-") ? row.id.slice("swarm-".length)
-            : null;
           const telegraphImages: Array<{ name: string; url: string }> = [];
           if (jobId) {
             try {
-              const artifacts = listArtifacts(storage, jobId);
-              for (const meta of artifacts) {
-                if (meta.mimeType.startsWith("image/")) {
-                  const artifact = getArtifact(storage, meta.id);
-                  if (artifact) {
-                    const imgUrl = await uploadImage(artifact.data, meta.name, logger);
-                    if (imgUrl) {
-                      telegraphImages.push({ name: meta.name, url: imgUrl });
-                    }
+              const visualArtifacts = presentation.visuals.length > 0
+                ? presentation.visuals.map((visual) => ({ artifactId: visual.artifactId, title: visual.title }))
+                : listArtifacts(storage, jobId)
+                  .filter((artifact) => artifact.mimeType.startsWith("image/"))
+                  .map((artifact) => ({ artifactId: artifact.id, title: artifact.name }));
+
+              for (const visual of visualArtifacts) {
+                const artifact = getArtifact(storage, visual.artifactId);
+                if (artifact) {
+                  const imgUrl = await uploadImage(artifact.data, artifact.name, logger);
+                  if (imgUrl) {
+                    telegraphImages.push({ name: visual.title, url: imgUrl });
                   }
                 }
               }
@@ -103,7 +124,7 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
           try {
             const account = await getOrCreateAccount(storage, logger);
             if (account) {
-              const page = await createPage(account, title, parsed.report, telegraphImages, logger);
+              const page = await createPage(account, title, presentation.report, telegraphImages, logger);
               if (page) {
                 telegraphUrl = page.url;
               }
@@ -112,46 +133,17 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
             logger.warn("Telegraph publish failed, falling back to text", { error: err instanceof Error ? err.message : String(err) });
           }
 
-          // Send message with preview + Telegraph button (or fallback to text-only)
-          const preview = makePreview(formattedReport);
           if (telegraphUrl) {
-            const previewHtml = `${emoji} <b>${label}: ${escapeHTML(title)}</b>\n\n${markdownToTelegramHTML(preview)}`;
-            const keyboard = new InlineKeyboard()
-              .url("Read Full Report", telegraphUrl);
-            const parts = splitMessage(previewHtml);
+            const keyboard = new InlineKeyboard().url("Read Full Report", telegraphUrl);
             try {
-              // First part gets the keyboard button
-              await bot.api.sendMessage(chatId, parts[0]!, { parse_mode: "HTML", reply_markup: keyboard });
-              for (let pi = 1; pi < parts.length; pi++) {
-                await bot.api.sendMessage(chatId, parts[pi]!, { parse_mode: "HTML" });
-              }
+              await bot.api.sendMessage(chatId, "\uD83D\uDCC4 Full report", {
+                parse_mode: "HTML",
+                reply_markup: keyboard,
+              });
             } catch {
-              // Fallback: send without keyboard
-              await sendToTelegramChat(bot, chatId, previewHtml, logger);
+              await bot.api.sendMessage(chatId, telegraphUrl);
             }
             logger.info("Research report published to Telegraph", { briefingId: row.id, url: telegraphUrl });
-          } else {
-            // Fallback: send full report as text messages
-            const fullHtml = `${emoji} <b>${label}: ${escapeHTML(title)}</b>\n\n${markdownToTelegramHTML(formattedReport)}`;
-            await sendToTelegramChat(bot, chatId, fullHtml, logger);
-            // Send image artifacts as documents if Telegraph upload failed
-            if (jobId && telegraphImages.length === 0) {
-              try {
-                const artifacts = listArtifacts(storage, jobId);
-                for (const meta of artifacts) {
-                  if (meta.mimeType.startsWith("image/")) {
-                    const artifact = getArtifact(storage, meta.id);
-                    if (artifact) {
-                      await bot.api.sendDocument(chatId, new InputFile(artifact.data, meta.name), {
-                        caption: meta.name,
-                      });
-                    }
-                  }
-                }
-              } catch (err) {
-                logger.warn("Failed to send artifact documents", { jobId, error: err instanceof Error ? err.message : String(err) });
-              }
-            }
           }
 
           storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);

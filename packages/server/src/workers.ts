@@ -2,6 +2,7 @@ import type { PluginContext } from "@personal-ai/core";
 import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads } from "@personal-ai/core";
 import { getDueSchedules, markScheduleRun } from "@personal-ai/plugin-schedules";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
+import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
 import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { generateBriefing, getLatestBriefing } from "./briefing.js";
@@ -170,6 +171,8 @@ export class WorkerLoop {
               provider: this.ctx.config.llm.provider,
               model: this.ctx.config.llm.model,
               contextWindow: this.ctx.config.llm.contextWindow,
+              sandboxUrl: this.ctx.config.sandboxUrl,
+              browserUrl: this.ctx.config.browserUrl,
               dataDir: this.ctx.config.dataDir,
               webSearch,
               formatSearchResults,
@@ -179,7 +182,33 @@ export class WorkerLoop {
           ).catch((err) => {
             this.ctx.logger.error(`Scheduled research failed: ${err instanceof Error ? err.message : String(err)}`);
           });
+          continue;
         }
+
+        const jobId = createSwarmJob(this.ctx.storage, {
+          goal: schedule.goal,
+          threadId: schedule.threadId,
+        });
+        runSwarmInBackground(
+          {
+            storage: this.ctx.storage,
+            llm: this.ctx.llm,
+            logger: this.ctx.logger,
+            timezone: this.ctx.config.timezone,
+            provider: this.ctx.config.llm.provider,
+            model: this.ctx.config.llm.model,
+            contextWindow: this.ctx.config.llm.contextWindow,
+            sandboxUrl: this.ctx.config.sandboxUrl,
+            browserUrl: this.ctx.config.browserUrl,
+            dataDir: this.ctx.config.dataDir,
+            webSearch,
+            formatSearchResults,
+            fetchPage: fetchPageAsMarkdown,
+          },
+          jobId,
+        ).catch((err) => {
+          this.ctx.logger.error(`Scheduled analysis failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
       }
     } catch (err) {
       this.ctx.logger.warn(`Schedule runner error: ${err instanceof Error ? err.message : String(err)}`);

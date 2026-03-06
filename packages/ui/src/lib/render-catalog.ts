@@ -185,6 +185,8 @@ export function getResultRenderPrompt(): string {
       "Use DataTable for comparing multiple items (flights, stocks, etc.)",
       "Use BulletList for risks, catalysts, recommendations",
       "Use Badge for verdict, status, and category labels",
+      "Use ChartImage for static chart artifacts at /api/artifacts/<id> when visuals are available",
+      "Use LinkButton for artifact downloads or high-value external links",
       "Use SourceList at the end for all reference links",
       "Keep the spec concise — avoid deeply nested structures",
     ],

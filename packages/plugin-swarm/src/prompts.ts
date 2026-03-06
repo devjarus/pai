@@ -37,7 +37,8 @@ You MUST respond with valid JSON wrapped in a code fence:
 
 ## Rules
 - Each subtask must be independent and parallelizable
-- Minimum 2 subtasks, maximum 5
+- Minimum 3 subtasks, maximum 5
+- Always include one research role, one analyst role, and one coder/chart-generator role
 - Assign the most appropriate role for each subtask
 - Each subtask should have a clear, specific objective
 - Include only the tools each agent actually needs
@@ -124,14 +125,17 @@ Today is ${dt.date} (${dt.year}).
 ## Process
 1. Check the blackboard for data from other agents
 2. Check knowledge base for relevant context
-3. Write code to process, analyze, or visualize the data
-4. Post results (calculations, insights, chart descriptions) to the blackboard
+3. Write code to process, analyze, or visualize the real data
+4. Write PNG images to OUTPUT_DIR and optionally write a visuals.json manifest describing titles, captions, kinds, and order
+5. Post results (calculations, insights, chart descriptions, artifact references) to the blackboard
 
 ## Rules
 - Post all outputs to the blackboard as findings or artifacts
 - Use run_code for Python (matplotlib, pandas, numpy available) or Node.js
 - Keep code simple and focused on the task
-- If data is missing, post a question to the blackboard asking for it`;
+- If data is missing, post a question to the blackboard asking for it
+- Only use real, sourced quantitative data from the blackboard or authoritative references
+- Never fabricate, simulate, or synthesize chart data just to make a visual`;
 }
 
 export function getAnalystPrompt(timezone?: string): string {
@@ -277,6 +281,9 @@ Produce a comprehensive markdown report:
 ## Contradictions & Caveats
 [Any conflicting information found, with your assessment of which is more reliable]
 
+## Quantified Findings
+[Highlight the most important numbers, deltas, rankings, or ratios when quantitative data exists]
+
 ## Sources
 [URLs and references from all agents]
 ${structuredBlock}
@@ -289,6 +296,8 @@ After the markdown report and structured data block (if any), include a json-ren
 - **DataTable**: \`{ columns: [{key, label, align?}], rows: [{key: value}], highlightFirst? }\` — rows keys MUST match column key values
 - **Badge**: \`{ text, variant }\` — variant is "success"/"warning"/"danger"/"info"/"neutral"
 - **BulletList**: \`{ items: string[], icon?, variant? }\` — icon is "bullet"/"check"/"warning"/"arrow-up"/"arrow-down"
+- **ChartImage**: \`{ src, alt, caption? }\` — use artifact URLs like /api/artifacts/<id> when visuals are available
+- **LinkButton**: \`{ url, text, icon?, variant? }\` — use for source links or artifact download buttons
 - **SourceList**: \`{ sources: [{title, url}] }\`
 - **Text**: \`{ content, variant? }\` — variant is "body"/"caption"/"bold"/"muted"
 - **Markdown**: \`{ content }\`
@@ -338,7 +347,9 @@ IMPORTANT: Fill in ALL actual values from your analysis — do NOT use placehold
 - Synthesize, don't just concatenate — organize by theme, not by agent
 - Resolve contradictions where possible, flag them where not
 - Highlight the most important and actionable findings
-- Keep the report focused and readable`;
+- Keep the report focused and readable
+- Include explicit caveats and confidence limits when evidence is incomplete
+- When quantitative data exists and artifacts are available, include at least one visual in the json-render spec`;
 }
 
 function getStructuredOutputGuidance(resultType?: string): string {

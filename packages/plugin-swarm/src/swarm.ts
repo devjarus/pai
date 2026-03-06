@@ -3,7 +3,18 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger } from "@personal-ai/core";
-import { knowledgeSearch, appendMessages, learnFromContent, resolveSandboxUrl, getContextBudget, getProviderOptions, createBrowserTools } from "@personal-ai/core";
+import {
+  knowledgeSearch,
+  appendMessages,
+  learnFromContent,
+  resolveSandboxUrl,
+  getContextBudget,
+  getProviderOptions,
+  createBrowserTools,
+  buildReportPresentation,
+  deriveReportVisuals,
+  extractPresentationBlocks,
+} from "@personal-ai/core";
 import { upsertJob, updateJobStatus } from "@personal-ai/core";
 import { storeArtifact, guessMimeType } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
@@ -71,9 +82,90 @@ function getSubAgentPrompt(role: string, resultType: string, timezone?: string):
 }
 
 const MAX_AGENTS = 5;
-const MAX_SEARCHES_PER_AGENT = 3;
-const MAX_PAGES_PER_AGENT = 2;
-const AGENT_STEP_LIMIT = 6;
+const MAX_SEARCHES_PER_AGENT = 4;
+const MAX_PAGES_PER_AGENT = 3;
+const AGENT_STEP_LIMIT = 8;
+
+function getDefaultResearchRole(resultType?: string): string {
+  switch (resultType) {
+    case "flight":
+      return "flight_researcher";
+    case "stock":
+      return "stock_researcher";
+    case "crypto":
+      return "crypto_researcher";
+    case "news":
+      return "news_researcher";
+    default:
+      return "researcher";
+  }
+}
+
+function getDefaultAnalystRole(resultType?: string): string {
+  switch (resultType) {
+    case "flight":
+      return "price_analyst";
+    case "crypto":
+      return "market_analyst";
+    case "comparison":
+      return "comparator";
+    case "news":
+      return "fact_checker";
+    default:
+      return "analyst";
+  }
+}
+
+function buildDefaultAnalysisPlan(goal: string, resultType?: string): SwarmPlanItem[] {
+  return [
+    {
+      role: getDefaultResearchRole(resultType),
+      task: `Research authoritative facts, source evidence, and key quantitative data for: ${goal}`,
+      tools: ["web_search", "read_page", "knowledge_search"],
+    },
+    {
+      role: getDefaultAnalystRole(resultType),
+      task: `Analyze the evidence, quantify important trends, compare competing signals, and surface caveats for: ${goal}`,
+      tools: ["web_search", "read_page", "knowledge_search"],
+    },
+    {
+      role: "chart_generator",
+      task: `Using only real data from the blackboard or authoritative sources, generate at least one PNG visual for: ${goal}. Write image files to OUTPUT_DIR and optionally write visuals.json describing titles, captions, kinds, and order. Do not fabricate, simulate, or synthesize data.`,
+      tools: ["web_search", "read_page", "knowledge_search", "run_code"],
+    },
+  ];
+}
+
+function ensureAnalysisPlan(plan: SwarmPlanItem[] | null, goal: string, resultType?: string): SwarmPlanItem[] {
+  const current = plan && plan.length > 0 ? [...plan] : [];
+  const normalized = current.slice(0, MAX_AGENTS);
+  const required = buildDefaultAnalysisPlan(goal, resultType);
+
+  const hasResearcher = normalized.some((item) => item.role === "researcher" || item.role.endsWith("_researcher"));
+  const hasAnalyst = normalized.some((item) =>
+    ["analyst", "comparator", "fact_checker", "market_analyst", "price_analyst"].includes(item.role),
+  );
+  const hasCoder = normalized.some((item) => item.role === "coder" || item.role === "chart_generator");
+
+  if (!hasResearcher) normalized.unshift(required[0]!);
+  if (!hasAnalyst) normalized.push(required[1]!);
+  if (!hasCoder) normalized.push(required[2]!);
+
+  const deduped: SwarmPlanItem[] = [];
+  const seen = new Set<string>();
+  for (const item of normalized) {
+    const key = `${item.role}:${item.task}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+
+  const requiredRoles = new Set(required.map((item) => item.role));
+  const requiredItems = deduped.filter((item) => requiredRoles.has(item.role));
+  const optionalItems = deduped.filter((item) => !requiredRoles.has(item.role));
+
+  return [...requiredItems, ...optionalItems].slice(0, MAX_AGENTS);
+}
 
 // ---- Background Execution ----
 
@@ -103,23 +195,18 @@ export async function runSwarmInBackground(
     updateSwarmJob(ctx.storage, jobId, { status: "planning" });
     updateJobStatus(ctx.storage, jobId, { progress: "planning subtasks" });
 
-    const plan = await planSwarm(ctx, job.goal, job.resultType);
-    if (!plan || plan.length === 0) {
-      // Fallback: single-agent execution
-      ctx.logger.warn(`Swarm planning failed for ${jobId}, falling back to single agent`);
-      const fallbackPlan: SwarmPlanItem[] = [
-        { role: "researcher", task: job.goal, tools: ["web_search", "read_page", "knowledge_search"] },
-      ];
-      await executePlan(ctx, jobId, fallbackPlan, job.resultType);
-    } else {
-      const limited = plan.slice(0, MAX_AGENTS);
-      updateSwarmJob(ctx.storage, jobId, {
-        plan: JSON.stringify(limited),
-        agent_count: limited.length,
-        status: "running",
-      });
-      await executePlan(ctx, jobId, limited, job.resultType);
+    const planned = await planSwarm(ctx, job.goal, job.resultType);
+    const executablePlan = ensureAnalysisPlan(planned, job.goal, job.resultType);
+    if (!planned || planned.length === 0) {
+      ctx.logger.warn(`Swarm planning failed for ${jobId}, falling back to default analysis plan`);
     }
+
+    updateSwarmJob(ctx.storage, jobId, {
+      plan: JSON.stringify(executablePlan),
+      agent_count: executablePlan.length,
+      status: "running",
+    });
+    await executePlan(ctx, jobId, executablePlan, job.resultType);
 
     // Phase 3: Synthesize
     updateSwarmJob(ctx.storage, jobId, { status: "synthesizing" });
@@ -127,9 +214,18 @@ export async function runSwarmInBackground(
 
     const { synthesis: rawSynthesis, structuredResult, renderSpec } = await synthesize(ctx, jobId, job.goal, job.resultType);
     const report = rawSynthesis || "Swarm completed but no synthesis was generated.";
+    const visuals = deriveReportVisuals(ctx.storage, jobId);
+    const presentation = buildReportPresentation({
+      report,
+      ...(structuredResult ? { structuredResult } : {}),
+      ...(renderSpec ? { renderSpec } : {}),
+      visuals,
+      resultType: job.resultType || "general",
+      execution: "analysis",
+    });
 
     updateSwarmJob(ctx.storage, jobId, {
-      synthesis: report,
+      synthesis: presentation.report,
       status: "done",
       completed_at: new Date().toISOString(),
     });
@@ -137,7 +233,7 @@ export async function runSwarmInBackground(
     updateJobStatus(ctx.storage, jobId, {
       status: "done",
       progress: "complete",
-      result: report.slice(0, 200),
+      result: presentation.report.slice(0, 200),
       resultType: job.resultType || "general",
       ...(structuredResult ? { structuredResult } : {}),
     });
@@ -146,11 +242,13 @@ export async function runSwarmInBackground(
     const briefingId = `swarm-${jobId}`;
     try {
       const sections = JSON.stringify({
-        report,
+        report: presentation.report,
         goal: job.goal,
-        resultType: job.resultType || "general",
-        structuredResult: structuredResult ?? undefined,
-        renderSpec: renderSpec ?? undefined,
+        resultType: presentation.resultType,
+        execution: presentation.execution,
+        visuals: presentation.visuals,
+        structuredResult: presentation.structuredResult ?? undefined,
+        renderSpec: presentation.renderSpec ?? undefined,
       });
       ctx.storage.run(
         "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
@@ -165,7 +263,7 @@ export async function runSwarmInBackground(
     try {
       const reportUrl = `/inbox/${briefingId}`;
       const reportTitle = `Swarm Report: ${job.goal.slice(0, 100)}`;
-      await learnFromContent(ctx.storage, ctx.llm, reportUrl, reportTitle, report);
+      await learnFromContent(ctx.storage, ctx.llm, reportUrl, reportTitle, presentation.report);
     } catch (err) {
       ctx.logger.warn(`Failed to store swarm report in knowledge: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -173,9 +271,9 @@ export async function runSwarmInBackground(
     // Append summary to originating chat thread
     if (job.threadId) {
       try {
-        const summary = report.length > 500
-          ? report.slice(0, 500) + "\n\n*Full report available in your Inbox.*"
-          : report;
+        const summary = presentation.report.length > 500
+          ? presentation.report.slice(0, 500) + "\n\n*Full report available in your Inbox.*"
+          : presentation.report;
         appendMessages(ctx.storage, job.threadId, [
           { role: "assistant", content: `Swarm analysis complete: "${job.goal}"\n\n${summary}` },
         ]);
@@ -537,7 +635,7 @@ async function synthesize(
   jobId: string,
   goal: string,
   resultType?: string,
-): Promise<{ synthesis: string; structuredResult: string | null; renderSpec: string | null }> {
+): Promise<{ synthesis: string; structuredResult?: string; renderSpec?: string }> {
   const agents = getSwarmAgents(ctx.storage, jobId);
   const blackboard = getBlackboardEntries(ctx.storage, jobId);
 
@@ -567,38 +665,10 @@ async function synthesize(
   });
 
   const text = result.text || "Synthesis produced no output.";
-
-  // Extract structured JSON from code fence if present
-  let structuredResult: string | null = null;
-  let renderSpec: string | null = null;
-  let synthesis = text;
-
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/);
-  if (jsonMatch?.[1]) {
-    try {
-      // Validate it's parseable JSON
-      JSON.parse(jsonMatch[1].trim());
-      structuredResult = jsonMatch[1].trim();
-      // Remove the JSON code fence from the markdown report
-      synthesis = text.replace(/```json\s*[\s\S]*?```/, "").trim();
-    } catch {
-      // Invalid JSON — keep original text, no structured result
-      ctx.logger.warn("Synthesizer produced invalid JSON in code fence, ignoring structured output");
-    }
-  }
-
-  // Extract json-render UI spec if present
-  const specMatch = synthesis.match(/```jsonrender\s*([\s\S]*?)```/);
-  if (specMatch?.[1]) {
-    try {
-      JSON.parse(specMatch[1].trim());
-      renderSpec = specMatch[1].trim();
-      // Remove the jsonrender code fence from the markdown report
-      synthesis = synthesis.replace(/```jsonrender\s*[\s\S]*?```/, "").trim();
-    } catch {
-      ctx.logger.warn("Synthesizer produced invalid jsonrender spec, ignoring");
-    }
-  }
-
-  return { synthesis, structuredResult, renderSpec };
+  const extracted = extractPresentationBlocks(text);
+  return {
+    synthesis: extracted.report,
+    ...(extracted.structuredResult ? { structuredResult: extracted.structuredResult } : {}),
+    ...(extracted.renderSpec ? { renderSpec: extracted.renderSpec } : {}),
+  };
 }

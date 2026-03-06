@@ -23,7 +23,7 @@ export interface SwarmJob {
 }
 
 export interface SwarmPlanItem {
-  role: "researcher" | "coder" | "analyst";
+  role: string;
   task: string;
   tools: string[];
 }

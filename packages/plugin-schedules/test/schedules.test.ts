@@ -53,11 +53,13 @@ describe("schedules", () => {
       const schedule = createSchedule(storage, {
         label: "Weekly crypto",
         goal: "Research crypto market",
+        type: "analysis",
         intervalHours: 168,
         chatId: 12345,
         threadId: "thread-abc",
       });
 
+      expect(schedule.type).toBe("analysis");
       expect(schedule.intervalHours).toBe(168);
       expect(schedule.chatId).toBe(12345);
       expect(schedule.threadId).toBe("thread-abc");

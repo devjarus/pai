@@ -235,7 +235,20 @@ function InboxDetail({ id }: { id: string }) {
     );
   }
 
-  const sections = item.sections as { goal?: string; report?: string; greeting?: string };
+  const sections = item.sections as {
+    goal?: string;
+    report?: string;
+    greeting?: string;
+    execution?: "research" | "analysis";
+    visuals?: Array<{
+      artifactId: string;
+      mimeType: string;
+      kind: "chart" | "image";
+      title: string;
+      caption?: string;
+      order: number;
+    }>;
+  };
 
   return (
     <div className="h-full overflow-y-auto">
@@ -307,7 +320,9 @@ function InboxDetail({ id }: { id: string }) {
         <div className="mb-4 md:mb-6">
           <div className="flex items-center gap-2 mb-2">
             {item.type === "research" ? (
-              <Badge variant="outline" className="text-[10px] border-blue-500/20 bg-blue-500/10 text-blue-400">Research Report</Badge>
+              <Badge variant="outline" className="text-[10px] border-blue-500/20 bg-blue-500/10 text-blue-400">
+                {sections.execution === "analysis" ? "Analysis Report" : "Research Report"}
+              </Badge>
             ) : (
               <Badge variant="outline" className="text-[10px] border-primary/20 bg-primary/10 text-primary">Daily Briefing</Badge>
             )}
@@ -327,6 +342,7 @@ function InboxDetail({ id }: { id: string }) {
             <ResultRenderer
               spec={(sections as Record<string, unknown>).renderSpec}
               structuredResult={(sections as Record<string, unknown>).structuredResult}
+              visuals={sections.visuals ?? []}
               markdown={sections.report}
               resultType={(sections as Record<string, unknown>).resultType as string | undefined}
               debug={configData?.debugResearch ?? false}
@@ -781,7 +797,13 @@ const domainBadges: Record<string, { icon: string; label: string; color: string;
 function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; onCardClick: (id: string) => void; isRead: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const navigate = useNavigate();
-  const sections = item.sections as { report?: string; goal?: string; resultType?: string };
+  const sections = item.sections as {
+    report?: string;
+    goal?: string;
+    resultType?: string;
+    execution?: "research" | "analysis";
+    visuals?: Array<unknown>;
+  };
   const domain = domainBadges[sections.resultType ?? ""];
 
   return (
@@ -798,11 +820,16 @@ function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; on
             <div className="flex items-center gap-2">
               <SearchIcon className="h-4 w-4 shrink-0 text-blue-400" />
               <Badge variant="outline" className="text-[10px] border-blue-500/20 bg-blue-500/10 text-blue-400">
-                Research Report
+                {sections.execution === "analysis" ? "Analysis Report" : "Research Report"}
               </Badge>
               {domain && (
                 <Badge variant="outline" className={`text-[10px] ${domain.border} ${domain.bg} ${domain.color}`}>
                   {domain.icon} {domain.label}
+                </Badge>
+              )}
+              {(sections.visuals?.length ?? 0) > 0 && (
+                <Badge variant="outline" className="text-[10px]">
+                  {(sections.visuals?.length ?? 0)} visual{sections.visuals?.length === 1 ? "" : "s"}
                 </Badge>
               )}
               <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>

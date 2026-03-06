@@ -24,6 +24,7 @@ import { ToolSwarmStart } from "../tools/ToolSwarmStart";
 import { ToolScheduleAction } from "../tools/ToolScheduleAction";
 import { ToolDocumentReport } from "../tools/ToolDocumentReport";
 import { ToolBrowseAction } from "../tools/ToolBrowseAction";
+import { ArtifactGallery } from "../results/ArtifactGallery";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -203,7 +204,13 @@ export const RunCodeToolUI = makeAssistantToolUI({
   render: ({ args, result, status }) => {
     const state = mapStatus(status);
     const input = args as { language?: string; code?: string };
-    const output = result as { output?: string; error?: string; files?: unknown[] } | undefined;
+    const output = result as {
+      stdout?: string;
+      stderr?: string;
+      exitCode?: number;
+      artifacts?: Array<{ id: string; name: string; mimeType: string }>;
+      error?: string;
+    } | undefined;
 
     if (state === "input-available") {
       return (
@@ -236,11 +243,23 @@ export const RunCodeToolUI = makeAssistantToolUI({
         {input.code && (
           <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{input.code}</pre>
         )}
-        {output?.output && (
+        {typeof output?.exitCode === "number" && (
+          <div className="text-xs text-muted-foreground">Exit code: {output.exitCode}</div>
+        )}
+        {output?.stdout && (
           <>
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Output</div>
-            <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{output.output}</pre>
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Stdout</div>
+            <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{output.stdout}</pre>
           </>
+        )}
+        {output?.stderr && (
+          <>
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Stderr</div>
+            <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{output.stderr}</pre>
+          </>
+        )}
+        {output?.artifacts && output.artifacts.length > 0 && (
+          <ArtifactGallery artifacts={output.artifacts} title="Files" />
         )}
       </div>
     );

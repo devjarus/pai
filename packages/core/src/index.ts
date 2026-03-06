@@ -49,6 +49,16 @@ export type { Owner } from "./auth.js";
 // Research schemas
 export { detectResearchDomain } from "./research-schemas.js";
 export type { FlightQuery, FlightOption, FlightReport, StockMetrics, ChartArtifact, StockReport, ResearchResult, ResearchResultType } from "./research-schemas.js";
+export {
+  extractPresentationBlocks,
+  parseVisualManifest,
+  collectReportVisuals,
+  deriveReportVisuals,
+  mergeRenderSpecWithVisuals,
+  buildReportPresentation,
+  getReferencedVisualsFromSpec,
+} from "./report-presentation.js";
+export type { ReportExecution, ReportVisual, ReportPresentation } from "./report-presentation.js";
 
 // Sandbox
 export { resolveSandboxUrl, sandboxHealth, runInSandbox } from "./sandbox.js";

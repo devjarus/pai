@@ -19,12 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Analysis execution mode** — Schedules, Inbox reruns, and assistant-created recurring jobs now distinguish between lightweight `research` runs and deeper `analysis` runs. Analysis schedules dispatch through the swarm pipeline, preserve execution mode on rerun, and receive sandbox/browser/dataDir context so scheduled visual reports can use code execution, browser tools, and artifacts.
+- **Shared report presentation pipeline** — Research and swarm jobs now persist a normalized presentation payload with execution mode, visuals, structured data, and merged render specs. Jobs, Inbox, web chat, and Telegram now consume the same report/visual contract instead of scraping fenced JSON from markdown.
+- **Telegram visual delivery** — Report summaries now send inline chart photos before the full-report button, and direct chat artifact delivery sends image outputs as photos instead of generic documents.
 - **Filesystem-backed artifacts** — Artifacts (screenshots, charts, reports) are now stored on disk at `{dataDir}/artifacts/` instead of as SQLite BLOBs. Keeps the database lean and makes cleanup trivial. Migration v2 runs automatically on server startup — no manual setup required.
 - **Artifact auto-cleanup** — Background worker deletes artifacts older than 7 days (runs every 24 hours). Also cleans up orphan files on disk that have no matching DB records.
 - **Telegram HTML report readability** — Downloaded Telegram research/swarm report documents now use richer markdown-to-HTML rendering with proper headings, paragraphs, ordered/unordered lists, blockquotes, links, and improved document styling for browser viewing.
 
 ### Added
 
+- **Report visuals metadata** — Added shared `ReportExecution`, `ReportVisual`, and `ReportPresentation` types plus deterministic visual manifest parsing and render-spec merging for chart/image artifacts.
+- **Visual gallery fallbacks** — Inbox, Jobs, and chat tool results now use shared gallery components to render persisted chart PNGs and other artifacts consistently when specs omit them.
 - **Chat document upload** — Attach text documents (`.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`, code files) directly in the chat composer via drag-and-drop or the attachment button. Documents are automatically stored in the knowledge base and included in the LLM context for analysis, Q&A, and comparison.
 - **Downloadable analysis reports** — New `generate_report` agent tool creates downloadable Markdown reports from chat conversations. Includes a tool card with a one-click download button. Ask the assistant to "generate a report" or "create an analysis document" to trigger it.
 - **Document upload + analysis** — Added `/api/knowledge/upload` and Knowledge UI flow to upload text-based docs (`.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`), index them into the knowledge base, and generate a quick AI analysis summary
