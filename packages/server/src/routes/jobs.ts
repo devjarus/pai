@@ -108,7 +108,7 @@ export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext
         sourceScheduleId: j.sourceScheduleId,
         ...queueState(j.id, j.status),
         error: tracked?.error ?? null,
-        result: j.report ? j.report.slice(0, 300) : tracked?.result ?? null,
+        result: j.report ? j.report.slice(0, 1000) : tracked?.result ?? null,
         resultType: j.resultType ?? null,
       };
     });
@@ -131,7 +131,7 @@ export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext
         sourceScheduleId: j.sourceScheduleId,
         ...queueState(j.id, j.status),
         error: tracked?.error ?? null,
-        result: j.synthesis ? j.synthesis.slice(0, 300) : tracked?.result ?? null,
+        result: j.synthesis ? j.synthesis.slice(0, 1000) : tracked?.result ?? null,
         resultType: j.resultType ?? null,
       };
     });

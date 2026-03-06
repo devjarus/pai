@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   useTasks,
@@ -57,10 +58,11 @@ const priorityStyles: Record<string, string> = {
 };
 
 export default function Tasks() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"tasks" | "goals">("tasks");
   const [statusFilter, setStatusFilter] = useState<string>("open");
 
-  const [showAddTask, setShowAddTask] = useState(false);
+  const [showAddTask, setShowAddTask] = useState(searchParams.get("action") === "add");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskForm, setTaskForm] = useState({
     title: "",
@@ -81,7 +83,8 @@ export default function Tasks() {
 
   useEffect(() => {
     document.title = "Tasks - pai";
-  }, []);
+    if (searchParams.get("action")) setSearchParams({}, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- TanStack Query hooks ---
   const { data: tasks = [], isLoading: tasksLoading } = useTasks({ status: statusFilter });

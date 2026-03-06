@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -46,6 +47,7 @@ function parseTags(tags: string | null): string[] {
 }
 
 export default function Knowledge() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
 
   // --- Debounced search state ---
@@ -55,7 +57,7 @@ export default function Knowledge() {
 
   // --- UI toggle / dialog state ---
   const [selectedSource, setSelectedSource] = useState<KnowledgeSource | null>(null);
-  const [showLearnDialog, setShowLearnDialog] = useState(false);
+  const [showLearnDialog, setShowLearnDialog] = useState(searchParams.get("action") === "learn");
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [learnUrl, setLearnUrl] = useState("");
@@ -85,7 +87,7 @@ export default function Knowledge() {
   const reindexMutation = useReindexKnowledge();
   const updateTagsMutation = useUpdateKnowledgeSource();
 
-  useEffect(() => { document.title = "Knowledge Base - pai"; }, []);
+  useEffect(() => { document.title = "Knowledge Base - pai"; if (searchParams.get("action")) setSearchParams({}, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     clearTimeout(debounceRef.current);

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import type { Schedule } from "../api";
 import { useSchedules, useCreateSchedule, useDeleteSchedule, usePauseSchedule, useResumeSchedule } from "@/hooks";
@@ -54,10 +55,11 @@ function timeUntil(iso: string): string {
 }
 
 export default function Schedules() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: schedules = [], isLoading: loading } = useSchedules();
 
   // Add/Edit dialog state (UI-only)
-  const [showDialog, setShowDialog] = useState(false);
+  const [showDialog, setShowDialog] = useState(searchParams.get("action") === "add");
   const [editing, setEditing] = useState<Schedule | null>(null);
   const [form, setForm] = useState({
     label: "",
@@ -77,7 +79,8 @@ export default function Schedules() {
 
   useEffect(() => {
     document.title = "Schedules - pai";
-  }, []);
+    if (searchParams.get("action")) setSearchParams({}, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saving = createSchedule.isPending || deleteSchedule.isPending;
 
