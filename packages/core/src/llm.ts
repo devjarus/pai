@@ -1,6 +1,7 @@
 import { streamText, embed as aiEmbed, stepCountIs } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createCerebras } from "@ai-sdk/cerebras";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ai-sdk-ollama";
 import type { LLMClient, ChatMessage, ChatOptions, ChatResult, StreamEvent, Config, Logger, Storage, EmbedOptions } from "./types.js";
@@ -54,6 +55,8 @@ function createProviderModel(provider: Config["llm"]["provider"], model: string,
       return createOllama({ baseURL: baseUrl, headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined })(model);
     case "anthropic":
       return createAnthropic({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
+    case "cerebras":
+      return createCerebras({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
     case "google":
       return createGoogleGenerativeAI({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
     case "openai":
@@ -70,8 +73,9 @@ function createProviderEmbedding(provider: string, embedModelName: string, baseU
       return createOpenAI({ baseURL: baseUrl, apiKey: apiKey ?? "" }).textEmbeddingModel(embedModelName);
     case "google":
       return createGoogleGenerativeAI({ baseURL: baseUrl, apiKey: apiKey ?? "" }).textEmbeddingModel(embedModelName);
+    case "cerebras":
     case "anthropic":
-      // Anthropic does not offer a native embedding API; return null to trigger local fallback
+      // Anthropic and Cerebras do not offer native embeddings; return null to trigger local fallback
       return null;
     default:
       return null;
@@ -116,6 +120,12 @@ async function localEmbed(text: string, log: Logger): Promise<number[] | null> {
   await initLocalPipeline(log);
   if (!localPipeline) return null;
   return localPipeline(text);
+}
+
+/** Reset local embedding cache (for tests). */
+export function _resetLocalEmbeddingCache(): void {
+  localPipeline = null;
+  localPipelineLoading = null;
 }
 
 // --- Main factory ---
@@ -292,6 +302,13 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
           headers: { "x-goog-api-key": apiKey ?? "" },
         });
         return { ok: res.ok, provider: "google" };
+      }
+      if (provider === "cerebras") {
+        const url = baseUrl.replace(/\/+$/, "") + "/models";
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${apiKey ?? ""}` },
+        });
+        return { ok: res.ok, provider: "cerebras" };
       }
       // openai (default)
       const res = await fetch(`${baseUrl}/models`, {

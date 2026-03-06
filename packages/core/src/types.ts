@@ -85,7 +85,7 @@ export interface Config {
   dataDir: string;
   logLevel: LogLevel;
   llm: {
-    provider: "ollama" | "openai" | "anthropic" | "google";
+    provider: "ollama" | "openai" | "anthropic" | "google" | "cerebras";
     model: string;
     baseUrl: string;
     apiKey?: string;

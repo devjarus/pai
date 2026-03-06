@@ -88,6 +88,7 @@ const mockWriteConfig = vi.fn();
 const mockLoadConfigFile = vi.fn().mockReturnValue({});
 const mockCreateLLMClient = vi.fn().mockReturnValue({
   health: vi.fn().mockResolvedValue({ ok: true, provider: "openai" }),
+  chat: vi.fn().mockResolvedValue({ text: "OK" }),
 });
 const mockGetObservabilityOverview = vi.fn();
 const mockListProcessAggregates = vi.fn();
@@ -1942,7 +1943,7 @@ describe("Config routes", () => {
 
   it("POST /api/config/test returns ok for valid config", async () => {
     mockCreateLLMClient.mockReturnValue({
-      health: vi.fn().mockResolvedValue({ ok: true, provider: "openai" }),
+      chat: vi.fn().mockResolvedValue({ text: "OK" }),
     });
 
     const res = await app.inject({
@@ -1962,9 +1963,29 @@ describe("Config routes", () => {
     expect(body.provider).toBe("openai");
   });
 
-  it("POST /api/config/test returns not ok for failed health check", async () => {
+  it("POST /api/config/test accepts cerebras", async () => {
     mockCreateLLMClient.mockReturnValue({
-      health: vi.fn().mockResolvedValue({ ok: false, provider: "openai" }),
+      chat: vi.fn().mockResolvedValue({ text: "OK" }),
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/config/test",
+      payload: {
+        provider: "cerebras",
+        model: "gpt-oss-120b",
+        baseUrl: "https://api.cerebras.ai/v1",
+        apiKey: "csk-test",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, provider: "cerebras" });
+  });
+
+  it("POST /api/config/test returns not ok for failed inference check", async () => {
+    mockCreateLLMClient.mockReturnValue({
+      chat: vi.fn().mockRejectedValue(new Error("Invalid API key for openai. Please check your API key in Settings.")),
     });
 
     const res = await app.inject({
@@ -1979,7 +2000,11 @@ describe("Config routes", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json().ok).toBe(false);
+    expect(res.json()).toEqual({
+      ok: false,
+      provider: "openai",
+      error: "Invalid API key for openai. Please check your API key in Settings.",
+    });
   });
 
   it("POST /api/config/test rejects missing required fields", async () => {

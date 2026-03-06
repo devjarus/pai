@@ -51,6 +51,13 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     embedModel: "text-embedding-004",
     needsKey: true,
   },
+  cerebras: {
+    provider: "cerebras",
+    model: "gpt-oss-120b",
+    baseUrl: "https://api.cerebras.ai/v1",
+    embedModel: "text-embedding-3-small",
+    needsKey: true,
+  },
 };
 
 const VALID_CHOICES = Object.keys(PROVIDER_PRESETS);

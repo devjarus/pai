@@ -34,6 +34,7 @@ describe("context-budget", () => {
       expect(getContextBudget("openai", "nonexistent").contextWindow).toBe(128_000);
       expect(getContextBudget("anthropic", "nonexistent").contextWindow).toBe(200_000);
       expect(getContextBudget("google", "nonexistent").contextWindow).toBe(1_000_000);
+      expect(getContextBudget("cerebras", "nonexistent").contextWindow).toBe(131_072);
     });
 
     it("historyBudget is 50% of contextWindow", () => {

@@ -3,7 +3,7 @@
  *
  * - Anthropic: auto-compaction + tool-use clearing at 85% of context window
  * - OpenAI: auto-truncation
- * - Others (Ollama, Google): rely on adaptive message loading only
+ * - Others (Ollama, Google, Cerebras): rely on adaptive message loading only
  */
 export function getProviderOptions(provider: string, contextWindow: number): Record<string, Record<string, unknown>> | undefined {
   const triggerTokens = Math.floor(contextWindow * 0.85);
