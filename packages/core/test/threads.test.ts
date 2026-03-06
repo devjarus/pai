@@ -339,6 +339,28 @@ describe("appendMessages", () => {
     expect(updated.title).toBe("Custom Title");
   });
 
+  it("replaces a low-signal title when replaceLowSignalTitle is enabled", () => {
+    const thread = createThread(storage, { title: "hi" });
+
+    appendMessages(storage, thread.id, [
+      { role: "user", content: "Can you summarize this document?" },
+    ], { titleCandidate: "Can you summarize this document?", replaceLowSignalTitle: true });
+
+    const updated = getThread(storage, thread.id)!;
+    expect(updated.title).toBe("Can you summarize this document?");
+  });
+
+  it("does not replace a low-signal title unless explicitly enabled", () => {
+    const thread = createThread(storage, { title: "hi" });
+
+    appendMessages(storage, thread.id, [
+      { role: "user", content: "Can you summarize this document?" },
+    ], { titleCandidate: "Can you summarize this document?" });
+
+    const updated = getThread(storage, thread.id)!;
+    expect(updated.title).toBe("hi");
+  });
+
   it("stores partsJson when provided", () => {
     const thread = createThread(storage);
     const parts = JSON.stringify([{ type: "text", text: "hello" }]);

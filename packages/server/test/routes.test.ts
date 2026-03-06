@@ -365,6 +365,7 @@ function createMockStorage() {
         const id = params?.[0] as string;
         const t = threads.get(id);
         if (sql.includes("SELECT *")) return t ? [t] : [];
+        if (sql.includes("SELECT title")) return t ? [{ title: t.title }] : [];
         return t ? [{ id: t.id }] : [];
       }
       if (sql.includes("FROM thread_messages") && sql.includes("MAX(sequence)")) {
@@ -1120,6 +1121,65 @@ describe("agent routes", () => {
     expect(body[0].content).toBe("Hello");
     expect(body[1].role).toBe("assistant");
     expect(body[1].content).toBe("Hello from AI");
+  });
+
+  it("POST /api/chat does not invoke LLM title generation for short threads", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Short Thread" },
+    });
+    const thread = JSON.parse(createRes.payload);
+
+    for (const message of ["hi", "can you browse", "take a screenshot", "summarize that"]) {
+      await app.inject({
+        method: "POST",
+        url: "/api/chat",
+        payload: { message, sessionId: thread.id },
+      });
+    }
+
+    expect(serverCtx.ctx.llm.chat).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/chat generates a capped thread title after longer conversations", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Long Thread" },
+    });
+    const thread = JSON.parse(createRes.payload);
+
+    for (const message of [
+      "hi",
+      "can you browse the React docs",
+      "take a screenshot of the hooks page",
+      "summarize the main sections",
+      "compare it with the API reference",
+    ]) {
+      await app.inject({
+        method: "POST",
+        url: "/api/chat",
+        payload: { message, sessionId: thread.id },
+      });
+    }
+
+    const titleCalls = vi.mocked(serverCtx.ctx.llm.chat).mock.calls.filter(([, options]) =>
+      (options as { telemetry?: { process?: string } } | undefined)?.telemetry?.process === "thread.title",
+    );
+
+    expect(titleCalls).toHaveLength(1);
+    expect(titleCalls[0]).toEqual([
+      expect.any(Array),
+      expect.objectContaining({
+        temperature: 0,
+        maxTokens: 12,
+        telemetry: expect.objectContaining({
+          process: "thread.title",
+          threadId: thread.id,
+        }),
+      }),
+    ]);
   });
 
   // -- GET /api/threads ----------------------------------------------------

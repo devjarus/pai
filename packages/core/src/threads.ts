@@ -145,7 +145,23 @@ export interface ListMessagesOptions {
 export interface AppendMessagesOptions {
   maxMessages?: number;
   titleCandidate?: string;
+  replaceLowSignalTitle?: boolean;
   now?: string;
+}
+
+const LOW_SIGNAL_TITLES = new Set([
+  "hi",
+  "hello",
+  "hey",
+  "ok",
+  "okay",
+  "thanks",
+  "thank you",
+]);
+
+function isLowSignalTitle(title: string): boolean {
+  const normalized = title.trim().toLowerCase().replace(/[.!?]+$/g, "");
+  return LOW_SIGNAL_TITLES.has(normalized);
 }
 
 export function getThread(storage: Storage, id: string): ThreadRow | null {
@@ -219,6 +235,14 @@ export function listMessages(storage: Storage, threadId: string, opts: ListMessa
 export function appendMessages(storage: Storage, threadId: string, messages: ThreadMessageInput[], opts: AppendMessagesOptions = {}): void {
   if (messages.length === 0) return;
   const now = opts.now ?? new Date().toISOString();
+  const currentThread = opts.titleCandidate
+    ? storage.query<{ title: string }>("SELECT title FROM threads WHERE id = ?", [threadId])[0]
+    : null;
+  const shouldReplaceTitle = !!opts.titleCandidate
+    && (
+      currentThread?.title === "New conversation"
+      || (opts.replaceLowSignalTitle === true && currentThread?.title != null && isLowSignalTitle(currentThread.title))
+    );
 
   const tx = storage.db.transaction(() => {
     const seqRow = storage.query<{ seq: number }>(
@@ -265,9 +289,9 @@ export function appendMessages(storage: Storage, threadId: string, messages: Thr
     );
     const finalCount = finalCountRow[0]?.count ?? 0;
 
-    if (opts.titleCandidate) {
+    if (opts.titleCandidate && shouldReplaceTitle) {
       storage.run(
-        "UPDATE threads SET updated_at = ?, message_count = ?, title = CASE WHEN title = 'New conversation' THEN ? ELSE title END WHERE id = ?",
+        "UPDATE threads SET updated_at = ?, message_count = ?, title = ? WHERE id = ?",
         [now, finalCount, opts.titleCandidate, threadId],
       );
     } else {
