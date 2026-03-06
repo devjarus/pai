@@ -217,11 +217,11 @@ Environment variables or `~/.personal-ai/config.json` (editable via Settings UI)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PAI_DATA_DIR` | `~/.personal-ai/data` | Database location |
-| `PAI_LLM_PROVIDER` | `ollama` | `ollama`, `openai`, `anthropic`, or `google` |
+| `PAI_LLM_PROVIDER` | `ollama` | `ollama`, `openai`, `anthropic`, `google`, or `cerebras` |
 | `PAI_LLM_MODEL` | `llama3.2` | Chat model |
 | `PAI_LLM_EMBED_MODEL` | `nomic-embed-text` | Embedding model |
 | `PAI_LLM_BASE_URL` | `http://127.0.0.1:11434` | Provider URL |
-| `PAI_LLM_API_KEY` | | API key (Ollama Cloud / OpenAI) |
+| `PAI_LLM_API_KEY` | | API key (required for cloud providers) |
 | `PAI_TELEGRAM_TOKEN` | | Telegram bot token from @BotFather |
 | `PAI_LOG_LEVEL` | `silent` | `silent`, `error`, `warn`, `info`, `debug` |
 | `PAI_JWT_SECRET` | _(auto-generated)_ | Custom JWT signing secret |

@@ -9,7 +9,7 @@ const isCloudDeployment =
   window.location.hostname !== "localhost" &&
   window.location.hostname !== "127.0.0.1";
 
-type ProviderKey = "ollama-local" | "ollama-cloud" | "openai" | "anthropic" | "google";
+type ProviderKey = "ollama-local" | "ollama-cloud" | "openai" | "anthropic" | "google" | "cerebras";
 
 const PROVIDERS: Record<ProviderKey, {
   label: string;
@@ -73,6 +73,16 @@ const PROVIDERS: Record<ProviderKey, {
     keyUrl: "https://aistudio.google.com/apikey",
     badge: "Free tier",
   },
+  cerebras: {
+    label: "Cerebras",
+    description: "GPT OSS 120B — reliable Cerebras default",
+    provider: "cerebras",
+    baseUrl: "https://api.cerebras.ai/v1",
+    model: "gpt-oss-120b",
+    embedModel: "text-embedding-3-small",
+    needsKey: true,
+    keyUrl: "https://cloud.cerebras.ai/",
+  },
 };
 
 type Step = "mode" | "provider" | "apikey" | "local-guide";
@@ -124,7 +134,7 @@ export default function LLMSetupWizard({ onComplete, onSkip }: Props) {
         apiKey: apiKey || undefined,
         embedModel: preset.embedModel,
       });
-      setTestResult({ ok: result.ok });
+      setTestResult({ ok: result.ok, error: result.error });
     } catch (err) {
       setTestResult({ ok: false, error: err instanceof Error ? err.message : "Connection failed" });
     } finally {
@@ -187,7 +197,7 @@ export default function LLMSetupWizard({ onComplete, onSkip }: Props) {
 
   // Provider picker (cloud providers)
   if (step === "provider") {
-    const cloudProviders: ProviderKey[] = ["ollama-cloud", "openai", "anthropic", "google"];
+    const cloudProviders: ProviderKey[] = ["ollama-cloud", "openai", "anthropic", "google", "cerebras"];
     return (
       <div className="space-y-3">
         <p className="text-center text-xs text-muted-foreground">Pick your AI provider</p>
@@ -240,7 +250,7 @@ export default function LLMSetupWizard({ onComplete, onSkip }: Props) {
         {testResult && (
           <div className={`flex items-center gap-2 rounded-md p-2 text-xs ${testResult.ok ? "bg-green-500/10 text-green-600" : "bg-destructive/10 text-destructive"}`}>
             {testResult.ok ? <CheckCircleIcon className="size-4" /> : <XCircleIcon className="size-4" />}
-            {testResult.ok ? "Connected to Ollama!" : "Can't reach Ollama. Is it running?"}
+            {testResult.ok ? "Connected to Ollama!" : (testResult.error ?? "Can't reach Ollama. Is it running?")}
           </div>
         )}
         {testResult?.ok && (

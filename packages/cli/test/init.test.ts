@@ -18,6 +18,7 @@ describe("pai init PROVIDER_PRESETS", () => {
     expect(keys).toContain("openai");
     expect(keys).toContain("anthropic");
     expect(keys).toContain("google");
+    expect(keys).toContain("cerebras");
   });
 
   it("ollama local does not require a key", () => {

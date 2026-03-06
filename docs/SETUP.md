@@ -136,7 +136,7 @@ In the Railway service settings, add these variables:
 
 | Variable | Value | Required |
 |----------|-------|----------|
-| `PAI_LLM_PROVIDER` | `openai`, `anthropic`, or `google` | Yes |
+| `PAI_LLM_PROVIDER` | `openai`, `anthropic`, `google`, or `cerebras` | Yes |
 | `PAI_LLM_API_KEY` | Your provider API key | Yes |
 | `PAI_LLM_MODEL` | e.g. `gpt-4o`, `claude-sonnet-4-20250514` | Recommended |
 | `PAI_DATA_DIR` | `/data` | Yes |

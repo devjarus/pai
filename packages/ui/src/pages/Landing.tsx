@@ -143,7 +143,7 @@ export default function Landing() {
           <ShieldCheckIcon className="mx-auto mb-3 h-7 w-7 text-muted-foreground" />
           <h2 className="mb-2 text-xl font-semibold tracking-tight sm:text-2xl">Your data stays yours.</h2>
           <p className="mx-auto max-w-md text-base text-muted-foreground">
-            Single SQLite file. No cloud dependency. No telemetry. Run it on your laptop, a Raspberry Pi, or Railway. Bring your own LLM — Ollama, OpenAI, Anthropic, or Google.
+            Single SQLite file. No cloud dependency. No telemetry. Run it on your laptop, a Raspberry Pi, or Railway. Bring your own LLM — Ollama, OpenAI, Anthropic, Google, or Cerebras.
           </p>
         </div>
       </section>
