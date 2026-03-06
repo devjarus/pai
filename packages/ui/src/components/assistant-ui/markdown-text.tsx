@@ -70,7 +70,7 @@ const defaultComponents = memoizeMarkdownComponents({
   h1: ({ className, ...props }) => (
     <h1
       className={cn(
-        "aui-md-h1 mb-2 scroll-m-20 font-semibold text-base first:mt-0 last:mb-0",
+        "aui-md-h1 mt-6 mb-3 scroll-m-20 font-bold text-lg first:mt-0 last:mb-0",
         className,
       )}
       {...props}
@@ -79,7 +79,7 @@ const defaultComponents = memoizeMarkdownComponents({
   h2: ({ className, ...props }) => (
     <h2
       className={cn(
-        "aui-md-h2 mt-3 mb-1.5 scroll-m-20 font-semibold text-sm first:mt-0 last:mb-0",
+        "aui-md-h2 mt-5 mb-2.5 scroll-m-20 font-semibold text-base first:mt-0 last:mb-0",
         className,
       )}
       {...props}
@@ -88,7 +88,7 @@ const defaultComponents = memoizeMarkdownComponents({
   h3: ({ className, ...props }) => (
     <h3
       className={cn(
-        "aui-md-h3 mt-2.5 mb-1 scroll-m-20 font-semibold text-sm first:mt-0 last:mb-0",
+        "aui-md-h3 mt-4 mb-2 scroll-m-20 font-semibold text-sm first:mt-0 last:mb-0",
         className,
       )}
       {...props}
@@ -97,7 +97,7 @@ const defaultComponents = memoizeMarkdownComponents({
   h4: ({ className, ...props }) => (
     <h4
       className={cn(
-        "aui-md-h4 mt-2 mb-1 scroll-m-20 font-medium text-sm first:mt-0 last:mb-0",
+        "aui-md-h4 mt-3 mb-1.5 scroll-m-20 font-medium text-sm text-foreground/90 first:mt-0 last:mb-0",
         className,
       )}
       {...props}
@@ -106,7 +106,7 @@ const defaultComponents = memoizeMarkdownComponents({
   h5: ({ className, ...props }) => (
     <h5
       className={cn(
-        "aui-md-h5 mt-2 mb-1 font-medium text-sm first:mt-0 last:mb-0",
+        "aui-md-h5 mt-3 mb-1 font-medium text-xs uppercase tracking-wide text-muted-foreground first:mt-0 last:mb-0",
         className,
       )}
       {...props}
@@ -115,7 +115,7 @@ const defaultComponents = memoizeMarkdownComponents({
   h6: ({ className, ...props }) => (
     <h6
       className={cn(
-        "aui-md-h6 mt-2 mb-1 font-medium text-sm first:mt-0 last:mb-0",
+        "aui-md-h6 mt-2 mb-1 font-medium text-xs text-muted-foreground first:mt-0 last:mb-0",
         className,
       )}
       {...props}
@@ -124,21 +124,39 @@ const defaultComponents = memoizeMarkdownComponents({
   p: ({ className, ...props }) => (
     <p
       className={cn(
-        "aui-md-p my-2.5 leading-normal first:mt-0 last:mb-0",
+        "aui-md-p my-3 leading-relaxed first:mt-0 last:mb-0",
         className,
       )}
       {...props}
     />
   ),
-  a: ({ className, ...props }) => (
-    <a
-      className={cn(
-        "aui-md-a text-primary underline underline-offset-2 hover:text-primary/80",
-        className,
-      )}
-      {...props}
-    />
-  ),
+  a: ({ className, children, ...props }) => {
+    const text = typeof children === "string" ? children : "";
+    if (/^\^?\d+$/.test(text)) {
+      return (
+        <a
+          className={cn(
+            "aui-md-citation ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded bg-primary/15 px-1 text-[9px] font-medium text-primary/70 no-underline hover:bg-primary/25 hover:text-primary transition-colors align-super",
+            className,
+          )}
+          {...props}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {text.replace("^", "")}
+        </a>
+      );
+    }
+    return (
+      <a
+        className={cn(
+          "aui-md-a text-primary underline underline-offset-2 hover:text-primary/80",
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
   blockquote: ({ className, ...props }) => (
     <blockquote
       className={cn(
@@ -151,7 +169,7 @@ const defaultComponents = memoizeMarkdownComponents({
   ul: ({ className, ...props }) => (
     <ul
       className={cn(
-        "aui-md-ul my-2 ml-4 list-disc marker:text-muted-foreground [&>li]:mt-1",
+        "aui-md-ul my-3 ml-4 list-disc marker:text-muted-foreground [&>li]:mt-1.5",
         className,
       )}
       {...props}
@@ -160,7 +178,7 @@ const defaultComponents = memoizeMarkdownComponents({
   ol: ({ className, ...props }) => (
     <ol
       className={cn(
-        "aui-md-ol my-2 ml-4 list-decimal marker:text-muted-foreground [&>li]:mt-1",
+        "aui-md-ol my-3 ml-4 list-decimal marker:text-muted-foreground [&>li]:mt-1.5",
         className,
       )}
       {...props}
@@ -213,7 +231,7 @@ const defaultComponents = memoizeMarkdownComponents({
   ),
   sup: ({ className, ...props }) => (
     <sup
-      className={cn("aui-md-sup [&>a]:text-xs [&>a]:no-underline", className)}
+      className={cn("aui-md-sup [&>a]:text-[9px] [&>a]:no-underline [&>a]:ml-0.5 [&>a]:rounded-sm [&>a]:bg-primary/15 [&>a]:px-1 [&>a]:py-px [&>a]:text-primary/70 [&>a]:hover:bg-primary/25 [&>a]:hover:text-primary [&>a]:transition-colors", className)}
       {...props}
     />
   ),

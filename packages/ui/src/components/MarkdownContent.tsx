@@ -53,19 +53,19 @@ const markdownComponents: Components = {
     return <p className="mb-3 text-sm leading-relaxed text-foreground last:mb-0">{children}</p>;
   },
   h1({ children }) {
-    return <h1 className="mb-3 mt-5 text-lg font-bold text-foreground first:mt-0">{children}</h1>;
+    return <h1 className="mb-4 mt-8 text-lg font-bold text-foreground first:mt-0">{children}</h1>;
   },
   h2({ children }) {
-    return <h2 className="mb-2 mt-4 text-base font-semibold text-foreground first:mt-0">{children}</h2>;
+    return <h2 className="mb-3 mt-6 text-base font-semibold text-foreground first:mt-0">{children}</h2>;
   },
   h3({ children }) {
-    return <h3 className="mb-2 mt-3 text-sm font-semibold text-foreground first:mt-0">{children}</h3>;
+    return <h3 className="mb-2 mt-5 text-sm font-semibold text-foreground first:mt-0">{children}</h3>;
   },
   ul({ children }) {
-    return <ul className="mb-3 ml-4 list-disc space-y-1 text-sm text-foreground last:mb-0">{children}</ul>;
+    return <ul className="mb-4 ml-4 list-disc space-y-1.5 text-sm text-foreground last:mb-0">{children}</ul>;
   },
   ol({ children }) {
-    return <ol className="mb-3 ml-4 list-decimal space-y-1 text-sm text-foreground last:mb-0">{children}</ol>;
+    return <ol className="mb-4 ml-4 list-decimal space-y-1.5 text-sm text-foreground last:mb-0">{children}</ol>;
   },
   li({ children }) {
     return <li className="leading-relaxed">{children}</li>;
@@ -101,7 +101,7 @@ const markdownComponents: Components = {
     return <td className="border-t border-border/30 px-3 py-2 text-foreground/85">{children}</td>;
   },
   hr() {
-    return <hr className="my-4 border-border/40" />;
+    return <hr className="my-6 border-border/40" />;
   },
   strong({ children }) {
     return <strong className="font-semibold text-foreground">{children}</strong>;

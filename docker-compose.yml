@@ -18,8 +18,8 @@ services:
       - PAI_CORS_ORIGIN=${PAI_CORS_ORIGIN:-}
       - PAI_TELEGRAM_TOKEN=${PAI_TELEGRAM_TOKEN:-}
       - PAI_SEARCH_URL=http://searxng:8080
-      - PAI_SANDBOX_URL=${PAI_SANDBOX_URL:-}
-      - PAI_BROWSER_URL=${PAI_BROWSER_URL:-}
+      - PAI_SANDBOX_URL=${PAI_SANDBOX_URL:-http://sandbox:9867}
+      - PAI_BROWSER_URL=${PAI_BROWSER_URL:-http://sandbox:9867}
       - NODE_ENV=production
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3141/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
@@ -35,6 +35,8 @@ services:
   searxng:
     image: searxng/searxng:latest
     container_name: personal-ai-searxng
+    ports:
+      - "8080:8080"
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
     environment:
@@ -49,8 +51,8 @@ services:
 
   sandbox:
     build:
-      context: ./sandbox
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: sandbox/Dockerfile
     container_name: personal-ai-sandbox
     profiles:
       - sandbox

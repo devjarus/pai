@@ -9,7 +9,13 @@ import "./App.css";
 
 // Auto-reload when a new service worker is installed so users always get
 // the latest UI without needing a hard refresh.
-registerSW({ immediate: true });
+registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    // New content available — reload immediately
+    window.location.reload();
+  },
+});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
