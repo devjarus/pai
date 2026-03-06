@@ -1,4 +1,4 @@
-import { FileTextIcon, CheckIcon, AlertCircleIcon, LoaderIcon, DownloadIcon } from "lucide-react";
+import { FileTextIcon, CheckIcon, AlertCircleIcon, LoaderIcon, DownloadIcon, ExternalLinkIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -60,17 +60,30 @@ export function ToolDocumentReport({ state, input, output }: ToolDocumentReportP
             Report ready: <span className="font-medium">{title}</span>
           </span>
           {downloadUrl && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 gap-1 px-2 text-xs"
-              asChild
-            >
-              <a href={downloadUrl} download target="_blank" rel="noopener noreferrer">
-                <DownloadIcon className="size-3" />
-                Download
-              </a>
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 px-2 text-xs"
+                asChild
+              >
+                <a href={`${downloadUrl}/view`} target="_blank" rel="noopener noreferrer">
+                  <ExternalLinkIcon className="size-3" />
+                  View
+                </a>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 px-2 text-xs"
+                asChild
+              >
+                <a href={downloadUrl} download>
+                  <DownloadIcon className="size-3" />
+                  Download
+                </a>
+              </Button>
+            </>
           )}
         </CardContent>
       </Card>

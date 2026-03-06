@@ -506,6 +506,7 @@ export function createAgentTools(ctx: AgentContext) {
             fileName,
             title,
             downloadUrl: `/api/artifacts/${artifactId}`,
+            viewUrl: `/api/artifacts/${artifactId}/view`,
           };
         } catch (err) {
           return { ok: false, error: `Failed to generate report: ${err instanceof Error ? err.message : "unknown error"}` };

@@ -41,8 +41,8 @@
     "@personal-ai/plugin-assistant": "workspace:*",
     "@personal-ai/plugin-curator": "workspace:*",
     "@personal-ai/plugin-research": "workspace:*",
-    "@personal-ai/plugin-swarm": "workspace:*",
     "@personal-ai/plugin-schedules": "workspace:*",
+    "@personal-ai/plugin-swarm": "workspace:*",
     "@personal-ai/plugin-tasks": "workspace:*",
     "@personal-ai/plugin-telegram": "workspace:*",
     "ai": "^6.0.0",
@@ -50,6 +50,7 @@
     "dotenv": "^16.4.0",
     "fastify": "^5.0.0",
     "jsonwebtoken": "^9.0.3",
+    "marked": "^17.0.4",
     "zod": "^3.24.0"
   },
   "devDependencies": {

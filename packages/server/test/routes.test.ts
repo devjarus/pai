@@ -2805,6 +2805,49 @@ describe("Artifact routes", () => {
     expect(mockGetArtifact).toHaveBeenCalledWith(serverCtx.ctx.storage, "art-1");
   });
 
+  it("GET /api/artifacts/:id/view returns styled HTML for markdown artifacts", async () => {
+    const mdArtifact = {
+      id: "art-md",
+      name: "report.md",
+      mimeType: "text/markdown",
+      data: Buffer.from("# Test Report\n\n| Col A | Col B |\n|-------|-------|\n| 1 | 2 |\n\n```json\n{\"ticker\":\"NVDA\"}\n```\n\nConclusion"),
+      jobId: "job-1",
+      createdAt: "2025-01-01",
+    };
+    mockGetArtifact.mockReturnValue(mdArtifact);
+
+    const res = await app.inject({ method: "GET", url: "/api/artifacts/art-md/view" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/html");
+    const body = res.body;
+    // Should render tables as HTML
+    expect(body).toContain("<table>");
+    expect(body).toContain("<th>");
+    expect(body).toContain("Col A");
+    // Should strip json render blocks
+    expect(body).not.toContain("ticker");
+    // Should include conclusion text
+    expect(body).toContain("Conclusion");
+    // Should have title
+    expect(body).toContain("<title>Test Report</title>");
+    // Should have print-friendly CSS
+    expect(body).toContain("@media print");
+  });
+
+  it("GET /api/artifacts/:id/view returns 404 for missing artifact", async () => {
+    mockGetArtifact.mockReturnValue(null);
+    const res = await app.inject({ method: "GET", url: "/api/artifacts/missing/view" });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("GET /api/artifacts/:id/view redirects non-markdown artifacts", async () => {
+    mockGetArtifact.mockReturnValue(MOCK_ARTIFACT); // image/png
+    const res = await app.inject({ method: "GET", url: "/api/artifacts/art-1/view" });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe("/api/artifacts/art-1");
+  });
+
   it("GET /api/jobs/:jobId/artifacts returns artifact list", async () => {
     const mockArtifactList = [
       { id: "art-1", name: "chart.png", mimeType: "image/png", jobId: "job-1", createdAt: "2025-01-01" },
