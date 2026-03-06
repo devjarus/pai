@@ -1,4 +1,4 @@
-import type { Plugin, PluginContext, Command, Migration, Storage } from "@personal-ai/core";
+import type { BackgroundJobSourceKind, Plugin, PluginContext, Command, Migration, Storage } from "@personal-ai/core";
 import { detectResearchDomain } from "@personal-ai/core";
 import { nanoid } from "nanoid";
 
@@ -19,6 +19,12 @@ export interface SwarmJob {
   synthesis: string | null;
   briefingId: string | null;
   createdAt: string;
+  queuedAt: string;
+  startedAt: string | null;
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  sourceKind: BackgroundJobSourceKind;
+  sourceScheduleId: string | null;
   completedAt: string | null;
 }
 
@@ -65,6 +71,12 @@ interface SwarmJobRow {
   synthesis: string | null;
   briefing_id: string | null;
   created_at: string;
+  queued_at: string | null;
+  started_at: string | null;
+  attempt_count: number | null;
+  last_attempt_at: string | null;
+  source_kind: string | null;
+  source_schedule_id: string | null;
   completed_at: string | null;
 }
 
@@ -142,15 +154,27 @@ export const swarmMigrations: Migration[] = [
     version: 2,
     up: `ALTER TABLE swarm_jobs ADD COLUMN result_type TEXT NOT NULL DEFAULT 'general';`,
   },
+  {
+    version: 3,
+    up: `
+      ALTER TABLE swarm_jobs ADD COLUMN queued_at TEXT;
+      ALTER TABLE swarm_jobs ADD COLUMN started_at TEXT;
+      ALTER TABLE swarm_jobs ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE swarm_jobs ADD COLUMN last_attempt_at TEXT;
+      ALTER TABLE swarm_jobs ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'manual';
+      ALTER TABLE swarm_jobs ADD COLUMN source_schedule_id TEXT;
+    `,
+  },
 ];
 
 // ---- Data Access ----
 
 export function createSwarmJob(
   storage: Storage,
-  opts: { goal: string; threadId: string | null; resultType?: string },
+  opts: { goal: string; threadId: string | null; resultType?: string; sourceKind?: BackgroundJobSourceKind; sourceScheduleId?: string | null },
 ): string {
   const id = nanoid();
+  const queuedAt = new Date().toISOString();
   // Cross-validate LLM-provided type against keyword detection to prevent misclassification
   let resultType = opts.resultType ?? "general";
   const detected = detectResearchDomain(opts.goal);
@@ -159,9 +183,9 @@ export function createSwarmJob(
     resultType = detected;
   }
   storage.run(
-    `INSERT INTO swarm_jobs (id, thread_id, goal, result_type, status, created_at)
-     VALUES (?, ?, ?, ?, 'pending', datetime('now'))`,
-    [id, opts.threadId, opts.goal, resultType],
+    `INSERT INTO swarm_jobs (id, thread_id, goal, result_type, status, created_at, queued_at, source_kind, source_schedule_id)
+     VALUES (?, ?, ?, ?, 'pending', datetime('now'), ?, ?, ?)`,
+    [id, opts.threadId, opts.goal, resultType, queuedAt, opts.sourceKind ?? "manual", opts.sourceScheduleId ?? null],
   );
   return id;
 }
@@ -179,6 +203,13 @@ export function getSwarmJob(storage: Storage, id: string): SwarmJob | null {
 export function listSwarmJobs(storage: Storage): SwarmJob[] {
   const rows = storage.query<SwarmJobRow>(
     "SELECT * FROM swarm_jobs ORDER BY created_at DESC LIMIT 50",
+  );
+  return rows.map(rowToSwarmJob);
+}
+
+export function listPendingSwarmJobs(storage: Storage): SwarmJob[] {
+  const rows = storage.query<SwarmJobRow>(
+    "SELECT * FROM swarm_jobs WHERE status = 'pending' ORDER BY CASE source_kind WHEN 'manual' THEN 0 WHEN 'schedule' THEN 1 ELSE 2 END, queued_at ASC, created_at ASC",
   );
   return rows.map(rowToSwarmJob);
 }
@@ -205,10 +236,24 @@ export function recoverStaleSwarmJobs(storage: Storage): number {
   )[0]?.cnt ?? 0;
   if (count > 0) {
     storage.run(
-      `UPDATE swarm_agents SET status = 'failed', error = 'Server restarted — job interrupted', completed_at = datetime('now') WHERE swarm_id IN (SELECT id FROM swarm_jobs WHERE status IN ${activeStatuses}) AND status IN ('pending', 'running')`,
+      `DELETE FROM swarm_blackboard WHERE swarm_id IN (SELECT id FROM swarm_jobs WHERE status IN ${activeStatuses})`,
     );
     storage.run(
-      `UPDATE swarm_jobs SET status = 'failed', completed_at = datetime('now') WHERE status IN ${activeStatuses}`,
+      `DELETE FROM swarm_agents WHERE swarm_id IN (SELECT id FROM swarm_jobs WHERE status IN ${activeStatuses})`,
+    );
+    storage.run(
+      `UPDATE swarm_jobs
+       SET status = 'pending',
+           plan = NULL,
+           agent_count = 0,
+           agents_done = 0,
+           synthesis = NULL,
+           briefing_id = NULL,
+           started_at = NULL,
+           completed_at = NULL,
+           last_attempt_at = NULL,
+           attempt_count = attempt_count + 1
+       WHERE status IN ${activeStatuses}`,
     );
   }
   return count;
@@ -250,6 +295,7 @@ const SWARM_JOB_COLUMNS = new Set([
   "status", "result_type", "error",
   "plan", "agent_count", "agents_done", "synthesis",
   "briefing_id", "completed_at",
+  "queued_at", "started_at", "attempt_count", "last_attempt_at", "source_kind", "source_schedule_id",
 ]);
 
 export function updateSwarmJob(storage: Storage, id: string, fields: Record<string, unknown>): void {
@@ -343,6 +389,12 @@ function rowToSwarmJob(row: SwarmJobRow): SwarmJob {
     synthesis: row.synthesis,
     briefingId: row.briefing_id,
     createdAt: row.created_at,
+    queuedAt: row.queued_at ?? row.created_at,
+    startedAt: row.started_at,
+    attemptCount: row.attempt_count ?? 0,
+    lastAttemptAt: row.last_attempt_at,
+    sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "manual",
+    sourceScheduleId: row.source_schedule_id,
     completedAt: row.completed_at,
   };
 }

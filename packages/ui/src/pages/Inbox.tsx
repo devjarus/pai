@@ -21,6 +21,7 @@ import {
   SparklesIcon,
   Trash2Icon,
   SearchIcon,
+  ClockIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   LoaderIcon,
@@ -308,7 +309,7 @@ function InboxDetail({ id }: { id: string }) {
                   size="sm"
                   onClick={() => {
                     rerunMutation.mutate(id, {
-                      onSuccess: () => toast.success("Research rerun started"),
+                      onSuccess: () => toast.success("Research rerun queued"),
                       onError: () => toast.error("Failed to rerun research"),
                     });
                   }}
@@ -465,27 +466,29 @@ function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<str
 // ---- Feed View ----
 
 function InboxFeed() {
-  const [generating, setGenerating] = useState(false);
   const navigate = useNavigate();
   const prevGeneratingRef = useRef(false);
+  const prevPendingRef = useRef(false);
   const { readIds, markRead } = useContext(ReadContext);
+  const refreshInboxMut = useRefreshInbox();
+  const clearInboxMut = useClearInbox();
 
   const { data: inboxData, isLoading: loading } = useInboxAll({
-    refetchInterval: generating ? 3000 : false,
+    refetchInterval: (data) => data?.generating || data?.pending ? 3000 : false,
   });
   const items: InboxItem[] = inboxData?.briefings ?? [];
+  const generating = !!inboxData?.generating;
+  const pending = !!inboxData?.pending;
+  const busy = generating || pending || refreshInboxMut.isPending;
 
   // Track generating state transitions via query data
   useEffect(() => {
-    if (inboxData?.generating && !generating) {
-      setGenerating(true);
-    }
-    if (prevGeneratingRef.current && !inboxData?.generating) {
-      setGenerating(false);
+    if ((prevGeneratingRef.current || prevPendingRef.current) && !inboxData?.generating && !inboxData?.pending) {
       toast.success("Briefing updated!");
     }
     prevGeneratingRef.current = !!inboxData?.generating;
-  }, [inboxData?.generating]); // eslint-disable-line react-hooks/exhaustive-deps
+    prevPendingRef.current = !!inboxData?.pending;
+  }, [inboxData?.generating, inboxData?.pending]);
 
   // Store last seen briefing ID
   useEffect(() => {
@@ -507,16 +510,11 @@ function InboxFeed() {
     [markRead, navigate],
   );
 
-  const refreshInboxMut = useRefreshInbox();
-  const clearInboxMut = useClearInbox();
-
   const handleRefresh = async () => {
-    setGenerating(true);
     try {
-      await refreshInboxMut.mutateAsync();
-      toast.success("Generating new briefing...");
+      const result = await refreshInboxMut.mutateAsync();
+      toast.success(result.message ?? "Briefing queued");
     } catch {
-      setGenerating(false);
       toast.error("Failed to start briefing refresh");
     }
   };
@@ -533,7 +531,7 @@ function InboxFeed() {
 
   if (loading) return <InboxSkeleton />;
 
-  if (items.length === 0 && !generating) {
+  if (items.length === 0 && !busy) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-6 p-4 md:p-6">
         <div className="inbox-fade-in flex w-full max-w-md flex-col items-center gap-5 text-center">
@@ -592,10 +590,10 @@ function InboxFeed() {
               variant="ghost"
               size="icon"
               onClick={handleRefresh}
-              disabled={generating}
+              disabled={busy}
               className="text-muted-foreground hover:text-foreground"
             >
-              <RefreshCwIcon className={`h-4 w-4 ${generating ? "animate-spin" : ""}`} />
+              <RefreshCwIcon className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} />
             </Button>
             <Button
               variant="ghost"
@@ -607,6 +605,13 @@ function InboxFeed() {
             </Button>
           </div>
         </div>
+
+        {pending && !generating && (
+          <div className="inbox-fade-in flex items-center gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-3">
+            <ClockIcon className="h-4 w-4 text-yellow-400" />
+            <span className="text-sm text-yellow-300">Briefing queued. Waiting for background slot...</span>
+          </div>
+        )}
 
         {generating && (
           <div className="inbox-fade-in flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">

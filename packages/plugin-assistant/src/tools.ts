@@ -316,36 +316,44 @@ export function createAgentTools(ctx: AgentContext) {
           const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
 
           const resultType = type;
-          const jobId = createResearchJob(ctx.storage, {
-            goal,
-            threadId: threadId ?? null,
-            resultType,
-          });
+          const jobId = ctx.backgroundJobs?.enqueueResearch
+            ? await ctx.backgroundJobs.enqueueResearch({
+              goal,
+              threadId: threadId ?? null,
+              resultType,
+              sourceKind: "manual",
+            })
+            : createResearchJob(ctx.storage, {
+              goal,
+              threadId: threadId ?? null,
+              resultType,
+            });
 
-          // Fire and forget — pass injected dependencies
-          runResearchInBackground(
-            {
-              storage: ctx.storage,
-              llm: ctx.llm,
-              logger: ctx.logger,
-              timezone: ctx.config.timezone,
-              provider: ctx.config.llm.provider,
-              model: ctx.config.llm.model,
-              contextWindow: ctx.config.llm.contextWindow,
-              sandboxUrl: ctx.config.sandboxUrl,
-              browserUrl: ctx.config.browserUrl,
-              dataDir: ctx.config.dataDir,
-              webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
-              formatSearchResults,
-              fetchPage: fetchPageAsMarkdown,
-            },
-            jobId,
-          ).catch((err) => {
-            ctx.logger.error(`Research background execution failed: ${err instanceof Error ? err.message : String(err)}`);
-          });
+          if (!ctx.backgroundJobs?.enqueueResearch) {
+            runResearchInBackground(
+              {
+                storage: ctx.storage,
+                llm: ctx.llm,
+                logger: ctx.logger,
+                timezone: ctx.config.timezone,
+                provider: ctx.config.llm.provider,
+                model: ctx.config.llm.model,
+                contextWindow: ctx.config.llm.contextWindow,
+                sandboxUrl: ctx.config.sandboxUrl,
+                browserUrl: ctx.config.browserUrl,
+                dataDir: ctx.config.dataDir,
+                webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
+                formatSearchResults,
+                fetchPage: fetchPageAsMarkdown,
+              },
+              jobId,
+            ).catch((err) => {
+              ctx.logger.error(`Research background execution failed: ${err instanceof Error ? err.message : String(err)}`);
+            });
+          }
 
           const domainLabel = resultType === "flight" ? "flight search" : resultType === "stock" ? "stock analysis" : "research";
-          return `Research started! I'm running a ${domainLabel} for "${goal.slice(0, 80)}". The report will appear in your Inbox when it's done. Use job_status to check progress.`;
+          return `Research queued! I'm preparing a ${domainLabel} for "${goal.slice(0, 80)}". The report will appear in your Inbox when it's done. Use job_status to check progress.`;
         } catch (err) {
           return `Failed to start research: ${err instanceof Error ? err.message : "unknown error"}`;
         }
@@ -362,35 +370,43 @@ export function createAgentTools(ctx: AgentContext) {
         try {
           const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
 
-          const jobId = createSwarmJob(ctx.storage, {
-            goal,
-            threadId: threadId ?? null,
-            resultType: type,
-          });
+          const jobId = ctx.backgroundJobs?.enqueueSwarm
+            ? await ctx.backgroundJobs.enqueueSwarm({
+              goal,
+              threadId: threadId ?? null,
+              resultType: type,
+              sourceKind: "manual",
+            })
+            : createSwarmJob(ctx.storage, {
+              goal,
+              threadId: threadId ?? null,
+              resultType: type,
+            });
 
-          // Fire and forget
-          runSwarmInBackground(
-            {
-              storage: ctx.storage,
-              llm: ctx.llm,
-              logger: ctx.logger,
-              timezone: ctx.config.timezone,
-              provider: ctx.config.llm.provider,
-              model: ctx.config.llm.model,
-              contextWindow: ctx.config.llm.contextWindow,
-              sandboxUrl: ctx.config.sandboxUrl,
-              browserUrl: ctx.config.browserUrl,
-              dataDir: ctx.config.dataDir,
-              webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
-              formatSearchResults,
-              fetchPage: fetchPageAsMarkdown,
-            },
-            jobId,
-          ).catch((err) => {
-            ctx.logger.error(`Swarm background execution failed: ${err instanceof Error ? err.message : String(err)}`);
-          });
+          if (!ctx.backgroundJobs?.enqueueSwarm) {
+            runSwarmInBackground(
+              {
+                storage: ctx.storage,
+                llm: ctx.llm,
+                logger: ctx.logger,
+                timezone: ctx.config.timezone,
+                provider: ctx.config.llm.provider,
+                model: ctx.config.llm.model,
+                contextWindow: ctx.config.llm.contextWindow,
+                sandboxUrl: ctx.config.sandboxUrl,
+                browserUrl: ctx.config.browserUrl,
+                dataDir: ctx.config.dataDir,
+                webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
+                formatSearchResults,
+                fetchPage: fetchPageAsMarkdown,
+              },
+              jobId,
+            ).catch((err) => {
+              ctx.logger.error(`Swarm background execution failed: ${err instanceof Error ? err.message : String(err)}`);
+            });
+          }
 
-          return `Swarm analysis started! I'm spawning multiple sub-agents for a ${type} analysis of "${goal.slice(0, 80)}" in parallel. The synthesized report will appear in your Inbox when done. Use job_status to check progress.`;
+          return `Swarm analysis queued! I'm preparing a ${type} analysis of "${goal.slice(0, 80)}". The synthesized report will appear in your Inbox when done. Use job_status to check progress.`;
         } catch (err) {
           return `Failed to start swarm: ${err instanceof Error ? err.message : "unknown error"}`;
         }

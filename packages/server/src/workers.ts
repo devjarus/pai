@@ -2,11 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PluginContext } from "@personal-ai/core";
 import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads, cleanupOldTelemetrySpans, startSpan, finishSpan } from "@personal-ai/core";
 import { getDueSchedules, markScheduleRun } from "@personal-ai/plugin-schedules";
-import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
-import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
-import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
-import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
-import { generateBriefing, getLatestBriefing } from "./briefing.js";
+import { getLatestBriefing } from "./briefing.js";
 import { runBackgroundLearning } from "./learning.js";
 
 export interface WorkerOptions {
@@ -67,10 +63,10 @@ export class WorkerLoop {
     // --- Briefing generator ---
     this.briefingTimer = setInterval(() => {
       if (this.ctx.config.workers?.briefing === false || !isLLMConfigured) return;
-      this.runWorkerTask("worker.briefing", async (telemetry) => {
-        await generateBriefing(this.ctx, telemetry);
+      this.runWorkerTask("worker.briefing", async () => {
+        this.ctx.backgroundJobs?.enqueueBriefing?.({ sourceKind: "maintenance", reason: "interval" });
       }).catch((err) => {
-        this.ctx.logger.warn(`Background briefing failed: ${err instanceof Error ? err.message : String(err)}`);
+        this.ctx.logger.warn(`Background briefing queueing failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     }, briefingMs);
 
@@ -82,10 +78,10 @@ export class WorkerLoop {
           listBeliefs(this.ctx.storage, "active").length > 0 ||
           listThreads(this.ctx.storage).length > 0;
         if (hasData) {
-          this.runWorkerTask("worker.briefing", async (telemetry) => {
-            await generateBriefing(this.ctx, telemetry);
+          this.runWorkerTask("worker.briefing", async () => {
+            this.ctx.backgroundJobs?.enqueueBriefing?.({ sourceKind: "maintenance", reason: "startup" });
           }).catch((err) => {
-            this.ctx.logger.warn(`Initial briefing failed: ${err instanceof Error ? err.message : String(err)}`);
+            this.ctx.logger.warn(`Initial briefing queueing failed: ${err instanceof Error ? err.message : String(err)}`);
           });
         }
       }
@@ -170,64 +166,47 @@ export class WorkerLoop {
     Object.assign(this.ctx, newCtx);
   }
 
+  private hasQueuedOrRunningSchedule(scheduleId: string, type: "research" | "analysis"): boolean {
+    if (type === "research") {
+      const rows = this.ctx.storage.query<{ count: number }>(
+        "SELECT COUNT(*) as count FROM research_jobs WHERE source_schedule_id = ? AND status IN ('pending', 'running')",
+        [scheduleId],
+      );
+      return (rows[0]?.count ?? 0) > 0;
+    }
+
+    const rows = this.ctx.storage.query<{ count: number }>(
+      "SELECT COUNT(*) as count FROM swarm_jobs WHERE source_schedule_id = ? AND status IN ('pending', 'planning', 'running', 'synthesizing')",
+      [scheduleId],
+    );
+    return (rows[0]?.count ?? 0) > 0;
+  }
+
   private async runDueSchedules(): Promise<void> {
     try {
       const due = getDueSchedules(this.ctx.storage);
       for (const schedule of due) {
+        if (this.hasQueuedOrRunningSchedule(schedule.id, schedule.type)) {
+          continue;
+        }
         this.ctx.logger.info("Running scheduled job", { id: schedule.id, label: schedule.label });
         markScheduleRun(this.ctx.storage, schedule.id);
 
         if (schedule.type === "research") {
-          const jobId = createResearchJob(this.ctx.storage, {
+          await this.ctx.backgroundJobs?.enqueueResearch?.({
             goal: schedule.goal,
             threadId: schedule.threadId,
-          });
-          runResearchInBackground(
-            {
-              storage: this.ctx.storage,
-              llm: this.ctx.llm,
-              logger: this.ctx.logger,
-              timezone: this.ctx.config.timezone,
-              provider: this.ctx.config.llm.provider,
-              model: this.ctx.config.llm.model,
-              contextWindow: this.ctx.config.llm.contextWindow,
-              sandboxUrl: this.ctx.config.sandboxUrl,
-              browserUrl: this.ctx.config.browserUrl,
-              dataDir: this.ctx.config.dataDir,
-              webSearch,
-              formatSearchResults,
-              fetchPage: fetchPageAsMarkdown,
-            },
-            jobId,
-          ).catch((err) => {
-            this.ctx.logger.error(`Scheduled research failed: ${err instanceof Error ? err.message : String(err)}`);
+            sourceKind: "schedule",
+            sourceScheduleId: schedule.id,
           });
           continue;
         }
 
-        const jobId = createSwarmJob(this.ctx.storage, {
+        await this.ctx.backgroundJobs?.enqueueSwarm?.({
           goal: schedule.goal,
           threadId: schedule.threadId,
-        });
-        runSwarmInBackground(
-          {
-            storage: this.ctx.storage,
-            llm: this.ctx.llm,
-            logger: this.ctx.logger,
-            timezone: this.ctx.config.timezone,
-            provider: this.ctx.config.llm.provider,
-            model: this.ctx.config.llm.model,
-            contextWindow: this.ctx.config.llm.contextWindow,
-            sandboxUrl: this.ctx.config.sandboxUrl,
-            browserUrl: this.ctx.config.browserUrl,
-            dataDir: this.ctx.config.dataDir,
-            webSearch,
-            formatSearchResults,
-            fetchPage: fetchPageAsMarkdown,
-          },
-          jobId,
-        ).catch((err) => {
-          this.ctx.logger.error(`Scheduled analysis failed: ${err instanceof Error ? err.message : String(err)}`);
+          sourceKind: "schedule",
+          sourceScheduleId: schedule.id,
         });
       }
     } catch (err) {

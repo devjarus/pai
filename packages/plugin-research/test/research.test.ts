@@ -110,6 +110,12 @@ describe("Research jobs", () => {
       expect(job!.status).toBe("done");
       expect(job!.report).toContain("Research Report");
       expect(job!.completedAt).not.toBeNull();
+      expect(generateText).toHaveBeenCalledWith(expect.objectContaining({
+        timeout: {
+          totalMs: 10 * 60_000,
+          stepMs: 90_000,
+        },
+      }));
     });
 
     it("sets job to failed when generateText throws", async () => {

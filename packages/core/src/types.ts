@@ -15,6 +15,17 @@ export interface Logger {
   debug(msg: string, data?: Record<string, unknown>): void;
 }
 
+export const LLM_TRAFFIC_LANES = ["interactive", "deferred", "background"] as const;
+export type LlmTrafficLane = typeof LLM_TRAFFIC_LANES[number];
+
+export interface LlmTrafficConfig {
+  maxConcurrent?: number;
+  startGapMs?: number;
+  startupDelayMs?: number;
+  swarmAgentConcurrency?: number;
+  reservedInteractiveSlots?: number;
+}
+
 export const TELEMETRY_SPAN_TYPES = ["http", "worker", "llm", "tool", "embed"] as const;
 export type TelemetrySpanType = typeof TELEMETRY_SPAN_TYPES[number];
 
@@ -93,6 +104,7 @@ export interface Config {
     backgroundLearning?: boolean;  // default true
     briefing?: boolean;            // default true
     knowledgeCleanup?: boolean;    // default true
+    llmTraffic?: LlmTrafficConfig;
   };
   knowledge?: {
     defaultTtlDays?: number | null;  // null = no default expiry; config default 90
@@ -120,6 +132,15 @@ export interface Migration {
   version: number;
   up: string; // SQL statement
 }
+
+export type BackgroundJobSourceKind = "manual" | "schedule" | "maintenance";
+export type BackgroundWaitingReason =
+  | "startup_delay"
+  | "interactive_ahead"
+  | "manual_job_ahead"
+  | "scheduled_job_ahead"
+  | "maintenance_job_ahead"
+  | "llm_busy";
 
 export interface Storage {
   db: Database;
@@ -188,6 +209,11 @@ export interface PluginContext {
   json?: boolean;
   exitCode?: number;
   contextProvider?: (query: string) => Promise<string>;
+  backgroundJobs?: {
+    enqueueResearch?: (args: { goal: string; threadId: string | null; resultType?: string; sourceKind?: BackgroundJobSourceKind; sourceScheduleId?: string | null }) => Promise<string> | string;
+    enqueueSwarm?: (args: { goal: string; threadId: string | null; resultType?: string; sourceKind?: BackgroundJobSourceKind; sourceScheduleId?: string | null }) => Promise<string> | string;
+    enqueueBriefing?: (args?: { sourceKind?: BackgroundJobSourceKind; reason?: string }) => Promise<string> | string;
+  };
 }
 
 export interface Command {

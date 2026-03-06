@@ -2,6 +2,7 @@ export type {
   Config, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult, EmbedResult, StreamEvent,
   PluginContext, Command, Plugin, AgentPlugin, AgentContext, Logger, LogLevel, LogFileOptions,
   TelemetryAttributes, TelemetryProcess, TelemetrySpanType, TelemetryStatus, TelemetrySurface, EmbedOptions,
+  LlmTrafficConfig, LlmTrafficLane, BackgroundJobSourceKind, BackgroundWaitingReason,
 } from "./types.js";
 
 // Background jobs (DB-backed)
@@ -11,6 +12,15 @@ export { loadConfig, loadConfigFile, writeConfig, findGitRoot, resolveConfigHome
 export { createStorage, backupDatabase, resolveIdPrefix } from "./storage.js";
 export { createLLMClient } from "./llm.js";
 export { createLogger } from "./logger.js";
+export {
+  acquireLlmTrafficPermit,
+  configureLlmTraffic,
+  getDefaultLlmTrafficConfig,
+  getLlmTrafficConfig,
+  getLlmTrafficSnapshot,
+  getTrafficLane,
+} from "./llm-traffic.js";
+export type { LlmTrafficPermit, LlmTrafficSnapshot } from "./llm-traffic.js";
 export {
   telemetryMigrations,
   TELEMETRY_RETENTION_DAYS,
@@ -36,6 +46,9 @@ export type {
   TelemetrySummary,
   ProcessAggregate,
   ModelAggregate,
+  QueueProcessAggregate,
+  QueueLaneSnapshot,
+  LiveQueueSnapshot,
   ObservabilityOverview,
   ObservabilityRange,
   ThreadMessageUsage,

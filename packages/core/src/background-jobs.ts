@@ -1,4 +1,4 @@
-import type { Storage, Migration } from "./types.js";
+import type { BackgroundJobSourceKind, BackgroundWaitingReason, Storage, Migration } from "./types.js";
 import type { ResearchResultType } from "./research-schemas.js";
 
 // ---- Types ----
@@ -7,9 +7,16 @@ export interface BackgroundJob {
   id: string;
   type: "crawl" | "research" | "swarm";
   label: string;
-  status: "running" | "done" | "error";
+  status: "pending" | "running" | "done" | "error";
   progress: string;
   startedAt: string;
+  queuedAt?: string | null;
+  attemptCount?: number;
+  lastAttemptAt?: string | null;
+  sourceKind?: BackgroundJobSourceKind;
+  sourceScheduleId?: string | null;
+  queuePosition?: number | null;
+  waitingReason?: BackgroundWaitingReason | null;
   error?: string;
   result?: string;
   resultType?: ResearchResultType;
@@ -27,6 +34,12 @@ interface BackgroundJobRow {
   result: string | null;
   result_type: string | null;
   structured_result: string | null;
+  queued_at: string | null;
+  started_at_actual: string | null;
+  attempt_count: number | null;
+  last_attempt_at: string | null;
+  source_kind: string | null;
+  source_schedule_id: string | null;
   updated_at: string;
 }
 
@@ -57,6 +70,17 @@ export const backgroundJobMigrations: Migration[] = [
       ALTER TABLE background_jobs ADD COLUMN structured_result TEXT;
     `,
   },
+  {
+    version: 3,
+    up: `
+      ALTER TABLE background_jobs ADD COLUMN queued_at TEXT;
+      ALTER TABLE background_jobs ADD COLUMN started_at_actual TEXT;
+      ALTER TABLE background_jobs ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE background_jobs ADD COLUMN last_attempt_at TEXT;
+      ALTER TABLE background_jobs ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'manual';
+      ALTER TABLE background_jobs ADD COLUMN source_schedule_id TEXT;
+    `,
+  },
 ];
 
 // ---- Helpers ----
@@ -69,6 +93,12 @@ function rowToJob(row: BackgroundJobRow): BackgroundJob {
     status: row.status as BackgroundJob["status"],
     progress: row.progress,
     startedAt: row.started_at,
+    queuedAt: row.queued_at ?? row.started_at,
+    ...(row.started_at_actual ? { startedAt: row.started_at_actual } : {}),
+    attemptCount: row.attempt_count ?? 0,
+    lastAttemptAt: row.last_attempt_at,
+    sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "manual",
+    sourceScheduleId: row.source_schedule_id,
     ...(row.error ? { error: row.error } : {}),
     ...(row.result ? { result: row.result } : {}),
     ...(row.result_type ? { resultType: row.result_type as BackgroundJob["resultType"] } : {}),
@@ -80,17 +110,41 @@ function rowToJob(row: BackgroundJobRow): BackgroundJob {
 
 export function upsertJob(storage: Storage, job: BackgroundJob): void {
   storage.run(
-    `INSERT INTO background_jobs (id, type, label, status, progress, started_at, error, result, result_type, structured_result, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `INSERT INTO background_jobs (id, type, label, status, progress, started_at, error, result, result_type, structured_result, queued_at, started_at_actual, attempt_count, last_attempt_at, source_kind, source_schedule_id, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(id) DO UPDATE SET
        status = excluded.status,
+       label = excluded.label,
        progress = excluded.progress,
        error = excluded.error,
        result = excluded.result,
        result_type = excluded.result_type,
        structured_result = excluded.structured_result,
+       queued_at = COALESCE(excluded.queued_at, background_jobs.queued_at),
+       started_at_actual = excluded.started_at_actual,
+       attempt_count = excluded.attempt_count,
+       last_attempt_at = excluded.last_attempt_at,
+       source_kind = excluded.source_kind,
+       source_schedule_id = excluded.source_schedule_id,
        updated_at = datetime('now')`,
-    [job.id, job.type, job.label, job.status, job.progress, job.startedAt, job.error ?? null, job.result ?? null, job.resultType ?? null, job.structuredResult ?? null],
+    [
+      job.id,
+      job.type,
+      job.label,
+      job.status,
+      job.progress,
+      job.startedAt,
+      job.error ?? null,
+      job.result ?? null,
+      job.resultType ?? null,
+      job.structuredResult ?? null,
+      job.queuedAt ?? job.startedAt,
+      job.status === "pending" ? null : (job.startedAt ?? null),
+      job.attemptCount ?? 0,
+      job.lastAttemptAt ?? null,
+      job.sourceKind ?? "manual",
+      job.sourceScheduleId ?? null,
+    ],
   );
 }
 
@@ -113,7 +167,7 @@ export function listJobs(storage: Storage): BackgroundJob[] {
 export function updateJobStatus(
   storage: Storage,
   id: string,
-  updates: Partial<Pick<BackgroundJob, "status" | "progress" | "error" | "result" | "resultType" | "structuredResult">>,
+  updates: Partial<Pick<BackgroundJob, "status" | "progress" | "error" | "result" | "resultType" | "structuredResult" | "queuedAt" | "startedAt" | "attemptCount" | "lastAttemptAt" | "sourceKind" | "sourceScheduleId">>,
 ): void {
   const fields: string[] = ["updated_at = datetime('now')"];
   const values: unknown[] = [];
@@ -142,6 +196,30 @@ export function updateJobStatus(
     fields.push("structured_result = ?");
     values.push(updates.structuredResult);
   }
+  if (updates.queuedAt !== undefined) {
+    fields.push("queued_at = ?");
+    values.push(updates.queuedAt);
+  }
+  if (updates.startedAt !== undefined) {
+    fields.push("started_at_actual = ?");
+    values.push(updates.startedAt);
+  }
+  if (updates.attemptCount !== undefined) {
+    fields.push("attempt_count = ?");
+    values.push(updates.attemptCount);
+  }
+  if (updates.lastAttemptAt !== undefined) {
+    fields.push("last_attempt_at = ?");
+    values.push(updates.lastAttemptAt);
+  }
+  if (updates.sourceKind !== undefined) {
+    fields.push("source_kind = ?");
+    values.push(updates.sourceKind);
+  }
+  if (updates.sourceScheduleId !== undefined) {
+    fields.push("source_schedule_id = ?");
+    values.push(updates.sourceScheduleId);
+  }
 
   values.push(id);
   storage.run(`UPDATE background_jobs SET ${fields.join(", ")} WHERE id = ?`, values);
@@ -149,7 +227,7 @@ export function updateJobStatus(
 
 export function cancelBackgroundJob(storage: Storage, id: string): boolean {
   const job = getJob(storage, id);
-  if (!job || job.status !== "running") return false;
+  if (!job || (job.status !== "running" && job.status !== "pending")) return false;
   storage.run(
     "UPDATE background_jobs SET status = 'error', error = 'Cancelled by user', updated_at = datetime('now') WHERE id = ?",
     [id],
@@ -166,11 +244,14 @@ export function forceDeleteBackgroundJob(storage: Storage, id: string): boolean 
 
 export function recoverStaleBackgroundJobs(storage: Storage): number {
   const count = storage.query<{ cnt: number }>(
-    "SELECT COUNT(*) as cnt FROM background_jobs WHERE status = 'running'",
+    "SELECT COUNT(*) as cnt FROM background_jobs WHERE status IN ('running', 'pending')",
   )[0]?.cnt ?? 0;
   if (count > 0) {
     storage.run(
-      "UPDATE background_jobs SET status = 'error', error = 'Server restarted — job interrupted', updated_at = datetime('now') WHERE status = 'running'",
+      "UPDATE background_jobs SET status = 'pending', error = NULL, progress = 'queued after restart', started_at_actual = NULL, updated_at = datetime('now') WHERE type IN ('research', 'swarm') AND status IN ('running', 'pending')",
+    );
+    storage.run(
+      "UPDATE background_jobs SET status = 'error', error = 'Server restarted — job interrupted', updated_at = datetime('now') WHERE type = 'crawl' AND status = 'running'",
     );
   }
   return count;
@@ -178,11 +259,11 @@ export function recoverStaleBackgroundJobs(storage: Storage): number {
 
 export function cancelAllRunningBackgroundJobs(storage: Storage): number {
   const count = storage.query<{ cnt: number }>(
-    "SELECT COUNT(*) as cnt FROM background_jobs WHERE status = 'running'",
+    "SELECT COUNT(*) as cnt FROM background_jobs WHERE status IN ('running', 'pending')",
   )[0]?.cnt ?? 0;
   if (count > 0) {
     storage.run(
-      "UPDATE background_jobs SET status = 'error', error = 'Server shutting down', updated_at = datetime('now') WHERE status = 'running'",
+      "UPDATE background_jobs SET status = 'error', error = 'Server shutting down', updated_at = datetime('now') WHERE status IN ('running', 'pending')",
     );
   }
   return count;
