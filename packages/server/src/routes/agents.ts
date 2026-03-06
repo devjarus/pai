@@ -36,8 +36,11 @@ import { validate } from "../validate.js";
 export { threadMigrations };
 
 const MAX_MESSAGES_PER_THREAD = 500;
-const TITLE_GENERATE_AT = 1;   // Generate LLM title after this many user turns
-const TITLE_REFRESH_EVERY = 5; // Re-check title every N user turns after that
+const TITLE_GENERATE_AT = 5;    // Use heuristic titles first; ask the LLM only for longer threads
+const TITLE_REFRESH_EVERY = 10; // Re-check title every N user turns after that
+const TITLE_CONTEXT_MESSAGES = 6;
+const TITLE_MESSAGE_PREVIEW_CHARS = 120;
+const TITLE_MAX_OUTPUT_TOKENS = 12;
 const STREAM_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;  // 30 seconds
 
@@ -155,16 +158,19 @@ async function generateThreadTitle(
   messages: Array<{ role: string; content: string }>,
 ): Promise<void> {
   try {
-    const recent = messages.slice(-10);
-    const conversation = recent.map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join("\n");
+    const recent = messages.slice(-TITLE_CONTEXT_MESSAGES);
+    const conversation = recent
+      .map((m) => `${m.role}: ${m.content.slice(0, TITLE_MESSAGE_PREVIEW_CHARS)}`)
+      .join("\n");
     const result = await ctx.llm.chat([
       {
         role: "system",
-        content: "Generate a short title (max 50 chars) for this conversation. Return ONLY the title, nothing else. No quotes, no prefix.",
+        content: "Write a concise thread title for this conversation in 2 to 6 words. Max 50 characters. Return only the title. No quotes or punctuation decoration.",
       },
       { role: "user", content: conversation },
     ], {
-      temperature: 0.3,
+      temperature: 0,
+      maxTokens: TITLE_MAX_OUTPUT_TOKENS,
       telemetry: {
         process: "thread.title",
         surface: "web",
@@ -172,7 +178,11 @@ async function generateThreadTitle(
         route: "/api/chat",
       },
     });
-    const title = result.text.trim().replace(/^["']|["']$/g, "").slice(0, 50);
+    const title = result.text
+      .trim()
+      .split("\n")[0]!
+      .replace(/^["']|["']$/g, "")
+      .slice(0, 50);
     if (title.length >= 3) {
       ctx.storage.run("UPDATE threads SET title = ? WHERE id = ?", [title, threadId]);
     }
@@ -569,7 +579,7 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
             ({
               result,
               traceId: telemetryTraceId,
-            } = instrumentedStreamText(
+            } = await instrumentedStreamText(
               { storage: ctx.storage, logger: ctx.logger },
               {
                 model: ctx.llm.getModel() as LanguageModel,
@@ -644,6 +654,7 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                     appendMessages(ctx.storage, sid, toPersist, {
                       maxMessages: MAX_MESSAGES_PER_THREAD,
                       titleCandidate: autoTitle(message),
+                      replaceLowSignalTitle: true,
                     });
 
                     // afterResponse — fire and forget, but log errors
@@ -670,12 +681,15 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                     }
 
                     // Generate/refresh thread title via LLM (awaited so UI picks up the new title on refresh)
-                    const shouldTitle = userTurnCount === TITLE_GENERATE_AT
-                      || (userTurnCount > TITLE_GENERATE_AT && (userTurnCount - TITLE_GENERATE_AT) % TITLE_REFRESH_EVERY === 0);
+                    const shouldTitle = userTurnCount >= TITLE_GENERATE_AT
+                      && (
+                        userTurnCount === TITLE_GENERATE_AT
+                        || (userTurnCount > TITLE_GENERATE_AT && (userTurnCount - TITLE_GENERATE_AT) % TITLE_REFRESH_EVERY === 0)
+                      );
                     if (shouldTitle) {
                       const allMessages = listMessages(ctx.storage, sid, { limit: 10 })
                         .map((row) => ({ role: row.role, content: row.content }));
-                      await generateThreadTitle(ctx, sid, allMessages).catch((err) => {
+                      void generateThreadTitle(ctx, sid, allMessages).catch((err) => {
                         ctx.logger.warn(`Title generation failed: ${err instanceof Error ? err.message : String(err)}`);
                       });
                     }
