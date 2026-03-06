@@ -393,12 +393,22 @@ export function updateConfig(updates: {
   embedProvider?: string;
   apiKey?: string;
   dataDir?: string;
+  backgroundLearning?: boolean;
+  briefingEnabled?: boolean;
   telegramToken?: string;
   telegramEnabled?: boolean;
   knowledgeCleanup?: boolean;
+  llmTrafficMaxConcurrent?: number;
+  llmTrafficStartGapMs?: number;
+  llmTrafficStartupDelayMs?: number;
+  llmTrafficSwarmAgentConcurrency?: number;
+  llmTrafficReservedInteractiveSlots?: number;
   knowledgeDefaultTtlDays?: number | null;
   knowledgeFreshnessDecayDays?: number;
   debugResearch?: boolean;
+  sandboxUrl?: string;
+  searchUrl?: string;
+  browserUrl?: string;
   timezone?: string;
 }): Promise<ConfigInfo> {
   return request<ConfigInfo>("/config", {
@@ -494,7 +504,7 @@ export function deleteGoal(id: string): Promise<{ ok: boolean }> {
 
 // ---- Inbox ----
 
-export function refreshInbox(): Promise<{ ok: boolean }> {
+export function refreshInbox(): Promise<{ ok: boolean; briefingId?: string; message?: string }> {
   return request("/inbox/refresh", { method: "POST", body: "{}" });
 }
 
@@ -502,7 +512,7 @@ export function getInboxBriefing(id: string): Promise<{ briefing: Briefing }> {
   return request<{ briefing: Briefing }>(`/inbox/${id}`);
 }
 
-export function getInboxAll(): Promise<{ briefings: Array<{ id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string }>; generating: boolean }> {
+export function getInboxAll(): Promise<{ briefings: Array<{ id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string }>; generating: boolean; pending?: boolean }> {
   return request("/inbox/all");
 }
 
@@ -523,7 +533,14 @@ export interface BackgroundJobInfo {
   status: "pending" | "running" | "done" | "error" | "failed" | "planning" | "synthesizing";
   progress: string;
   startedAt: string;
+  queuedAt?: string | null;
   completedAt?: string | null;
+  attemptCount?: number;
+  lastAttemptAt?: string | null;
+  sourceKind?: "manual" | "schedule" | "maintenance";
+  sourceScheduleId?: string | null;
+  queuePosition?: number | null;
+  waitingReason?: "startup_delay" | "interactive_ahead" | "manual_job_ahead" | "scheduled_job_ahead" | "maintenance_job_ahead" | "llm_busy" | null;
   error?: string | null;
   result?: string | null;
   resultType?: ResearchResultType | null;
@@ -540,7 +557,15 @@ export interface ResearchJobDetail {
   pagesLearned: number;
   report: string | null;
   createdAt: string;
+  queuedAt?: string | null;
+  startedAt?: string | null;
   completedAt: string | null;
+  attemptCount?: number;
+  lastAttemptAt?: string | null;
+  sourceKind?: "manual" | "schedule" | "maintenance";
+  sourceScheduleId?: string | null;
+  queuePosition?: number | null;
+  waitingReason?: "startup_delay" | "interactive_ahead" | "manual_job_ahead" | "scheduled_job_ahead" | "maintenance_job_ahead" | "llm_busy" | null;
   resultType?: ResearchResultType;
   briefingId?: string | null;
   // Swarm-specific fields (present when job is a swarm)

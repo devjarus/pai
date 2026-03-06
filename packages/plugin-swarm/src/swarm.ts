@@ -10,6 +10,7 @@ import {
   resolveSandboxUrl,
   getContextBudget,
   getProviderOptions,
+  getLlmTrafficConfig,
   createBrowserTools,
   buildReportPresentation,
   deriveReportVisuals,
@@ -39,6 +40,11 @@ import {
   getStockResearcherPrompt,
   getCryptoResearcherPrompt,
 } from "./prompts.js";
+
+const SWARM_LLM_TIMEOUT = {
+  totalMs: 10 * 60_000,
+  stepMs: 90_000,
+} as const;
 
 // ---- Types ----
 
@@ -180,6 +186,9 @@ export async function runSwarmInBackground(
     return;
   }
 
+  const startedAt = new Date().toISOString();
+  const nextAttempt = (job.attemptCount ?? 0) + 1;
+
   // Register in shared background_jobs tracker
   const tracked: BackgroundJob = {
     id: jobId,
@@ -187,14 +196,35 @@ export async function runSwarmInBackground(
     label: job.goal.slice(0, 100),
     status: "running",
     progress: "planning",
-    startedAt: new Date().toISOString(),
+    startedAt,
+    queuedAt: job.queuedAt,
+    attemptCount: nextAttempt,
+    lastAttemptAt: startedAt,
+    sourceKind: job.sourceKind,
+    sourceScheduleId: job.sourceScheduleId,
   };
   upsertJob(ctx.storage, tracked);
 
   try {
     // Phase 1: Plan — decompose goal into subtasks
-    updateSwarmJob(ctx.storage, jobId, { status: "planning" });
-    updateJobStatus(ctx.storage, jobId, { progress: "planning subtasks" });
+    updateSwarmJob(ctx.storage, jobId, {
+      status: "planning",
+      started_at: startedAt,
+      last_attempt_at: startedAt,
+      attempt_count: nextAttempt,
+      completed_at: null,
+      synthesis: null,
+      briefing_id: null,
+    });
+    updateJobStatus(ctx.storage, jobId, {
+      progress: "planning subtasks",
+      queuedAt: job.queuedAt,
+      startedAt,
+      attemptCount: nextAttempt,
+      lastAttemptAt: startedAt,
+      sourceKind: job.sourceKind,
+      sourceScheduleId: job.sourceScheduleId,
+    });
 
     const planned = await planSwarm(ctx, job.goal, job.resultType);
     const executablePlan = ensureAnalysisPlan(planned, job.goal, job.resultType);
@@ -237,6 +267,12 @@ export async function runSwarmInBackground(
       result: presentation.report.slice(0, 200),
       resultType: job.resultType || "general",
       ...(structuredResult ? { structuredResult } : {}),
+      queuedAt: job.queuedAt,
+      startedAt,
+      attemptCount: nextAttempt,
+      lastAttemptAt: startedAt,
+      sourceKind: job.sourceKind,
+      sourceScheduleId: job.sourceScheduleId,
     });
 
     // Create Inbox briefing
@@ -291,7 +327,16 @@ export async function runSwarmInBackground(
       completed_at: new Date().toISOString(),
     });
 
-    updateJobStatus(ctx.storage, jobId, { status: "error", error: errorMsg });
+    updateJobStatus(ctx.storage, jobId, {
+      status: "error",
+      error: errorMsg,
+      queuedAt: job.queuedAt,
+      startedAt,
+      attemptCount: nextAttempt,
+      lastAttemptAt: startedAt,
+      sourceKind: job.sourceKind,
+      sourceScheduleId: job.sourceScheduleId,
+    });
 
     if (job.threadId) {
       try {
@@ -324,6 +369,7 @@ async function planSwarm(ctx: SwarmContext, goal: string, resultType?: string): 
           { role: "user", content: `Decompose this goal into parallel subtasks:\n\n${goal}${domainHint}` },
         ],
         maxRetries: 1,
+        timeout: SWARM_LLM_TIMEOUT,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
       },
@@ -377,19 +423,25 @@ async function executePlan(ctx: SwarmContext, jobId: string, plan: SwarmPlanItem
     progress: `running ${plan.length} agents`,
   });
 
-  // Execute all agents in parallel
-  const promises = plan.map((item, i) =>
-    runSubAgent(ctx, jobId, agentIds[i]!, item, resultType).catch((err) => {
+  const maxConcurrent = Math.max(1, getLlmTrafficConfig().swarmAgentConcurrency);
+  let nextIndex = 0;
+  const runNext = async (): Promise<void> => {
+    const index = nextIndex++;
+    if (index >= plan.length) return;
+    try {
+      await runSubAgent(ctx, jobId, agentIds[index]!, plan[index]!, resultType);
+    } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      updateSwarmAgent(ctx.storage, agentIds[i]!, {
+      updateSwarmAgent(ctx.storage, agentIds[index]!, {
         status: "failed",
         error: errorMsg,
         completed_at: new Date().toISOString(),
       });
-    }),
-  );
+    }
+    await runNext();
+  };
 
-  await Promise.allSettled(promises);
+  await Promise.all(Array.from({ length: Math.min(maxConcurrent, plan.length) }, () => runNext()));
 
   // Update agents_done count
   const agents = getSwarmAgents(ctx.storage, jobId);
@@ -429,6 +481,7 @@ async function runSubAgent(
       toolChoice: "auto",
       stopWhen: stepCountIs(AGENT_STEP_LIMIT),
       maxRetries: 1,
+      timeout: SWARM_LLM_TIMEOUT,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       providerOptions: getProviderOptions(ctx.provider ?? "ollama", agentBudget.contextWindow) as any,
     },
@@ -688,6 +741,7 @@ async function synthesize(
         },
       ],
       maxRetries: 1,
+      timeout: SWARM_LLM_TIMEOUT,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       providerOptions: getProviderOptions(ctx.provider ?? "ollama", synthBudget.contextWindow) as any,
     },

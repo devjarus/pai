@@ -39,6 +39,11 @@ function formatDate(value: string, timezone?: string): string {
   }, timezone);
 }
 
+function getQueueWait(span: TelemetrySpan): number | null {
+  const value = span.metadata?.queueWaitMs;
+  return typeof value === "number" ? value : null;
+}
+
 function getTraceDepth(spans: TelemetrySpan[], span: TelemetrySpan): number {
   let depth = 0;
   let current = span;
@@ -101,6 +106,7 @@ function TraceViewer({ traceId, timezone }: { traceId: string | null; timezone?:
             </div>
             <div className="mt-1 text-[11px] text-muted-foreground">
               {formatDate(span.startedAt, timezone)}
+              {getQueueWait(span) != null ? ` • queue ${formatDuration(getQueueWait(span))}` : ""}
               {span.errorMessage ? ` • ${span.errorMessage}` : ""}
             </div>
           </div>
@@ -258,6 +264,45 @@ export function DiagnosticsPanel({ timezone }: { timezone?: string }) {
                       <StatCard label="Avg Time" value={formatDuration(overview.totals.avgDurationMs)} />
                       <StatCard label="P95 Time" value={formatDuration(overview.totals.p95DurationMs)} />
                     </div>
+                    <div className="grid gap-3 sm:grid-cols-4">
+                      <StatCard label="Active LLM" value={formatNumber(overview.live?.activeRequests ?? 0)} />
+                      <StatCard label="Queued LLM" value={formatNumber(overview.live?.queuedRequests ?? 0)} />
+                      <StatCard label="Avg Queue" value={formatDuration(overview.queue.avgWaitMs)} />
+                      <StatCard label="P95 Queue" value={formatDuration(overview.queue.p95WaitMs)} />
+                    </div>
+                    <div className="grid gap-3 lg:grid-cols-3">
+                      {(["interactive", "deferred", "background"] as const).map((lane) => (
+                        <div key={lane} className="rounded-lg border border-border/40 bg-background/40 px-4 py-3">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{lane}</div>
+                          <div className="mt-2 flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">active</span>
+                            <span className="font-medium text-foreground">{formatNumber(overview.live?.lanes[lane].active ?? 0)}</span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">queued</span>
+                            <span className="font-medium text-foreground">{formatNumber(overview.live?.lanes[lane].queued ?? 0)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                      <span>pending background jobs {formatNumber(overview.live?.pendingBackgroundJobs ?? 0)}</span>
+                      {overview.live?.backgroundActiveKind ? <span>active background {overview.live.backgroundActiveKind}</span> : null}
+                      {overview.live?.startupDelayUntil ? <span>startup delay until {formatDate(overview.live.startupDelayUntil, timezone)}</span> : null}
+                    </div>
+                    <div className="rounded-lg border border-border/40">
+                      <div className="border-b border-border/30 px-4 py-3 text-xs font-medium text-foreground">Queue Wait By Process</div>
+                      {overview.queue.byProcess.length > 0 ? overview.queue.byProcess.map((process) => (
+                        <div key={process.process} className="grid grid-cols-[minmax(0,1.8fr)_repeat(3,minmax(0,1fr))] items-center gap-3 border-t border-border/30 px-4 py-3 text-xs first:border-t-0">
+                          <span className="truncate font-medium text-foreground">{process.process}</span>
+                          <span className="text-muted-foreground">{formatDuration(process.avgQueueWaitMs)}</span>
+                          <span className="text-muted-foreground">{formatDuration(process.p95QueueWaitMs)}</span>
+                          <span className="text-muted-foreground">{formatNumber(process.calls)}</span>
+                        </div>
+                      )) : (
+                        <div className="px-4 py-3 text-xs text-muted-foreground">No queue waits recorded in this range.</div>
+                      )}
+                    </div>
                     <div className="grid gap-4 lg:grid-cols-2">
                       <div className="rounded-lg border border-border/40">
                         <div className="border-b border-border/30 px-4 py-3 text-xs font-medium text-foreground">Top Processes</div>
@@ -291,11 +336,13 @@ export function DiagnosticsPanel({ timezone }: { timezone?: string }) {
               <TabsContent value="processes" className="space-y-3">
                 <div className="rounded-lg border border-border/40">
                   {(processes?.processes ?? []).map((process) => (
-                    <div key={process.process} className="grid grid-cols-[minmax(0,1.8fr)_repeat(4,minmax(0,1fr))] items-center gap-3 border-t border-border/30 px-4 py-3 text-xs first:border-t-0">
+                    <div key={process.process} className="grid grid-cols-[minmax(0,1.8fr)_repeat(7,minmax(0,1fr))] items-center gap-3 border-t border-border/30 px-4 py-3 text-xs first:border-t-0">
                       <span className="truncate font-medium text-foreground">{process.process}</span>
                       <span className="text-muted-foreground">{formatNumber(process.totalTokens)}</span>
                       <span className="text-muted-foreground">{formatDuration(process.avgDurationMs)}</span>
                       <span className="text-muted-foreground">{formatDuration(process.p95DurationMs)}</span>
+                      <span className="text-muted-foreground">{formatDuration(process.avgQueueWaitMs)}</span>
+                      <span className="text-muted-foreground">{formatDuration(process.p95QueueWaitMs)}</span>
                       <span className="text-muted-foreground">{formatNumber(process.calls)}</span>
                       <span className="text-muted-foreground">{formatNumber(process.errors)}</span>
                     </div>

@@ -158,6 +158,7 @@ const mockGenerateBriefing = vi.fn();
 const mockClearAllBriefings = vi.fn();
 const mockListAllBriefings = vi.fn();
 const mockGetResearchBriefings = vi.fn();
+const mockGetDailyBriefingState = vi.fn().mockReturnValue({ generating: false, pending: false });
 
 vi.mock("../src/briefing.js", () => ({
   getLatestBriefing: (...args: unknown[]) => mockGetLatestBriefing(...args),
@@ -167,6 +168,7 @@ vi.mock("../src/briefing.js", () => ({
   clearAllBriefings: (...args: unknown[]) => mockClearAllBriefings(...args),
   listAllBriefings: (...args: unknown[]) => mockListAllBriefings(...args),
   getResearchBriefings: (...args: unknown[]) => mockGetResearchBriefings(...args),
+  getDailyBriefingState: (...args: unknown[]) => mockGetDailyBriefingState(...args),
   briefingMigrations: [],
 }));
 
@@ -261,6 +263,7 @@ function setupDefaultAIMocks(responseText = "Hello from AI"): void {
   mockCreateUIMessageStream.mockImplementation(
     ({ execute, onError }: { execute: (ctx: { writer: { write: unknown; merge: unknown } }) => Promise<void>; onError?: (e: unknown) => string }) => {
       const chunks: string[] = [];
+      const merged: Promise<void>[] = [];
       const mockWriter = {
         write: vi.fn().mockImplementation((part: unknown) => {
           chunks.push(`data: ${JSON.stringify(part)}\n\n`);
@@ -274,32 +277,26 @@ function setupDefaultAIMocks(responseText = "Hello from AI"): void {
               chunks.push(typeof value === "string" ? value : new TextDecoder().decode(value));
               return pump();
             });
-          pump().catch(() => {});
+          const promise = pump();
+          merged.push(promise);
+          return promise.catch(() => {});
         }),
       };
-
-      // Execute the callback (async but we handle errors)
-      try {
-        const result = execute({ writer: mockWriter });
-        if (result && typeof result.then === "function") {
-          result.catch((e: unknown) => {
-            if (onError) onError(e);
-          });
-        }
-      } catch (e) {
-        if (onError) onError(e);
-      }
 
       // Return a simple ReadableStream with the collected text
       const encoder = new TextEncoder();
       return new ReadableStream({
-        start(controller) {
-          // Use a microtask to let the execute callback's async merge run
-          queueMicrotask(() => {
+        async start(controller) {
+          try {
+            await execute({ writer: mockWriter });
+            await Promise.allSettled(merged);
             const body = chunks.length > 0 ? chunks.join("") : `0:${JSON.stringify(responseText)}\n`;
             controller.enqueue(encoder.encode(body));
             controller.close();
-          });
+          } catch (e) {
+            if (onError) onError(e);
+            controller.close();
+          }
         },
       });
     },
@@ -473,6 +470,18 @@ function createMockStorage() {
 
 function createMockServerCtx(): ServerContext {
   const storage = createMockStorage();
+  const backgroundDispatcher = {
+    enqueueResearch: vi.fn().mockResolvedValue("job-research-1"),
+    enqueueSwarm: vi.fn().mockResolvedValue("job-swarm-1"),
+    enqueueBriefing: vi.fn().mockReturnValue("briefing-queued-1"),
+    getJobQueueMetadata: vi.fn().mockReturnValue({ queuePosition: null, waitingReason: null }),
+    getWorkState: vi.fn().mockReturnValue({
+      startupDelayUntil: null,
+      activeWorkId: null,
+      activeKind: null,
+      pending: [],
+    }),
+  };
   return {
     ctx: {
       config: {
@@ -522,6 +531,7 @@ function createMockServerCtx(): ServerContext {
         },
       },
     ],
+    backgroundDispatcher: backgroundDispatcher as ServerContext["backgroundDispatcher"],
     reinitialize: vi.fn(),
     telegramBot: null,
     telegramStatus: { running: false },
@@ -2148,10 +2158,10 @@ describe("Inbox routes", () => {
   });
 
   it("POST /api/inbox/refresh triggers generation", async () => {
-    mockGenerateBriefing.mockResolvedValue(null);
     const res = await app.inject({ method: "POST", url: "/api/inbox/refresh", payload: {} });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
+    expect(serverCtx.backgroundDispatcher.enqueueBriefing).toHaveBeenCalledWith({ sourceKind: "manual", reason: "inbox-refresh" });
   });
 
   it("GET /api/inbox/history returns list", async () => {
@@ -2204,6 +2214,7 @@ describe("Inbox routes", () => {
     const body = res.json();
     expect(body.briefings).toHaveLength(2);
     expect(body.generating).toBe(false);
+    expect(body.pending).toBe(false);
   });
 
   it("GET /api/inbox/research returns research briefings", async () => {
@@ -2254,24 +2265,19 @@ describe("Inbox routes", () => {
       sections: JSON.stringify({ goal: "Research AI trends", resultType: "news" }),
       status: "ready",
     });
-    mockCreateResearchJob.mockReturnValue("new_job_123");
-    mockRunResearchInBackground.mockResolvedValue(undefined);
+    vi.mocked(serverCtx.backgroundDispatcher.enqueueResearch).mockResolvedValue("new_job_123");
 
     const res = await app.inject({ method: "POST", url: "/api/inbox/brief_rerun/rerun", payload: {} });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.ok).toBe(true);
     expect(body.jobId).toBe("new_job_123");
-    expect(mockCreateResearchJob).toHaveBeenCalledOnce();
-    expect(mockRunResearchInBackground).toHaveBeenCalledOnce();
-    expect(mockRunResearchInBackground).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sandboxUrl: "http://sandbox",
-        browserUrl: "http://browser",
-        dataDir: "/tmp/test",
-      }),
-      "new_job_123",
-    );
+    expect(serverCtx.backgroundDispatcher.enqueueResearch).toHaveBeenCalledWith({
+      goal: "Research AI trends",
+      threadId: null,
+      resultType: "news",
+      sourceKind: "manual",
+    });
   });
 
   it("POST /api/inbox/:id/rerun defaults resultType to general when missing", async () => {
@@ -2280,17 +2286,17 @@ describe("Inbox routes", () => {
       sections: JSON.stringify({ goal: "Research something" }),
       status: "ready",
     });
-    mockCreateResearchJob.mockReturnValue("job_gen");
-    mockRunResearchInBackground.mockResolvedValue(undefined);
+    vi.mocked(serverCtx.backgroundDispatcher.enqueueResearch).mockResolvedValue("job_gen");
 
     const res = await app.inject({ method: "POST", url: "/api/inbox/brief_notype/rerun", payload: {} });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
-    // Verify resultType defaults to "general"
-    expect(mockCreateResearchJob).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ resultType: "general" }),
-    );
+    expect(serverCtx.backgroundDispatcher.enqueueResearch).toHaveBeenCalledWith({
+      goal: "Research something",
+      threadId: null,
+      resultType: "general",
+      sourceKind: "manual",
+    });
   });
 
   it("POST /api/inbox/:id/rerun handles already-parsed sections object", async () => {
@@ -2299,16 +2305,17 @@ describe("Inbox routes", () => {
       sections: { goal: "Research parsed", resultType: "stock" },
       status: "ready",
     });
-    mockCreateResearchJob.mockReturnValue("job_obj");
-    mockRunResearchInBackground.mockResolvedValue(undefined);
+    vi.mocked(serverCtx.backgroundDispatcher.enqueueResearch).mockResolvedValue("job_obj");
 
     const res = await app.inject({ method: "POST", url: "/api/inbox/brief_obj/rerun", payload: {} });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
-    expect(mockCreateResearchJob).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ goal: "Research parsed", resultType: "stock" }),
-    );
+    expect(serverCtx.backgroundDispatcher.enqueueResearch).toHaveBeenCalledWith({
+      goal: "Research parsed",
+      threadId: null,
+      resultType: "stock",
+      sourceKind: "manual",
+    });
   });
 
   it("POST /api/inbox/:id/rerun preserves analysis execution mode", async () => {
@@ -2321,24 +2328,17 @@ describe("Inbox routes", () => {
       }),
       status: "ready",
     });
-    mockCreateSwarmJob.mockReturnValue("swarm_job_1");
-    mockRunSwarmInBackground.mockResolvedValue(undefined);
+    vi.mocked(serverCtx.backgroundDispatcher.enqueueSwarm).mockResolvedValue("swarm_job_1");
 
     const res = await app.inject({ method: "POST", url: "/api/inbox/swarm-brief_analysis/rerun", payload: {} });
     expect(res.statusCode).toBe(200);
     expect(res.json().jobId).toBe("swarm_job_1");
-    expect(mockCreateSwarmJob).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ goal: "Compare AI model pricing trends", resultType: "comparison" }),
-    );
-    expect(mockRunSwarmInBackground).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sandboxUrl: "http://sandbox",
-        browserUrl: "http://browser",
-        dataDir: "/tmp/test",
-      }),
-      "swarm_job_1",
-    );
+    expect(serverCtx.backgroundDispatcher.enqueueSwarm).toHaveBeenCalledWith({
+      goal: "Compare AI model pricing trends",
+      threadId: null,
+      resultType: "comparison",
+      sourceKind: "manual",
+    });
   });
 });
 
@@ -2952,6 +2952,11 @@ describe("observability routes", () => {
       totals: { calls: 4, errors: 1, inputTokens: 10, outputTokens: 5, totalTokens: 15, avgDurationMs: 120, p95DurationMs: 180 },
       topProcesses: [],
       topModels: [],
+      queue: {
+        avgWaitMs: 0,
+        p95WaitMs: 0,
+        byProcess: [],
+      },
     });
 
     const res = await app.inject({ method: "GET", url: "/api/observability/overview?range=24h" });

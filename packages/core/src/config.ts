@@ -3,6 +3,7 @@ import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
 import type { Config } from "./types.js";
+import { getDefaultLlmTrafficConfig } from "./llm-traffic.js";
 
 const DEFAULT_HOME = join(homedir(), ".personal-ai");
 const DEFAULT_DATA_DIR = join(DEFAULT_HOME, "data");
@@ -127,6 +128,7 @@ export function resolveConfigHome(env: Record<string, string | undefined> = proc
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
+  const defaultTraffic = getDefaultLlmTrafficConfig();
   const fileConfig = loadConfigFile(env["PAI_HOME"]);
   const fileLlm: Partial<Config["llm"]> = fileConfig.llm ?? {};
   const fileTelegram: Partial<NonNullable<Config["telegram"]>> = fileConfig.telegram ?? {};
@@ -163,7 +165,15 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     plugins: env["PAI_PLUGINS"]?.split(",").map((s) => s.trim()) ?? fileConfig.plugins ?? ["memory", "tasks"],
     timezone: env["PAI_TIMEZONE"] ?? dataDirConfig?.timezone ?? fileConfig.timezone,
     webSearchEnabled: env["PAI_WEB_SEARCH"] === "false" ? false : (fileConfig.webSearchEnabled ?? true),
-    workers: dataDirConfig?.workers ?? fileConfig.workers,
+    workers: {
+      ...(fileConfig.workers ?? {}),
+      ...(dataDirConfig?.workers ?? {}),
+      llmTraffic: {
+        ...defaultTraffic,
+        ...(fileConfig.workers?.llmTraffic ?? {}),
+        ...(dataDirConfig?.workers?.llmTraffic ?? {}),
+      },
+    },
     knowledge: dataDirConfig?.knowledge ?? fileConfig.knowledge,
     debugResearch: dataDirConfig?.debugResearch ?? fileConfig.debugResearch,
     sandboxUrl: dataDirConfig?.sandboxUrl ?? env["PAI_SANDBOX_URL"] ?? fileConfig.sandboxUrl,

@@ -24,6 +24,14 @@ const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedMo
   google: { baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.0-flash", embedModel: "text-embedding-004" },
 };
 
+const DEFAULT_LLM_TRAFFIC = {
+  maxConcurrent: 6,
+  startGapMs: 1500,
+  startupDelayMs: 10000,
+  swarmAgentConcurrency: 5,
+  reservedInteractiveSlots: 1,
+};
+
 export default function Settings() {
   // --- TanStack Query hooks ---
   const { data: config, isLoading: configLoading } = useConfig();
@@ -57,6 +65,11 @@ export default function Settings() {
   const [bgLearningEnabled, setBgLearningEnabled] = useState(true);
   const [briefingEnabled, setBriefingEnabled] = useState(true);
   const [knowledgeCleanupEnabled, setKnowledgeCleanupEnabled] = useState(true);
+  const [llmTrafficMaxConcurrent, setLlmTrafficMaxConcurrent] = useState(DEFAULT_LLM_TRAFFIC.maxConcurrent);
+  const [llmTrafficStartGapMs, setLlmTrafficStartGapMs] = useState(DEFAULT_LLM_TRAFFIC.startGapMs);
+  const [llmTrafficStartupDelayMs, setLlmTrafficStartupDelayMs] = useState(DEFAULT_LLM_TRAFFIC.startupDelayMs);
+  const [llmTrafficSwarmAgentConcurrency, setLlmTrafficSwarmAgentConcurrency] = useState(DEFAULT_LLM_TRAFFIC.swarmAgentConcurrency);
+  const [llmTrafficReservedInteractiveSlots, setLlmTrafficReservedInteractiveSlots] = useState(DEFAULT_LLM_TRAFFIC.reservedInteractiveSlots);
 
   // Sidecar URLs
   const [sandboxUrl, setSandboxUrl] = useState("");
@@ -92,6 +105,7 @@ export default function Settings() {
 
     // Only sync form fields when not editing
     if (!editing) {
+      const llmTraffic = config.workers?.llmTraffic ?? {};
       setProvider(config.llm.provider);
       setModel(config.llm.model);
       setBaseUrl(config.llm.baseUrl ?? "");
@@ -102,6 +116,11 @@ export default function Settings() {
       setBgLearningEnabled(config.workers?.backgroundLearning !== false);
       setBriefingEnabled(config.workers?.briefing !== false);
       setKnowledgeCleanupEnabled(config.workers?.knowledgeCleanup !== false);
+      setLlmTrafficMaxConcurrent(llmTraffic.maxConcurrent ?? DEFAULT_LLM_TRAFFIC.maxConcurrent);
+      setLlmTrafficStartGapMs(llmTraffic.startGapMs ?? DEFAULT_LLM_TRAFFIC.startGapMs);
+      setLlmTrafficStartupDelayMs(llmTraffic.startupDelayMs ?? DEFAULT_LLM_TRAFFIC.startupDelayMs);
+      setLlmTrafficSwarmAgentConcurrency(llmTraffic.swarmAgentConcurrency ?? DEFAULT_LLM_TRAFFIC.swarmAgentConcurrency);
+      setLlmTrafficReservedInteractiveSlots(llmTraffic.reservedInteractiveSlots ?? DEFAULT_LLM_TRAFFIC.reservedInteractiveSlots);
       setSandboxUrl(config.sandboxUrl ?? "");
       setSearchUrl(config.searchUrl ?? "");
       setBrowserUrl(config.browserUrl ?? "");
@@ -111,7 +130,7 @@ export default function Settings() {
   const handleSave = useCallback(async () => {
     if (!config) return;
     try {
-      const updates: Record<string, string | boolean> = {};
+      const updates: Record<string, string | boolean | number | null> = {};
       if (provider !== config.llm.provider) updates.provider = provider;
       if (model !== config.llm.model) updates.model = model;
       if (baseUrl !== (config.llm.baseUrl ?? "")) updates.baseUrl = baseUrl;
@@ -125,6 +144,21 @@ export default function Settings() {
       if (bgLearningEnabled !== (config.workers?.backgroundLearning !== false)) updates.backgroundLearning = bgLearningEnabled;
       if (briefingEnabled !== (config.workers?.briefing !== false)) updates.briefingEnabled = briefingEnabled;
       if (knowledgeCleanupEnabled !== (config.workers?.knowledgeCleanup !== false)) updates.knowledgeCleanup = knowledgeCleanupEnabled;
+      if (llmTrafficMaxConcurrent !== (config.workers?.llmTraffic?.maxConcurrent ?? DEFAULT_LLM_TRAFFIC.maxConcurrent)) {
+        updates.llmTrafficMaxConcurrent = llmTrafficMaxConcurrent;
+      }
+      if (llmTrafficStartGapMs !== (config.workers?.llmTraffic?.startGapMs ?? DEFAULT_LLM_TRAFFIC.startGapMs)) {
+        updates.llmTrafficStartGapMs = llmTrafficStartGapMs;
+      }
+      if (llmTrafficStartupDelayMs !== (config.workers?.llmTraffic?.startupDelayMs ?? DEFAULT_LLM_TRAFFIC.startupDelayMs)) {
+        updates.llmTrafficStartupDelayMs = llmTrafficStartupDelayMs;
+      }
+      if (llmTrafficSwarmAgentConcurrency !== (config.workers?.llmTraffic?.swarmAgentConcurrency ?? DEFAULT_LLM_TRAFFIC.swarmAgentConcurrency)) {
+        updates.llmTrafficSwarmAgentConcurrency = llmTrafficSwarmAgentConcurrency;
+      }
+      if (llmTrafficReservedInteractiveSlots !== (config.workers?.llmTraffic?.reservedInteractiveSlots ?? DEFAULT_LLM_TRAFFIC.reservedInteractiveSlots)) {
+        updates.llmTrafficReservedInteractiveSlots = llmTrafficReservedInteractiveSlots;
+      }
       if (sandboxUrl !== (config.sandboxUrl ?? "")) updates.sandboxUrl = sandboxUrl;
       if (searchUrl !== (config.searchUrl ?? "")) updates.searchUrl = searchUrl;
       if (browserUrl !== (config.browserUrl ?? "")) updates.browserUrl = browserUrl;
@@ -142,7 +176,7 @@ export default function Settings() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save configuration");
     }
-  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, knowledgeCleanupEnabled, sandboxUrl, searchUrl, browserUrl, config, updateConfigMut]);
+  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, knowledgeCleanupEnabled, llmTrafficMaxConcurrent, llmTrafficStartGapMs, llmTrafficStartupDelayMs, llmTrafficSwarmAgentConcurrency, llmTrafficReservedInteractiveSlots, sandboxUrl, searchUrl, browserUrl, config, updateConfigMut]);
 
   const handleCancel = useCallback(() => {
     if (config) {
@@ -160,6 +194,11 @@ export default function Settings() {
     setBgLearningEnabled(config?.workers?.backgroundLearning !== false);
     setBriefingEnabled(config?.workers?.briefing !== false);
     setKnowledgeCleanupEnabled(config?.workers?.knowledgeCleanup !== false);
+    setLlmTrafficMaxConcurrent(config?.workers?.llmTraffic?.maxConcurrent ?? DEFAULT_LLM_TRAFFIC.maxConcurrent);
+    setLlmTrafficStartGapMs(config?.workers?.llmTraffic?.startGapMs ?? DEFAULT_LLM_TRAFFIC.startGapMs);
+    setLlmTrafficStartupDelayMs(config?.workers?.llmTraffic?.startupDelayMs ?? DEFAULT_LLM_TRAFFIC.startupDelayMs);
+    setLlmTrafficSwarmAgentConcurrency(config?.workers?.llmTraffic?.swarmAgentConcurrency ?? DEFAULT_LLM_TRAFFIC.swarmAgentConcurrency);
+    setLlmTrafficReservedInteractiveSlots(config?.workers?.llmTraffic?.reservedInteractiveSlots ?? DEFAULT_LLM_TRAFFIC.reservedInteractiveSlots);
     setDebugResearch(config?.debugResearch ?? false);
     setSandboxUrl(config?.sandboxUrl ?? "");
     setSearchUrl(config?.searchUrl ?? "");
@@ -621,6 +660,65 @@ export default function Settings() {
                 )}
               </div>
 
+              <div className="border-t border-border/30 px-5 py-3">
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  LLM Traffic Shaping
+                  <InfoBubble text="Serializes model traffic so chat stays responsive and restart backlogs do not stampede the LLM server. Background jobs wait behind interactive work." side="right" />
+                </div>
+              </div>
+
+              {editing ? (
+                <>
+                  <NumericWorkerRow
+                    label="Max LLM concurrency"
+                    value={llmTrafficMaxConcurrent}
+                    onChange={setLlmTrafficMaxConcurrent}
+                    min={1}
+                    description="Concurrent LLM or embed requests allowed for this instance."
+                  />
+                  <NumericWorkerRow
+                    label="Background start gap"
+                    value={llmTrafficStartGapMs}
+                    onChange={setLlmTrafficStartGapMs}
+                    min={0}
+                    step={100}
+                    suffix="ms"
+                    description="Delay between starting background requests so the provider sees smoother traffic."
+                  />
+                  <NumericWorkerRow
+                    label="Startup delay"
+                    value={llmTrafficStartupDelayMs}
+                    onChange={setLlmTrafficStartupDelayMs}
+                    min={0}
+                    step={1000}
+                    suffix="ms"
+                    description="How long workers wait after boot before draining queued background jobs."
+                  />
+                  <NumericWorkerRow
+                    label="Swarm agent concurrency"
+                    value={llmTrafficSwarmAgentConcurrency}
+                    onChange={setLlmTrafficSwarmAgentConcurrency}
+                    min={1}
+                    description="How many swarm sub-agents may run at once inside a single background job."
+                  />
+                  <NumericWorkerRow
+                    label="Reserved interactive slots"
+                    value={llmTrafficReservedInteractiveSlots}
+                    onChange={setLlmTrafficReservedInteractiveSlots}
+                    min={0}
+                    description="Capacity held back from background work so chats and deferred tasks can still start immediately."
+                  />
+                </>
+              ) : (
+                <>
+                  <ConfigRow label="Max LLM concurrency" value={String(config.workers?.llmTraffic?.maxConcurrent ?? DEFAULT_LLM_TRAFFIC.maxConcurrent)} />
+                  <ConfigRow label="Background start gap" value={`${config.workers?.llmTraffic?.startGapMs ?? DEFAULT_LLM_TRAFFIC.startGapMs}ms`} />
+                  <ConfigRow label="Startup delay" value={`${config.workers?.llmTraffic?.startupDelayMs ?? DEFAULT_LLM_TRAFFIC.startupDelayMs}ms`} />
+                  <ConfigRow label="Swarm agent concurrency" value={String(config.workers?.llmTraffic?.swarmAgentConcurrency ?? DEFAULT_LLM_TRAFFIC.swarmAgentConcurrency)} />
+                  <ConfigRow label="Reserved interactive slots" value={String(config.workers?.llmTraffic?.reservedInteractiveSlots ?? DEFAULT_LLM_TRAFFIC.reservedInteractiveSlots)} />
+                </>
+              )}
+
               {/* Last Run Info */}
               {config.workers?.lastRun && (
                 <div className="flex items-center justify-between border-t border-border/30 px-5 py-3">
@@ -947,6 +1045,44 @@ function EditableRow({
         placeholder={placeholder}
         className="w-full max-w-xs rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
       />
+    </div>
+  );
+}
+
+function NumericWorkerRow({
+  label,
+  value,
+  onChange,
+  description,
+  min = 0,
+  step = 1,
+  suffix,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  description: string;
+  min?: number;
+  step?: number;
+  suffix?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-3">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs text-foreground">{label}</span>
+        <span className="text-[10px] text-muted-foreground">{description}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min={min}
+          step={step}
+          value={value}
+          onChange={(event) => onChange(Math.max(min, Number(event.target.value) || min))}
+          className="w-24 rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-right font-mono text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+        />
+        {suffix ? <span className="text-xs text-muted-foreground">{suffix}</span> : null}
+      </div>
     </div>
   );
 }

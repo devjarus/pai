@@ -2,7 +2,7 @@ import { tool, stepCountIs } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import type { Storage, LLMClient, Logger, ResearchResultType } from "@personal-ai/core";
+import type { BackgroundJobSourceKind, Storage, LLMClient, Logger, ResearchResultType } from "@personal-ai/core";
 import {
   formatDateTime,
   detectResearchDomain,
@@ -15,6 +15,11 @@ import {
 } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent, createBrowserTools } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
+
+const RESEARCH_LLM_TIMEOUT = {
+  totalMs: 10 * 60_000,
+  stepMs: 90_000,
+} as const;
 
 // ---- Types ----
 
@@ -32,6 +37,12 @@ export interface ResearchJob {
   report: string | null;
   briefingId: string | null;
   createdAt: string;
+  queuedAt: string;
+  startedAt: string | null;
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  sourceKind: BackgroundJobSourceKind;
+  sourceScheduleId: string | null;
   completedAt: string | null;
 }
 
@@ -49,6 +60,12 @@ interface ResearchJobRow {
   report: string | null;
   briefing_id: string | null;
   created_at: string;
+  queued_at: string | null;
+  started_at: string | null;
+  attempt_count: number | null;
+  last_attempt_at: string | null;
+  source_kind: string | null;
+  source_schedule_id: string | null;
   completed_at: string | null;
 }
 
@@ -82,16 +99,17 @@ export interface ResearchContext {
 
 export function createResearchJob(
   storage: Storage,
-  opts: { goal: string; threadId: string | null; maxSearches?: number; maxPages?: number; resultType?: ResearchResultType },
+  opts: { goal: string; threadId: string | null; maxSearches?: number; maxPages?: number; resultType?: ResearchResultType; sourceKind?: BackgroundJobSourceKind; sourceScheduleId?: string | null },
 ): string {
   const id = nanoid();
+  const queuedAt = new Date().toISOString();
   // Cross-validate LLM-provided type against keyword detection to prevent misclassification
   const detected = detectResearchDomain(opts.goal);
   const detectedType = detected !== "general" ? detected : (opts.resultType ?? "general");
   storage.run(
-    `INSERT INTO research_jobs (id, thread_id, goal, status, result_type, budget_max_searches, budget_max_pages, created_at)
-     VALUES (?, ?, ?, 'pending', ?, ?, ?, datetime('now'))`,
-    [id, opts.threadId, opts.goal, detectedType, opts.maxSearches ?? 5, opts.maxPages ?? 3],
+    `INSERT INTO research_jobs (id, thread_id, goal, status, result_type, budget_max_searches, budget_max_pages, created_at, queued_at, source_kind, source_schedule_id)
+     VALUES (?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?, ?)`,
+    [id, opts.threadId, opts.goal, detectedType, opts.maxSearches ?? 5, opts.maxPages ?? 3, queuedAt, opts.sourceKind ?? "manual", opts.sourceScheduleId ?? null],
   );
   return id;
 }
@@ -117,6 +135,12 @@ export function getResearchJob(storage: Storage, id: string): ResearchJob | null
     report: row.report,
     briefingId: row.briefing_id,
     createdAt: row.created_at,
+    queuedAt: row.queued_at ?? row.created_at,
+    startedAt: row.started_at,
+    attemptCount: row.attempt_count ?? 0,
+    lastAttemptAt: row.last_attempt_at,
+    sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "manual",
+    sourceScheduleId: row.source_schedule_id,
     completedAt: row.completed_at,
   };
 }
@@ -139,6 +163,12 @@ export function listResearchJobs(storage: Storage): ResearchJob[] {
     report: row.report,
     briefingId: row.briefing_id,
     createdAt: row.created_at,
+    queuedAt: row.queued_at ?? row.created_at,
+    startedAt: row.started_at,
+    attemptCount: row.attempt_count ?? 0,
+    lastAttemptAt: row.last_attempt_at,
+    sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "manual",
+    sourceScheduleId: row.source_schedule_id,
     completedAt: row.completed_at,
   }));
 }
@@ -159,7 +189,18 @@ export function recoverStaleResearchJobs(storage: Storage): number {
   )[0]?.cnt ?? 0;
   if (count > 0) {
     storage.run(
-      "UPDATE research_jobs SET status = 'failed', completed_at = datetime('now') WHERE status IN ('running', 'pending')",
+      `UPDATE research_jobs
+       SET status = 'pending',
+           report = NULL,
+           briefing_id = NULL,
+           searches_used = 0,
+           pages_learned = 0,
+           steps_log = '[]',
+           started_at = NULL,
+           completed_at = NULL,
+           last_attempt_at = NULL,
+           attempt_count = attempt_count + 1
+       WHERE status IN ('running', 'pending')`,
     );
   }
   return count;
@@ -185,11 +226,40 @@ export function clearCompletedJobs(storage: Storage): number {
   return count;
 }
 
+export function listPendingResearchJobs(storage: Storage): ResearchJob[] {
+  const rows = storage.query<ResearchJobRow>(
+    "SELECT * FROM research_jobs WHERE status = 'pending' ORDER BY CASE source_kind WHEN 'manual' THEN 0 WHEN 'schedule' THEN 1 ELSE 2 END, queued_at ASC, created_at ASC",
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    threadId: row.thread_id,
+    goal: row.goal,
+    status: row.status as ResearchJob["status"],
+    resultType: (row.result_type as ResearchResultType) ?? "general",
+    budgetMaxSearches: row.budget_max_searches,
+    budgetMaxPages: row.budget_max_pages,
+    searchesUsed: row.searches_used,
+    pagesLearned: row.pages_learned,
+    stepsLog: JSON.parse(row.steps_log) as string[],
+    report: row.report,
+    briefingId: row.briefing_id,
+    createdAt: row.created_at,
+    queuedAt: row.queued_at ?? row.created_at,
+    startedAt: row.started_at,
+    attemptCount: row.attempt_count ?? 0,
+    lastAttemptAt: row.last_attempt_at,
+    sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "manual",
+    sourceScheduleId: row.source_schedule_id,
+    completedAt: row.completed_at,
+  }));
+}
+
 // Allowlist of column names that can be updated on research_jobs
 const RESEARCH_JOB_COLUMNS = new Set([
   "status", "report", "result_type", "error",
   "searches_used", "pages_learned", "steps_log",
   "briefing_id", "completed_at",
+  "queued_at", "started_at", "attempt_count", "last_attempt_at", "source_kind", "source_schedule_id",
 ]);
 
 function updateJob(storage: Storage, id: string, fields: Record<string, unknown>): void {
@@ -1094,6 +1164,9 @@ export async function runResearchInBackground(
     return;
   }
 
+  const startedAt = new Date().toISOString();
+  const nextAttempt = (job.attemptCount ?? 0) + 1;
+
   // Register in shared tracker (DB-backed)
   const tracked: BackgroundJob = {
     id: jobId,
@@ -1101,12 +1174,25 @@ export async function runResearchInBackground(
     label: job.goal.slice(0, 100),
     status: "running",
     progress: "starting",
-    startedAt: new Date().toISOString(),
+    startedAt,
+    queuedAt: job.queuedAt,
+    attemptCount: nextAttempt,
+    lastAttemptAt: startedAt,
+    sourceKind: job.sourceKind,
+    sourceScheduleId: job.sourceScheduleId,
   };
   upsertJob(ctx.storage, tracked);
 
   // Set status to running
-  updateJob(ctx.storage, jobId, { status: "running" });
+  updateJob(ctx.storage, jobId, {
+    status: "running",
+    started_at: startedAt,
+    last_attempt_at: startedAt,
+    attempt_count: nextAttempt,
+    completed_at: null,
+    report: null,
+    briefing_id: null,
+  });
 
   try {
     const tools = createResearchTools(ctx, jobId, job);
@@ -1146,6 +1232,7 @@ export async function runResearchInBackground(
         toolChoice: "auto",
         stopWhen: stepCountIs(15),
         maxRetries: 1,
+        timeout: RESEARCH_LLM_TIMEOUT,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
       },
@@ -1277,6 +1364,12 @@ export async function runResearchInBackground(
       result: presentation.report.slice(0, 200),
       resultType: job.resultType,
       ...(structuredResult ? { structuredResult } : {}),
+      queuedAt: job.queuedAt,
+      startedAt,
+      attemptCount: nextAttempt,
+      lastAttemptAt: startedAt,
+      sourceKind: job.sourceKind,
+      sourceScheduleId: job.sourceScheduleId,
     });
 
     // Create Inbox briefing for the report
@@ -1332,7 +1425,16 @@ export async function runResearchInBackground(
       completed_at: new Date().toISOString(),
     });
 
-    updateJobStatus(ctx.storage, jobId, { status: "error", error: errorMsg });
+    updateJobStatus(ctx.storage, jobId, {
+      status: "error",
+      error: errorMsg,
+      queuedAt: job.queuedAt,
+      startedAt,
+      attemptCount: nextAttempt,
+      lastAttemptAt: startedAt,
+      sourceKind: job.sourceKind,
+      sourceScheduleId: job.sourceScheduleId,
+    });
 
     // Post failure to thread
     if (job.threadId) {

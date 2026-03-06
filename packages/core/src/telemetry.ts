@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { generateText, streamText } from "ai";
 import type { Logger, Migration, Storage, TelemetryAttributes, TelemetrySpanType, TelemetryStatus } from "./types.js";
+import {
+  acquireLlmTrafficPermit,
+  getTrafficLane,
+  runWithLlmTrafficPermitContext,
+  runWithLlmTrafficPermitContextStream,
+} from "./llm-traffic.js";
 
 export const TELEMETRY_RETENTION_DAYS = 30;
 
@@ -166,11 +172,35 @@ export interface TelemetrySummary {
 export interface ProcessAggregate extends TelemetrySummary {
   process: string;
   avgStepCount: number;
+  avgQueueWaitMs: number;
+  p95QueueWaitMs: number;
 }
 
 export interface ModelAggregate extends TelemetrySummary {
   provider: string | null;
   model: string | null;
+}
+
+export interface QueueProcessAggregate {
+  process: string;
+  calls: number;
+  avgQueueWaitMs: number;
+  p95QueueWaitMs: number;
+}
+
+export interface QueueLaneSnapshot {
+  active: number;
+  queued: number;
+}
+
+export interface LiveQueueSnapshot {
+  activeRequests: number;
+  queuedRequests: number;
+  lanes: Record<"interactive" | "deferred" | "background", QueueLaneSnapshot>;
+  startupDelayUntil: string | null;
+  backgroundActiveWorkId: string | null;
+  backgroundActiveKind: string | null;
+  pendingBackgroundJobs: number;
 }
 
 export interface ObservabilityOverview {
@@ -179,6 +209,12 @@ export interface ObservabilityOverview {
   totals: TelemetrySummary;
   topProcesses: ProcessAggregate[];
   topModels: ModelAggregate[];
+  queue: {
+    avgWaitMs: number;
+    p95WaitMs: number;
+    byProcess: QueueProcessAggregate[];
+  };
+  live?: LiveQueueSnapshot;
 }
 
 export interface ThreadMessageUsage {
@@ -366,6 +402,41 @@ function summarizeRows(rows: TelemetrySpanRow[]): TelemetrySummary {
 
 function summarizeAggregateRows(rows: TelemetrySpanRow[]): TelemetrySpanRow[] {
   return rows.filter((row) => row.span_type !== "tool");
+}
+
+function getQueueWaitMs(row: TelemetrySpanRow): number | null {
+  const metadata = parseMetadata(row.metadata_json);
+  const value = metadata?.queueWaitMs;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function summarizeQueueWait(rows: TelemetrySpanRow[]): { avgQueueWaitMs: number; p95QueueWaitMs: number } {
+  const waits = rows.map(getQueueWaitMs).filter((value): value is number => value != null && value >= 0);
+  return {
+    avgQueueWaitMs: average(waits),
+    p95QueueWaitMs: percentile95(waits),
+  };
+}
+
+function listQueueBreakdown(rows: TelemetrySpanRow[]): QueueProcessAggregate[] {
+  const groups = new Map<string, TelemetrySpanRow[]>();
+  for (const row of rows) {
+    const list = groups.get(row.process) ?? [];
+    list.push(row);
+    groups.set(row.process, list);
+  }
+  return [...groups.entries()]
+    .map(([process, grouped]) => {
+      const summary = summarizeQueueWait(grouped);
+      return {
+        process,
+        calls: grouped.length,
+        avgQueueWaitMs: summary.avgQueueWaitMs,
+        p95QueueWaitMs: summary.p95QueueWaitMs,
+      };
+    })
+    .filter((group) => group.avgQueueWaitMs > 0 || group.p95QueueWaitMs > 0)
+    .sort((a, b) => b.p95QueueWaitMs - a.p95QueueWaitMs || b.avgQueueWaitMs - a.avgQueueWaitMs || b.calls - a.calls);
 }
 
 export function createChildTelemetry(
@@ -602,7 +673,18 @@ export function getObservabilityOverview(storage: Storage, range: ObservabilityR
     })
     .sort((a, b) => b.totalTokens - a.totalTokens || b.calls - a.calls)
     .slice(0, 5);
-  return { range, since, totals, topProcesses, topModels };
+  return {
+    range,
+    since,
+    totals,
+    topProcesses,
+    topModels,
+    queue: {
+      avgWaitMs: summarizeQueueWait(rows).avgQueueWaitMs,
+      p95WaitMs: summarizeQueueWait(rows).p95QueueWaitMs,
+      byProcess: listQueueBreakdown(rows).slice(0, 5),
+    },
+  };
 }
 
 export function listProcessAggregates(storage: Storage, range: ObservabilityRange = "24h"): ProcessAggregate[] {
@@ -618,6 +700,7 @@ export function listProcessAggregates(storage: Storage, range: ObservabilityRang
       process,
       ...summarizeRows(grouped),
       avgStepCount: average(grouped.map((row) => row.step_count ?? 0).filter((value) => value > 0)),
+      ...summarizeQueueWait(grouped),
     }))
     .sort((a, b) => b.totalTokens - a.totalTokens || b.calls - a.calls);
 }
@@ -685,6 +768,7 @@ function listGroupedBreakdown(rows: TelemetrySpanRow[]): ProcessAggregate[] {
       process,
       ...summarizeRows(grouped),
       avgStepCount: average(grouped.map((row) => row.step_count ?? 0).filter((value) => value > 0)),
+      ...summarizeQueueWait(grouped),
     }))
     .sort((a, b) => b.totalTokens - a.totalTokens || b.calls - a.calls);
 }
@@ -720,6 +804,8 @@ export async function instrumentedGenerateText(
   telemetry: TelemetryStartInput,
 ): Promise<{ result: Awaited<ReturnType<typeof generateText>>; traceId: string; spanId: string }> {
   const span = startSpan(runtime, telemetry);
+  const lane = getTrafficLane(telemetry.process, telemetry.surface ?? null);
+  const permit = await acquireLlmTrafficPermit(lane);
   const toolSpans = new Map<string, ActiveTelemetrySpan>();
   let stepCount = 0;
   const originalOnStepFinish = (options as { onStepFinish?: ((event: unknown) => void) | undefined }).onStepFinish;
@@ -763,7 +849,7 @@ export async function instrumentedGenerateText(
   };
 
   try {
-    const result = await generateText(wrappedOptions);
+    const result = await runWithLlmTrafficPermitContext(permit, () => generateText(wrappedOptions));
     closeToolSpans(runtime, toolSpans, "ok");
     finishSpan(runtime, span, {
       status: "ok",
@@ -772,6 +858,12 @@ export async function instrumentedGenerateText(
       totalTokens: getTotalTokens(result.usage),
       stepCount: stepCount || result.steps?.length || null,
       responseSizeChars: result.text?.length ?? null,
+      metadata: {
+        queueLane: lane,
+        queueWaitMs: permit.queueWaitMs,
+        queueDepthAtEnqueue: permit.queueDepthAtEnqueue,
+        queueDepthAtStart: permit.queueDepthAtStart,
+      },
     });
     return { result, traceId: span.traceId, spanId: span.id };
   } catch (err) {
@@ -780,92 +872,175 @@ export async function instrumentedGenerateText(
       status: "error",
       stepCount: stepCount || null,
       errorMessage: err instanceof Error ? err.message : String(err),
+      metadata: {
+        queueLane: lane,
+        queueWaitMs: permit.queueWaitMs,
+        queueDepthAtEnqueue: permit.queueDepthAtEnqueue,
+        queueDepthAtStart: permit.queueDepthAtStart,
+      },
     });
     throw err;
+  } finally {
+    permit.release();
   }
 }
 
-export function instrumentedStreamText(
+export async function instrumentedStreamText(
   runtime: TelemetryRuntime,
   options: Parameters<typeof streamText>[0],
   telemetry: TelemetryStartInput,
-): { result: ReturnType<typeof streamText>; traceId: string; spanId: string } {
+): Promise<{ result: ReturnType<typeof streamText>; traceId: string; spanId: string }> {
   const span = startSpan(runtime, telemetry);
+  const lane = getTrafficLane(telemetry.process, telemetry.surface ?? null);
+  const permit = await acquireLlmTrafficPermit(lane);
   const toolSpans = new Map<string, ActiveTelemetrySpan>();
   let finished = false;
   let stepCount = 0;
+  let fallbackText = "";
+  let fallbackUsage: { inputTokens?: number | null; outputTokens?: number | null } = {};
 
   const finishRoot = (updates: NonNullable<Parameters<typeof finishSpan>[2]>) => {
     if (finished) return;
     finished = true;
     closeToolSpans(runtime, toolSpans, updates.status === "ok" ? "ok" : "error", updates.errorMessage ?? null);
-    finishSpan(runtime, span, updates);
+    finishSpan(runtime, span, {
+      ...updates,
+      metadata: {
+        ...(updates.metadata ?? {}),
+        queueLane: lane,
+        queueWaitMs: permit.queueWaitMs,
+        queueDepthAtEnqueue: permit.queueDepthAtEnqueue,
+        queueDepthAtStart: permit.queueDepthAtStart,
+      },
+    });
+    permit.release();
   };
 
-  const wrappedOptions = {
-    ...options,
-    onStepFinish: (event: unknown) => {
-      stepCount += 1;
-      const callback = (options as { onStepFinish?: ((evt: unknown) => void) | undefined }).onStepFinish;
-      callback?.(event);
-    },
-    onFinish: (event: Record<string, unknown>) => {
-      const usage = (event.totalUsage ?? event.usage) as { inputTokens?: number; outputTokens?: number } | undefined;
-      const text = typeof event.text === "string" ? event.text : "";
-      finishRoot({
-        status: "ok",
-        inputTokens: usage?.inputTokens ?? null,
-        outputTokens: usage?.outputTokens ?? null,
-        totalTokens: getTotalTokens(usage),
-        stepCount: stepCount || (Array.isArray(event.steps) ? event.steps.length : null),
-        responseSizeChars: text.length,
-      });
-      const callback = (options as { onFinish?: ((evt: unknown) => void) | undefined }).onFinish;
-      callback?.(event);
-    },
-    onError: (event: Record<string, unknown>) => {
-      finishRoot({
-        status: "error",
-        stepCount: stepCount || null,
-        errorMessage: event.error instanceof Error ? event.error.message : String(event.error),
-      });
-      const callback = (options as { onError?: ((evt: unknown) => void) | undefined }).onError;
-      callback?.(event);
-    },
-    experimental_onToolCallStart: (event: Record<string, unknown>) => {
-      const toolCall = event.toolCall as Record<string, unknown> | undefined;
-      const toolCallId = typeof toolCall?.toolCallId === "string" ? toolCall.toolCallId : randomUUID();
-      const toolName = typeof toolCall?.toolName === "string" ? toolCall.toolName : "tool";
-      toolSpans.set(toolCallId, startSpan(runtime, {
-        ...createChildTelemetry(span, { process: telemetry.process, toolName }),
-        spanType: "tool",
-        toolName,
-        metadata: { args: event.input ?? null },
-      }));
-      const callback = (options as Record<string, unknown>).experimental_onToolCallStart as ((evt: unknown) => void) | undefined;
-      callback?.(event);
-    },
-    experimental_onToolCallFinish: (event: Record<string, unknown>) => {
-      const toolCall = event.toolCall as Record<string, unknown> | undefined;
-      const toolCallId = typeof toolCall?.toolCallId === "string" ? toolCall.toolCallId : "";
-      const activeToolSpan = toolSpans.get(toolCallId);
-      if (activeToolSpan) {
-        finishSpan(runtime, activeToolSpan, {
-          status: event.success === false || event.error ? "error" : "ok",
-          responseSizeChars: typeof event.output === "string" ? event.output.length : jsonLength(event.output),
-          errorMessage: event.error ? String(event.error) : null,
-          metadata: { durationMs: typeof event.durationMs === "number" ? event.durationMs : undefined },
+  try {
+    const wrappedOptions = {
+      ...options,
+      onStepFinish: (event: unknown) => {
+        stepCount += 1;
+        const callback = (options as { onStepFinish?: ((evt: unknown) => void) | undefined }).onStepFinish;
+        callback?.(event);
+      },
+      onFinish: (event: Record<string, unknown>) => {
+        const usage = (event.totalUsage ?? event.usage) as { inputTokens?: number; outputTokens?: number } | undefined;
+        const text = typeof event.text === "string" ? event.text : "";
+        finishRoot({
+          status: "ok",
+          inputTokens: usage?.inputTokens ?? null,
+          outputTokens: usage?.outputTokens ?? null,
+          totalTokens: getTotalTokens(usage),
+          stepCount: stepCount || (Array.isArray(event.steps) ? event.steps.length : null),
+          responseSizeChars: text.length,
         });
-        toolSpans.delete(toolCallId);
+        const callback = (options as { onFinish?: ((evt: unknown) => void) | undefined }).onFinish;
+        callback?.(event);
+      },
+      onError: (event: Record<string, unknown>) => {
+        finishRoot({
+          status: "error",
+          stepCount: stepCount || null,
+          errorMessage: event.error instanceof Error ? event.error.message : String(event.error),
+        });
+        const callback = (options as { onError?: ((evt: unknown) => void) | undefined }).onError;
+        callback?.(event);
+      },
+      experimental_onToolCallStart: (event: Record<string, unknown>) => {
+        const toolCall = event.toolCall as Record<string, unknown> | undefined;
+        const toolCallId = typeof toolCall?.toolCallId === "string" ? toolCall.toolCallId : randomUUID();
+        const toolName = typeof toolCall?.toolName === "string" ? toolCall.toolName : "tool";
+        toolSpans.set(toolCallId, startSpan(runtime, {
+          ...createChildTelemetry(span, { process: telemetry.process, toolName }),
+          spanType: "tool",
+          toolName,
+          metadata: { args: event.input ?? null },
+        }));
+        const callback = (options as Record<string, unknown>).experimental_onToolCallStart as ((evt: unknown) => void) | undefined;
+        callback?.(event);
+      },
+      experimental_onToolCallFinish: (event: Record<string, unknown>) => {
+        const toolCall = event.toolCall as Record<string, unknown> | undefined;
+        const toolCallId = typeof toolCall?.toolCallId === "string" ? toolCall.toolCallId : "";
+        const activeToolSpan = toolSpans.get(toolCallId);
+        if (activeToolSpan) {
+          finishSpan(runtime, activeToolSpan, {
+            status: event.success === false || event.error ? "error" : "ok",
+            responseSizeChars: typeof event.output === "string" ? event.output.length : jsonLength(event.output),
+            errorMessage: event.error ? String(event.error) : null,
+            metadata: { durationMs: typeof event.durationMs === "number" ? event.durationMs : undefined },
+          });
+          toolSpans.delete(toolCallId);
+        }
+        const callback = (options as Record<string, unknown>).experimental_onToolCallFinish as ((evt: unknown) => void) | undefined;
+        callback?.(event);
+      },
+    } as unknown as Parameters<typeof streamText>[0];
+
+    const streamResult = await runWithLlmTrafficPermitContext(permit, () => Promise.resolve(streamText(wrappedOptions)));
+    const wrappedFullStream = (async function* () {
+      try {
+        for await (const part of runWithLlmTrafficPermitContextStream(
+          permit,
+          streamResult.fullStream as AsyncIterable<Record<string, unknown>>,
+        )) {
+          if (part.type === "text-delta" && typeof part.text === "string") {
+            fallbackText += part.text;
+          } else if (part.type === "finish") {
+            const usage = part.totalUsage as { inputTokens?: number | null; outputTokens?: number | null } | undefined;
+            fallbackUsage = {
+              inputTokens: usage?.inputTokens ?? null,
+              outputTokens: usage?.outputTokens ?? null,
+            };
+          } else if (part.type === "error" && !finished) {
+            finishRoot({
+              status: "error",
+              stepCount: stepCount || null,
+              errorMessage: part.error instanceof Error ? part.error.message : String(part.error),
+            });
+          }
+          yield part;
+        }
+
+        if (!finished) {
+          finishRoot({
+            status: "ok",
+            inputTokens: fallbackUsage.inputTokens ?? null,
+            outputTokens: fallbackUsage.outputTokens ?? null,
+            totalTokens: getTotalTokens(fallbackUsage),
+            stepCount: stepCount || null,
+            responseSizeChars: fallbackText.length || null,
+          });
+        }
+      } catch (err) {
+        if (!finished) {
+          finishRoot({
+            status: "error",
+            stepCount: stepCount || null,
+            errorMessage: err instanceof Error ? err.message : String(err),
+          });
+        }
+        throw err;
       }
-      const callback = (options as Record<string, unknown>).experimental_onToolCallFinish as ((evt: unknown) => void) | undefined;
-      callback?.(event);
-    },
-  } as unknown as Parameters<typeof streamText>[0];
+    })();
 
-  const result = streamText(wrappedOptions);
-
-  return { result, traceId: span.traceId, spanId: span.id };
+    return {
+      result: {
+        ...streamResult,
+        fullStream: wrappedFullStream,
+      } as unknown as ReturnType<typeof streamText>,
+      traceId: span.traceId,
+      spanId: span.id,
+    };
+  } catch (err) {
+    finishRoot({
+      status: "error",
+      stepCount: stepCount || null,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
 }
 
 export async function instrumentedEmbed<T>(
@@ -874,23 +1049,39 @@ export async function instrumentedEmbed<T>(
   execute: () => Promise<{ result: T; responseSizeChars?: number | null; inputTokens?: number | null; outputTokens?: number | null; totalTokens?: number | null; metadata?: Record<string, unknown> }>,
 ): Promise<{ result: T; traceId: string; spanId: string }> {
   const span = startSpan(runtime, telemetry);
+  const lane = getTrafficLane(telemetry.process, telemetry.surface ?? null);
+  const permit = await acquireLlmTrafficPermit(lane);
 
   try {
-    const output = await execute();
+    const output = await runWithLlmTrafficPermitContext(permit, execute);
     finishSpan(runtime, span, {
       status: "ok",
       inputTokens: output.inputTokens ?? null,
       outputTokens: output.outputTokens ?? null,
       totalTokens: output.totalTokens ?? null,
       responseSizeChars: output.responseSizeChars ?? null,
-      metadata: output.metadata,
+      metadata: {
+        ...(output.metadata ?? {}),
+        queueLane: lane,
+        queueWaitMs: permit.queueWaitMs,
+        queueDepthAtEnqueue: permit.queueDepthAtEnqueue,
+        queueDepthAtStart: permit.queueDepthAtStart,
+      },
     });
     return { result: output.result, traceId: span.traceId, spanId: span.id };
   } catch (err) {
     finishSpan(runtime, span, {
       status: "error",
       errorMessage: err instanceof Error ? err.message : String(err),
+      metadata: {
+        queueLane: lane,
+        queueWaitMs: permit.queueWaitMs,
+        queueDepthAtEnqueue: permit.queueDepthAtEnqueue,
+        queueDepthAtStart: permit.queueDepthAtStart,
+      },
     });
     throw err;
+  } finally {
+    permit.release();
   }
 }

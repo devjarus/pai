@@ -45,6 +45,13 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
       backgroundLearning: (workers as Record<string, unknown> | undefined)?.backgroundLearning !== false,
       briefing: (workers as Record<string, unknown> | undefined)?.briefing !== false,
       knowledgeCleanup: (workers as Record<string, unknown> | undefined)?.knowledgeCleanup !== false,
+      llmTraffic: {
+        maxConcurrent: ((workers as Record<string, unknown> | undefined)?.llmTraffic as Record<string, unknown> | undefined)?.maxConcurrent ?? 6,
+        startGapMs: ((workers as Record<string, unknown> | undefined)?.llmTraffic as Record<string, unknown> | undefined)?.startGapMs ?? 1500,
+        startupDelayMs: ((workers as Record<string, unknown> | undefined)?.llmTraffic as Record<string, unknown> | undefined)?.startupDelayMs ?? 10000,
+        swarmAgentConcurrency: ((workers as Record<string, unknown> | undefined)?.llmTraffic as Record<string, unknown> | undefined)?.swarmAgentConcurrency ?? 5,
+        reservedInteractiveSlots: ((workers as Record<string, unknown> | undefined)?.llmTraffic as Record<string, unknown> | undefined)?.reservedInteractiveSlots ?? 1,
+      },
     },
     knowledge: config.knowledge ?? {},
     debugResearch: !!config.debugResearch,
@@ -98,6 +105,11 @@ const updateConfigSchema = z.object({
   backgroundLearning: z.boolean().optional(),
   briefingEnabled: z.boolean().optional(),
   knowledgeCleanup: z.boolean().optional(),
+  llmTrafficMaxConcurrent: z.number().int().positive().optional(),
+  llmTrafficStartGapMs: z.number().int().min(0).optional(),
+  llmTrafficStartupDelayMs: z.number().int().min(0).optional(),
+  llmTrafficSwarmAgentConcurrency: z.number().int().positive().optional(),
+  llmTrafficReservedInteractiveSlots: z.number().int().min(0).optional(),
   knowledgeDefaultTtlDays: z.number().int().positive().nullable().optional(),
   knowledgeFreshnessDecayDays: z.number().int().positive().optional(),
   debugResearch: z.boolean().optional(),
@@ -188,12 +200,29 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     }
 
     // Worker settings
-    if (body.backgroundLearning !== undefined || body.briefingEnabled !== undefined || body.knowledgeCleanup !== undefined) {
+    if (
+      body.backgroundLearning !== undefined ||
+      body.briefingEnabled !== undefined ||
+      body.knowledgeCleanup !== undefined ||
+      body.llmTrafficMaxConcurrent !== undefined ||
+      body.llmTrafficStartGapMs !== undefined ||
+      body.llmTrafficStartupDelayMs !== undefined ||
+      body.llmTrafficSwarmAgentConcurrency !== undefined ||
+      body.llmTrafficReservedInteractiveSlots !== undefined
+    ) {
       const existingWorkers = ctx.config.workers ?? {};
       const workersUpdate: Record<string, unknown> = { ...existingWorkers };
       if (body.backgroundLearning !== undefined) workersUpdate.backgroundLearning = body.backgroundLearning;
       if (body.briefingEnabled !== undefined) workersUpdate.briefing = body.briefingEnabled;
       if (body.knowledgeCleanup !== undefined) workersUpdate.knowledgeCleanup = body.knowledgeCleanup;
+      const existingTraffic = (existingWorkers.llmTraffic as Record<string, unknown> | undefined) ?? {};
+      const llmTrafficUpdate: Record<string, unknown> = { ...existingTraffic };
+      if (body.llmTrafficMaxConcurrent !== undefined) llmTrafficUpdate.maxConcurrent = body.llmTrafficMaxConcurrent;
+      if (body.llmTrafficStartGapMs !== undefined) llmTrafficUpdate.startGapMs = body.llmTrafficStartGapMs;
+      if (body.llmTrafficStartupDelayMs !== undefined) llmTrafficUpdate.startupDelayMs = body.llmTrafficStartupDelayMs;
+      if (body.llmTrafficSwarmAgentConcurrency !== undefined) llmTrafficUpdate.swarmAgentConcurrency = body.llmTrafficSwarmAgentConcurrency;
+      if (body.llmTrafficReservedInteractiveSlots !== undefined) llmTrafficUpdate.reservedInteractiveSlots = body.llmTrafficReservedInteractiveSlots;
+      workersUpdate.llmTraffic = llmTrafficUpdate;
       update.workers = workersUpdate;
     }
 

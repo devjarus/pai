@@ -188,7 +188,7 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
 
     let result: ReturnType<typeof streamText>;
     try {
-      ({ result } = instrumentedStreamText(
+      ({ result } = await instrumentedStreamText(
         { storage, logger: log },
         {
           model: llmModel,

@@ -365,6 +365,10 @@ describe("generateBriefing", () => {
       expect.objectContaining({
         model: "mock-model",
         maxRetries: 1,
+        timeout: {
+          totalMs: 2 * 60_000,
+          stepMs: 60_000,
+        },
       }),
     );
   });

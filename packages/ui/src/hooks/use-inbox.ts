@@ -15,11 +15,19 @@ export const inboxKeys = {
   research: () => ["inbox", "research"] as const,
 };
 
-export function useInboxAll(options?: { refetchInterval?: number | false }) {
+export function useInboxAll(options?: { refetchInterval?: number | false | ((data: Awaited<ReturnType<typeof getInboxAll>> | undefined) => number | false) }) {
   return useQuery({
     queryKey: inboxKeys.list(),
     queryFn: () => getInboxAll(),
-    refetchInterval: options?.refetchInterval,
+    refetchInterval: options?.refetchInterval
+      ? (query) => {
+          const value = options.refetchInterval;
+          if (typeof value === "function") {
+            return value(query.state.data as Awaited<ReturnType<typeof getInboxAll>> | undefined);
+          }
+          return value;
+        }
+      : false,
   });
 }
 
