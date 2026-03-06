@@ -1,4 +1,4 @@
-import type { AgentContext, AgentPlugin, ChatMessage, PluginContext, ThreadMessageInput } from "@personal-ai/core";
+import type { AgentContext, AgentPlugin, ChatMessage, PluginContext, ThreadMessageInput, ThreadMessageUsage } from "@personal-ai/core";
 import {
   consolidateConversation,
   listMessages,
@@ -10,8 +10,9 @@ import {
   getContextBudget,
   estimateTokens,
   getProviderOptions,
+  instrumentedGenerateText,
 } from "@personal-ai/core";
-import { generateText, stepCountIs, tool } from "ai";
+import { stepCountIs, tool } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
 
@@ -47,6 +48,34 @@ function autoTitle(message: string): string {
   const trimmed = message.trim();
   if (trimmed.length <= 50) return trimmed;
   return trimmed.slice(0, 47) + "...";
+}
+
+function buildUsageSummary(args: {
+  traceId: string;
+  provider: string;
+  model: string;
+  durationMs: number;
+  steps: Array<{ toolCalls?: unknown[] }>;
+  usage?: { inputTokens?: number | null; outputTokens?: number | null; totalTokens?: number | null } | null;
+}): ThreadMessageUsage {
+  const inputTokens = args.usage?.inputTokens ?? null;
+  const outputTokens = args.usage?.outputTokens ?? null;
+  const totalTokens = args.usage?.totalTokens ?? (inputTokens == null && outputTokens == null
+    ? null
+    : (inputTokens ?? 0) + (outputTokens ?? 0));
+
+  return {
+    traceId: args.traceId,
+    process: "telegram.chat",
+    provider: args.provider,
+    model: args.model,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    durationMs: args.durationMs,
+    stepCount: args.steps.length,
+    toolCallCount: args.steps.reduce((count, step) => count + (step.toolCalls?.length ?? 0), 0),
+  };
 }
 
 // Per-thread processing queue to prevent race conditions
@@ -118,17 +147,33 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
           task: z.string().describe("What to ask the sub-agent to do"),
         }),
         execute: async ({ task }) => {
-          const result = await generateText({
-            model: ctx.llm.getModel() as LanguageModel,
-            system: sub.agent.systemPrompt,
-            messages: [{ role: "user" as const, content: task }],
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            tools: subTools as any,
-            toolChoice: "auto",
-            stopWhen: stepCountIs(5),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
-          });
+          const { result } = await instrumentedGenerateText(
+            { storage: ctx.storage, logger: ctx.logger },
+            {
+              model: ctx.llm.getModel() as LanguageModel,
+              system: sub.agent.systemPrompt,
+              messages: [{ role: "user" as const, content: task }],
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              tools: subTools as any,
+              toolChoice: "auto",
+              stopWhen: stepCountIs(5),
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
+            },
+            {
+              spanType: "llm",
+              process: "chat.subagent",
+              surface: "telegram",
+              threadId,
+              chatId,
+              senderUsername: sender?.username,
+              senderDisplayName: sender?.displayName,
+              agentName: sub.name,
+              provider: ctx.config.llm.provider,
+              model: ctx.config.llm.model,
+              requestSizeChars: task.length,
+            },
+          );
           return result.text;
         },
       });
@@ -173,29 +218,45 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
   const toolCalls: Array<{ name: string }> = [];
 
   // Use generateText (non-streaming) for Telegram
-  const result = await generateText({
-    model: ctx.llm.getModel() as LanguageModel,
-    system: systemPrompt,
-    messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    temperature: 0.7,
-    maxRetries: 1,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tools: tools as any,
-    toolChoice: tools ? "auto" : undefined,
-    stopWhen: tools ? stepCountIs(15) : undefined,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
-    onStepFinish: ({ toolCalls: stepTools, text: stepText }) => {
-      ctx.logger.debug("Telegram step finished", { toolCount: stepTools?.length ?? 0, textLen: stepText?.length ?? 0 });
-      if (stepTools) {
-        for (const tc of stepTools) {
-          ctx.logger.debug("Telegram tool called", { tool: tc.toolName });
-          toolCalls.push({ name: tc.toolName });
-          onToolCall?.(tc.toolName);
+  const startedAt = Date.now();
+  const { result, traceId } = await instrumentedGenerateText(
+    { storage: ctx.storage, logger: ctx.logger },
+    {
+      model: ctx.llm.getModel() as LanguageModel,
+      system: systemPrompt,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      temperature: 0.7,
+      maxRetries: 1,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tools: tools as any,
+      toolChoice: tools ? "auto" : undefined,
+      stopWhen: tools ? stepCountIs(15) : undefined,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
+      onStepFinish: ({ toolCalls: stepTools, text: stepText }) => {
+        ctx.logger.debug("Telegram step finished", { toolCount: stepTools?.length ?? 0, textLen: stepText?.length ?? 0 });
+        if (stepTools) {
+          for (const tc of stepTools) {
+            ctx.logger.debug("Telegram tool called", { tool: tc.toolName });
+            toolCalls.push({ name: tc.toolName });
+            onToolCall?.(tc.toolName);
+          }
         }
-      }
+      },
     },
-  });
+    {
+      spanType: "llm",
+      process: "telegram.chat",
+      surface: "telegram",
+      threadId,
+      chatId,
+      senderUsername: sender?.username,
+      senderDisplayName: sender?.displayName,
+      provider: ctx.config.llm.provider,
+      model: ctx.config.llm.model,
+      requestSizeChars: messages.reduce((sum, current) => sum + current.content.length, 0),
+    },
+  );
 
   // Clean up raw tool call JSON that some models (Ollama) emit as text
   let text = result.text;
@@ -239,7 +300,20 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
     }
   }
 
-  if (text) toPersist.push({ role: "assistant", content: text });
+  if (text) {
+    toPersist.push({
+      role: "assistant",
+      content: text,
+      usageJson: JSON.stringify(buildUsageSummary({
+        traceId,
+        provider: ctx.config.llm.provider,
+        model: ctx.config.llm.model,
+        durationMs: Math.max(0, Date.now() - startedAt),
+        steps: result.steps ?? [],
+        usage: result.usage ?? null,
+      })),
+    });
+  }
 
   // Persist to SQLite (normalized)
   appendMessages(ctx.storage, threadId, toPersist, {

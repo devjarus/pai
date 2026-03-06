@@ -5,7 +5,7 @@ import { WorkerLoop } from "./workers.js";
 const config = loadConfig();
 const logger = createLogger(config.logLevel, { dir: config.dataDir });
 const storage = createStorage(config.dataDir, logger);
-const llm = createLLMClient(config.llm, logger);
+const llm = createLLMClient(config.llm, logger, storage);
 
 runAllMigrations(storage);
 

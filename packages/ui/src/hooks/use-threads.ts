@@ -15,10 +15,11 @@ export const threadKeys = {
   messages: (id: string) => ["threads", "messages", id] as const,
 };
 
-export function useThreads() {
+export function useThreads(enabled = true) {
   return useQuery({
     queryKey: threadKeys.list(),
     queryFn: () => getThreads(),
+    enabled,
   });
 }
 

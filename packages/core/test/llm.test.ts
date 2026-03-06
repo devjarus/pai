@@ -1,5 +1,10 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createLLMClient } from "../src/llm.js";
+import { createStorage } from "../src/storage.js";
+import { telemetryMigrations } from "../src/telemetry.js";
 
 vi.mock("ai", () => ({
   generateText: vi.fn(),
@@ -508,5 +513,135 @@ describe("LLMClient", () => {
     // Should NOT yield a done event when streamText throws synchronously (returns early)
     const doneEvent = events.find((e: any) => e.type === "done");
     expect(doneEvent).toBeUndefined();
+  });
+});
+
+describe("LLMClient telemetry", () => {
+  let dir: string;
+  let storage: ReturnType<typeof createStorage>;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-llm-telemetry-"));
+    storage = createStorage(dir);
+    storage.migrate("telemetry", telemetryMigrations);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("persists telemetry spans for chat", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "Hello world",
+      usage: { inputTokens: 9, outputTokens: 4, totalTokens: 13 },
+      steps: [{ toolCalls: [] }],
+    } as any);
+
+    const client = createLLMClient({
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "sk-test",
+      fallbackMode: "strict",
+    }, undefined, storage);
+
+    await client.chat([{ role: "user", content: "Hi" }], {
+      telemetry: { process: "chat.main", surface: "web", threadId: "thread-1" },
+    });
+
+    const rows = storage.query<{ process: string; surface: string | null; thread_id: string | null; total_tokens: number | null; span_type: string; status: string }>(
+      "SELECT process, surface, thread_id, total_tokens, span_type, status FROM telemetry_spans",
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      process: "chat.main",
+      surface: "web",
+      thread_id: "thread-1",
+      total_tokens: 13,
+      span_type: "llm",
+      status: "ok",
+    });
+  });
+
+  it("persists telemetry spans for streamChat", async () => {
+    mockStreamText.mockImplementation((options: Record<string, unknown>) => {
+      const onFinish = options.onFinish as ((event: { text: string; steps: unknown[]; usage: { inputTokens: number; outputTokens: number } }) => void) | undefined;
+      onFinish?.({
+        text: "Hi there",
+        steps: [{ toolCalls: [] }],
+        usage: { inputTokens: 6, outputTokens: 3 },
+      });
+      return {
+        fullStream: (async function* () {
+          yield { type: "text-delta", text: "Hi there" };
+          yield { type: "finish", totalUsage: { inputTokens: 6, outputTokens: 3 } };
+        })(),
+      };
+    });
+
+    const client = createLLMClient({
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "sk-test",
+      fallbackMode: "strict",
+    }, undefined, storage);
+
+    const events = [];
+    for await (const event of client.streamChat([{ role: "user", content: "Hi" }], {
+      telemetry: { process: "chat.main", surface: "web", threadId: "thread-2" },
+    })) {
+      events.push(event);
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      type: "done",
+      usage: { totalTokens: 9 },
+    });
+
+    const row = storage.query<{ process: string; thread_id: string | null; total_tokens: number | null; step_count: number | null }>(
+      "SELECT process, thread_id, total_tokens, step_count FROM telemetry_spans ORDER BY rowid DESC LIMIT 1",
+    )[0];
+
+    expect(row).toMatchObject({
+      process: "chat.main",
+      thread_id: "thread-2",
+      total_tokens: 9,
+      step_count: 1,
+    });
+  });
+
+  it("persists telemetry spans for embed", async () => {
+    mockEmbed.mockResolvedValue({
+      embedding: [0.1, 0.2, 0.3],
+      value: "test",
+      usage: { tokens: 5 },
+    } as any);
+
+    const client = createLLMClient({
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "sk-test",
+      fallbackMode: "strict",
+    }, undefined, storage);
+
+    await client.embed("test text", {
+      telemetry: { process: "embed.knowledge", surface: "web" },
+    });
+
+    const row = storage.query<{ process: string; span_type: string; surface: string | null; response_size_chars: number | null }>(
+      "SELECT process, span_type, surface, response_size_chars FROM telemetry_spans ORDER BY rowid DESC LIMIT 1",
+    )[0];
+
+    expect(row).toMatchObject({
+      process: "embed.knowledge",
+      span_type: "embed",
+      surface: "web",
+      response_size_chars: 3,
+    });
   });
 });

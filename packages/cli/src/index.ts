@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { loadConfig, createStorage, createLLMClient, createLogger, memoryMigrations, knowledgeMigrations, memoryCommands, getMemoryContext, learnFromContent, knowledgeSearch, listSources, forgetSource, hasSource } from "@personal-ai/core";
+import { loadConfig, createStorage, createLLMClient, createLogger, memoryMigrations, knowledgeMigrations, telemetryMigrations, memoryCommands, getMemoryContext, learnFromContent, knowledgeSearch, listSources, forgetSource, hasSource } from "@personal-ai/core";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import type { Plugin, PluginContext, Command as PaiCommand } from "@personal-ai/core";
 import { tasksPlugin } from "@personal-ai/plugin-tasks";
@@ -84,7 +84,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel, { dir: config.dataDir });
   const storage = createStorage(config.dataDir, logger);
-  const llm = createLLMClient(config.llm, logger);
+  const llm = createLLMClient(config.llm, logger, storage);
 
   logger.info("Starting pai", { plugins: config.plugins, dataDir: config.dataDir });
 
@@ -93,6 +93,7 @@ async function main(): Promise<void> {
   // Memory + Knowledge are always available — run migrations unconditionally
   storage.migrate("memory", memoryMigrations);
   storage.migrate("knowledge", knowledgeMigrations);
+  storage.migrate("telemetry", telemetryMigrations);
   ctx.contextProvider = (query: string) => getMemoryContext(storage, query, { llm });
 
   for (const cmd of memoryCommands(ctx)) {

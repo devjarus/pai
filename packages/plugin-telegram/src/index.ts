@@ -1,7 +1,7 @@
 import type { Plugin, PluginContext, Command, Migration } from "@personal-ai/core";
 import {
   loadConfig, createStorage, createLLMClient, createLogger,
-  memoryMigrations, threadMigrations,
+  memoryMigrations, telemetryMigrations, threadMigrations,
 } from "@personal-ai/core";
 import { taskMigrations } from "@personal-ai/plugin-tasks";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
@@ -57,10 +57,11 @@ if (isDirectExecution) {
   }
   const logger = createLogger(config.logLevel, { dir: config.dataDir });
   const storage = createStorage(config.dataDir, logger);
-  const llm = createLLMClient(config.llm, logger);
+  const llm = createLLMClient(config.llm, logger, storage);
 
   // Run all migrations
   storage.migrate("memory", memoryMigrations);
+  storage.migrate("telemetry", telemetryMigrations);
   storage.migrate("tasks", taskMigrations);
   storage.migrate("threads", threadMigrations);
   storage.migrate("telegram", telegramMigrations);

@@ -512,6 +512,8 @@ The **Settings** page lets you configure:
 - **API Key** — your provider API key (stored locally, never sent to pai servers)
 - **Embed Model** — model used for semantic search
 - **Data Directory** — where your database lives (default: `~/.personal-ai/data/`)
+- **Background Workers** — toggle briefing generation, background learning, and knowledge cleanup
+- **Diagnostics** — owner-local observability for token usage, process hotspots, thread/job traces, and recent failures. Data stays inside the current instance and is surfaced only in Settings.
 
 Changes take effect immediately — no restart needed.
 

@@ -1,4 +1,4 @@
-import { generateText, tool, stepCountIs } from "ai";
+import { tool, stepCountIs } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
@@ -11,6 +11,7 @@ import {
   buildReportPresentation,
   deriveReportVisuals,
   extractPresentationBlocks,
+  instrumentedGenerateText,
 } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent, createBrowserTools } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
@@ -1133,19 +1134,32 @@ export async function runResearchInBackground(
     }
 
     const budget = getContextBudget(ctx.provider ?? "ollama", ctx.model ?? "", ctx.contextWindow);
-    const result = await generateText({
-      model: ctx.llm.getModel() as LanguageModel,
-      system: systemPrompt,
-      messages: [
-        { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
-      ],
-      tools,
-      toolChoice: "auto",
-      stopWhen: stepCountIs(8),
-      maxRetries: 1,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
-    });
+    const { result } = await instrumentedGenerateText(
+      { storage: ctx.storage, logger: ctx.logger },
+      {
+        model: ctx.llm.getModel() as LanguageModel,
+        system: systemPrompt,
+        messages: [
+          { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
+        ],
+        tools,
+        toolChoice: "auto",
+        stopWhen: stepCountIs(8),
+        maxRetries: 1,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
+      },
+      {
+        spanType: "llm",
+        process: "research.run",
+        surface: "worker",
+        threadId: job.threadId,
+        jobId,
+        provider: ctx.provider ?? "ollama",
+        model: ctx.model ?? "",
+        requestSizeChars: job.goal.length,
+      },
+    );
 
     const rawReport = result.text || "Research completed but no report was generated.";
     let { report, structuredResult, renderSpec } = extractPresentationBlocks(rawReport);

@@ -20,6 +20,13 @@ import type {
   ArtifactMeta,
   ReportPresentation,
   ReportExecution,
+  ObservabilityOverview,
+  ObservabilityRange,
+  ProcessAggregate,
+  ThreadDiagnostics,
+  JobDiagnostics,
+  RecentError,
+  TelemetrySpan,
 } from "./types";
 
 const BASE = "/api";
@@ -275,6 +282,32 @@ export function getThreadMessages(id: string, params?: { limit?: number; before?
   if (params?.before) qs.set("before", params.before);
   const query = qs.toString();
   return request<ThreadMessage[]>(`/threads/${id}/messages${query ? `?${query}` : ""}`);
+}
+
+// ---- Observability ----
+
+export function getObservabilityOverview(range: ObservabilityRange): Promise<ObservabilityOverview> {
+  return request<ObservabilityOverview>(`/observability/overview?range=${encodeURIComponent(range)}`);
+}
+
+export function getObservabilityProcesses(range: ObservabilityRange): Promise<{ range: ObservabilityRange; processes: ProcessAggregate[] }> {
+  return request<{ range: ObservabilityRange; processes: ProcessAggregate[] }>(`/observability/processes?range=${encodeURIComponent(range)}`);
+}
+
+export function getObservabilityThread(threadId: string): Promise<ThreadDiagnostics> {
+  return request<ThreadDiagnostics>(`/observability/threads/${threadId}`);
+}
+
+export function getObservabilityJob(jobId: string): Promise<JobDiagnostics> {
+  return request<JobDiagnostics>(`/observability/jobs/${jobId}`);
+}
+
+export function getObservabilityTrace(traceId: string): Promise<{ traceId: string; spans: TelemetrySpan[] }> {
+  return request<{ traceId: string; spans: TelemetrySpan[] }>(`/observability/traces/${traceId}`);
+}
+
+export function getObservabilityRecentErrors(range: ObservabilityRange): Promise<{ range: ObservabilityRange; errors: RecentError[] }> {
+  return request<{ range: ObservabilityRange; errors: RecentError[] }>(`/observability/recent-errors?range=${encodeURIComponent(range)}`);
 }
 
 // ---- Knowledge ----

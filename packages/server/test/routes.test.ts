@@ -11,6 +11,7 @@ import { registerInboxRoutes } from "../src/routes/inbox.js";
 import { registerJobRoutes } from "../src/routes/jobs.js";
 import { registerLearningRoutes } from "../src/routes/learning.js";
 import { registerArtifactRoutes } from "../src/routes/artifacts.js";
+import { registerObservabilityRoutes } from "../src/routes/observability.js";
 import type { ServerContext } from "../src/index.js";
 import jwt from "jsonwebtoken";
 
@@ -62,6 +63,12 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     getArtifact: (...args: unknown[]) => mockGetArtifact(...args),
     listArtifacts: (...args: unknown[]) => mockListArtifacts(...args),
     createLLMClient: (...args: unknown[]) => mockCreateLLMClient(...args),
+    getObservabilityOverview: (...args: unknown[]) => mockGetObservabilityOverview(...args),
+    listProcessAggregates: (...args: unknown[]) => mockListProcessAggregates(...args),
+    getThreadDiagnostics: (...args: unknown[]) => mockGetThreadDiagnostics(...args),
+    getJobDiagnostics: (...args: unknown[]) => mockGetJobDiagnostics(...args),
+    getTraceSpans: (...args: unknown[]) => mockGetTraceSpans(...args),
+    listRecentErrors: (...args: unknown[]) => mockListRecentErrors(...args),
   };
 });
 
@@ -82,6 +89,12 @@ const mockLoadConfigFile = vi.fn().mockReturnValue({});
 const mockCreateLLMClient = vi.fn().mockReturnValue({
   health: vi.fn().mockResolvedValue({ ok: true, provider: "openai" }),
 });
+const mockGetObservabilityOverview = vi.fn();
+const mockListProcessAggregates = vi.fn();
+const mockGetThreadDiagnostics = vi.fn();
+const mockGetJobDiagnostics = vi.fn();
+const mockGetTraceSpans = vi.fn();
+const mockListRecentErrors = vi.fn();
 
 // ---------------------------------------------------------------------------
 // Background jobs mock functions
@@ -399,9 +412,9 @@ function createMockStorage() {
         threads.set(id, { id, title, agent_name, user_id, created_at, updated_at, message_count: 0 });
       }
       if (sql.startsWith("INSERT INTO thread_messages")) {
-        const [id, thread_id, role, content, parts_json, created_at, sequence] = params as [string, string, string, string, string | null, string, number];
+        const [id, thread_id, role, content, parts_json, usage_json, created_at, sequence] = params as [string, string, string, string, string | null, string | null, string, number];
         const msgs = threadMessages.get(thread_id) ?? [];
-        msgs.push({ id, thread_id, role, content, parts_json, created_at, sequence });
+        msgs.push({ id, thread_id, role, content, parts_json, usage_json, created_at, sequence });
         threadMessages.set(thread_id, msgs);
       }
       if (sql.includes("DELETE FROM thread_messages WHERE thread_id")) {
@@ -673,7 +686,13 @@ describe("memory routes", () => {
     expect(body).toHaveLength(1);
     expect(body[0].similarity).toBe(0.85);
     expect(body[0].statement).toBe(MOCK_BELIEF.statement);
-    expect(serverCtx.ctx.llm.embed).toHaveBeenCalledWith("testing framework");
+    expect(serverCtx.ctx.llm.embed).toHaveBeenCalledWith("testing framework", {
+      telemetry: {
+        process: "embed.memory",
+        surface: "web",
+        route: "/api/search",
+      },
+    });
   });
 
   it("GET /api/search filters out low-similarity results", async () => {
@@ -2799,5 +2818,81 @@ describe("Artifact routes", () => {
     expect(body.artifacts).toHaveLength(1);
     expect(body.artifacts[0].id).toBe("art-1");
     expect(mockListArtifacts).toHaveBeenCalledWith(serverCtx.ctx.storage, "job-1");
+  });
+});
+
+// ==========================================================================
+// Observability Routes
+// ==========================================================================
+
+describe("observability routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = Fastify();
+    addTestErrorHandler(app);
+    serverCtx = createMockServerCtx();
+    registerObservabilityRoutes(app, serverCtx);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("GET /api/observability/overview returns summary data", async () => {
+    mockGetObservabilityOverview.mockReturnValue({
+      range: "24h",
+      since: "2026-03-05T00:00:00Z",
+      totals: { calls: 4, errors: 1, inputTokens: 10, outputTokens: 5, totalTokens: 15, avgDurationMs: 120, p95DurationMs: 180 },
+      topProcesses: [],
+      topModels: [],
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/observability/overview?range=24h" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().totals.totalTokens).toBe(15);
+    expect(mockGetObservabilityOverview).toHaveBeenCalledWith(serverCtx.ctx.storage, "24h");
+  });
+
+  it("GET /api/observability/threads/:threadId returns 404 for unknown threads", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/observability/threads/thread-missing" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Thread not found");
+  });
+
+  it("GET /api/observability/threads/:threadId returns diagnostics for a known thread", async () => {
+    serverCtx.ctx.storage.run(
+      "INSERT INTO threads (id, title, agent_name, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      ["thread-1", "Debug thread", null, "user-local", "2026-03-05T00:00:00Z", "2026-03-05T00:00:00Z"],
+    );
+    mockGetThreadDiagnostics.mockReturnValue({
+      threadId: "thread-1",
+      totals: { calls: 2, errors: 0, inputTokens: 20, outputTokens: 10, totalTokens: 30, avgDurationMs: 200, p95DurationMs: 250 },
+      processBreakdown: [],
+      messages: [],
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/observability/threads/thread-1" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().threadId).toBe("thread-1");
+    expect(mockGetThreadDiagnostics).toHaveBeenCalledWith(serverCtx.ctx.storage, "thread-1");
+  });
+
+  it("GET /api/observability/traces/:traceId returns trace spans", async () => {
+    mockGetTraceSpans.mockReturnValue([{ id: "span-1", traceId: "trace-1" }]);
+
+    const res = await app.inject({ method: "GET", url: "/api/observability/traces/trace-1" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      traceId: "trace-1",
+      spans: [{ id: "span-1", traceId: "trace-1" }],
+    });
   });
 });

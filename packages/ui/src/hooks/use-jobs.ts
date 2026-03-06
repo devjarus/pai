@@ -10,10 +10,11 @@ export const jobKeys = {
   artifacts: (id: string) => ["jobs", "artifacts", id] as const,
 };
 
-export function useJobs() {
+export function useJobs(enabled = true) {
   return useQuery({
     queryKey: jobKeys.list(),
     queryFn: () => getJobs(),
+    enabled,
     refetchInterval: 10_000,
   });
 }

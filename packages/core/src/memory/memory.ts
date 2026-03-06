@@ -280,7 +280,9 @@ export async function updateBeliefContent(
     [newStatement, beliefId],
   );
   try {
-    const { embedding } = await llmClient.embed(newStatement);
+    const { embedding } = await llmClient.embed(newStatement, {
+      telemetry: { process: "embed.memory" },
+    });
     storeEmbedding(storage, beliefId, embedding);
   } catch {
     // embedding update is best-effort
@@ -792,7 +794,10 @@ export async function synthesize(
         role: "user",
         content: `Related beliefs:\n${cluster.statements.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\nWhat general principle connects these?`,
       },
-    ], { temperature: 0.3 });
+    ], {
+      temperature: 0.3,
+      telemetry: { process: "memory.summarize" },
+    });
 
     const statement = result.text.trim();
     if (!statement) continue;
@@ -803,7 +808,9 @@ export async function synthesize(
 
     // Try to embed the meta-belief
     try {
-      const { embedding } = await llm.embed(statement);
+      const { embedding } = await llm.embed(statement, {
+        telemetry: { process: "embed.memory" },
+      });
       storeEmbedding(storage, belief.id, embedding);
     } catch {
       // Proceed without embedding
@@ -903,7 +910,10 @@ Only output the numbered verdicts, nothing else.`,
       role: "user",
       content: pairsList,
     },
-  ], { temperature: 0 });
+  ], {
+    temperature: 0,
+    telemetry: { process: "memory.contradiction" },
+  });
 
   // Parse batched response
   const contradictions: Array<{ beliefA: Belief; beliefB: Belief; explanation: string }> = [];
@@ -1019,7 +1029,10 @@ export async function backfillSubjects(storage: Storage, llm: LLMClient, logger?
             "Examples:\n1. owner\n2. Alex\n3. general\n4. Bob",
         },
         { role: "user", content: numbered },
-      ], { temperature: 0 });
+      ], {
+        temperature: 0,
+        telemetry: { process: "memory.extract" },
+      });
 
       const lines = result.text.trim().split("\n");
       for (const line of lines) {
@@ -1161,7 +1174,9 @@ export async function getMemoryContext(
 
   if (options?.llm) {
     try {
-      const { embedding } = await options.llm.embed(query);
+      const { embedding } = await options.llm.embed(query, {
+        telemetry: { process: "embed.memory" },
+      });
       const similar = semanticSearch(storage, embedding, beliefLimit, query);
       // Fetch stability and subject for context-retrieved beliefs
       beliefs = similar.map((s) => {
@@ -1265,7 +1280,9 @@ export async function retrieveContext(
   let queryEmbedding: number[] | undefined;
   if (options?.llm) {
     try {
-      const result = await options.llm.embed(query);
+      const result = await options.llm.embed(query, {
+        telemetry: { process: "embed.memory" },
+      });
       queryEmbedding = result.embedding;
     } catch {
       // Fall through to FTS-only paths

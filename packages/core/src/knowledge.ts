@@ -195,7 +195,9 @@ export async function learnFromContent(
 
     let embedding: number[] | null = null;
     try {
-      const result = await llm.embed(chunk);
+      const result = await llm.embed(chunk, {
+        telemetry: { process: "embed.knowledge" },
+      });
       embedding = result.embedding;
     } catch {
       // Continue without embedding — search will skip this chunk
@@ -340,7 +342,9 @@ export async function knowledgeSearch(
   let queryEmbedding = options?.queryEmbedding;
   if (!queryEmbedding) {
     try {
-      const result = await llm.embed(query);
+      const result = await llm.embed(query, {
+        telemetry: { process: "embed.knowledge" },
+      });
       queryEmbedding = result.embedding;
     } catch {
       // Embedding failed — return FTS-only results with score 0.5
@@ -535,7 +539,9 @@ export async function reindexSource(
     const chunkId = nanoid();
     let embedding: number[] | null = null;
     try {
-      const result = await llm.embed(chunk);
+      const result = await llm.embed(chunk, {
+        telemetry: { process: "embed.knowledge" },
+      });
       embedding = result.embedding;
     } catch {
       // Continue without embedding

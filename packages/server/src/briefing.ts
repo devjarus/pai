@@ -1,7 +1,6 @@
-import { generateText } from "ai";
 import type { LanguageModel } from "ai";
-import type { Migration, PluginContext } from "@personal-ai/core";
-import { listBeliefs, memoryStats, listSources, formatDateTime, getContextBudget, getProviderOptions } from "@personal-ai/core";
+import type { Migration, PluginContext, TelemetryAttributes } from "@personal-ai/core";
+import { listBeliefs, memoryStats, listSources, formatDateTime, getContextBudget, getProviderOptions, instrumentedGenerateText } from "@personal-ai/core";
 import { listTasks, listGoals } from "@personal-ai/plugin-tasks";
 
 // --- Types ---
@@ -163,7 +162,10 @@ function pruneOldBriefings(storage: PluginContext["storage"]): void {
 
 // --- Generation ---
 
-export async function generateBriefing(ctx: PluginContext): Promise<Briefing | null> {
+export async function generateBriefing(
+  ctx: PluginContext,
+  telemetry?: Pick<TelemetryAttributes, "traceId" | "runId">,
+): Promise<Briefing | null> {
   try {
     const health = await ctx.llm.health();
     if (!health.ok) return null;
@@ -319,14 +321,27 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
 
   try {
     const budget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
-    const result = await generateText({
-      model: ctx.llm.getModel() as LanguageModel,
-      prompt,
-      temperature: 0.8,
-      maxRetries: 1,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
-    });
+    const { result } = await instrumentedGenerateText(
+      { storage: ctx.storage, logger: ctx.logger },
+      {
+        model: ctx.llm.getModel() as LanguageModel,
+        prompt,
+        temperature: 0.8,
+        maxRetries: 1,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
+      },
+      {
+        spanType: "llm",
+        process: "briefing.generate",
+        traceId: telemetry?.traceId,
+        runId: telemetry?.runId,
+        surface: "worker",
+        provider: ctx.config.llm.provider,
+        model: ctx.config.llm.model,
+        requestSizeChars: prompt.length,
+      },
+    );
 
     // Extract JSON from the response (handle possible markdown code fences)
     let jsonText = result.text.trim();

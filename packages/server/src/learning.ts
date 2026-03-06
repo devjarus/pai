@@ -1,7 +1,6 @@
-import { generateText } from "ai";
 import type { LanguageModel } from "ai";
-import { remember, getContextBudget, getProviderOptions } from "@personal-ai/core";
-import type { Migration, PluginContext, Storage } from "@personal-ai/core";
+import { remember, getContextBudget, getProviderOptions, instrumentedGenerateText } from "@personal-ai/core";
+import type { Migration, PluginContext, Storage, TelemetryAttributes } from "@personal-ai/core";
 
 export const learningMigrations: Migration[] = [
   {
@@ -379,7 +378,11 @@ export function parseLearningResponse(text: string): ExtractedFact[] {
   }
 }
 
-export async function runBackgroundLearning(ctx: PluginContext, signal?: AbortSignal): Promise<void> {
+export async function runBackgroundLearning(
+  ctx: PluginContext,
+  signal?: AbortSignal,
+  telemetry?: Pick<TelemetryAttributes, "traceId" | "runId">,
+): Promise<void> {
   const start = Date.now();
   ctx.logger.info("Background learning: starting");
 
@@ -483,14 +486,27 @@ export async function runBackgroundLearning(ctx: PluginContext, signal?: AbortSi
   try {
     const llmStart = Date.now();
     const budget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
-    const result = await generateText({
-      model: ctx.llm.getModel() as LanguageModel,
-      prompt,
-      temperature: 0.3,
-      maxRetries: 1,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
-    });
+    const { result } = await instrumentedGenerateText(
+      { storage: ctx.storage, logger: ctx.logger },
+      {
+        model: ctx.llm.getModel() as LanguageModel,
+        prompt,
+        temperature: 0.3,
+        maxRetries: 1,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
+      },
+      {
+        spanType: "llm",
+        process: "learning.extract",
+        traceId: telemetry?.traceId,
+        runId: telemetry?.runId ?? `learning-${runId}`,
+        surface: "worker",
+        provider: ctx.config.llm.provider,
+        model: ctx.config.llm.model,
+        requestSizeChars: prompt.length,
+      },
+    );
     ctx.logger.debug("Background learning: LLM call complete", {
       durationMs: Date.now() - llmStart,
     });
