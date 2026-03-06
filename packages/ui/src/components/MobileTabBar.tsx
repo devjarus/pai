@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 
 interface MobileTabBarProps {
   hasNewBriefing: boolean;
+  activeJobCount: number;
 }
 
 const primaryTabs = [
@@ -21,7 +22,7 @@ const moreTabs = [
   { to: "/settings", label: "Settings", icon: TabIconSettings },
 ] as const;
 
-export function MobileTabBar({ hasNewBriefing }: MobileTabBarProps) {
+export function MobileTabBar({ hasNewBriefing, activeJobCount }: MobileTabBarProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
@@ -106,6 +107,11 @@ export function MobileTabBar({ hasNewBriefing }: MobileTabBarProps) {
                 >
                   <tab.icon />
                   <span>{tab.label}</span>
+                  {tab.to === "/jobs" && activeJobCount > 0 && (
+                    <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                      {activeJobCount}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>
