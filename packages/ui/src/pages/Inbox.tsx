@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { marked } from "marked";
 import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig } from "@/hooks";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -69,80 +70,36 @@ function stripRenderBlocks(md: string): string {
   return md.replace(/```(?:json|jsonrender)\s*[\s\S]*?```/g, "").trim();
 }
 
-function markdownToHtml(md: string): string {
-  const cleaned = stripRenderBlocks(md);
-  let html = cleaned;
-
-  // Escape HTML entities in non-code content
-  html = html.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-  // Code blocks (``` ... ```) — must come before inline processing
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang: string, code: string) =>
-    `<pre><code>${code.trim()}</code></pre>`);
-
-  // Tables — convert pipe-delimited markdown tables to HTML tables
-  html = html.replace(
-    /^(\|.+\|)\n(\|[\s:|-]+\|)\n((?:\|.+\|\n?)+)/gm,
-    (_m, headerRow: string, _sep: string, bodyRows: string) => {
-      const headers = headerRow.split("|").slice(1, -1).map((c: string) => c.trim());
-      const rows = bodyRows.trim().split("\n").map((row: string) =>
-        row.split("|").slice(1, -1).map((c: string) => c.trim())
-      );
-      const thRow = headers.map((h: string) => `<th>${h}</th>`).join("");
-      const tbRows = rows.map((cols: string[]) =>
-        `<tr>${cols.map((c: string) => `<td>${c}</td>`).join("")}</tr>`
-      ).join("");
-      return `<table><thead><tr>${thRow}</tr></thead><tbody>${tbRows}</tbody></table>`;
-    }
-  );
-
-  // Headings
-  html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
-  html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
-  html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
-
-  // Inline formatting
-  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
-  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-
-  // Lists
-  html = html.replace(/^- (.+)$/gm, "<li>$1</li>");
-  html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, "<ul>$1</ul>");
-  html = html.replace(/^\d+\.\s(.+)$/gm, "<li>$1</li>");
-
-  // Horizontal rules
-  html = html.replace(/^---$/gm, "<hr>");
-
-  // Paragraphs
-  html = html.replace(/\n{2,}/g, "<br><br>");
-
-  return html;
-}
-
-function printResearchAsPdf(sections: { goal?: string; report?: string }): void {
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) return;
-  const title = (sections.goal ?? "Research Report").replace(/</g, "&lt;");
-  const body = markdownToHtml(sections.report ?? "");
-  w.document.write(`<html><head><title>${title}</title><style>
+const REPORT_CSS = `
 body{font-family:system-ui,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1a1a1a}
 h1{font-size:1.6em;border-bottom:2px solid #2563eb;padding-bottom:8px;font-weight:700}
 h2{font-size:1.3em;margin-top:1.5em;color:#2563eb;font-weight:600}
 h3{font-size:1.1em;margin-top:1.2em;font-weight:600}
-ul{padding-left:1.5em}li{margin:4px 0}
+h4{font-size:1em;margin-top:1em;font-weight:600;color:#6b7280}
+p{margin:0.75em 0}
+ul,ol{padding-left:1.5em;margin:0.5em 0}li{margin:4px 0}
 hr{border:none;border-top:1px solid #e5e5e5;margin:1.5em 0}
-strong{font-weight:600}
+strong{font-weight:600}em{font-style:italic}
+a{color:#2563eb;text-decoration:none}
 table{width:100%;border-collapse:collapse;margin:1em 0;font-size:0.92em}
 thead{background:#eff6ff}
 th{font-weight:600;text-align:left;padding:0.5em 0.7em;border-bottom:2px solid #2563eb}
 td{padding:0.4em 0.7em;border-bottom:1px solid #e5e7eb}
 tr:nth-child(even){background:#f9fafb}
-pre{background:#f3f4f6;padding:0.8em;border-radius:6px;overflow-x:auto;font-size:0.9em}
-code{font-family:monospace;font-size:0.9em}
-blockquote{border-left:3px solid #2563eb;padding:0.5em 1em;margin:1em 0;background:#eff6ff}
-@media print{body{margin:0;padding:0}h2{break-after:avoid}tr{break-inside:avoid}}
-</style></head><body>${body}</body></html>`);
+pre{background:#f3f4f6;padding:0.8em;border-radius:6px;overflow-x:auto;font-size:0.9em;margin:1em 0}
+code{font-family:'SF Mono',Monaco,monospace;font-size:0.9em;background:#f3f4f6;padding:0.1em 0.3em;border-radius:3px}
+pre code{background:none;padding:0}
+blockquote{border-left:3px solid #2563eb;padding:0.5em 1em;margin:1em 0;background:#eff6ff;border-radius:0 6px 6px 0}
+@media print{body{margin:0;padding:0}h2{break-after:avoid}tr{break-inside:avoid}table{font-size:10pt}}
+`;
+
+function printResearchAsPdf(sections: { goal?: string; report?: string }): void {
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) return;
+  const title = (sections.goal ?? "Research Report").replace(/</g, "&lt;");
+  const cleaned = stripRenderBlocks(sections.report ?? "");
+  const body = marked.parse(cleaned, { gfm: true, breaks: false, async: false }) as string;
+  w.document.write(`<html><head><title>${title}</title><style>${REPORT_CSS}</style></head><body>${body}</body></html>`);
   w.document.close();
   w.focus();
   w.print();

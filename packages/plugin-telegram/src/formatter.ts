@@ -443,8 +443,11 @@ export function formatTelegramResponse(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return text;
 
+  // Strip jsonrender blocks (UI render specs, not for humans)
+  let normalized = trimmed.replace(/```jsonrender\s*[\s\S]*?```/gi, "").trim();
+
   // Convert fenced JSON blocks (```json ... ```) into readable markdown summaries.
-  let normalized = trimmed.replace(/```json\s*([\s\S]*?)```/gi, (match, payload: string) => {
+  normalized = normalized.replace(/```json\s*([\s\S]*?)```/gi, (match, payload: string) => {
     try {
       const formatted = formatJsonPayload(JSON.parse(payload.trim()));
       return formatted ?? match;
