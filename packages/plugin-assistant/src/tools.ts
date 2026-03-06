@@ -479,7 +479,7 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     generate_report: tool({
-      description: "Generate a downloadable analysis report as a Markdown file. Use this when the user asks to create a report, analysis document, summary report, or any document they might want to download and share. The report is saved as a downloadable artifact.",
+      description: "Generate a downloadable report file. ONLY use this when the user EXPLICITLY asks for a downloadable document, PDF, export, or file — e.g. 'give me a report I can download', 'export as PDF', 'create a document'. Do NOT use this for normal analysis or research responses — just reply with text instead.",
       inputSchema: z.object({
         title: z.string().describe("Report title"),
         content: z.string().describe("Full report content in Markdown format. Include headings, bullet points, tables, and sections as appropriate."),
