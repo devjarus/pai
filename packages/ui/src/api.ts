@@ -378,8 +378,8 @@ export function testConfig(config: {
   baseUrl: string;
   apiKey?: string;
   embedModel?: string;
-}): Promise<{ ok: boolean; provider: string }> {
-  return request<{ ok: boolean; provider: string }>("/config/test", {
+}): Promise<{ ok: boolean; provider: string; error?: string }> {
+  return request<{ ok: boolean; provider: string; error?: string }>("/config/test", {
     method: "POST",
     body: JSON.stringify(config),
   });

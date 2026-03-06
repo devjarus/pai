@@ -82,7 +82,7 @@ function getEnvOverrides(): string[] {
 }
 
 const updateConfigSchema = z.object({
-  provider: z.enum(["ollama", "openai", "anthropic", "google"]).optional(),
+  provider: z.enum(["ollama", "openai", "anthropic", "google", "cerebras"]).optional(),
   model: z.string().optional(),
   baseUrl: z
     .string()
@@ -307,9 +307,11 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     return sanitizeConfig(serverCtx.ctx.config as never);
   });
 
-  // Test LLM config without saving — used by the setup wizard
+  // Test LLM config without saving — used by the setup wizard.
+  // This performs a tiny generation instead of a shallow health check so
+  // provider-specific quota, billing, auth, and model access issues surface.
   const testConfigSchema = z.object({
-    provider: z.enum(["ollama", "openai", "anthropic", "google"]),
+    provider: z.enum(["ollama", "openai", "anthropic", "google", "cerebras"]),
     model: z.string().min(1),
     baseUrl: z.string().url(),
     apiKey: z.string().optional(),
@@ -326,8 +328,19 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       embedModel: body.embedModel ?? "nomic-embed-text",
       fallbackMode: "local-first",
     });
-    const result = await testLlm.health();
-    return { ok: result.ok, provider: result.provider };
+    try {
+      await testLlm.chat(
+        [{ role: "user", content: "Reply with exactly OK." }],
+        { maxTokens: 8 },
+      );
+      return { ok: true, provider: body.provider };
+    } catch (err) {
+      return {
+        ok: false,
+        provider: body.provider,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   });
 
   // Directory browser endpoint for the UI — restricted to home directory

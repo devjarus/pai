@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createLLMClient } from "../src/llm.js";
+import { createLLMClient, _resetLocalEmbeddingCache } from "../src/llm.js";
 import { createStorage } from "../src/storage.js";
 import { telemetryMigrations } from "../src/telemetry.js";
 
@@ -14,22 +14,29 @@ vi.mock("ai", () => ({
 }));
 
 vi.mock("@huggingface/transformers", () => ({
-  pipeline: vi.fn().mockResolvedValue(
-    vi.fn().mockResolvedValue({ data: new Float32Array(384).fill(0.1) }),
-  ),
+  pipeline: vi.fn(),
   env: {},
 }));
 
 import { generateText, streamText, embed as aiEmbed } from "ai";
+import { pipeline as transformersPipeline } from "@huggingface/transformers";
 const mockGenerateText = vi.mocked(generateText);
 const mockStreamText = vi.mocked(streamText);
 const mockEmbed = vi.mocked(aiEmbed);
+const mockTransformersPipeline = vi.mocked(transformersPipeline);
 
 describe("LLMClient", () => {
   const originalFetch = globalThis.fetch;
 
+  beforeEach(() => {
+    mockTransformersPipeline.mockResolvedValue(
+      vi.fn().mockResolvedValue({ data: new Float32Array(384).fill(0.1) }) as any,
+    );
+  });
+
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    _resetLocalEmbeddingCache();
     vi.restoreAllMocks();
   });
 
@@ -277,6 +284,79 @@ describe("LLMClient", () => {
     expect(result.embedding).toBeInstanceOf(Array);
     expect(result.embedding.length).toBe(384); // all-MiniLM-L6-v2 dimensions
     // Remote mock should NOT have been called (no OpenAI fallback with Anthropic key)
+    expect(mockEmbed).not.toHaveBeenCalled();
+  });
+
+  // --- Cerebras provider tests ---
+
+  it("should construct with cerebras config", () => {
+    const client = createLLMClient({
+      provider: "cerebras",
+      model: "zai-glm-4.7",
+      baseUrl: "https://api.cerebras.ai/v1",
+      apiKey: "csk-test",
+      fallbackMode: "strict",
+    });
+    expect(client).toBeDefined();
+    expect(client.chat).toBeTypeOf("function");
+    expect(client.health).toBeTypeOf("function");
+    expect(client.embed).toBeTypeOf("function");
+  });
+
+  it("chat should return text and usage via cerebras provider", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "Cerebras says hi",
+      usage: { inputTokens: 18, outputTokens: 9 },
+    } as any);
+
+    const client = createLLMClient({
+      provider: "cerebras",
+      model: "zai-glm-4.7",
+      baseUrl: "https://api.cerebras.ai/v1",
+      apiKey: "csk-test",
+      fallbackMode: "strict",
+    });
+
+    const result = await client.chat([{ role: "user", content: "Hi" }]);
+    expect(result.text).toBe("Cerebras says hi");
+    expect(result.usage.inputTokens).toBe(18);
+    expect(result.usage.outputTokens).toBe(9);
+    expect(result.usage.totalTokens).toBe(27);
+  });
+
+  it("health should return ok for cerebras", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    globalThis.fetch = mockFetch;
+    const client = createLLMClient({
+      provider: "cerebras",
+      model: "zai-glm-4.7",
+      baseUrl: "https://api.cerebras.ai/v1",
+      apiKey: "csk-test",
+      fallbackMode: "strict",
+    });
+    const result = await client.health();
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe("cerebras");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.cerebras.ai/v1/models",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer csk-test" }),
+      }),
+    );
+  });
+
+  it("embed should use local fallback for cerebras provider (no native embeddings)", async () => {
+    const client = createLLMClient({
+      provider: "cerebras",
+      model: "zai-glm-4.7",
+      baseUrl: "https://api.cerebras.ai/v1",
+      apiKey: "csk-test",
+      fallbackMode: "strict",
+    });
+
+    const result = await client.embed("test text");
+    expect(result.embedding).toBeInstanceOf(Array);
+    expect(result.embedding.length).toBe(384);
     expect(mockEmbed).not.toHaveBeenCalled();
   });
 

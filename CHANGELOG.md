@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cerebras provider support** — Added first-class Cerebras support across the core LLM client, config validation, CLI setup, settings/onboarding flows, health checks, and context budgeting. Cerebras uses the official `@ai-sdk/cerebras` provider with local embedding fallback.
 - **Per-instance diagnostics** — Added a local observability system that records LLM, embed, tool, HTTP, and worker spans in SQLite. New owner-facing diagnostics panel lives in Settings with Overview, Processes, Threads, Jobs, and Errors tabs for token, latency, and failure visibility.
 - **LLM traffic shaping controls** — Added instance-level queue controls in Settings for max LLM concurrency, background start gap, startup delay, and swarm agent concurrency. Jobs and diagnostics now expose queue position, wait reason, queue wait metrics, and live lane depth.
 - **Swarm-friendly traffic defaults** — Default LLM traffic shaping now allows up to 5 concurrent swarm sub-agents with one reserved interactive slot, so a single swarm can investigate in parallel without fully blocking chat responsiveness.
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **End-to-end telemetry coverage** — Chat, Telegram, background learning, briefings, research, swarm execution, memory extraction, and knowledge embeddings now emit standardized process-level telemetry. Assistant thread messages also persist compact usage summaries for diagnostics without exposing raw metrics in normal user-facing flows.
 - **Background dispatch smoothing** — Research, swarm, and daily briefing generation now enqueue into a single background dispatcher instead of starting immediately. Restarts requeue unfinished research/swarm/briefing work as `pending`, scheduled jobs dedupe by schedule, manual work is prioritized ahead of scheduled and maintenance work, and swarm agent execution is staggered to avoid bursting the LLM server.
+- **Cerebras default model** — Setup wizard, Settings presets, and `pai init` now default Cerebras to `gpt-oss-120b` instead of `zai-glm-4.7` so fresh configurations land on a model that works with the currently tested account access path.
 
 ### Security
 
@@ -57,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Provider setup error visibility** — LLM setup "Test Connection" now performs a tiny inference instead of a shallow provider health check, so billing, quota, auth, and model-access failures surface with the provider's actual error message.
 - **Wasteful thread title token usage** — Short chats now keep cheap heuristic titles instead of immediately invoking the full LLM title path. LLM-generated title refreshes only start on longer threads and the title call itself is capped to a tiny output budget, cutting unnecessary token burn and queue time.
 - **Hung background LLM calls** — Research, swarm, and daily briefing generation now set explicit AI SDK timeouts so a stalled provider step cannot hold the background dispatcher indefinitely and leave jobs stuck in `running`.
 - **Nested chat LLM slowdown** — Nested LLM work inside an active chat or analysis turn now reuses the parent traffic permit instead of queueing for a second slot. This keeps sub-agent delegation and in-turn follow-up LLM calls from stalling behind background work.

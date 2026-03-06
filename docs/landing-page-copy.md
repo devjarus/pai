@@ -45,7 +45,7 @@ Web UI, Telegram bot, CLI, or integrate with Claude Code / Cursor / Windsurf via
 
 **Your data stays yours.**
 
-Single SQLite file. No cloud dependency. No telemetry. Run it on your laptop, a Raspberry Pi, or Railway. Bring your own LLM — Ollama, OpenAI, Anthropic, or Google.
+Single SQLite file. No cloud dependency. No telemetry. Run it on your laptop, a Raspberry Pi, or Railway. Bring your own LLM — Ollama, OpenAI, Anthropic, Google, or Cerebras.
 
 ---
 

@@ -5,6 +5,7 @@ const PROVIDER_DEFAULTS: Record<string, number> = {
   openai: 128_000,
   anthropic: 200_000,
   google: 1_000_000,
+  cerebras: 131_072,
 };
 
 export interface ContextBudget {
@@ -23,7 +24,7 @@ let cachedBudget: { key: string; budget: ContextBudget } | null = null;
  * Resolution order:
  * 1. `contextWindow` override (from config or PAI_CONTEXT_WINDOW env)
  * 2. TokenLens static catalog (337+ cloud models)
- * 3. Provider defaults (ollama=200K, openai=128K, anthropic=200K, google=1M)
+ * 3. Provider defaults (ollama=200K, openai=128K, anthropic=200K, google=1M, cerebras=131072)
  * 4. Fallback: 8,192
  */
 export function getContextBudget(

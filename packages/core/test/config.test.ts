@@ -207,6 +207,16 @@ describe("loadConfig with config file merging", () => {
     expect(config.llm.model).toBe("claude-opus-4-6");
   });
 
+  it("should allow config file to set llm.provider to cerebras", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pai-test-"));
+    dirs.push(dir);
+    const fileConfig = { llm: { provider: "cerebras", model: "gpt-oss-120b", baseUrl: "https://api.cerebras.ai/v1", apiKey: "csk-test" } };
+    writeFileSync(join(dir, "config.json"), JSON.stringify(fileConfig));
+    const config = loadConfig({ PAI_HOME: dir });
+    expect(config.llm.provider).toBe("cerebras");
+    expect(config.llm.model).toBe("gpt-oss-120b");
+  });
+
   it("should use dataDir from config file", () => {
     const dir = mkdtempSync(join(tmpdir(), "pai-test-"));
     dirs.push(dir);

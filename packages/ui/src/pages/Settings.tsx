@@ -23,6 +23,7 @@ const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedMo
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o", embedModel: "text-embedding-3-small" },
   anthropic: { baseUrl: "https://api.anthropic.com", model: "claude-sonnet-4-20250514", embedModel: "" },
   google: { baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.0-flash", embedModel: "text-embedding-004" },
+  cerebras: { baseUrl: "https://api.cerebras.ai/v1", model: "gpt-oss-120b", embedModel: "text-embedding-3-small" },
 };
 
 const DEFAULT_LLM_TRAFFIC = {
@@ -316,6 +317,7 @@ export default function Settings() {
                       <option value="openai">OpenAI</option>
                       <option value="anthropic">Anthropic</option>
                       <option value="google">Google AI</option>
+                      <option value="cerebras">Cerebras</option>
                     </select>
                   </div>
                   <EditableRow label="Model" value={model} onChange={setModel} placeholder={PROVIDER_PRESETS[provider]?.model ?? "model name"} envLabel={envOverrides.includes("model")} />
