@@ -26,11 +26,11 @@ jobs:
             dockerfile: Dockerfile
             image_suffix: ""
           - service: sandbox
-            context: "./sandbox"
+            context: "."
             dockerfile: sandbox/Dockerfile
             image_suffix: "-sandbox"
           - service: searxng
-            context: "./searxng"
+            context: "."
             dockerfile: searxng/Dockerfile
             image_suffix: "-searxng"
 
