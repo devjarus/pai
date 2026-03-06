@@ -8,6 +8,10 @@ interface NamedArtifact {
   name: string;
 }
 
+interface DeliveryOptions {
+  protectContent?: boolean;
+}
+
 function isImageMimeType(mimeType: string): boolean {
   return mimeType.startsWith("image/");
 }
@@ -16,6 +20,7 @@ async function sendPhotos(
   bot: Bot,
   chatId: number,
   photos: Array<{ data: Buffer; name: string; caption?: string }>,
+  options: DeliveryOptions = {},
 ): Promise<void> {
   if (photos.length === 0) return;
 
@@ -23,6 +28,7 @@ async function sendPhotos(
     for (const photo of photos) {
       await bot.api.sendPhoto(chatId, new InputFile(photo.data, photo.name), {
         ...(photo.caption ? { caption: photo.caption } : {}),
+        ...(options.protectContent ? { protect_content: true } : {}),
       });
     }
     return;
@@ -32,7 +38,7 @@ async function sendPhotos(
     type: "photo" as const,
     media: new InputFile(photo.data, photo.name),
     ...(index === 0 && photo.caption ? { caption: photo.caption } : {}),
-  })));
+  })), options.protectContent ? { protect_content: true } : undefined);
 }
 
 export async function sendVisualsToTelegram(
@@ -41,6 +47,7 @@ export async function sendVisualsToTelegram(
   chatId: number,
   visuals: ReportVisual[],
   logger: Logger,
+  options: DeliveryOptions = {},
 ): Promise<void> {
   const photos: Array<{ data: Buffer; name: string; caption?: string }> = [];
 
@@ -61,7 +68,7 @@ export async function sendVisualsToTelegram(
     }
   }
 
-  await sendPhotos(bot, chatId, photos);
+  await sendPhotos(bot, chatId, photos, options);
 }
 
 export async function sendArtifactsToTelegram(
@@ -70,6 +77,7 @@ export async function sendArtifactsToTelegram(
   chatId: number,
   artifacts: NamedArtifact[],
   logger: Logger,
+  options: DeliveryOptions = {},
 ): Promise<void> {
   const photos: Array<{ data: Buffer; name: string; caption?: string }> = [];
   const documents: Array<{ data: Buffer; name: string }> = [];
@@ -91,11 +99,12 @@ export async function sendArtifactsToTelegram(
     }
   }
 
-  await sendPhotos(bot, chatId, photos);
+  await sendPhotos(bot, chatId, photos, options);
 
   for (const document of documents) {
     await bot.api.sendDocument(chatId, new InputFile(document.data, document.name), {
       caption: document.name,
+      ...(options.protectContent ? { protect_content: true } : {}),
     });
   }
 }

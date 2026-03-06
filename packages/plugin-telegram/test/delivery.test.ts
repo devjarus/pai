@@ -80,4 +80,25 @@ describe("Telegram delivery helpers", () => {
     expect(bot.api.sendPhoto).toHaveBeenCalledOnce();
     expect(bot.api.sendDocument).toHaveBeenCalledOnce();
   });
+
+  it("passes protect_content when requested", async () => {
+    const bot = createBot();
+    const logger = createLogger();
+    mockGetArtifact.mockReturnValueOnce({ id: "art-1", name: "chart.png", mimeType: "image/png", data: Buffer.from("png") });
+
+    await sendVisualsToTelegram(
+      {} as Storage,
+      bot,
+      123,
+      [{ artifactId: "art-1", mimeType: "image/png", kind: "chart", title: "First", order: 1 }],
+      logger,
+      { protectContent: true },
+    );
+
+    expect(bot.api.sendPhoto).toHaveBeenCalledWith(
+      123,
+      expect.anything(),
+      expect.objectContaining({ protect_content: true }),
+    );
+  });
 });

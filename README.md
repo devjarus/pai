@@ -99,6 +99,7 @@ node packages/plugin-telegram/dist/index.js
 Commands: `/start`, `/help`, `/clear`, `/tasks`, `/memories`, `/jobs`, `/research <query>` — or just send any message.
 
 The bot knows who's talking (owner vs. family/friends) and attributes memories to the correct person.
+Research and analysis reports stay inside Telegram: the bot sends a protected preview, inline visuals, and an attached HTML report document instead of publishing a public article link.
 
 ## MCP Server
 

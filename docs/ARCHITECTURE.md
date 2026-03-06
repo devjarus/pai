@@ -548,7 +548,7 @@ Tasks (status/priority/due date) + Goals. `ai-suggest` feeds tasks + memory to L
 - Commands: `/start`, `/help`, `/clear`, `/tasks`, `/memories`, `/jobs`, `/research`
 - Multi-user: sender identity injected, owner detected via `config.telegram.ownerUsername`
 - Markdown → Telegram HTML conversion, 4096-char splitting
-- Research push loop delivers both research and swarm results to originating Telegram chat
+- Research push loop delivers both research and swarm results to originating Telegram chat as protected previews, inline visuals, and attached HTML report documents
 
 ---
 

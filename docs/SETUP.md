@@ -414,6 +414,7 @@ PAI_TELEGRAM_TOKEN=7123456789:AAF...
 ### Step 3: Chat
 
 Open your bot in Telegram and send any message. The bot responds using the same assistant pipeline as the web UI — it has access to memory, web search, tasks, and knowledge.
+When a research or analysis run finishes, the bot sends a protected preview plus any chart images directly in Telegram, then attaches the full report as an HTML document. Reports are no longer published to a public third-party article service.
 
 ### Telegram commands
 

@@ -16,7 +16,7 @@ export { createBot } from "./bot.js";
 export { runAgentChat, createThread, deleteThread, clearThread } from "./chat.js";
 export { markdownToTelegramHTML, markdownToReportHTML, splitMessage, formatBriefingHTML, escapeHTML, formatTelegramResponse } from "./formatter.js";
 export { startResearchPushLoop } from "./push.js";
-export { getOrCreateAccount, uploadImage, createPage } from "./telegraph.js";
+export { buildTelegramReportDocument, sendReportDocumentToTelegram } from "./report-document.js";
 
 /** Migrations for telegram_threads mapping table */
 export const telegramMigrations: Migration[] = [
