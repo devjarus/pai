@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { OfflineBanner } from "./OfflineBanner";
 import { MobileTabBar } from "./MobileTabBar";
 import { useInboxAll } from "@/hooks/use-inbox";
+import { useJobs } from "@/hooks/use-jobs";
 
 const navItems = [
   { to: "/", label: "Inbox", icon: IconInbox },
@@ -26,6 +27,11 @@ export default function Layout() {
 
   // Shared inbox query — reuses cache with Inbox page, polls every 30 min
   const { data: inboxData } = useInboxAll();
+  const { data: jobsData } = useJobs();
+
+  const activeJobCount = jobsData?.jobs?.filter(
+    (j) => j.status === "running" || j.status === "pending" || j.status === "planning" || j.status === "synthesizing"
+  ).length ?? 0;
 
   // Track last-seen briefing ID (persisted in localStorage)
   const [seenId, setSeenId] = useState(() => localStorage.getItem(INBOX_SEEN_KEY));
@@ -76,6 +82,11 @@ export default function Layout() {
                   {item.to === "/" && hasNewBriefing && (
                     <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-[#0a0a0a] pointer-events-none" />
                   )}
+                  {item.to === "/jobs" && activeJobCount > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground ring-2 ring-[#0a0a0a] pointer-events-none">
+                      {activeJobCount}
+                    </span>
+                  )}
                 </div>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={8}>
@@ -95,7 +106,7 @@ export default function Layout() {
       </main>
 
       {/* Mobile bottom tab bar */}
-      <MobileTabBar hasNewBriefing={hasNewBriefing} />
+      <MobileTabBar hasNewBriefing={hasNewBriefing} activeJobCount={activeJobCount} />
     </div>
   );
 }
