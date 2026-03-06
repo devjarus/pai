@@ -1,6 +1,6 @@
 import type { Plugin, PluginContext, Command, Migration } from "@personal-ai/core";
 import {
-  loadConfig, createStorage, createLLMClient, createLogger,
+  loadConfig, createStorage, createLLMClient, createLogger, configureLlmTraffic,
   memoryMigrations, telemetryMigrations, threadMigrations,
 } from "@personal-ai/core";
 import { taskMigrations } from "@personal-ai/plugin-tasks";
@@ -56,6 +56,7 @@ if (isDirectExecution) {
     process.exit(1);
   }
   const logger = createLogger(config.logLevel, { dir: config.dataDir });
+  configureLlmTraffic(config.workers?.llmTraffic);
   const storage = createStorage(config.dataDir, logger);
   const llm = createLLMClient(config.llm, logger, storage);
 

@@ -137,7 +137,7 @@ describe("Swarm jobs", () => {
   });
 
   describe("recoverStaleSwarmJobs", () => {
-    it("marks running jobs and agents as failed", () => {
+    it("requeues running jobs and clears partial agent state", () => {
       const id1 = createSwarmJob(storage, { goal: "running job", threadId: null });
       const id2 = createSwarmJob(storage, { goal: "done job", threadId: null });
       updateSwarmJob(storage, id1, { status: "running" });
@@ -165,17 +165,14 @@ describe("Swarm jobs", () => {
       const recovered = recoverStaleSwarmJobs(storage);
       expect(recovered).toBe(1);
 
-      // Job should be failed
+      // Job should be requeued
       const job1 = getSwarmJob(storage, id1);
-      expect(job1!.status).toBe("failed");
+      expect(job1!.status).toBe("pending");
+      expect(job1!.attemptCount).toBe(1);
 
-      // Agents should be failed
+      // Partial agents should be cleared so the dispatcher can restart cleanly
       const agents = getSwarmAgents(storage, id1);
-      expect(agents).toHaveLength(2);
-      for (const a of agents) {
-        expect(a.status).toBe("failed");
-        expect(a.error).toBe("Server restarted — job interrupted");
-      }
+      expect(agents).toHaveLength(0);
 
       // Done job should be untouched
       const job2 = getSwarmJob(storage, id2);
@@ -325,6 +322,15 @@ describe("Swarm jobs", () => {
       expect(job!.synthesis).toContain("Swarm Report");
       expect(job!.completedAt).not.toBeNull();
       expect(job!.agentCount).toBe(3);
+      expect(mockInstrumentedGenerateText).toHaveBeenCalled();
+      for (const call of mockInstrumentedGenerateText.mock.calls) {
+        expect(call[1]).toEqual(expect.objectContaining({
+          timeout: {
+            totalMs: 10 * 60_000,
+            stepMs: 90_000,
+          },
+        }));
+      }
 
       // Verify agents were created
       const agents = getSwarmAgents(storage, id);

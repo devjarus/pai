@@ -64,6 +64,21 @@ const resultTypeBadges: Record<string, string> = {
   comparison: "\u2696 comparison",
 };
 
+const waitingReasonLabels: Record<NonNullable<BackgroundJobInfo["waitingReason"]>, string> = {
+  startup_delay: "startup delay",
+  interactive_ahead: "interactive work ahead",
+  manual_job_ahead: "manual job ahead",
+  scheduled_job_ahead: "scheduled job ahead",
+  maintenance_job_ahead: "maintenance job ahead",
+  llm_busy: "llm busy",
+};
+
+const sourceKindLabels: Record<NonNullable<BackgroundJobInfo["sourceKind"]>, string> = {
+  manual: "manual",
+  schedule: "schedule",
+  maintenance: "maintenance",
+};
+
 const roleStyles: Record<string, string> = {
   researcher: "bg-blue-500/15 text-blue-400 border-blue-500/20",
   flight_researcher: "bg-blue-500/15 text-blue-400 border-blue-500/20",
@@ -97,6 +112,21 @@ function formatDuration(start: string, end: string | null): string {
   const mins = Math.floor(secs / 60);
   const remainSecs = secs % 60;
   return `${mins}m ${remainSecs}s`;
+}
+
+function statusTimestamp(job: BackgroundJobInfo): string {
+  const timestamp = job.status === "pending"
+    ? (job.queuedAt ?? job.startedAt)
+    : job.startedAt;
+  return timeAgo(timestamp);
+}
+
+function queueSummary(job: BackgroundJobInfo): string | null {
+  if (job.status !== "pending") return null;
+  const parts: string[] = [];
+  if (job.queuePosition) parts.push(`queue #${job.queuePosition}`);
+  if (job.waitingReason) parts.push(waitingReasonLabels[job.waitingReason]);
+  return parts.length > 0 ? parts.join(" · ") : "queued";
 }
 
 const blackboardTypeIcons: Record<string, typeof LightbulbIcon> = {
@@ -221,7 +251,9 @@ export default function Jobs() {
 
   if (isLoading) return <JobsSkeleton />;
 
-  const runningCount = jobs.filter((j) => j.status === "running" || j.status === "pending").length;
+  const activeCount = jobs.filter((j) =>
+    j.status === "pending" || j.status === "running" || j.status === "planning" || j.status === "synthesizing",
+  ).length;
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -233,9 +265,9 @@ export default function Jobs() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h1 className="font-mono text-lg font-semibold text-foreground">Background Jobs</h1>
-              {runningCount > 0 && (
+              {activeCount > 0 && (
                 <Badge variant="outline" className="text-[10px] border-blue-500/20 bg-blue-500/10 text-blue-400 animate-pulse">
-                  {runningCount} running
+                  {activeCount} active
                 </Badge>
               )}
               {jobs.length > 0 && (
@@ -332,7 +364,20 @@ export default function Jobs() {
                             </Badge>
                           )}
                           <span className="text-[10px] text-muted-foreground">{job.progress}</span>
-                          <span className="text-[10px] text-muted-foreground/60">{timeAgo(job.startedAt)}</span>
+                          <span className="text-[10px] text-muted-foreground/60">{statusTimestamp(job)}</span>
+                          {job.status === "pending" && job.queuePosition ? (
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-yellow-500/20 bg-yellow-500/10 text-yellow-300">
+                              #{job.queuePosition}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {queueSummary(job) ? (
+                          <p className="mt-1 text-xs text-yellow-300/80">{queueSummary(job)}</p>
+                        ) : null}
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground/70">
+                          <span>source {sourceKindLabels[job.sourceKind ?? "manual"]}</span>
+                          <span>attempt {job.attemptCount ?? 0}</span>
+                          {job.lastAttemptAt ? <span>last attempt {timeAgo(job.lastAttemptAt)}</span> : null}
                         </div>
                         {job.error && (
                           <p className="mt-1 text-xs text-red-400">{job.error}</p>
@@ -416,6 +461,10 @@ export default function Jobs() {
                   <span>Agents: {selectedJob.agentsDone ?? 0}/{selectedJob.agentCount}</span>
                 )}
                 <span>Status: {selectedJob.status}</span>
+                {selectedJob.queuePosition ? <span>Queue: #{selectedJob.queuePosition}</span> : null}
+                {selectedJob.waitingReason ? <span>Waiting: {waitingReasonLabels[selectedJob.waitingReason]}</span> : null}
+                {selectedJob.sourceKind ? <span>Source: {sourceKindLabels[selectedJob.sourceKind]}</span> : null}
+                {selectedJob.attemptCount != null ? <span>Attempts: {selectedJob.attemptCount}</span> : null}
               </div>
 
               {/* Agents section for swarm jobs */}

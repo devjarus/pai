@@ -240,11 +240,18 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
 
     try {
       const threadId = getOrCreateThread(ctx, tgCtx.chat.id, tgCtx.from?.username);
-      const jobId = createResearchJob(ctx.storage, {
-        goal,
-        threadId,
-        resultType: "general",
-      });
+      const jobId = ctx.backgroundJobs?.enqueueResearch
+        ? await ctx.backgroundJobs.enqueueResearch({
+          goal,
+          threadId,
+          resultType: "general",
+          sourceKind: "manual",
+        })
+        : createResearchJob(ctx.storage, {
+          goal,
+          threadId,
+          resultType: "general",
+        });
 
       const researchCtx: ResearchContext = {
         storage: ctx.storage,
@@ -262,11 +269,13 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         fetchPage: fetchPageAsMarkdown,
       };
 
-      runResearchInBackground(researchCtx, jobId).catch((err) => {
-        ctx.logger.error(`Research background execution failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
+      if (!ctx.backgroundJobs?.enqueueResearch) {
+        runResearchInBackground(researchCtx, jobId).catch((err) => {
+          ctx.logger.error(`Research background execution failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+      }
 
-      await tgCtx.reply(`\uD83D\uDD2C Starting research: "${goal.slice(0, 80)}"...\n\nI'll send results when done.`);
+      await tgCtx.reply(`\uD83D\uDD2C Research queued: "${goal.slice(0, 80)}"...\n\nI'll send results when done.`);
     } catch (err) {
       ctx.logger.error("Failed to start research", { error: err instanceof Error ? err.message : String(err) });
       await tgCtx.reply("Failed to start research. Please try again.");

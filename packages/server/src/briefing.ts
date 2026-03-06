@@ -1,7 +1,12 @@
 import type { LanguageModel } from "ai";
-import type { Migration, PluginContext, TelemetryAttributes } from "@personal-ai/core";
+import type { BackgroundJobSourceKind, Migration, PluginContext, TelemetryAttributes } from "@personal-ai/core";
 import { listBeliefs, memoryStats, listSources, formatDateTime, getContextBudget, getProviderOptions, instrumentedGenerateText } from "@personal-ai/core";
 import { listTasks, listGoals } from "@personal-ai/plugin-tasks";
+
+const BRIEFING_LLM_TIMEOUT = {
+  totalMs: 2 * 60_000,
+  stepMs: 60_000,
+} as const;
 
 // --- Types ---
 
@@ -30,6 +35,11 @@ export interface BriefingRow {
   raw_context: string | null;
   status: string;
   type: string;
+  queued_at: string | null;
+  started_at: string | null;
+  attempt_count: number | null;
+  last_attempt_at: string | null;
+  source_kind: string | null;
 }
 
 export interface Briefing {
@@ -38,6 +48,11 @@ export interface Briefing {
   sections: BriefingSection;
   status: string;
   type: string;
+  queuedAt?: string | null;
+  startedAt?: string | null;
+  attemptCount?: number;
+  lastAttemptAt?: string | null;
+  sourceKind?: BackgroundJobSourceKind;
 }
 
 // --- Migration ---
@@ -64,6 +79,16 @@ export const briefingMigrations: Migration[] = [
     version: 3,
     up: `ALTER TABLE briefings ADD COLUMN telegram_sent_at TEXT;`,
   },
+  {
+    version: 4,
+    up: `
+      ALTER TABLE briefings ADD COLUMN queued_at TEXT;
+      ALTER TABLE briefings ADD COLUMN started_at TEXT;
+      ALTER TABLE briefings ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE briefings ADD COLUMN last_attempt_at TEXT;
+      ALTER TABLE briefings ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'maintenance';
+    `,
+  },
 ];
 
 // --- Data Access ---
@@ -81,6 +106,11 @@ export function getLatestBriefing(storage: PluginContext["storage"]): Briefing |
     sections: JSON.parse(row.sections),
     status: row.status,
     type: row.type,
+    queuedAt: row.queued_at,
+    startedAt: row.started_at,
+    attemptCount: row.attempt_count ?? 0,
+    lastAttemptAt: row.last_attempt_at,
+    sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "maintenance",
   };
 }
 
@@ -97,6 +127,11 @@ export function getBriefingById(storage: PluginContext["storage"], id: string): 
     sections: JSON.parse(row.sections),
     status: row.status,
     type: row.type,
+    queuedAt: row.queued_at,
+    startedAt: row.started_at,
+    attemptCount: row.attempt_count ?? 0,
+    lastAttemptAt: row.last_attempt_at,
+    sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "maintenance",
   };
 }
 
@@ -114,11 +149,16 @@ export function listAllBriefings(storage: PluginContext["storage"]): Briefing[] 
   );
   return rows.map((row) => ({
     id: row.id,
-    generatedAt: row.generated_at,
-    sections: JSON.parse(row.sections),
-    status: row.status,
-    type: row.type,
-  }));
+      generatedAt: row.generated_at,
+      sections: JSON.parse(row.sections),
+      status: row.status,
+      type: row.type,
+      queuedAt: row.queued_at,
+      startedAt: row.started_at,
+      attemptCount: row.attempt_count ?? 0,
+      lastAttemptAt: row.last_attempt_at,
+      sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "maintenance",
+    }));
 }
 
 export function clearAllBriefings(storage: PluginContext["storage"]): number {
@@ -153,6 +193,73 @@ export function createResearchBriefing(
   );
 }
 
+export function getDailyBriefingState(storage: PluginContext["storage"]): { pending: boolean; generating: boolean; activeId: string | null } {
+  const rows = storage.query<{ id: string; status: string }>(
+    "SELECT id, status FROM briefings WHERE type = 'daily' AND status IN ('pending', 'generating') ORDER BY generated_at DESC LIMIT 1",
+  );
+  const row = rows[0];
+  return {
+    pending: row?.status === "pending",
+    generating: row?.status === "generating",
+    activeId: row?.id ?? null,
+  };
+}
+
+export function enqueueBriefingGeneration(
+  storage: PluginContext["storage"],
+  sourceKind: BackgroundJobSourceKind = "maintenance",
+): string {
+  const existing = storage.query<{ id: string; status: string; source_kind: string | null }>(
+    "SELECT id, status, source_kind FROM briefings WHERE type = 'daily' AND status IN ('pending', 'generating') ORDER BY generated_at DESC LIMIT 1",
+  )[0];
+  if (existing) {
+    if (existing.status === "pending" && sourceKind === "manual" && existing.source_kind !== "manual") {
+      storage.run(
+        "UPDATE briefings SET source_kind = 'manual' WHERE id = ?",
+        [existing.id],
+      );
+    }
+    return existing.id;
+  }
+
+  const id = crypto.randomUUID();
+  const queuedAt = new Date().toISOString();
+  storage.run(
+    "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type, queued_at, source_kind) VALUES (?, datetime('now'), '{}', null, 'pending', 'daily', ?, ?)",
+    [id, queuedAt, sourceKind],
+  );
+  return id;
+}
+
+export function recoverStaleBriefings(storage: PluginContext["storage"]): number {
+  const count = storage.query<{ cnt: number }>(
+    "SELECT COUNT(*) as cnt FROM briefings WHERE type = 'daily' AND status IN ('pending', 'generating')",
+  )[0]?.cnt ?? 0;
+  if (count > 0) {
+    storage.run(
+      `UPDATE briefings
+       SET status = 'pending',
+           started_at = NULL,
+           last_attempt_at = NULL,
+           raw_context = NULL,
+           sections = '{}',
+           attempt_count = CASE WHEN status = 'generating' THEN attempt_count + 1 ELSE attempt_count END
+       WHERE type = 'daily' AND status IN ('pending', 'generating')`,
+    );
+  }
+  return count;
+}
+
+export function listPendingDailyBriefings(storage: PluginContext["storage"]): Array<{ id: string; queuedAt: string; sourceKind: BackgroundJobSourceKind }> {
+  return storage.query<{ id: string; queued_at: string | null; generated_at: string; source_kind: string | null }>(
+    "SELECT id, queued_at, generated_at, source_kind FROM briefings WHERE type = 'daily' AND status = 'pending' ORDER BY CASE source_kind WHEN 'manual' THEN 0 WHEN 'schedule' THEN 1 ELSE 2 END, queued_at ASC, generated_at ASC",
+  ).map((row) => ({
+    id: row.id,
+    queuedAt: row.queued_at ?? row.generated_at,
+    sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "maintenance",
+  }));
+}
+
 function pruneOldBriefings(storage: PluginContext["storage"]): void {
   storage.run(
     "DELETE FROM briefings WHERE generated_at < datetime('now', '-30 days')",
@@ -165,6 +272,7 @@ function pruneOldBriefings(storage: PluginContext["storage"]): void {
 export async function generateBriefing(
   ctx: PluginContext,
   telemetry?: Pick<TelemetryAttributes, "traceId" | "runId">,
+  briefingId?: string,
 ): Promise<Briefing | null> {
   try {
     const health = await ctx.llm.health();
@@ -313,11 +421,27 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
   "suggestions": [{ "title": "string", "reason": "string", "action": "recall|task|learn (optional)", "actionTarget": "string (optional)" }]
 }`;
 
-  const id = crypto.randomUUID();
-  ctx.storage.run(
-    "INSERT INTO briefings (id, generated_at, sections, raw_context, status) VALUES (?, datetime('now'), '{}', ?, 'generating')",
-    [id, JSON.stringify(rawContext)],
-  );
+  const id = briefingId ?? crypto.randomUUID();
+  const hasExisting = briefingId
+    ? ctx.storage.query<{ id: string }>("SELECT id FROM briefings WHERE id = ?", [briefingId]).length > 0
+    : false;
+  if (hasExisting) {
+    ctx.storage.run(
+      `UPDATE briefings
+       SET status = 'generating',
+           raw_context = ?,
+           started_at = ?,
+           last_attempt_at = ?,
+           attempt_count = attempt_count + 1
+       WHERE id = ?`,
+      [JSON.stringify(rawContext), new Date().toISOString(), new Date().toISOString(), id],
+    );
+  } else {
+    ctx.storage.run(
+      "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type, queued_at, started_at, last_attempt_at, attempt_count, source_kind) VALUES (?, datetime('now'), '{}', ?, 'generating', 'daily', ?, ?, ?, 1, 'maintenance')",
+      [id, JSON.stringify(rawContext), new Date().toISOString(), new Date().toISOString(), new Date().toISOString()],
+    );
+  }
 
   try {
     const budget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
@@ -328,6 +452,7 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
         prompt,
         temperature: 0.8,
         maxRetries: 1,
+        timeout: BRIEFING_LLM_TIMEOUT,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
       },
@@ -364,6 +489,11 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
       sections: parsed,
       status: "ready",
       type: "daily",
+      queuedAt: null,
+      startedAt: new Date().toISOString(),
+      attemptCount: 1,
+      lastAttemptAt: new Date().toISOString(),
+      sourceKind: "maintenance",
     };
   } catch (err) {
     console.error("Briefing generation failed:", err instanceof Error ? err.message : String(err));

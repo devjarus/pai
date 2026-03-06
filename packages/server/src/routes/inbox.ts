@@ -1,13 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
-import { getLatestBriefing, getBriefingById, listBriefings, listAllBriefings, generateBriefing, clearAllBriefings, getResearchBriefings } from "../briefing.js";
-import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
-import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
-import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
-import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
+import { getLatestBriefing, getBriefingById, listBriefings, listAllBriefings, clearAllBriefings, getResearchBriefings, getDailyBriefingState } from "../briefing.js";
 import type { ResearchResultType } from "@personal-ai/core";
 
-export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
+export function registerInboxRoutes(app: FastifyInstance, { ctx, backgroundDispatcher }: ServerContext): void {
   app.get("/api/inbox", async () => {
     const briefing = getLatestBriefing(ctx.storage);
     if (!briefing) return { briefing: null };
@@ -15,12 +11,8 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext
   });
 
   app.post("/api/inbox/refresh", async () => {
-    generateBriefing(ctx).catch((err) => {
-      ctx.logger.error("Briefing refresh failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-    return { ok: true, message: "Briefing generation started" };
+    const briefingId = backgroundDispatcher.enqueueBriefing({ sourceKind: "manual", reason: "inbox-refresh" });
+    return { ok: true, briefingId, message: "Briefing queued" };
   });
 
   app.get("/api/inbox/history", async () => {
@@ -36,11 +28,8 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext
   // Unified feed — all briefing types in chronological order
   app.get("/api/inbox/all", async () => {
     const briefings = listAllBriefings(ctx.storage);
-    // Check if a briefing is currently being generated
-    const generating = ctx.storage.query<{ id: string }>(
-      "SELECT id FROM briefings WHERE status = 'generating' LIMIT 1",
-    );
-    return { briefings, generating: generating.length > 0 };
+    const state = getDailyBriefingState(ctx.storage);
+    return { briefings, generating: state.generating, pending: state.pending };
   });
 
   app.get("/api/inbox/research", async () => {
@@ -80,57 +69,18 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx }: ServerContext
 
     let jobId: string;
     if (execution === "analysis") {
-      jobId = createSwarmJob(ctx.storage, {
+      jobId = await backgroundDispatcher.enqueueSwarm({
         goal,
         threadId: null,
         resultType,
-      });
-      runSwarmInBackground(
-        {
-          storage: ctx.storage,
-          llm: ctx.llm,
-          logger: ctx.logger,
-          timezone: ctx.config.timezone,
-          provider: ctx.config.llm.provider,
-          model: ctx.config.llm.model,
-          contextWindow: ctx.config.llm.contextWindow,
-          sandboxUrl: ctx.config.sandboxUrl,
-          browserUrl: ctx.config.browserUrl,
-          dataDir: ctx.config.dataDir,
-          webSearch,
-          formatSearchResults,
-          fetchPage: fetchPageAsMarkdown,
-        },
-        jobId,
-      ).catch((err) => {
-        ctx.logger.error(`Rerun analysis failed: ${err instanceof Error ? err.message : String(err)}`);
+        sourceKind: "manual",
       });
     } else {
-      jobId = createResearchJob(ctx.storage, {
+      jobId = await backgroundDispatcher.enqueueResearch({
         goal,
         threadId: null,
         resultType: resultType as ResearchResultType,
-      });
-
-      runResearchInBackground(
-        {
-          storage: ctx.storage,
-          llm: ctx.llm,
-          logger: ctx.logger,
-          timezone: ctx.config.timezone,
-          provider: ctx.config.llm.provider,
-          model: ctx.config.llm.model,
-          contextWindow: ctx.config.llm.contextWindow,
-          sandboxUrl: ctx.config.sandboxUrl,
-          browserUrl: ctx.config.browserUrl,
-          dataDir: ctx.config.dataDir,
-          webSearch,
-          formatSearchResults,
-          fetchPage: fetchPageAsMarkdown,
-        },
-        jobId,
-      ).catch((err) => {
-        ctx.logger.error(`Rerun research failed: ${err instanceof Error ? err.message : String(err)}`);
+        sourceKind: "manual",
       });
     }
 

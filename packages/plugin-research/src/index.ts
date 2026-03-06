@@ -1,6 +1,6 @@
 import type { Plugin, PluginContext, Command, Migration } from "@personal-ai/core";
 
-export { runResearchInBackground, createResearchJob, getResearchJob, listResearchJobs, cancelResearchJob, recoverStaleResearchJobs, cancelAllRunningResearchJobs, clearCompletedJobs } from "./research.js";
+export { runResearchInBackground, createResearchJob, getResearchJob, listResearchJobs, listPendingResearchJobs, cancelResearchJob, recoverStaleResearchJobs, cancelAllRunningResearchJobs, clearCompletedJobs } from "./research.js";
 export type { ResearchJob, ResearchContext } from "./research.js";
 
 export const researchMigrations: Migration[] = [
@@ -28,6 +28,17 @@ export const researchMigrations: Migration[] = [
   {
     version: 2,
     up: `ALTER TABLE research_jobs ADD COLUMN result_type TEXT DEFAULT 'general';`,
+  },
+  {
+    version: 3,
+    up: `
+      ALTER TABLE research_jobs ADD COLUMN queued_at TEXT;
+      ALTER TABLE research_jobs ADD COLUMN started_at TEXT;
+      ALTER TABLE research_jobs ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE research_jobs ADD COLUMN last_attempt_at TEXT;
+      ALTER TABLE research_jobs ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'manual';
+      ALTER TABLE research_jobs ADD COLUMN source_schedule_id TEXT;
+    `,
   },
 ];
 

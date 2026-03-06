@@ -104,6 +104,13 @@ export interface ConfigInfo {
     backgroundLearning?: boolean;
     briefing?: boolean;
     knowledgeCleanup?: boolean;
+    llmTraffic?: {
+      maxConcurrent?: number;
+      startGapMs?: number;
+      startupDelayMs?: number;
+      swarmAgentConcurrency?: number;
+      reservedInteractiveSlots?: number;
+    };
     lastRun?: Record<string, string | null>;
   };
   knowledge?: {
@@ -158,11 +165,35 @@ export interface TelemetrySummary {
 export interface ProcessAggregate extends TelemetrySummary {
   process: string;
   avgStepCount: number;
+  avgQueueWaitMs: number;
+  p95QueueWaitMs: number;
 }
 
 export interface ModelAggregate extends TelemetrySummary {
   provider: string | null;
   model: string | null;
+}
+
+export interface QueueProcessAggregate {
+  process: string;
+  calls: number;
+  avgQueueWaitMs: number;
+  p95QueueWaitMs: number;
+}
+
+export interface QueueLaneSnapshot {
+  active: number;
+  queued: number;
+}
+
+export interface LiveQueueSnapshot {
+  activeRequests: number;
+  queuedRequests: number;
+  lanes: Record<"interactive" | "deferred" | "background", QueueLaneSnapshot>;
+  startupDelayUntil: string | null;
+  backgroundActiveWorkId: string | null;
+  backgroundActiveKind: string | null;
+  pendingBackgroundJobs: number;
 }
 
 export interface ObservabilityOverview {
@@ -171,6 +202,12 @@ export interface ObservabilityOverview {
   totals: TelemetrySummary;
   topProcesses: ProcessAggregate[];
   topModels: ModelAggregate[];
+  queue: {
+    avgWaitMs: number;
+    p95WaitMs: number;
+    byProcess: QueueProcessAggregate[];
+  };
+  live?: LiveQueueSnapshot;
 }
 
 export interface ThreadMessageUsage {

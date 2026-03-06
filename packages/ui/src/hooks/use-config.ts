@@ -40,7 +40,15 @@ export function useUpdateConfig() {
       backgroundLearning?: boolean;
       briefingEnabled?: boolean;
       knowledgeCleanup?: boolean;
+      llmTrafficMaxConcurrent?: number;
+      llmTrafficStartGapMs?: number;
+      llmTrafficStartupDelayMs?: number;
+      llmTrafficSwarmAgentConcurrency?: number;
+      llmTrafficReservedInteractiveSlots?: number;
       debugResearch?: boolean;
+      sandboxUrl?: string;
+      searchUrl?: string;
+      browserUrl?: string;
     }) => updateConfig(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: configKeys.all });

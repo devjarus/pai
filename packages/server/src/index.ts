@@ -9,7 +9,7 @@ import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import jwt from "jsonwebtoken";
-import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword, recoverStaleBackgroundJobs, cancelAllRunningBackgroundJobs, startSpan, finishSpan } from "@personal-ai/core";
+import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword, recoverStaleBackgroundJobs, cancelAllRunningBackgroundJobs, startSpan, finishSpan, configureLlmTraffic } from "@personal-ai/core";
 import type { AgentPlugin, PluginContext, ActiveTelemetrySpan } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
@@ -33,10 +33,13 @@ import { registerObservabilityRoutes } from "./routes/observability.js";
 import { runAllMigrations } from "./migrations.js";
 import { WorkerLoop } from "./workers.js";
 import { recoverStaleLearningRuns } from "./learning.js";
+import { BackgroundDispatcher, attachBackgroundDispatch } from "./background-dispatcher.js";
+import { recoverStaleBriefings } from "./briefing.js";
 
 export interface ServerContext {
   ctx: PluginContext;
   agents: AgentPlugin[];
+  backgroundDispatcher: BackgroundDispatcher;
   /** Reinitialize storage and LLM after config change */
   reinitialize(): void;
   /** Telegram bot lifecycle */
@@ -54,6 +57,7 @@ interface TelemetryRequest {
 
 export async function createServer(options?: { port?: number; host?: string }) {
   const config = loadConfig();
+  configureLlmTraffic(config.workers?.llmTraffic);
   const logger = createLogger(config.logLevel, { dir: config.dataDir });
 
   // On PaaS (Railway, etc.) volumes may mount after the container starts.
@@ -112,7 +116,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   runAllMigrations(storage);
 
   // Recover stale jobs from previous crash/kill
-  const staleCount = recoverStaleBackgroundJobs(storage) + recoverStaleResearchJobs(storage) + recoverStaleSwarmJobs(storage) + recoverStaleLearningRuns(storage);
+  const staleCount = recoverStaleBackgroundJobs(storage) + recoverStaleResearchJobs(storage) + recoverStaleSwarmJobs(storage) + recoverStaleLearningRuns(storage) + recoverStaleBriefings(storage);
   if (staleCount > 0) logger.warn(`Recovered ${staleCount} stale jobs from previous run`);
 
   // Password reset via environment variable
@@ -131,6 +135,8 @@ export async function createServer(options?: { port?: number; host?: string }) {
   }
 
   const ctx: PluginContext = { config, storage, llm, logger };
+  const backgroundDispatcher = new BackgroundDispatcher(ctx);
+  attachBackgroundDispatch(ctx, backgroundDispatcher);
   const agents: AgentPlugin[] = [assistantPlugin, curatorPlugin];
 
   // Telegram bot state — use ReturnType to avoid importing grammy types
@@ -212,6 +218,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
 
     // Reload config and recreate connections
     const newConfig = loadConfig();
+    configureLlmTraffic(newConfig.workers?.llmTraffic);
     const newLogger = createLogger(newConfig.logLevel, { dir: newConfig.dataDir });
     const newStorage = createStorage(newConfig.dataDir, newLogger);
     const newLlm = createLLMClient(newConfig.llm, newLogger, newStorage);
@@ -225,6 +232,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
       llm: newLlm,
       logger: newLogger,
     });
+    attachBackgroundDispatch(ctx, backgroundDispatcher);
 
     // Close old storage after a delay to let in-flight requests drain
     pendingCloseStorage = oldStorage;
@@ -371,7 +379,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   }
 
   const serverCtx: ServerContext = {
-    ctx, agents, reinitialize,
+    ctx, agents, backgroundDispatcher, reinitialize,
     get telegramBot() { return telegramBot; },
     telegramStatus,
     startTelegramBot,
@@ -562,6 +570,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
 
   // --- Background workers (briefing, schedules, learning) ---
   const workerLoop = new WorkerLoop(ctx);
+  backgroundDispatcher.start();
   workerLoop.start();
 
   // Write PID file for process management
@@ -576,6 +585,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     try { unlinkSync(pidFile); } catch { /* ignore */ }
     stopTelegramBot();
     workerLoop.stop();
+    backgroundDispatcher.stop();
     // Cancel any pending storage close from reinitialize
     if (pendingCloseTimer) {
       clearTimeout(pendingCloseTimer);

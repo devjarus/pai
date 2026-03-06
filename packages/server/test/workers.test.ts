@@ -5,10 +5,8 @@ import type { PluginContext } from "@personal-ai/core";
 // ---------------------------------------------------------------------------
 // Mock all external dependencies so we test WorkerLoop in isolation
 // ---------------------------------------------------------------------------
-const mockGenerateBriefing = vi.fn().mockResolvedValue(undefined);
 const mockGetLatestBriefing = vi.fn().mockReturnValue(null);
 vi.mock("../src/briefing.js", () => ({
-  generateBriefing: (...args: unknown[]) => mockGenerateBriefing(...args),
   getLatestBriefing: (...args: unknown[]) => mockGetLatestBriefing(...args),
 }));
 
@@ -85,6 +83,11 @@ function createMockCtx(): PluginContext {
       warn: vi.fn(),
       error: vi.fn(),
     },
+    backgroundJobs: {
+      enqueueResearch: vi.fn().mockResolvedValue("job-1"),
+      enqueueSwarm: vi.fn().mockResolvedValue("swarm-1"),
+      enqueueBriefing: vi.fn().mockResolvedValue("briefing-1"),
+    },
   } as unknown as PluginContext;
 }
 
@@ -146,7 +149,7 @@ describe("WorkerLoop", () => {
     loop.start();
 
     expect(mockGetLatestBriefing).toHaveBeenCalled();
-    expect(mockGenerateBriefing).toHaveBeenCalledTimes(1);
+    expect(ctx.backgroundJobs?.enqueueBriefing).toHaveBeenCalledTimes(1);
 
     loop.stop();
   });
@@ -160,7 +163,7 @@ describe("WorkerLoop", () => {
     const loop = new WorkerLoop(ctx, { generateInitialBriefing: true });
     loop.start();
 
-    expect(mockGenerateBriefing).not.toHaveBeenCalled();
+    expect(ctx.backgroundJobs?.enqueueBriefing).not.toHaveBeenCalled();
 
     loop.stop();
   });
@@ -173,7 +176,7 @@ describe("WorkerLoop", () => {
     loop.start();
 
     expect(mockGetLatestBriefing).toHaveBeenCalled();
-    expect(mockGenerateBriefing).not.toHaveBeenCalled();
+    expect(ctx.backgroundJobs?.enqueueBriefing).not.toHaveBeenCalled();
 
     loop.stop();
   });
@@ -185,13 +188,13 @@ describe("WorkerLoop", () => {
     const loop = new WorkerLoop(ctx, { briefingIntervalMs: 5000, generateInitialBriefing: true });
     loop.start();
 
-    expect(mockGenerateBriefing).not.toHaveBeenCalled();
+    expect(ctx.backgroundJobs?.enqueueBriefing).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(5000);
-    expect(mockGenerateBriefing).toHaveBeenCalledTimes(1);
+    expect(ctx.backgroundJobs?.enqueueBriefing).toHaveBeenCalledTimes(1);
 
     vi.advanceTimersByTime(5000);
-    expect(mockGenerateBriefing).toHaveBeenCalledTimes(2);
+    expect(ctx.backgroundJobs?.enqueueBriefing).toHaveBeenCalledTimes(2);
 
     loop.stop();
   });
@@ -279,20 +282,12 @@ describe("WorkerLoop", () => {
     vi.advanceTimersByTime(1000);
 
     expect(mockMarkScheduleRun).toHaveBeenCalledWith(ctx.storage, "s1");
-    expect(mockCreateResearchJob).toHaveBeenCalledWith(ctx.storage, {
+    expect(ctx.backgroundJobs?.enqueueResearch).toHaveBeenCalledWith({
       goal: "Check news",
       threadId: "t1",
+      sourceKind: "schedule",
+      sourceScheduleId: "s1",
     });
-    expect(mockRunResearchInBackground).toHaveBeenCalledTimes(1);
-    expect(mockRunResearchInBackground).toHaveBeenCalledWith(
-      expect.objectContaining({
-        storage: ctx.storage,
-        sandboxUrl: "http://sandbox",
-        browserUrl: "http://browser",
-        dataDir: "/tmp",
-      }),
-      "job-1",
-    );
 
     loop.stop();
   });
@@ -312,19 +307,12 @@ describe("WorkerLoop", () => {
     vi.advanceTimersByTime(1000);
 
     expect(mockMarkScheduleRun).toHaveBeenCalledWith(ctx.storage, "s2");
-    expect(mockCreateSwarmJob).toHaveBeenCalledWith(ctx.storage, {
+    expect(ctx.backgroundJobs?.enqueueSwarm).toHaveBeenCalledWith({
       goal: "Compare revenue trends",
       threadId: "t2",
+      sourceKind: "schedule",
+      sourceScheduleId: "s2",
     });
-    expect(mockRunSwarmInBackground).toHaveBeenCalledWith(
-      expect.objectContaining({
-        storage: ctx.storage,
-        sandboxUrl: "http://sandbox",
-        browserUrl: "http://browser",
-        dataDir: "/tmp",
-      }),
-      "swarm-1",
-    );
 
     loop.stop();
   });

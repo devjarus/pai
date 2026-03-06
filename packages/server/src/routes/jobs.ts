@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
 import {
   listJobs,
+  getJob,
   cancelBackgroundJob,
   forceDeleteBackgroundJob,
   clearCompletedBackgroundJobs,
@@ -60,6 +61,14 @@ function getStoredPresentation(
 }
 
 export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext): void {
+  const { backgroundDispatcher } = serverCtx;
+
+  function queueState(id: string, status: string) {
+    return status === "pending"
+      ? backgroundDispatcher.getJobQueueMetadata(id)
+      : { queuePosition: null, waitingReason: null };
+  }
+
   // List all background jobs — DB-backed active + persisted research jobs
   app.get("/api/jobs", async () => {
     // Background jobs from DB (crawl + research status/progress)
@@ -70,38 +79,62 @@ export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext
       status: j.status,
       progress: j.progress,
       startedAt: j.startedAt,
+      queuedAt: j.queuedAt ?? j.startedAt,
+      attemptCount: j.attemptCount ?? 0,
+      lastAttemptAt: j.lastAttemptAt ?? null,
+      sourceKind: j.sourceKind ?? "manual",
+      sourceScheduleId: j.sourceScheduleId ?? null,
+      ...queueState(j.id, j.status),
       error: j.error ?? null,
       result: j.result ?? null,
       resultType: j.resultType ?? null,
     }));
 
     // Persisted research jobs from DB (with extra detail fields)
-    const research = listResearchJobs(serverCtx.ctx.storage).map((j) => ({
-      id: j.id,
-      type: "research" as const,
-      label: j.goal,
-      status: j.status,
-      progress: `${j.searchesUsed}/${j.budgetMaxSearches} searches, ${j.pagesLearned}/${j.budgetMaxPages} pages`,
-      startedAt: j.createdAt,
-      completedAt: j.completedAt,
-      error: null,
-      result: j.report ? j.report.slice(0, 300) : null,
-      resultType: j.resultType ?? null,
-    }));
+    const research = listResearchJobs(serverCtx.ctx.storage).map((j) => {
+      const tracked = getJob(serverCtx.ctx.storage, j.id);
+      return {
+        id: j.id,
+        type: "research" as const,
+        label: j.goal,
+        status: j.status,
+        progress: tracked?.progress ?? `${j.searchesUsed}/${j.budgetMaxSearches} searches, ${j.pagesLearned}/${j.budgetMaxPages} pages`,
+        startedAt: j.startedAt ?? j.createdAt,
+        queuedAt: j.queuedAt,
+        completedAt: j.completedAt,
+        attemptCount: j.attemptCount,
+        lastAttemptAt: j.lastAttemptAt,
+        sourceKind: j.sourceKind,
+        sourceScheduleId: j.sourceScheduleId,
+        ...queueState(j.id, j.status),
+        error: tracked?.error ?? null,
+        result: j.report ? j.report.slice(0, 300) : tracked?.result ?? null,
+        resultType: j.resultType ?? null,
+      };
+    });
 
     // Persisted swarm jobs from DB
-    const swarm = listSwarmJobs(serverCtx.ctx.storage).map((j) => ({
-      id: j.id,
-      type: "swarm" as const,
-      label: j.goal,
-      status: j.status,
-      progress: `${j.agentsDone}/${j.agentCount} agents`,
-      startedAt: j.createdAt,
-      completedAt: j.completedAt,
-      error: null,
-      result: j.synthesis ? j.synthesis.slice(0, 300) : null,
-      resultType: j.resultType ?? null,
-    }));
+    const swarm = listSwarmJobs(serverCtx.ctx.storage).map((j) => {
+      const tracked = getJob(serverCtx.ctx.storage, j.id);
+      return {
+        id: j.id,
+        type: "swarm" as const,
+        label: j.goal,
+        status: j.status,
+        progress: tracked?.progress ?? `${j.agentsDone}/${j.agentCount} agents`,
+        startedAt: j.startedAt ?? j.createdAt,
+        queuedAt: j.queuedAt,
+        completedAt: j.completedAt,
+        attemptCount: j.attemptCount,
+        lastAttemptAt: j.lastAttemptAt,
+        sourceKind: j.sourceKind,
+        sourceScheduleId: j.sourceScheduleId,
+        ...queueState(j.id, j.status),
+        error: tracked?.error ?? null,
+        result: j.synthesis ? j.synthesis.slice(0, 300) : tracked?.result ?? null,
+        resultType: j.resultType ?? null,
+      };
+    });
 
     // Merge: active jobs first, then persisted (dedup by id)
     const activeIds = new Set(active.map((j) => j.id));
@@ -119,7 +152,10 @@ export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext
     const researchJob = getResearchJob(serverCtx.ctx.storage, request.params.id);
     if (researchJob) {
       return {
-        job: researchJob,
+        job: {
+          ...researchJob,
+          ...queueState(researchJob.id, researchJob.status),
+        },
         presentation: getStoredPresentation(
           serverCtx,
           researchJob.id,
@@ -134,7 +170,10 @@ export function registerJobRoutes(app: FastifyInstance, serverCtx: ServerContext
     const swarmJob = getSwarmJob(serverCtx.ctx.storage, request.params.id);
     if (swarmJob) {
       return {
-        job: swarmJob,
+        job: {
+          ...swarmJob,
+          ...queueState(swarmJob.id, swarmJob.status),
+        },
         presentation: getStoredPresentation(
           serverCtx,
           swarmJob.id,
