@@ -120,7 +120,50 @@ Structured NDJSON logging via `createLogger()` with dual output:
 - **Rotation:** Size-based, 5MB max with 1 backup (`pai.log.1`). Checked at logger creation.
 - **Debugging:** Check `~/.personal-ai/data/pai.log` (or your `PAI_DATA_DIR`) for post-hoc debugging. Logs persist even when stderr is `silent`.
 
-## Git Hooks
+## PR Workflow
+
+This repo uses a fork-based PR workflow. The upstream is `devjarus/pai`, the fork is `sunchitanand/pai`.
+
+### Rules
+- **One logical feature per PR** — no cross-feature commits
+- **Single clean commit per PR** — squash before pushing
+- **Always branch from `origin/main`** — fetch and rebase before starting
+- **Push to fork, PR to upstream** — `git push fork <branch>`, then `gh pr create --repo devjarus/pai`
+- **`HUSKY=0` required for push** — pre-push hooks run `pnpm ci` which is slow; skip with `HUSKY=0 git push fork <branch>`
+- **No stale branches** — delete branches after PR merges
+
+### Workflow
+
+```bash
+# 1. Sync with upstream
+git fetch origin
+git checkout main
+git rebase origin/main
+
+# 2. Create feature branch
+git checkout -b feat/my-feature
+
+# 3. Make changes, build, test
+pnpm build && pnpm test
+
+# 4. Single commit
+git add -A
+git commit -m "feat: description"
+
+# 5. Push to fork
+HUSKY=0 git push fork feat/my-feature
+
+# 6. Create PR
+gh pr create --repo devjarus/pai --head sunchitanand:feat/my-feature --base main --title "feat: description" --body "..."
+```
+
+### Before raising a PR
+- `pnpm build` must pass with no errors
+- `pnpm test` must pass (833+ tests)
+- No cross-branch contamination — check `git log --oneline origin/main..HEAD`
+- Don't include `.ralph/`, `PROMPT.md`, or other agent artifacts in commits
+
+
 
 Pre-commit and pre-push hooks via Husky:
 

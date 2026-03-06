@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useConfig, useUpdateConfig, useMemoryStats, useBrowseDir, useHealth, useLearningRuns } from "@/hooks";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
 import { DiagnosticsPanel } from "@/components/settings/DiagnosticsPanel";
-import { FolderIcon, FolderOpenIcon, ChevronUpIcon, ChevronDownIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon, LogOutIcon } from "lucide-react";
+import { FolderIcon, FolderOpenIcon, ChevronUpIcon, ChevronDownIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon, LogOutIcon, SunIcon, MoonIcon, MonitorIcon } from "lucide-react";
 import type { LearningRun } from "@/api";
 import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
@@ -40,6 +41,7 @@ export default function Settings() {
   const { data: health, isLoading: healthLoading } = useHealth();
   const { data: learningData } = useLearningRuns();
   const { logout } = useAuth();
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
 
   const loading = configLoading || statsLoading;
@@ -470,6 +472,50 @@ export default function Settings() {
             </CardContent>
           </Card>
         )}
+
+        {/* Appearance */}
+        <Card className="gap-0 overflow-hidden border-border/50 bg-card/50 py-0">
+          <CardHeader className="px-5 py-4">
+            <CardTitle className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Appearance
+              <InfoBubble text="Choose between light, dark, or system theme. System theme automatically matches your device's appearance settings." side="right" />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-0 px-0 py-0">
+            <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-3">
+              <label className="text-xs text-muted-foreground">Theme</label>
+              <div className="flex gap-1">
+                <Button
+                  variant={theme === "light" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 gap-1.5 px-2.5 text-xs"
+                  onClick={() => setTheme("light")}
+                >
+                  <SunIcon className="size-3.5" />
+                  Light
+                </Button>
+                <Button
+                  variant={theme === "dark" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 gap-1.5 px-2.5 text-xs"
+                  onClick={() => setTheme("dark")}
+                >
+                  <MoonIcon className="size-3.5" />
+                  Dark
+                </Button>
+                <Button
+                  variant={theme === "system" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 gap-1.5 px-2.5 text-xs"
+                  onClick={() => setTheme("system")}
+                >
+                  <MonitorIcon className="size-3.5" />
+                  System
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Telegram Bot */}
         {config && (

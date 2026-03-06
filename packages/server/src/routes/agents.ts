@@ -199,6 +199,7 @@ function mapThread(row: ThreadRow) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     messageCount: row.message_count,
+    lastMessage: row.last_message ?? undefined,
   };
 }
 

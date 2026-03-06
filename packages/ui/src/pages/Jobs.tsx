@@ -405,7 +405,7 @@ export default function Jobs() {
           <div className="flex h-full">
             {/* Drag handle — desktop only */}
             <div onMouseDown={onDragStart} className="hidden md:block h-full w-2 shrink-0 cursor-col-resize bg-border/20 hover:bg-primary/30 active:bg-primary/40 transition-colors" />
-            <div style={{ width: undefined }} className="fixed right-0 top-0 z-40 h-full w-full overflow-y-auto border-l border-border/40 bg-[#0f0f0f] md:static md:h-full" ref={(el) => { if (el && window.innerWidth >= 768) el.style.width = `${panelWidth}px`; }}>
+            <div style={{ width: undefined }} className="fixed right-0 top-0 z-40 h-full w-full overflow-y-auto border-l border-border/40 bg-card md:static md:h-full" ref={(el) => { if (el && window.innerWidth >= 768) el.style.width = `${panelWidth}px`; }}>
             <div className="p-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
