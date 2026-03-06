@@ -6,14 +6,9 @@ import { startResearchPushLoop } from "../src/push.js";
 import type { Bot } from "grammy";
 import type { Storage, Logger } from "@personal-ai/core";
 
-// Mock telegraph module so it doesn't make real HTTP calls
-const mockGetOrCreateAccount = vi.fn().mockResolvedValue(null);
-const mockUploadImage = vi.fn().mockResolvedValue(null);
-const mockCreatePage = vi.fn().mockResolvedValue(null);
-vi.mock("../src/telegraph.js", () => ({
-  getOrCreateAccount: (...args: unknown[]) => mockGetOrCreateAccount(...args),
-  uploadImage: (...args: unknown[]) => mockUploadImage(...args),
-  createPage: (...args: unknown[]) => mockCreatePage(...args),
+const mockSendReportDocumentToTelegram = vi.fn().mockResolvedValue(undefined);
+vi.mock("../src/report-document.js", () => ({
+  sendReportDocumentToTelegram: (...args: unknown[]) => mockSendReportDocumentToTelegram(...args),
 }));
 
 function createMockStorage(rows: Array<{ id: string; sections: string }> = []): Storage {
@@ -31,6 +26,7 @@ function createMockBot(): Bot {
       sendMessage: vi.fn().mockResolvedValue({ message_id: 1 }),
       sendPhoto: vi.fn().mockResolvedValue({ message_id: 2 }),
       sendMediaGroup: vi.fn().mockResolvedValue([]),
+      sendDocument: vi.fn().mockResolvedValue({ message_id: 3 }),
     },
   } as unknown as Bot;
 }
@@ -105,11 +101,20 @@ describe("startResearchPushLoop", () => {
     // Allow async to settle
     await vi.advanceTimersByTimeAsync(0);
 
-    // Telegraph returns null (mocked) so falls back to text messages
     expect(bot.api.sendMessage).toHaveBeenCalledWith(
       12345,
       expect.stringContaining("Research Complete"),
-      { parse_mode: "HTML" },
+      { parse_mode: "HTML", protect_content: true },
+    );
+    expect(mockSendReportDocumentToTelegram).toHaveBeenCalledWith(
+      storage,
+      bot,
+      12345,
+      expect.objectContaining({
+        title: "AI trends",
+        markdown: "AI is growing fast",
+      }),
+      logger,
     );
 
     // Should mark as sent
@@ -121,7 +126,7 @@ describe("startResearchPushLoop", () => {
     handle.stop();
   });
 
-  it("sends summary, inline chart photo, and Telegraph button when visuals are present", async () => {
+  it("sends summary, inline chart photo, and private report document when visuals are present", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pai-push-visuals-"));
     tempDirs.push(dir);
     const imagePath = join(dir, "trend.png");
@@ -149,12 +154,7 @@ describe("startResearchPushLoop", () => {
       .mockReturnValueOnce([researchRow]) // briefings query
       .mockReturnValueOnce([{ thread_id: "thread-1" }]) // research_jobs query
       .mockReturnValueOnce([{ chat_id: 12345 }]) // telegram_threads query
-      .mockReturnValueOnce([{ id: "art-1", job_id: "job-with-visual", name: "trend.png", mime_type: "image/png", file_path: imagePath, size: 3, created_at: "now" }]) // sendVisuals getArtifact
-      .mockReturnValueOnce([{ id: "art-1", job_id: "job-with-visual", name: "trend.png", mime_type: "image/png", file_path: imagePath, size: 3, created_at: "now" }]); // telegraph image getArtifact
-
-    mockGetOrCreateAccount.mockResolvedValue({ access_token: "token" });
-    mockUploadImage.mockResolvedValue("https://cdn.example.com/trend.png");
-    mockCreatePage.mockResolvedValue({ url: "https://telegra.ph/report" });
+      .mockReturnValueOnce([{ id: "art-1", job_id: "job-with-visual", name: "trend.png", mime_type: "image/png", file_path: imagePath, size: 3, created_at: "now" }]); // sendVisuals getArtifact
 
     const bot = createMockBot();
     const logger = createMockLogger();
@@ -166,15 +166,18 @@ describe("startResearchPushLoop", () => {
     expect(bot.api.sendMessage).toHaveBeenCalledWith(
       12345,
       expect.stringContaining("Analysis Complete"),
-      { parse_mode: "HTML" },
+      { parse_mode: "HTML", protect_content: true },
     );
     expect(bot.api.sendPhoto).toHaveBeenCalledOnce();
-    expect(bot.api.sendMessage).toHaveBeenCalledWith(
+    expect(mockSendReportDocumentToTelegram).toHaveBeenCalledWith(
+      storage,
+      bot,
       12345,
-      "\uD83D\uDCC4 Full report",
       expect.objectContaining({
-        reply_markup: expect.anything(),
+        title: "AI revenue trends",
+        markdown: "Revenue is up strongly.",
       }),
+      logger,
     );
 
     handle.stop();
@@ -255,11 +258,20 @@ describe("startResearchPushLoop", () => {
     vi.advanceTimersByTime(1000);
     await vi.advanceTimersByTimeAsync(0);
 
-    // Telegraph returns null (mocked) so falls back to text messages
     expect(bot.api.sendMessage).toHaveBeenCalledWith(
       67890,
       expect.stringContaining("Analysis Complete"),
-      { parse_mode: "HTML" },
+      { parse_mode: "HTML", protect_content: true },
+    );
+    expect(mockSendReportDocumentToTelegram).toHaveBeenCalledWith(
+      storage,
+      bot,
+      67890,
+      expect.objectContaining({
+        title: "Market analysis",
+        markdown: "Markets are up",
+      }),
+      logger,
     );
 
     expect(storage.run).toHaveBeenCalledWith(

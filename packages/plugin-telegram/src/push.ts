@@ -1,10 +1,9 @@
-import { InlineKeyboard } from "grammy";
 import type { Bot } from "grammy";
 import type { Storage, Logger } from "@personal-ai/core";
-import { buildReportPresentation, deriveReportVisuals, extractPresentationBlocks, getArtifact, listArtifacts } from "@personal-ai/core";
+import { buildReportPresentation, deriveReportVisuals, extractPresentationBlocks } from "@personal-ai/core";
 import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse } from "./formatter.js";
-import { getOrCreateAccount, uploadImage, createPage } from "./telegraph.js";
 import { sendVisualsToTelegram } from "./delivery.js";
+import { sendReportDocumentToTelegram } from "./report-document.js";
 
 function findChatIdForBriefing(storage: Storage, briefingId: string): number | null {
   let jobId: string | null = null;
@@ -40,7 +39,7 @@ async function sendToTelegramChat(bot: Bot, chatId: number, html: string, logger
   const parts = splitMessage(html);
   try {
     for (const part of parts) {
-      await bot.api.sendMessage(chatId, part, { parse_mode: "HTML" });
+      await bot.api.sendMessage(chatId, part, { parse_mode: "HTML", protect_content: true });
     }
   } catch (err) {
     logger.warn("Failed to send Telegram message", {
@@ -93,58 +92,18 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
           const preview = makePreview(formattedReport);
           const previewHtml = `${emoji} <b>${label}: ${escapeHTML(title)}</b>\n\n${markdownToTelegramHTML(preview)}`;
           await sendToTelegramChat(bot, chatId, previewHtml, logger);
-          await sendVisualsToTelegram(storage, bot, chatId, presentation.visuals, logger);
-
-          // Collect image artifacts for embedding in Telegraph
-          const telegraphImages: Array<{ name: string; url: string }> = [];
-          if (jobId) {
-            try {
-              const visualArtifacts = presentation.visuals.length > 0
-                ? presentation.visuals.map((visual) => ({ artifactId: visual.artifactId, title: visual.title }))
-                : listArtifacts(storage, jobId)
-                  .filter((artifact) => artifact.mimeType.startsWith("image/"))
-                  .map((artifact) => ({ artifactId: artifact.id, title: artifact.name }));
-
-              for (const visual of visualArtifacts) {
-                const artifact = getArtifact(storage, visual.artifactId);
-                if (artifact) {
-                  const imgUrl = await uploadImage(artifact.data, artifact.name, logger);
-                  if (imgUrl) {
-                    telegraphImages.push({ name: visual.title, url: imgUrl });
-                  }
-                }
-              }
-            } catch (err) {
-              logger.warn("Failed to upload artifacts to Telegraph", { jobId, error: err instanceof Error ? err.message : String(err) });
-            }
-          }
-
-          // Try to publish as Telegraph article (Instant View)
-          let telegraphUrl: string | null = null;
-          try {
-            const account = await getOrCreateAccount(storage, logger);
-            if (account) {
-              const page = await createPage(account, title, presentation.report, telegraphImages, logger);
-              if (page) {
-                telegraphUrl = page.url;
-              }
-            }
-          } catch (err) {
-            logger.warn("Telegraph publish failed, falling back to text", { error: err instanceof Error ? err.message : String(err) });
-          }
-
-          if (telegraphUrl) {
-            const keyboard = new InlineKeyboard().url("Read Full Report", telegraphUrl);
-            try {
-              await bot.api.sendMessage(chatId, "\uD83D\uDCC4 Full report", {
-                parse_mode: "HTML",
-                reply_markup: keyboard,
-              });
-            } catch {
-              await bot.api.sendMessage(chatId, telegraphUrl);
-            }
-            logger.info("Research report published to Telegraph", { briefingId: row.id, url: telegraphUrl });
-          }
+          await sendVisualsToTelegram(storage, bot, chatId, presentation.visuals, logger, { protectContent: true });
+          await sendReportDocumentToTelegram(storage, bot, chatId, {
+            title,
+            markdown: presentation.report,
+            fileName: `${title}.html`,
+            visuals: presentation.visuals.map((visual) => ({
+              artifactId: visual.artifactId,
+              title: visual.title,
+              caption: visual.caption,
+              order: visual.order,
+            })),
+          }, logger);
 
           storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
           logger.info("Research report pushed to Telegram", { briefingId: row.id, chatId });

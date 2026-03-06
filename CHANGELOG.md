@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Telegram report privacy** — Removed Telegraph-based public article publishing from the Telegram bot. Research and analysis reports are now delivered as protected Telegram messages, images, and attached HTML report documents instead of public-by-link pages.
 - **SVG XSS prevention** — Removed `image/svg+xml` from inline display whitelist for artifacts. SVGs are now force-downloaded, preventing stored XSS via embedded JavaScript. Added CSP `sandbox` header as defense-in-depth for SVG/HTML artifacts.
 - **SQL injection hardening** — Added table name allowlist validation to `resolveIdPrefix()` to prevent SQL injection via table name interpolation.
 - **Login brute-force protection** — Reduced auth login rate limit from 20/min to 5/min. Added 3/min rate limit on setup endpoint.
@@ -29,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Analysis execution mode** — Schedules, Inbox reruns, and assistant-created recurring jobs now distinguish between lightweight `research` runs and deeper `analysis` runs. Analysis schedules dispatch through the swarm pipeline, preserve execution mode on rerun, and receive sandbox/browser/dataDir context so scheduled visual reports can use code execution, browser tools, and artifacts.
 - **Shared report presentation pipeline** — Research and swarm jobs now persist a normalized presentation payload with execution mode, visuals, structured data, and merged render specs. Jobs, Inbox, web chat, and Telegram now consume the same report/visual contract instead of scraping fenced JSON from markdown.
-- **Telegram visual delivery** — Report summaries now send inline chart photos before the full-report button, and direct chat artifact delivery sends image outputs as photos instead of generic documents.
+- **Telegram visual delivery** — Report summaries now send inline chart photos before the attached full-report document, and direct chat artifact delivery sends image outputs as photos instead of generic documents.
 - **Filesystem-backed artifacts** — Artifacts (screenshots, charts, reports) are now stored on disk at `{dataDir}/artifacts/` instead of as SQLite BLOBs. Keeps the database lean and makes cleanup trivial. Migration v2 runs automatically on server startup — no manual setup required.
 - **Artifact auto-cleanup** — Background worker deletes artifacts older than 7 days (runs every 24 hours). Also cleans up orphan files on disk that have no matching DB records.
 - **Telegram HTML report readability** — Downloaded Telegram research/swarm report documents now use richer markdown-to-HTML rendering with proper headings, paragraphs, ordered/unordered lists, blockquotes, links, and improved document styling for browser viewing.
