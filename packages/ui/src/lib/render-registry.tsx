@@ -24,7 +24,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
       const [open, setOpen] = useState(props.defaultOpen !== false);
       if (props.collapsible) {
         return (
-          <div className="border border-zinc-700/50 rounded-lg mb-3 overflow-hidden">
+          <div className="border border-zinc-700/50 rounded-lg mb-5 overflow-hidden">
             <button
               className="w-full flex items-center justify-between px-4 py-3 bg-zinc-800/50 hover:bg-zinc-800 text-left"
               onClick={() => setOpen(!open)}
@@ -41,14 +41,14 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
                 <ChevronRight className="w-4 h-4 text-zinc-400" />
               )}
             </button>
-            {open && <div className="px-4 py-3">{children}</div>}
+            {open && <div className="px-4 py-4 space-y-3">{children}</div>}
           </div>
         );
       }
       return (
-        <div className="mb-4">
-          <h3 className="font-semibold text-zinc-100 mb-2">{props.title}</h3>
-          {props.subtitle && <p className="text-sm text-zinc-400 mb-2">{props.subtitle}</p>}
+        <div className="mb-6">
+          <h3 className="font-semibold text-zinc-100 mb-3">{props.title}</h3>
+          {props.subtitle && <p className="text-sm text-zinc-400 mb-3">{props.subtitle}</p>}
           {children}
         </div>
       );
@@ -57,7 +57,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
     Stack: ({ props, children }) => {
       const dir = props.direction === "horizontal" ? "flex-row" : "flex-col";
       const gap =
-        props.gap === "sm" ? "gap-2" : props.gap === "lg" ? "gap-6" : "gap-4";
+        props.gap === "sm" ? "gap-3" : props.gap === "lg" ? "gap-8" : "gap-5";
       const wrap = props.wrap ? "flex-wrap" : "";
       return <div className={`flex ${dir} ${gap} ${wrap}`}>{children}</div>;
     },
@@ -65,7 +65,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
     Grid: ({ props, children }) => {
       const cols = props.columns ?? 3;
       const gap =
-        props.gap === "sm" ? "gap-2" : props.gap === "lg" ? "gap-6" : "gap-4";
+        props.gap === "sm" ? "gap-3" : props.gap === "lg" ? "gap-8" : "gap-5";
       const colClass =
         cols <= 2
           ? "md:grid-cols-2"

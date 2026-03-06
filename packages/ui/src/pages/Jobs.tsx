@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -149,6 +149,21 @@ export default function Jobs() {
   const jobs = jobsData?.jobs ?? [];
 
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+
+  // Resizable sidebar
+  const [panelWidth, setPanelWidth] = useState(480);
+  const dragging = useRef(false);
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    const onMove = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      setPanelWidth(Math.max(380, Math.min(window.innerWidth - ev.clientX, window.innerWidth * 0.6)));
+    };
+    const onUp = () => { dragging.current = false; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
   const { data: jobDetailData, isLoading: detailLoading } = useJobDetail(selectedJobId);
   const selectedJob = jobDetailData?.job ?? null;
   const presentation = jobDetailData?.presentation;
@@ -342,7 +357,10 @@ export default function Jobs() {
             className="fixed inset-0 z-30 bg-black/60 md:hidden"
             onClick={() => setSelectedJobId(null)}
           />
-          <div className="fixed right-0 top-0 z-40 h-full w-full overflow-y-auto border-l border-border/40 bg-[#0f0f0f] md:static md:w-[480px]">
+          <div className="flex h-full">
+            {/* Drag handle — desktop only */}
+            <div onMouseDown={onDragStart} className="hidden md:block h-full w-2 shrink-0 cursor-col-resize bg-border/20 hover:bg-primary/30 active:bg-primary/40 transition-colors" />
+            <div style={{ width: undefined }} className="fixed right-0 top-0 z-40 h-full w-full overflow-y-auto border-l border-border/40 bg-[#0f0f0f] md:static md:h-full" ref={(el) => { if (el && window.innerWidth >= 768) el.style.width = `${panelWidth}px`; }}>
             <div className="p-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -689,6 +707,7 @@ export default function Jobs() {
                 </div>
               )}
             </div>
+          </div>
           </div>
         </>
       )}
