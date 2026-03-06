@@ -1,4 +1,4 @@
-import { generateText, tool, stepCountIs } from "ai";
+import { tool, stepCountIs } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { nanoid } from "nanoid";
@@ -14,6 +14,7 @@ import {
   buildReportPresentation,
   deriveReportVisuals,
   extractPresentationBlocks,
+  instrumentedGenerateText,
 } from "@personal-ai/core";
 import { upsertJob, updateJobStatus } from "@personal-ai/core";
 import { storeArtifact, guessMimeType } from "@personal-ai/core";
@@ -314,16 +315,27 @@ async function planSwarm(ctx: SwarmContext, goal: string, resultType?: string): 
       ? `\n\nResearch domain: ${resultType}. Tailor subtasks for ${resultType} analysis.`
       : "";
     const budget = getContextBudget(ctx.provider ?? "ollama", ctx.model ?? "", ctx.contextWindow);
-    const result = await generateText({
-      model: ctx.llm.getModel() as LanguageModel,
-      system: getPlannerPrompt(resultType, ctx.timezone),
-      messages: [
-        { role: "user", content: `Decompose this goal into parallel subtasks:\n\n${goal}${domainHint}` },
-      ],
-      maxRetries: 1,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
-    });
+    const { result } = await instrumentedGenerateText(
+      { storage: ctx.storage, logger: ctx.logger },
+      {
+        model: ctx.llm.getModel() as LanguageModel,
+        system: getPlannerPrompt(resultType, ctx.timezone),
+        messages: [
+          { role: "user", content: `Decompose this goal into parallel subtasks:\n\n${goal}${domainHint}` },
+        ],
+        maxRetries: 1,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
+      },
+      {
+        spanType: "llm",
+        process: "swarm.plan",
+        surface: "worker",
+        provider: ctx.provider ?? "ollama",
+        model: ctx.model ?? "",
+        requestSizeChars: goal.length + domainHint.length,
+      },
+    );
 
     const jsonMatch = result.text.match(/```json\s*([\s\S]*?)```/);
     if (!jsonMatch?.[1]) return null;
@@ -405,19 +417,32 @@ async function runSubAgent(
   const tools = createSubAgentTools(ctx, swarmId, agentId, plan.tools);
 
   const agentBudget = getContextBudget(ctx.provider ?? "ollama", ctx.model ?? "", ctx.contextWindow);
-  const result = await generateText({
-    model: ctx.llm.getModel() as LanguageModel,
-    system: systemPrompt,
-    messages: [
-      { role: "user", content: `Your task: ${plan.task}` },
-    ],
-    tools,
-    toolChoice: "auto",
-    stopWhen: stepCountIs(AGENT_STEP_LIMIT),
-    maxRetries: 1,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    providerOptions: getProviderOptions(ctx.provider ?? "ollama", agentBudget.contextWindow) as any,
-  });
+  const { result } = await instrumentedGenerateText(
+    { storage: ctx.storage, logger: ctx.logger },
+    {
+      model: ctx.llm.getModel() as LanguageModel,
+      system: systemPrompt,
+      messages: [
+        { role: "user", content: `Your task: ${plan.task}` },
+      ],
+      tools,
+      toolChoice: "auto",
+      stopWhen: stepCountIs(AGENT_STEP_LIMIT),
+      maxRetries: 1,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      providerOptions: getProviderOptions(ctx.provider ?? "ollama", agentBudget.contextWindow) as any,
+    },
+    {
+      spanType: "llm",
+      process: "swarm.agent",
+      surface: "worker",
+      jobId: swarmId,
+      agentName: plan.role,
+      provider: ctx.provider ?? "ollama",
+      model: ctx.model ?? "",
+      requestSizeChars: plan.task.length,
+    },
+  );
 
   const agentResult = result.text || "Agent completed but produced no text output.";
 
@@ -650,19 +675,32 @@ async function synthesize(
     : "(no blackboard entries)";
 
   const synthBudget = getContextBudget(ctx.provider ?? "ollama", ctx.model ?? "", ctx.contextWindow);
-  const result = await generateText({
-    model: ctx.llm.getModel() as LanguageModel,
-    system: getSynthesizerPrompt(resultType, ctx.timezone),
-    messages: [
-      {
-        role: "user",
-        content: `## Original Goal\n${goal}\n\n## Sub-Agent Results\n${agentResults}\n\n## Blackboard Entries\n${blackboardText}\n\nSynthesize these findings into a unified report.`,
-      },
-    ],
-    maxRetries: 1,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    providerOptions: getProviderOptions(ctx.provider ?? "ollama", synthBudget.contextWindow) as any,
-  });
+  const synthesisPrompt = `## Original Goal\n${goal}\n\n## Sub-Agent Results\n${agentResults}\n\n## Blackboard Entries\n${blackboardText}\n\nSynthesize these findings into a unified report.`;
+  const { result } = await instrumentedGenerateText(
+    { storage: ctx.storage, logger: ctx.logger },
+    {
+      model: ctx.llm.getModel() as LanguageModel,
+      system: getSynthesizerPrompt(resultType, ctx.timezone),
+      messages: [
+        {
+          role: "user",
+          content: synthesisPrompt,
+        },
+      ],
+      maxRetries: 1,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      providerOptions: getProviderOptions(ctx.provider ?? "ollama", synthBudget.contextWindow) as any,
+    },
+    {
+      spanType: "llm",
+      process: "swarm.synthesize",
+      surface: "worker",
+      jobId,
+      provider: ctx.provider ?? "ollama",
+      model: ctx.model ?? "",
+      requestSizeChars: synthesisPrompt.length,
+    },
+  );
 
   const text = result.text || "Synthesis produced no output.";
   const extracted = extractPresentationBlocks(text);

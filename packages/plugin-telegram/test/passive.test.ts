@@ -6,16 +6,11 @@ vi.mock("@personal-ai/core", () => ({
   knowledgeSearch: vi.fn().mockResolvedValue([]),
   getContextBudget: vi.fn().mockReturnValue({ contextWindow: 8192, maxOutputTokens: 2048 }),
   getProviderOptions: vi.fn().mockReturnValue({}),
-}));
-
-// Mock ai
-vi.mock("ai", () => ({
-  generateText: vi.fn().mockResolvedValue({ text: "👍" }),
+  instrumentedGenerateText: vi.fn(),
 }));
 
 import { bufferMessage, passiveProcess } from "../src/passive.js";
-import { semanticSearch, knowledgeSearch } from "@personal-ai/core";
-import { generateText } from "ai";
+import { semanticSearch, knowledgeSearch, instrumentedGenerateText } from "@personal-ai/core";
 import type { PluginContext, AgentPlugin } from "@personal-ai/core";
 
 const mockCtx = {
@@ -81,7 +76,7 @@ describe("passiveProcess", () => {
     (mockCtx.config.telegram as any).passiveListening = true;
     (semanticSearch as any).mockReturnValue([]);
     (knowledgeSearch as any).mockResolvedValue([]);
-    (generateText as any).mockResolvedValue({ text: "👍" });
+    (instrumentedGenerateText as any).mockResolvedValue({ result: { text: "👍" } });
     mockCtx.llm.embed = vi.fn().mockResolvedValue({ embedding: [0.1, 0.2] });
   });
 
@@ -178,9 +173,9 @@ describe("passiveProcess", () => {
     (knowledgeSearch as any).mockResolvedValue([]);
 
     // First generateText call is for emoji, second is for proactive response
-    (generateText as any)
-      .mockResolvedValueOnce({ text: "🔥" }) // emoji picker
-      .mockResolvedValueOnce({ text: "That's really interesting, I know something about that!" }); // proactive response
+    (instrumentedGenerateText as any)
+      .mockResolvedValueOnce({ result: { text: "🔥" } }) // emoji picker
+      .mockResolvedValueOnce({ result: { text: "That's really interesting, I know something about that!" } }); // proactive response
 
     // Buffer some messages so generateProactiveResponse has context
     bufferMessage(200007, "Let's discuss the project", "Alice");
@@ -214,9 +209,9 @@ describe("passiveProcess", () => {
     (semanticSearch as any).mockReturnValue([{ similarity: 0.85 }]);
     (knowledgeSearch as any).mockResolvedValue([]);
 
-    (generateText as any)
-      .mockResolvedValueOnce({ text: "👍" }) // emoji picker
-      .mockResolvedValueOnce({ text: "SKIP" }); // proactive response is SKIP
+    (instrumentedGenerateText as any)
+      .mockResolvedValueOnce({ result: { text: "👍" } }) // emoji picker
+      .mockResolvedValueOnce({ result: { text: "SKIP" } }); // proactive response is SKIP
 
     bufferMessage(200008, "Some context message", "Alice");
 

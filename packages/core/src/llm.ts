@@ -1,10 +1,11 @@
-import { generateText, streamText, embed as aiEmbed, stepCountIs } from "ai";
+import { streamText, embed as aiEmbed, stepCountIs } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ai-sdk-ollama";
-import type { LLMClient, ChatMessage, ChatOptions, ChatResult, StreamEvent, Config, Logger } from "./types.js";
+import type { LLMClient, ChatMessage, ChatOptions, ChatResult, StreamEvent, Config, Logger, Storage, EmbedOptions } from "./types.js";
 import { createLogger } from "./logger.js";
+import { instrumentedEmbed, instrumentedGenerateText, instrumentedStreamText } from "./telemetry.js";
 
 /** Map raw provider/API errors to human-readable messages. */
 function humanizeError(provider: string, err: unknown): string {
@@ -119,7 +120,7 @@ async function localEmbed(text: string, log: Logger): Promise<number[] | null> {
 
 // --- Main factory ---
 
-export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMClient {
+export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, storage?: Storage): LLMClient {
   const log = logger ?? createLogger();
   const { provider, model, baseUrl, apiKey } = llmConfig;
   const embedProviderSetting = llmConfig.embedProvider ?? "auto";
@@ -145,23 +146,36 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMC
   async function chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult> {
     log.debug("LLM chat request", { model, messageCount: messages.length });
     try {
-      const { text, usage } = await generateText({
-        model: llmModel,
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
-        temperature: options?.temperature ?? 0.7,
-        maxOutputTokens: options?.maxTokens,
-      });
+      const { result: aiResult } = await instrumentedGenerateText(
+        { storage, logger: log },
+        {
+          model: llmModel,
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          temperature: options?.temperature ?? 0.7,
+          maxOutputTokens: options?.maxTokens,
+        },
+        {
+          spanType: "llm",
+          process: options?.telemetry?.process ?? "chat.main",
+          ...options?.telemetry,
+          provider,
+          model,
+          requestSizeChars: messages.reduce((sum, message) => sum + message.content.length, 0),
+        },
+      );
 
-      const result: ChatResult = {
-        text,
+      const response: ChatResult = {
+        text: aiResult.text,
         usage: {
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          totalTokens: (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0),
+          inputTokens: aiResult.usage.inputTokens ?? undefined,
+          outputTokens: aiResult.usage.outputTokens ?? undefined,
+          totalTokens: aiResult.usage.totalTokens ?? ((aiResult.usage.inputTokens == null && aiResult.usage.outputTokens == null)
+            ? undefined
+            : (aiResult.usage.inputTokens ?? 0) + (aiResult.usage.outputTokens ?? 0)),
         },
       };
-      log.debug("LLM chat response", { responseLength: result.text.length, usage: result.usage });
-      return result;
+      log.debug("LLM chat response", { responseLength: response.text.length, usage: response.usage });
+      return response;
     } catch (err) {
       const friendly = humanizeError(provider, err);
       log.error("LLM chat failed", { provider, model, error: friendly });
@@ -174,16 +188,27 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMC
 
     let result: ReturnType<typeof streamText>;
     try {
-      result = streamText({
-        model: llmModel,
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
-        temperature: options?.temperature ?? 0.7,
-        maxOutputTokens: options?.maxTokens,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tools: options?.tools as any,
-        toolChoice: options?.toolChoice,
-        stopWhen: options?.maxSteps ? stepCountIs(options.maxSteps) : undefined,
-      });
+      ({ result } = instrumentedStreamText(
+        { storage, logger: log },
+        {
+          model: llmModel,
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          temperature: options?.temperature ?? 0.7,
+          maxOutputTokens: options?.maxTokens,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tools: options?.tools as any,
+          toolChoice: options?.toolChoice,
+          stopWhen: options?.maxSteps ? stepCountIs(options.maxSteps) : undefined,
+        },
+        {
+          spanType: "llm",
+          process: options?.telemetry?.process ?? "chat.main",
+          ...options?.telemetry,
+          provider,
+          model,
+          requestSizeChars: messages.reduce((sum, message) => sum + message.content.length, 0),
+        },
+      ));
     } catch (err) {
       const friendly = humanizeError(provider, err);
       log.error("LLM streamChat failed to start", { provider, model, error: friendly });
@@ -238,7 +263,9 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMC
       usage: {
         inputTokens: lastUsage.inputTokens,
         outputTokens: lastUsage.outputTokens,
-        totalTokens: (lastUsage.inputTokens ?? 0) + (lastUsage.outputTokens ?? 0),
+        totalTokens: lastUsage.inputTokens == null && lastUsage.outputTokens == null
+          ? undefined
+          : (lastUsage.inputTokens ?? 0) + (lastUsage.outputTokens ?? 0),
       },
     };
   }
@@ -277,40 +304,58 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger): LLMC
     }
   }
 
-  async function embed(text: string): Promise<{ embedding: number[] }> {
-    // Fallback chain: remote provider → local → throw
-    const useLocal = effectiveEmbedProvider === "local";
+  async function embed(text: string, options?: EmbedOptions): Promise<{ embedding: number[] }> {
+    const { result } = await instrumentedEmbed<{ embedding: number[] }>(
+      { storage, logger: log },
+      {
+        spanType: "embed",
+        process: options?.telemetry?.process ?? "embed.memory",
+        ...options?.telemetry,
+        provider: effectiveEmbedProvider,
+        model: embedModelName,
+        requestSizeChars: text.length,
+      },
+      async () => {
+        const useLocal = effectiveEmbedProvider === "local";
 
-    if (!useLocal && remoteEmbeddingModel) {
-      try {
-        log.debug("Embedding request (remote)", { provider: effectiveEmbedProvider, model: embedModelName, textLength: text.length });
-        const { embedding } = await aiEmbed({
-          model: remoteEmbeddingModel,
-          value: text,
-        });
-        log.debug("Embedding response (remote)", { dimensions: embedding.length });
-        return { embedding };
-      } catch (err) {
-        // If embedProvider is explicitly set (not auto), don't fall back
-        if (embedProviderSetting !== "auto") {
-          const friendly = humanizeError(effectiveEmbedProvider, err);
-          throw new Error(friendly);
+        if (!useLocal && remoteEmbeddingModel) {
+          try {
+            log.debug("Embedding request (remote)", { provider: effectiveEmbedProvider, model: embedModelName, textLength: text.length });
+            const { embedding } = await aiEmbed({
+              model: remoteEmbeddingModel,
+              value: text,
+            });
+            log.debug("Embedding response (remote)", { dimensions: embedding.length });
+            return {
+              result: { embedding },
+              responseSizeChars: embedding.length,
+            };
+          } catch (err) {
+            if (embedProviderSetting !== "auto") {
+              throw new Error(humanizeError(effectiveEmbedProvider, err));
+            }
+            log.warn("Remote embedding failed, trying local fallback", {
+              provider: effectiveEmbedProvider,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
         }
-        log.warn("Remote embedding failed, trying local fallback", {
-          provider: effectiveEmbedProvider,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
 
-    // Local embedding fallback (or primary when embedProvider === "local")
-    const localResult = await localEmbed(text, log);
-    if (localResult) {
-      log.debug("Embedding response (local)", { dimensions: localResult.length });
-      return { embedding: localResult };
-    }
+        const localResult = await localEmbed(text, log);
+        if (localResult) {
+          log.debug("Embedding response (local)", { dimensions: localResult.length });
+          return {
+            result: { embedding: localResult },
+            responseSizeChars: localResult.length,
+            metadata: { mode: "local-fallback" },
+          };
+        }
 
-    throw new Error("Embedding unavailable: no remote provider and local embeddings not installed. Install @huggingface/transformers for local embeddings.");
+        throw new Error("Embedding unavailable: no remote provider and local embeddings not installed. Install @huggingface/transformers for local embeddings.");
+      },
+    );
+
+    return result;
   }
 
   return { chat, streamChat, embed, health, getModel: () => llmModel };

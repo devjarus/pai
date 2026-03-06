@@ -474,6 +474,12 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `GET` | `/api/config` | Current config (keys sanitized) |
 | `PUT` | `/api/config` | Update config → reinitialize() |
 | `GET` | `/api/learning/runs` | Recent learning run history |
+| `GET` | `/api/observability/overview` | Diagnostics overview totals, top processes, and top models |
+| `GET` | `/api/observability/processes` | Process-level token, latency, and error aggregates |
+| `GET` | `/api/observability/threads/:threadId` | Per-thread diagnostics with persisted per-message usage summaries |
+| `GET` | `/api/observability/jobs/:jobId` | Per-job diagnostics with process and agent breakdowns |
+| `GET` | `/api/observability/traces/:traceId` | Full span tree for a single trace |
+| `GET` | `/api/observability/recent-errors` | Recent failed spans with thread/job context |
 | `GET` | `/api/browse?path=` | Directory browser |
 
 ### Reinitialize Pattern
@@ -558,7 +564,7 @@ React SPA — Inbox, Chat, Memory Explorer, Knowledge, Tasks, Settings, Timeline
 | **Memory** | Browse/search beliefs, type filter tabs, detail sidebar, clear all, empty state |
 | **Knowledge** | Browse sources, view chunks, search knowledge base, learn from URLs, crawl sub-pages |
 | **Tasks** | Two sub-tabs (Tasks/Goals), full CRUD, priority badges, due dates, goal linking, progress bars, clear all with confirmation |
-| **Settings** | LLM provider dropdown with auto-populated presets (Ollama/OpenAI/Anthropic/Google), model/key, data directory browser, Telegram config |
+| **Settings** | LLM provider dropdown with auto-populated presets (Ollama/OpenAI/Anthropic/Google), model/key, data directory browser, Telegram config, background worker toggles, and a local-only Diagnostics panel (Overview, Processes, Threads, Jobs, Errors) backed by `/api/observability/*` |
 | **Timeline** | Chronological episodes + belief changes, empty state |
 
 **Global error handling:** `ErrorBoundary` (catches React errors, refresh + copy details) and `OfflineBanner` (10s ping, amber banner, auto-dismiss on reconnect).

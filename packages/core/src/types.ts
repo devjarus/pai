@@ -15,6 +15,61 @@ export interface Logger {
   debug(msg: string, data?: Record<string, unknown>): void;
 }
 
+export const TELEMETRY_SPAN_TYPES = ["http", "worker", "llm", "tool", "embed"] as const;
+export type TelemetrySpanType = typeof TELEMETRY_SPAN_TYPES[number];
+
+export const TELEMETRY_SURFACES = ["web", "telegram", "worker", "cli", "mcp"] as const;
+export type TelemetrySurface = typeof TELEMETRY_SURFACES[number];
+
+export const TELEMETRY_STATUSES = ["ok", "error", "cancelled"] as const;
+export type TelemetryStatus = typeof TELEMETRY_STATUSES[number];
+
+export const TELEMETRY_PROCESSES = [
+  "chat.main",
+  "chat.subagent",
+  "thread.title",
+  "memory.extract",
+  "memory.contradiction",
+  "memory.relationship",
+  "memory.summarize",
+  "briefing.generate",
+  "learning.extract",
+  "research.run",
+  "swarm.plan",
+  "swarm.agent",
+  "swarm.synthesize",
+  "telegram.chat",
+  "telegram.passive",
+  "embed.memory",
+  "embed.knowledge",
+  "http.request",
+  "worker.briefing",
+  "worker.learning",
+  "worker.schedule",
+  "worker.cleanup",
+] as const;
+export type TelemetryProcess = typeof TELEMETRY_PROCESSES[number];
+
+export interface TelemetryAttributes {
+  traceId?: string;
+  parentSpanId?: string;
+  surface?: TelemetrySurface;
+  process: TelemetryProcess | string;
+  provider?: string;
+  model?: string;
+  threadId?: string | null;
+  jobId?: string | null;
+  runId?: string | null;
+  agentName?: string | null;
+  toolName?: string | null;
+  route?: string | null;
+  chatId?: string | number | null;
+  senderUsername?: string | null;
+  senderDisplayName?: string | null;
+  requestSizeChars?: number | null;
+  metadata?: Record<string, unknown>;
+}
+
 export interface Config {
   dataDir: string;
   logLevel: LogLevel;
@@ -94,7 +149,7 @@ export interface EmbedResult {
 export interface LLMClient {
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult>;
   streamChat(messages: ChatMessage[], options?: ChatOptions): AsyncGenerator<StreamEvent>;
-  embed(text: string): Promise<EmbedResult>;
+  embed(text: string, options?: EmbedOptions): Promise<EmbedResult>;
   health(): Promise<{ ok: boolean; provider: string }>;
   /** Get the underlying AI SDK LanguageModel for direct streamText usage */
   getModel(): unknown;
@@ -111,6 +166,11 @@ export interface ChatOptions {
   tools?: Record<string, unknown>;
   toolChoice?: "auto" | "required" | "none";
   maxSteps?: number;
+  telemetry?: TelemetryAttributes;
+}
+
+export interface EmbedOptions {
+  telemetry?: TelemetryAttributes;
 }
 
 export type StreamEvent =

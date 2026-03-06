@@ -43,7 +43,13 @@ async function aiSuggest(ctx: PluginContext): Promise<string> {
       role: "user",
       content: `${memoryContext ? `${memoryContext}\n\n` : ""}My goals:\n${goalList || "(none set)"}\n\nMy open tasks:\n${taskList}\n\nWhat should I focus on next?`,
     },
-  ]);
+  ], {
+    telemetry: {
+      process: "memory.summarize",
+      surface: "cli",
+      metadata: { feature: "task.ai_suggest" },
+    },
+  });
   return result.text;
 }
 

@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { InfoBubble } from "../components/InfoBubble";
+import { DiagnosticsPanel } from "@/components/settings/DiagnosticsPanel";
 import { FolderIcon, FolderOpenIcon, ChevronUpIcon, ChevronDownIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon, LogOutIcon } from "lucide-react";
 import type { LearningRun } from "@/api";
 import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
@@ -767,6 +768,8 @@ export default function Settings() {
             </CardContent>
           </Card>
         )}
+
+        <DiagnosticsPanel timezone={timezone || undefined} />
 
         {/* Memory Health */}
         {stats ? (

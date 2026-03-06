@@ -1,4 +1,4 @@
-import { memoryMigrations, threadMigrations, knowledgeMigrations, authMigrations, backgroundJobMigrations, artifactMigrations } from "@personal-ai/core";
+import { memoryMigrations, threadMigrations, knowledgeMigrations, authMigrations, backgroundJobMigrations, artifactMigrations, telemetryMigrations } from "@personal-ai/core";
 import type { Storage, Migration } from "@personal-ai/core";
 import { taskMigrations } from "@personal-ai/plugin-tasks";
 import { telegramMigrations } from "@personal-ai/plugin-telegram";
@@ -23,6 +23,7 @@ export const allMigrations: Array<[string, Migration[]]> = [
   ["schedules", scheduleMigrations],
   ["background_jobs", backgroundJobMigrations],
   ["artifacts", artifactMigrations],
+  ["telemetry", telemetryMigrations],
 ];
 
 /** Run all plugin migrations on a storage instance */

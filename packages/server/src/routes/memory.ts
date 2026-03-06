@@ -55,7 +55,9 @@ export function registerMemoryRoutes(app: FastifyInstance, { ctx }: ServerContex
     if (!query) return [];
 
     try {
-      const { embedding } = await ctx.llm.embed(query);
+      const { embedding } = await ctx.llm.embed(query, {
+        telemetry: { process: "embed.memory", surface: "web", route: "/api/search" },
+      });
       const results = semanticSearch(ctx.storage, embedding, 20, query);
       return results.map((r) => {
         const full = ctx.storage.query<Belief>(

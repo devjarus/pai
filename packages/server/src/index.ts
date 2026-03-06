@@ -9,8 +9,8 @@ import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import jwt from "jsonwebtoken";
-import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword, recoverStaleBackgroundJobs, cancelAllRunningBackgroundJobs } from "@personal-ai/core";
-import type { AgentPlugin, PluginContext } from "@personal-ai/core";
+import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword, recoverStaleBackgroundJobs, cancelAllRunningBackgroundJobs, startSpan, finishSpan } from "@personal-ai/core";
+import type { AgentPlugin, PluginContext, ActiveTelemetrySpan } from "@personal-ai/core";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
 import { createBot, startResearchPushLoop } from "@personal-ai/plugin-telegram";
@@ -29,6 +29,7 @@ import { registerInboxRoutes } from "./routes/inbox.js";
 import { registerJobRoutes } from "./routes/jobs.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
 import { registerLearningRoutes } from "./routes/learning.js";
+import { registerObservabilityRoutes } from "./routes/observability.js";
 import { runAllMigrations } from "./migrations.js";
 import { WorkerLoop } from "./workers.js";
 import { recoverStaleLearningRuns } from "./learning.js";
@@ -45,6 +46,10 @@ export interface ServerContext {
   stopTelegramBot(): void;
   /** Whether JWT auth is enforced (false on localhost) */
   authEnabled: boolean;
+}
+
+interface TelemetryRequest {
+  telemetrySpan?: ActiveTelemetrySpan;
 }
 
 export async function createServer(options?: { port?: number; host?: string }) {
@@ -67,7 +72,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     }
   }
 
-  const llm = createLLMClient(config.llm, logger);
+  const llm = createLLMClient(config.llm, logger, storage);
 
   // Detect PaaS without persistent volume — warn loudly so operators notice
   if (process.env.PORT) {
@@ -209,7 +214,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     const newConfig = loadConfig();
     const newLogger = createLogger(newConfig.logLevel, { dir: newConfig.dataDir });
     const newStorage = createStorage(newConfig.dataDir, newLogger);
-    const newLlm = createLLMClient(newConfig.llm, newLogger);
+    const newLlm = createLLMClient(newConfig.llm, newLogger, newStorage);
 
     runAllMigrations(newStorage);
 
@@ -321,6 +326,19 @@ export async function createServer(options?: { port?: number; host?: string }) {
   // --- Request ID propagation ---
   app.addHook("onRequest", async (request, reply) => {
     reply.header("x-request-id", request.id);
+    if (!request.url.startsWith("/api/")) return;
+
+    const requestWithTelemetry = request as typeof request & TelemetryRequest;
+    requestWithTelemetry.telemetrySpan = startSpan({ storage: ctx.storage, logger: ctx.logger }, {
+      spanType: "http",
+      process: "http.request",
+      surface: "web",
+      route: request.url.split("?")[0] ?? request.url,
+      metadata: {
+        method: request.method,
+        requestId: request.id,
+      },
+    });
   });
 
   // --- Global error handler ---
@@ -388,6 +406,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   registerJobRoutes(app, serverCtx);
   registerArtifactRoutes(app, serverCtx);
   registerLearningRoutes(app, serverCtx);
+  registerObservabilityRoutes(app, serverCtx);
 
   // --- Schedule REST endpoints ---
   app.get("/api/schedules", async () => {
@@ -510,6 +529,19 @@ export async function createServer(options?: { port?: number; host?: string }) {
   // --- Request logging for API calls ---
   app.addHook("onResponse", async (request, reply) => {
     if (!request.url.startsWith("/api/")) return;
+    const requestWithTelemetry = request as typeof request & TelemetryRequest;
+    const telemetrySpan = requestWithTelemetry.telemetrySpan;
+    if (telemetrySpan) {
+      finishSpan({ storage: ctx.storage, logger: ctx.logger }, telemetrySpan, {
+        status: reply.statusCode >= 400 ? "error" : "ok",
+        responseSizeChars: Number(reply.getHeader("content-length") ?? 0) || null,
+        metadata: {
+          httpStatus: reply.statusCode,
+          method: request.method,
+          path: request.url,
+        },
+      });
+    }
     ctx.logger.info("API request", {
       requestId: request.id,
       method: request.method,

@@ -128,7 +128,13 @@ Reply with exactly one word: CONFIRMED or REJECTED.
         content: `Candidate fact: ${fact}\n\nAssistant's response: ${assistantResponse}`,
       },
     ],
-    { temperature: 0 },
+    {
+      temperature: 0,
+      telemetry: {
+        process: "memory.relationship",
+        surface: ctx.sender ? "telegram" : "web",
+      },
+    },
   );
 
   const verdict = result.text.trim().toUpperCase();
@@ -203,7 +209,13 @@ Extracted facts:`;
         const result = await ctx.llm.chat([
           { role: "system", content: extractionPrompt },
           { role: "user", content: userMsg },
-        ], { temperature: 0.3 });
+        ], {
+          temperature: 0.3,
+          telemetry: {
+            process: "memory.extract",
+            surface: ctx.sender ? "telegram" : "web",
+          },
+        });
 
         const text = result.text.trim();
         if (!text || text === "NONE" || text.startsWith("NONE")) return;

@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
-import type { AgentContext, ChatMessage, ThreadMessageInput, ThreadMessageRow, ThreadRow } from "@personal-ai/core";
+import type { AgentContext, ChatMessage, ThreadMessageInput, ThreadMessageRow, ThreadRow, ThreadMessageUsage } from "@personal-ai/core";
 import {
   threadMigrations,
   consolidateConversation,
@@ -24,8 +24,10 @@ import {
   learnFromContent,
   isBinaryDocument,
   parseBinaryDocument,
+  instrumentedGenerateText,
+  instrumentedStreamText,
 } from "@personal-ai/core";
-import { streamText, generateText, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, tool } from "ai";
+import { streamText, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, tool } from "ai";
 
 import type { LanguageModel } from "ai";
 import { z } from "zod";
@@ -155,12 +157,20 @@ async function generateThreadTitle(
   try {
     const recent = messages.slice(-10);
     const conversation = recent.map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join("\n");
-    const result = await generateText({
-      model: ctx.llm.getModel() as LanguageModel,
-      system: "Generate a short title (max 50 chars) for this conversation. Return ONLY the title, nothing else. No quotes, no prefix.",
-      messages: [{ role: "user", content: conversation }],
+    const result = await ctx.llm.chat([
+      {
+        role: "system",
+        content: "Generate a short title (max 50 chars) for this conversation. Return ONLY the title, nothing else. No quotes, no prefix.",
+      },
+      { role: "user", content: conversation },
+    ], {
       temperature: 0.3,
-      maxRetries: 1,
+      telemetry: {
+        process: "thread.title",
+        surface: "web",
+        threadId,
+        route: "/api/chat",
+      },
     });
     const title = result.text.trim().replace(/^["']|["']$/g, "").slice(0, 50);
     if (title.length >= 3) {
@@ -189,6 +199,39 @@ function mapMessage(row: ThreadMessageRow) {
     content: row.content,
     createdAt: row.created_at,
     sequence: row.sequence,
+  };
+}
+
+function buildUsageSummary(args: {
+  traceId: string;
+  process: string;
+  provider: string;
+  model: string;
+  durationMs: number;
+  steps: unknown[];
+  usage?: { inputTokens?: number | null; outputTokens?: number | null; totalTokens?: number | null } | null;
+}): ThreadMessageUsage {
+  const inputTokens = args.usage?.inputTokens ?? null;
+  const outputTokens = args.usage?.outputTokens ?? null;
+  const totalTokens = args.usage?.totalTokens ?? (inputTokens == null && outputTokens == null
+    ? null
+    : (inputTokens ?? 0) + (outputTokens ?? 0));
+  const toolCallCount = args.steps.reduce<number>((count, step) => {
+    const toolCalls = (step as { toolCalls?: unknown[] }).toolCalls;
+    return count + (Array.isArray(toolCalls) ? toolCalls.length : 0);
+  }, 0);
+
+  return {
+    traceId: args.traceId,
+    process: args.process,
+    provider: args.provider,
+    model: args.model,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    durationMs: args.durationMs,
+    stepCount: args.steps.length,
+    toolCallCount,
   };
 }
 
@@ -471,17 +514,31 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
                   task: z.string().describe("What to ask the sub-agent to do"),
                 }),
                 execute: async ({ task }) => {
-                  const result = await generateText({
-                    model: ctx.llm.getModel() as LanguageModel,
-                    system: subAgent.agent.systemPrompt,
-                    messages: [{ role: "user" as const, content: task }],
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    tools: subTools as any,
-                    toolChoice: "auto",
-                    stopWhen: stepCountIs(5),
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
-                  });
+                  const { result } = await instrumentedGenerateText(
+                    { storage: ctx.storage, logger: ctx.logger },
+                    {
+                      model: ctx.llm.getModel() as LanguageModel,
+                      system: subAgent.agent.systemPrompt,
+                      messages: [{ role: "user" as const, content: task }],
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      tools: subTools as any,
+                      toolChoice: "auto",
+                      stopWhen: stepCountIs(5),
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
+                    },
+                    {
+                      spanType: "llm",
+                      process: "chat.subagent",
+                      surface: "web",
+                      threadId: sid,
+                      route: "/api/chat",
+                      agentName: subAgent.name,
+                      provider: ctx.config.llm.provider,
+                      model: ctx.config.llm.model,
+                      requestSizeChars: task.length,
+                    },
+                  );
                   return result.text;
                 },
               });
@@ -505,115 +562,145 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
           });
 
           let result: ReturnType<typeof streamText>;
+          const streamStartedAt = Date.now();
+          const telemetryProcess = "chat.main";
+          let telemetryTraceId = "";
           try {
-            result = streamText({
-              model: ctx.llm.getModel() as LanguageModel,
-              system: systemPrompt,
-              messages: messages.map((m) => ({ role: m.role, content: m.content })),
-              temperature: 0.7,
-              maxRetries: 1,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              tools: tools as any,
-              toolChoice: tools ? "auto" : undefined,
-              stopWhen: tools ? stepCountIs(15) : undefined,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
-              onError: ({ error }) => {
-                ctx.logger.error("streamText error (multi-step)", {
-                  error: error instanceof Error ? error.message : String(error),
-                });
-                finish();
-              },
-              onFinish: async ({ text, steps }) => {
-                try {
-                  ctx.logger.info("streamText finished", { textLength: text.length, steps: steps.length });
+            ({
+              result,
+              traceId: telemetryTraceId,
+            } = instrumentedStreamText(
+              { storage: ctx.storage, logger: ctx.logger },
+              {
+                model: ctx.llm.getModel() as LanguageModel,
+                system: systemPrompt,
+                messages: messages.map((m) => ({ role: m.role, content: m.content })),
+                temperature: 0.7,
+                maxRetries: 1,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                tools: tools as any,
+                toolChoice: tools ? "auto" : undefined,
+                stopWhen: tools ? stepCountIs(15) : undefined,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
+                onError: ({ error }) => {
+                  ctx.logger.error("streamText error (multi-step)", {
+                    error: error instanceof Error ? error.message : String(error),
+                  });
+                  finish();
+                },
+                onFinish: async ({ text, steps, totalUsage, usage }) => {
+                  try {
+                    ctx.logger.info("streamText finished", { textLength: text.length, steps: steps.length });
 
-                  const toPersist: ThreadMessageInput[] = [
-                    { role: "user", content: message },
-                  ];
+                    const toPersist: ThreadMessageInput[] = [
+                      { role: "user", content: message },
+                    ];
 
-                  // Summarize tool calls (if any) for context continuity
-                  const toolSummaries: string[] = [];
-                  if (steps) {
-                    for (const step of steps) {
-                      const stepAny = step as { toolCalls?: unknown[]; toolResults?: unknown[] };
-                      if (stepAny.toolCalls && stepAny.toolResults) {
-                        for (let i = 0; i < stepAny.toolCalls.length; i++) {
-                          const tc = stepAny.toolCalls[i] as { toolName?: string; args?: unknown };
-                          const tr = stepAny.toolResults[i] as { result?: unknown; output?: unknown };
-                          if (tc) {
-                            const raw = tr?.output ?? tr?.result ?? tr;
-                            const resultStr = typeof raw === "string"
-                              ? raw.slice(0, 200)
-                              : JSON.stringify(raw).slice(0, 200);
-                            toolSummaries.push(`[${tc.toolName ?? "tool"}] → ${resultStr}`);
+                    // Summarize tool calls (if any) for context continuity
+                    const toolSummaries: string[] = [];
+                    if (steps) {
+                      for (const step of steps) {
+                        const stepAny = step as { toolCalls?: unknown[]; toolResults?: unknown[] };
+                        if (stepAny.toolCalls && stepAny.toolResults) {
+                          for (let i = 0; i < stepAny.toolCalls.length; i++) {
+                            const tc = stepAny.toolCalls[i] as { toolName?: string; args?: unknown };
+                            const tr = stepAny.toolResults[i] as { result?: unknown; output?: unknown };
+                            if (tc) {
+                              const raw = tr?.output ?? tr?.result ?? tr;
+                              const resultStr = typeof raw === "string"
+                                ? raw.slice(0, 200)
+                                : JSON.stringify(raw).slice(0, 200);
+                              toolSummaries.push(`[${tc.toolName ?? "tool"}] → ${resultStr}`);
+                            }
                           }
                         }
                       }
                     }
-                  }
-                  // If all steps were tool calls with no final text (hit step limit),
-                  // generate a fallback summary so the user always sees a response
-                  const assistantText = text || (toolSummaries.length > 0
-                    ? "I gathered some information but ran out of processing steps. Here's what I found — please ask a follow-up if you need more detail."
-                    : "");
+                    // If all steps were tool calls with no final text (hit step limit),
+                    // generate a fallback summary so the user always sees a response
+                    const assistantText = text || (toolSummaries.length > 0
+                      ? "I gathered some information but ran out of processing steps. Here's what I found - please ask a follow-up if you need more detail."
+                      : "");
 
-                  if (assistantText) {
-                    toPersist.push({
-                      role: "assistant",
-                      content: assistantText,
-                      partsJson: toolSummaries.length > 0 ? JSON.stringify({ toolCalls: toolSummaries }) : undefined,
+                    if (assistantText) {
+                      const usageSummary = buildUsageSummary({
+                        traceId: telemetryTraceId,
+                        process: telemetryProcess,
+                        provider: ctx.config.llm.provider,
+                        model: ctx.config.llm.model,
+                        durationMs: Math.max(0, Date.now() - streamStartedAt),
+                        steps,
+                        usage: totalUsage ?? usage ?? null,
+                      });
+                      toPersist.push({
+                        role: "assistant",
+                        content: assistantText,
+                        partsJson: toolSummaries.length > 0 ? JSON.stringify({ toolCalls: toolSummaries }) : undefined,
+                        usageJson: JSON.stringify(usageSummary),
+                      });
+                    }
+
+                    appendMessages(ctx.storage, sid, toPersist, {
+                      maxMessages: MAX_MESSAGES_PER_THREAD,
+                      titleCandidate: autoTitle(message),
                     });
-                  }
 
-                  appendMessages(ctx.storage, sid, toPersist, {
-                    maxMessages: MAX_MESSAGES_PER_THREAD,
-                    titleCandidate: autoTitle(message),
-                  });
+                    // afterResponse — fire and forget, but log errors
+                    if (agentPlugin.agent.afterResponse) {
+                      agentPlugin.agent.afterResponse(agentCtx, text).catch((err) => {
+                        ctx.logger.warn(`afterResponse failed: ${err instanceof Error ? err.message : String(err)}`);
+                      });
+                    }
 
-                  // afterResponse — fire and forget, but log errors
-                  if (agentPlugin.agent.afterResponse) {
-                    agentPlugin.agent.afterResponse(agentCtx, text).catch((err) => {
-                      ctx.logger.warn(`afterResponse failed: ${err instanceof Error ? err.message : String(err)}`);
+                    // Background tasks based on user turn count (fire and forget)
+                    const userTurnRow = ctx.storage.query<{ count: number }>(
+                      "SELECT COUNT(*) AS count FROM thread_messages WHERE thread_id = ? AND role = 'user'",
+                      [sid],
+                    );
+                    const userTurnCount = userTurnRow[0]?.count ?? 0;
+
+                    // Consolidate conversation every 5 user turns
+                    if (userTurnCount > 0 && userTurnCount % 5 === 0) {
+                      const recentTurns = listMessages(ctx.storage, sid, { limit: 10 })
+                        .map((row) => ({ role: row.role, content: row.content }));
+                      consolidateConversation(ctx.storage, ctx.llm, recentTurns, ctx.logger).catch((err) => {
+                        ctx.logger.warn(`Consolidation failed: ${err instanceof Error ? err.message : String(err)}`);
+                      });
+                    }
+
+                    // Generate/refresh thread title via LLM (awaited so UI picks up the new title on refresh)
+                    const shouldTitle = userTurnCount === TITLE_GENERATE_AT
+                      || (userTurnCount > TITLE_GENERATE_AT && (userTurnCount - TITLE_GENERATE_AT) % TITLE_REFRESH_EVERY === 0);
+                    if (shouldTitle) {
+                      const allMessages = listMessages(ctx.storage, sid, { limit: 10 })
+                        .map((row) => ({ role: row.role, content: row.content }));
+                      await generateThreadTitle(ctx, sid, allMessages).catch((err) => {
+                        ctx.logger.warn(`Title generation failed: ${err instanceof Error ? err.message : String(err)}`);
+                      });
+                    }
+                  } catch (err) {
+                    ctx.logger.error("Failed to persist streamText result", {
+                      error: err instanceof Error ? err.message : String(err),
+                      stack: err instanceof Error ? err.stack : undefined,
                     });
+                  } finally {
+                    finish();
                   }
-
-                  // Background tasks based on user turn count (fire and forget)
-                  const userTurnRow = ctx.storage.query<{ count: number }>(
-                    "SELECT COUNT(*) AS count FROM thread_messages WHERE thread_id = ? AND role = 'user'",
-                    [sid],
-                  );
-                  const userTurnCount = userTurnRow[0]?.count ?? 0;
-
-                  // Consolidate conversation every 5 user turns
-                  if (userTurnCount > 0 && userTurnCount % 5 === 0) {
-                    const recentTurns = listMessages(ctx.storage, sid, { limit: 10 })
-                      .map((row) => ({ role: row.role, content: row.content }));
-                    consolidateConversation(ctx.storage, ctx.llm, recentTurns, ctx.logger).catch((err) => {
-                      ctx.logger.warn(`Consolidation failed: ${err instanceof Error ? err.message : String(err)}`);
-                    });
-                  }
-
-                  // Generate/refresh thread title via LLM (awaited so UI picks up the new title on refresh)
-                  const shouldTitle = userTurnCount === TITLE_GENERATE_AT
-                    || (userTurnCount > TITLE_GENERATE_AT && (userTurnCount - TITLE_GENERATE_AT) % TITLE_REFRESH_EVERY === 0);
-                  if (shouldTitle) {
-                    const allMessages = listMessages(ctx.storage, sid, { limit: 10 })
-                      .map((row) => ({ role: row.role, content: row.content }));
-                    await generateThreadTitle(ctx, sid, allMessages).catch((err) => {
-                      ctx.logger.warn(`Title generation failed: ${err instanceof Error ? err.message : String(err)}`);
-                    });
-                  }
-                } catch (err) {
-                  ctx.logger.error("Failed to persist streamText result", {
-                    error: err instanceof Error ? err.message : String(err),
-                    stack: err instanceof Error ? err.stack : undefined,
-                  });
-                } finally {
-                  finish();
-                }
+                },
               },
-            });
+              {
+                spanType: "llm",
+                process: telemetryProcess,
+                surface: "web",
+                threadId: sid,
+                route: "/api/chat",
+                agentName: agentPlugin.name,
+                provider: ctx.config.llm.provider,
+                model: ctx.config.llm.model,
+                requestSizeChars: messages.reduce((sum, current) => sum + current.content.length, 0),
+              },
+            ));
           } catch (err) {
             finish();
             throw err;

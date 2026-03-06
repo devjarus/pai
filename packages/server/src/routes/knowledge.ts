@@ -75,7 +75,13 @@ export function registerKnowledgeRoutes(app: FastifyInstance, { ctx }: ServerCon
             role: "user",
             content: `Analyze this document. File: ${fileName}. MIME: ${mime}\n\n${snippet}`,
           },
-        ]);
+        ], {
+          telemetry: {
+            process: "memory.summarize",
+            surface: "web",
+            route: "/api/knowledge/upload",
+          },
+        });
         analysis = response.text;
       }
 

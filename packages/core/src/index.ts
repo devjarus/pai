@@ -1,6 +1,7 @@
 export type {
   Config, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult, EmbedResult, StreamEvent,
   PluginContext, Command, Plugin, AgentPlugin, AgentContext, Logger, LogLevel, LogFileOptions,
+  TelemetryAttributes, TelemetryProcess, TelemetrySpanType, TelemetryStatus, TelemetrySurface, EmbedOptions,
 } from "./types.js";
 
 // Background jobs (DB-backed)
@@ -10,6 +11,38 @@ export { loadConfig, loadConfigFile, writeConfig, findGitRoot, resolveConfigHome
 export { createStorage, backupDatabase, resolveIdPrefix } from "./storage.js";
 export { createLLMClient } from "./llm.js";
 export { createLogger } from "./logger.js";
+export {
+  telemetryMigrations,
+  TELEMETRY_RETENTION_DAYS,
+  cleanupOldTelemetrySpans,
+  createChildTelemetry,
+  finishSpan,
+  getJobDiagnostics,
+  getObservabilityOverview,
+  getThreadDiagnostics,
+  getTraceSpans,
+  instrumentedEmbed,
+  instrumentedGenerateText,
+  instrumentedStreamText,
+  listProcessAggregates,
+  listRecentErrors,
+  startSpan,
+} from "./telemetry.js";
+export type {
+  TelemetryRuntime,
+  TelemetryStartInput,
+  ActiveTelemetrySpan,
+  TelemetrySpan,
+  TelemetrySummary,
+  ProcessAggregate,
+  ModelAggregate,
+  ObservabilityOverview,
+  ObservabilityRange,
+  ThreadMessageUsage,
+  ThreadDiagnostics,
+  JobDiagnostics,
+  RecentError,
+} from "./telemetry.js";
 
 // Threads
 export {

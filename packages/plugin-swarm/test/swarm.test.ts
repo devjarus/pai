@@ -21,6 +21,16 @@ import {
 import { runSwarmInBackground } from "../src/swarm.js";
 import type { SwarmContext } from "../src/swarm.js";
 
+const mockInstrumentedGenerateText = vi.fn();
+
+vi.mock("@personal-ai/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@personal-ai/core")>();
+  return {
+    ...actual,
+    instrumentedGenerateText: (...args: unknown[]) => mockInstrumentedGenerateText(...args),
+  };
+});
+
 // Mock the AI SDK
 vi.mock("ai", () => ({
   generateText: vi.fn(),
@@ -39,6 +49,7 @@ describe("Swarm jobs", () => {
     storage.migrate("background_jobs", backgroundJobMigrations);
     storage.migrate("artifacts", artifactMigrations);
     vi.clearAllMocks();
+    mockInstrumentedGenerateText.mockReset();
   });
 
   afterEach(() => {
@@ -254,35 +265,51 @@ describe("Swarm jobs", () => {
 
   describe("runSwarmInBackground", () => {
     it("completes with synthesis on success", async () => {
-      const { generateText } = await import("ai");
-      // First call: planner returns plan
-      // Second+ calls: sub-agents produce results
-      // Last call: synthesizer produces report
-      (generateText as ReturnType<typeof vi.fn>)
+      mockInstrumentedGenerateText
         .mockResolvedValueOnce({
           // Planner
-          text: '```json\n[{"role":"researcher","task":"Research topic A","tools":["web_search","knowledge_search"]},{"role":"analyst","task":"Analyze topic B","tools":["knowledge_search"]}]\n```',
-          steps: [],
+          result: {
+            text: '```json\n[{"role":"researcher","task":"Research topic A","tools":["web_search","knowledge_search"]},{"role":"analyst","task":"Analyze topic B","tools":["knowledge_search"]}]\n```',
+            steps: [],
+          },
+          traceId: "trace-planner",
+          spanId: "span-planner",
         })
         .mockResolvedValueOnce({
           // Sub-agent 1
-          text: "Found important data about topic A.",
-          steps: [{ type: "tool-result" }],
+          result: {
+            text: "Found important data about topic A.",
+            steps: [{ type: "tool-result" }],
+          },
+          traceId: "trace-agent-1",
+          spanId: "span-agent-1",
         })
         .mockResolvedValueOnce({
           // Sub-agent 2
-          text: "Analysis shows strong trends in topic B.",
-          steps: [{ type: "tool-result" }],
+          result: {
+            text: "Analysis shows strong trends in topic B.",
+            steps: [{ type: "tool-result" }],
+          },
+          traceId: "trace-agent-2",
+          spanId: "span-agent-2",
         })
         .mockResolvedValueOnce({
           // Sub-agent 3 (chart generator)
-          text: "Generated a chart from the collected data.",
-          steps: [{ type: "tool-result" }],
+          result: {
+            text: "Generated a chart from the collected data.",
+            steps: [{ type: "tool-result" }],
+          },
+          traceId: "trace-agent-3",
+          spanId: "span-agent-3",
         })
         .mockResolvedValueOnce({
           // Synthesizer
-          text: "# Swarm Report: Test\n\n## Summary\nCombined findings from both agents.\n\n## Key Findings\n- Topic A data\n- Topic B trends",
-          steps: [],
+          result: {
+            text: "# Swarm Report: Test\n\n## Summary\nCombined findings from both agents.\n\n## Key Findings\n- Topic A data\n- Topic B trends",
+            steps: [],
+          },
+          traceId: "trace-synth",
+          spanId: "span-synth",
         });
 
       const ctx = makeCtx();
@@ -305,30 +332,49 @@ describe("Swarm jobs", () => {
     });
 
     it("falls back to a default three-role analysis plan when planning fails", async () => {
-      const { generateText } = await import("ai");
-      (generateText as ReturnType<typeof vi.fn>)
+      mockInstrumentedGenerateText
         .mockResolvedValueOnce({
           // Planner fails (no valid JSON)
-          text: "I cannot decompose this task.",
-          steps: [],
+          result: {
+            text: "I cannot decompose this task.",
+            steps: [],
+          },
+          traceId: "trace-planner",
+          spanId: "span-planner",
         })
         .mockResolvedValueOnce({
           // Fallback single agent
-          text: "Single agent result for the goal.",
-          steps: [{ type: "tool-result" }],
+          result: {
+            text: "Single agent result for the goal.",
+            steps: [{ type: "tool-result" }],
+          },
+          traceId: "trace-agent-1",
+          spanId: "span-agent-1",
         })
         .mockResolvedValueOnce({
-          text: "Analyst synthesized the findings.",
-          steps: [{ type: "tool-result" }],
+          result: {
+            text: "Analyst synthesized the findings.",
+            steps: [{ type: "tool-result" }],
+          },
+          traceId: "trace-agent-2",
+          spanId: "span-agent-2",
         })
         .mockResolvedValueOnce({
-          text: "Chart generator produced a PNG visual.",
-          steps: [{ type: "tool-result" }],
+          result: {
+            text: "Chart generator produced a PNG visual.",
+            steps: [{ type: "tool-result" }],
+          },
+          traceId: "trace-agent-3",
+          spanId: "span-agent-3",
         })
         .mockResolvedValueOnce({
           // Synthesizer
-          text: "# Swarm Report\n\nSingle agent findings.",
-          steps: [],
+          result: {
+            text: "# Swarm Report\n\nSingle agent findings.",
+            steps: [],
+          },
+          traceId: "trace-synth",
+          spanId: "span-synth",
         });
 
       const ctx = makeCtx();
@@ -347,8 +393,7 @@ describe("Swarm jobs", () => {
     });
 
     it("sets job to failed when execution throws", async () => {
-      const { generateText } = await import("ai");
-      (generateText as ReturnType<typeof vi.fn>).mockRejectedValue(
+      mockInstrumentedGenerateText.mockRejectedValue(
         new Error("LLM unavailable"),
       );
 
@@ -365,31 +410,50 @@ describe("Swarm jobs", () => {
     });
 
     it("persists sandbox artifacts and posts structured blackboard entry", async () => {
-      const { generateText } = await import("ai");
       // Plan with a coder agent that uses run_code
-      (generateText as ReturnType<typeof vi.fn>)
+      mockInstrumentedGenerateText
         .mockResolvedValueOnce({
           // Planner
-          text: '```json\n[{"role":"coder","task":"Generate a chart","tools":["run_code"]}]\n```',
-          steps: [],
+          result: {
+            text: '```json\n[{"role":"coder","task":"Generate a chart","tools":["run_code"]}]\n```',
+            steps: [],
+          },
+          traceId: "trace-planner",
+          spanId: "span-planner",
         })
         .mockResolvedValueOnce({
           // Sub-agent (coder) — tool calls happen inside the mock, but result text comes back
-          text: "Generated chart successfully.",
-          steps: [{ type: "tool-result" }],
+          result: {
+            text: "Generated chart successfully.",
+            steps: [{ type: "tool-result" }],
+          },
+          traceId: "trace-agent-1",
+          spanId: "span-agent-1",
         })
         .mockResolvedValueOnce({
-          text: "Researcher gathered supporting data.",
-          steps: [{ type: "tool-result" }],
+          result: {
+            text: "Researcher gathered supporting data.",
+            steps: [{ type: "tool-result" }],
+          },
+          traceId: "trace-agent-2",
+          spanId: "span-agent-2",
         })
         .mockResolvedValueOnce({
-          text: "Analyst summarized the quantitative findings.",
-          steps: [{ type: "tool-result" }],
+          result: {
+            text: "Analyst summarized the quantitative findings.",
+            steps: [{ type: "tool-result" }],
+          },
+          traceId: "trace-agent-3",
+          spanId: "span-agent-3",
         })
         .mockResolvedValueOnce({
           // Synthesizer
-          text: "# Report\nChart generated.",
-          steps: [],
+          result: {
+            text: "# Report\nChart generated.",
+            steps: [],
+          },
+          traceId: "trace-synth",
+          spanId: "span-synth",
         });
 
       // Mock sandbox to return a file
@@ -419,16 +483,35 @@ describe("Swarm jobs", () => {
     });
 
     it("registers job in background_jobs DB table", async () => {
-      const { generateText } = await import("ai");
-      (generateText as ReturnType<typeof vi.fn>)
+      mockInstrumentedGenerateText
         .mockResolvedValueOnce({
-          text: '```json\n[{"role":"researcher","task":"test","tools":["knowledge_search"]}]\n```',
-          steps: [],
+          result: {
+            text: '```json\n[{"role":"researcher","task":"test","tools":["knowledge_search"]}]\n```',
+            steps: [],
+          },
+          traceId: "trace-planner",
+          spanId: "span-planner",
         })
-        .mockResolvedValueOnce({ text: "Done.", steps: [] })
-        .mockResolvedValueOnce({ text: "Analyst review.", steps: [] })
-        .mockResolvedValueOnce({ text: "Chart created.", steps: [] })
-        .mockResolvedValueOnce({ text: "# Report\nDone.", steps: [] });
+        .mockResolvedValueOnce({
+          result: { text: "Done.", steps: [] },
+          traceId: "trace-agent-1",
+          spanId: "span-agent-1",
+        })
+        .mockResolvedValueOnce({
+          result: { text: "Analyst review.", steps: [] },
+          traceId: "trace-agent-2",
+          spanId: "span-agent-2",
+        })
+        .mockResolvedValueOnce({
+          result: { text: "Chart created.", steps: [] },
+          traceId: "trace-agent-3",
+          spanId: "span-agent-3",
+        })
+        .mockResolvedValueOnce({
+          result: { text: "# Report\nDone.", steps: [] },
+          traceId: "trace-synth",
+          spanId: "span-synth",
+        });
 
       const ctx = makeCtx();
       const id = createSwarmJob(storage, {

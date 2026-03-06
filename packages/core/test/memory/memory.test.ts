@@ -170,7 +170,14 @@ describe("Memory", () => {
 
     const context = await getMemoryContext(storage, "testing frameworks", { llm: mockLLM });
     expect(context).toContain("Vitest is fast for testing");
-    expect(mockLLM.embed).toHaveBeenCalledWith("testing frameworks");
+    expect(mockLLM.embed).toHaveBeenCalledWith(
+      "testing frameworks",
+      expect.objectContaining({
+        telemetry: expect.objectContaining({
+          process: "embed.memory",
+        }),
+      }),
+    );
   });
 
   it("should fall back to FTS5 when embedding fails", async () => {

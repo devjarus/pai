@@ -1,6 +1,5 @@
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
-import { semanticSearch, knowledgeSearch, getContextBudget, getProviderOptions } from "@personal-ai/core";
-import { generateText } from "ai";
+import { semanticSearch, knowledgeSearch, getContextBudget, getProviderOptions, instrumentedGenerateText } from "@personal-ai/core";
 import type { LanguageModel } from "ai";
 import type { Api } from "grammy";
 import type { RawApi } from "grammy";
@@ -60,7 +59,13 @@ async function shouldEngage(
   if (!canReact && !canPost) return { result: "ignore", score: 0 };
 
   // Single embedding call
-  const { embedding } = await ctx.llm.embed(text);
+  const { embedding } = await ctx.llm.embed(text, {
+    telemetry: {
+      process: "embed.memory",
+      surface: "telegram",
+      chatId,
+    },
+  });
 
   // Search memory
   const memoryResults = semanticSearch(ctx.storage, embedding, 3, text);
@@ -93,20 +98,31 @@ async function pickReactionEmoji(
 ): Promise<string> {
   try {
     const emojiBudget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
-    const result = await generateText({
-      model: ctx.llm.getModel() as LanguageModel,
-      system: `You are an emoji picker. Given a message, respond with exactly ONE emoji that best fits as a reaction. Choose from: ${ALLOWED_REACTIONS.join(" ")}
+    const { result } = await instrumentedGenerateText(
+      { storage: ctx.storage, logger: ctx.logger },
+      {
+        model: ctx.llm.getModel() as LanguageModel,
+        system: `You are an emoji picker. Given a message, respond with exactly ONE emoji that best fits as a reaction. Choose from: ${ALLOWED_REACTIONS.join(" ")}
 
 Rules:
 - Respond with ONLY the emoji, nothing else.
 - Match the emotion/tone of the message.
 - 👍 for agreement/approval, ❤️ for wholesome/love, 🔥 for impressive/cool, 👏 for achievements, 😁 for funny, 🎉 for celebrations, 🤔 for thought-provoking, 💯 for strong agreement, 😍 for amazing things, 🙏 for grateful/helpful, 👀 for interesting/curious, 🤯 for mind-blowing, 😱 for shocking, 🫡 for respect.`,
-      messages: [{ role: "user", content: messageText }],
-      temperature: 0.5,
-      maxRetries: 1,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      providerOptions: getProviderOptions(ctx.config.llm.provider, emojiBudget.contextWindow) as any,
-    });
+        messages: [{ role: "user", content: messageText }],
+        temperature: 0.5,
+        maxRetries: 1,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        providerOptions: getProviderOptions(ctx.config.llm.provider, emojiBudget.contextWindow) as any,
+      },
+      {
+        spanType: "llm",
+        process: "telegram.passive",
+        surface: "telegram",
+        provider: ctx.config.llm.provider,
+        model: ctx.config.llm.model,
+        requestSizeChars: messageText.length,
+      },
+    );
     const emoji = result.text.trim();
     // Validate it's an allowed emoji, fallback to 👍
     if (ALLOWED_REACTIONS.includes(emoji as typeof ALLOWED_REACTIONS[number])) {
@@ -148,17 +164,30 @@ Rules:
 - Match the energy of the conversation — be playful if they're playful, serious if they're serious.`;
 
   const chimeBudget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
-  const result = await generateText({
-    model: ctx.llm.getModel() as LanguageModel,
-    system: systemPrompt,
-    messages: [
-      { role: "user", content: `Recent group conversation:\n${conversationContext}\n\nChime in if you have something valuable or interesting to add. Otherwise say SKIP.` },
-    ],
-    temperature: 0.5,
-    maxRetries: 1,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    providerOptions: getProviderOptions(ctx.config.llm.provider, chimeBudget.contextWindow) as any,
-  });
+  const prompt = `Recent group conversation:\n${conversationContext}\n\nChime in if you have something valuable or interesting to add. Otherwise say SKIP.`;
+  const { result } = await instrumentedGenerateText(
+    { storage: ctx.storage, logger: ctx.logger },
+    {
+      model: ctx.llm.getModel() as LanguageModel,
+      system: systemPrompt,
+      messages: [
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.5,
+      maxRetries: 1,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      providerOptions: getProviderOptions(ctx.config.llm.provider, chimeBudget.contextWindow) as any,
+    },
+    {
+      spanType: "llm",
+      process: "telegram.passive",
+      surface: "telegram",
+      chatId,
+      provider: ctx.config.llm.provider,
+      model: ctx.config.llm.model,
+      requestSizeChars: prompt.length,
+    },
+  );
 
   const text = result.text.trim();
   if (!text || text === "SKIP" || text.length < 5) return null;

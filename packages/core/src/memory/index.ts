@@ -64,7 +64,9 @@ export function memoryCommands(ctx: PluginContext): Command[] {
         const typeFilter = opts?.["type"] as string | undefined;
         let beliefs: Array<{ id: string; statement: string; confidence: number; type: string }> = [];
         try {
-          const { embedding } = await ctx.llm.embed(query);
+          const { embedding } = await ctx.llm.embed(query, {
+            telemetry: { process: "embed.memory" },
+          });
           const similar = semanticSearch(ctx.storage, embedding, 10, query);
           beliefs = similar.filter((s) => s.similarity > 0.2).map((s) => ({
             id: s.beliefId,

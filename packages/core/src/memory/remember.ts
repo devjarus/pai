@@ -22,7 +22,10 @@ export async function extractBeliefs(
         'Keep each under 20 words.',
     },
     { role: "user", content: text },
-  ], { temperature: 0.3 });
+  ], {
+    temperature: 0.3,
+    telemetry: { process: "memory.extract" },
+  });
 
   try {
     // Strip markdown code fences if present (e.g. ```json ... ```)
@@ -74,7 +77,10 @@ export async function checkContradiction(
       role: "user",
       content: `New belief: "${newStatement}"\n\nExisting beliefs:\n${beliefList}\n\nDo any existing beliefs DIRECTLY contradict the new belief (cannot both be true)? Reply ONLY: ${validNumbers} or NONE.`,
     },
-  ], { temperature: 0 });
+  ], {
+    temperature: 0,
+    telemetry: { process: "memory.contradiction" },
+  });
 
   const answer = result.text.trim();
   logger?.debug("Contradiction check result", { answer, beliefCount: existingBeliefs.length });
@@ -127,7 +133,10 @@ export async function classifyRelationship(
       role: "user",
       content: `Existing belief: "${existingStatement}"\nNew belief: "${newStatement}"\n\nClassify: REINFORCEMENT, CONTRADICTION, or INDEPENDENT?`,
     },
-  ], { temperature: 0 });
+  ], {
+    temperature: 0,
+    telemetry: { process: "memory.relationship" },
+  });
 
   const answer = result.text.trim().toUpperCase();
   logger?.debug("Relationship classification", { answer, newStatement, existingStatement });
@@ -149,7 +158,9 @@ async function processNewBelief(
 ): Promise<{ beliefId: string; isReinforcement: boolean }> {
   let embedding: number[] | null = null;
   try {
-    const result = await llm.embed(statement);
+    const result = await llm.embed(statement, {
+      telemetry: { process: "embed.memory" },
+    });
     embedding = result.embedding;
   } catch (err) {
     logger?.warn("Embedding failed for belief, skipping semantic dedup", {
@@ -311,7 +322,9 @@ export async function remember(
   // Run episode embedding and belief extraction in parallel (independent LLM calls)
   const [, extracted] = await Promise.all([
     // Store episode embedding for semantic episode search
-    llm.embed(text)
+    llm.embed(text, {
+      telemetry: { process: "embed.memory" },
+    })
       .then(({ embedding }) => storeEpisodeEmbedding(storage, episode.id, embedding))
       .catch(() => logger?.warn("Failed to embed episode", { episodeId: episode.id })),
     // Extract beliefs from text

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Per-instance diagnostics** — Added a local observability system that records LLM, embed, tool, HTTP, and worker spans in SQLite. New owner-facing diagnostics panel lives in Settings with Overview, Processes, Threads, Jobs, and Errors tabs for token, latency, and failure visibility.
+
+### Changed
+
+- **End-to-end telemetry coverage** — Chat, Telegram, background learning, briefings, research, swarm execution, memory extraction, and knowledge embeddings now emit standardized process-level telemetry. Assistant thread messages also persist compact usage summaries for diagnostics without exposing raw metrics in normal user-facing flows.
+
 ### Security
 
 - **SVG XSS prevention** — Removed `image/svg+xml` from inline display whitelist for artifacts. SVGs are now force-downloaded, preventing stored XSS via embedded JavaScript. Added CSP `sandbox` header as defense-in-depth for SVG/HTML artifacts.

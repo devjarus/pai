@@ -6,6 +6,7 @@ import { loadConfig, createStorage, createLLMClient, createLogger } from "@perso
 import {
   memoryMigrations,
   knowledgeMigrations,
+  telemetryMigrations,
   getMemoryContext,
   remember,
   listBeliefs,
@@ -35,11 +36,12 @@ import {
 const config = loadConfig();
 const logger = createLogger(config.logLevel, { dir: config.dataDir });
 const storage = createStorage(config.dataDir, logger);
-const llm = createLLMClient(config.llm, logger);
+const llm = createLLMClient(config.llm, logger, storage);
 
 // Run migrations
 storage.migrate("memory", memoryMigrations);
 storage.migrate("knowledge", knowledgeMigrations);
+storage.migrate("telemetry", telemetryMigrations);
 storage.migrate("tasks", taskMigrations);
 
 // Clean shutdown

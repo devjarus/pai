@@ -33,7 +33,10 @@ export async function consolidateConversation(
   const result = await llm.chat([
     { role: "system", content: CONSOLIDATION_PROMPT },
     { role: "user", content: formatted },
-  ], { temperature: 0.3 });
+  ], {
+    temperature: 0.3,
+    telemetry: { process: "memory.summarize" },
+  });
 
   const summary = result.text.trim();
   if (!summary || summary === "NONE" || summary.startsWith("NONE")) return null;
@@ -44,7 +47,9 @@ export async function consolidateConversation(
   });
 
   try {
-    const { embedding } = await llm.embed(summary);
+    const { embedding } = await llm.embed(summary, {
+      telemetry: { process: "embed.memory" },
+    });
     storeEpisodeEmbedding(storage, episode.id, embedding);
   } catch {
     logger?.warn("Failed to embed consolidated episode", { episodeId: episode.id });

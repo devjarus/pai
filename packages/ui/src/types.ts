@@ -143,6 +143,125 @@ export interface ThreadMessage {
   sequence: number;
 }
 
+export type ObservabilityRange = "24h" | "7d" | "30d";
+
+export interface TelemetrySummary {
+  calls: number;
+  errors: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  avgDurationMs: number;
+  p95DurationMs: number;
+}
+
+export interface ProcessAggregate extends TelemetrySummary {
+  process: string;
+  avgStepCount: number;
+}
+
+export interface ModelAggregate extends TelemetrySummary {
+  provider: string | null;
+  model: string | null;
+}
+
+export interface ObservabilityOverview {
+  range: ObservabilityRange;
+  since: string;
+  totals: TelemetrySummary;
+  topProcesses: ProcessAggregate[];
+  topModels: ModelAggregate[];
+}
+
+export interface ThreadMessageUsage {
+  traceId: string;
+  process: string;
+  provider?: string | null;
+  model?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  durationMs?: number | null;
+  stepCount?: number | null;
+  toolCallCount?: number | null;
+}
+
+export interface ThreadDiagnosticsMessage {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: string;
+  sequence: number;
+  usage: ThreadMessageUsage | null;
+}
+
+export interface ThreadDiagnostics {
+  threadId: string;
+  totals: TelemetrySummary;
+  processBreakdown: ProcessAggregate[];
+  messages: ThreadDiagnosticsMessage[];
+}
+
+export interface AgentAggregate extends TelemetrySummary {
+  agentName: string;
+}
+
+export interface TelemetrySpan {
+  id: string;
+  traceId: string;
+  parentSpanId: string | null;
+  spanType: string;
+  surface: string | null;
+  process: string;
+  status: string;
+  provider: string | null;
+  model: string | null;
+  threadId: string | null;
+  jobId: string | null;
+  runId: string | null;
+  agentName: string | null;
+  toolName: string | null;
+  route: string | null;
+  chatId: string | null;
+  senderUsername: string | null;
+  senderDisplayName: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  stepCount: number | null;
+  durationMs: number | null;
+  requestSizeChars: number | null;
+  responseSizeChars: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  metadata: Record<string, unknown> | null;
+  startedAt: string;
+  endedAt: string;
+}
+
+export interface JobDiagnostics {
+  jobId: string;
+  totals: TelemetrySummary;
+  processBreakdown: ProcessAggregate[];
+  agentBreakdown: AgentAggregate[];
+  recentSpans: TelemetrySpan[];
+}
+
+export interface RecentError {
+  id: string;
+  traceId: string;
+  process: string;
+  surface: string | null;
+  route: string | null;
+  threadId: string | null;
+  jobId: string | null;
+  model: string | null;
+  provider: string | null;
+  durationMs: number | null;
+  errorMessage: string | null;
+  startedAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;

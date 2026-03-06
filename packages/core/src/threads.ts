@@ -91,6 +91,12 @@ export const threadMigrations: Migration[] = [
         ON thread_messages (thread_id, sequence);
     `,
   },
+  {
+    version: 4,
+    up: `
+      ALTER TABLE thread_messages ADD COLUMN usage_json TEXT;
+    `,
+  },
 ];
 
 export const DEFAULT_USER_ID = "user-local";
@@ -111,6 +117,7 @@ export interface ThreadMessageRow {
   role: ChatMessage["role"];
   content: string;
   parts_json: string | null;
+  usage_json: string | null;
   created_at: string;
   sequence: number;
 }
@@ -119,6 +126,7 @@ export interface ThreadMessageInput {
   role: ChatMessage["role"];
   content: string;
   partsJson?: string | null;
+  usageJson?: string | null;
   createdAt?: string;
 }
 
@@ -197,11 +205,11 @@ export function listMessages(storage: Storage, threadId: string, opts: ListMessa
 
   const rows = beforeSequence
     ? storage.query<ThreadMessageRow>(
-      "SELECT id, thread_id, role, content, parts_json, created_at, sequence FROM thread_messages WHERE thread_id = ? AND sequence < ? ORDER BY sequence DESC LIMIT ?",
+      "SELECT id, thread_id, role, content, parts_json, usage_json, created_at, sequence FROM thread_messages WHERE thread_id = ? AND sequence < ? ORDER BY sequence DESC LIMIT ?",
       [threadId, beforeSequence, limit],
     )
     : storage.query<ThreadMessageRow>(
-      "SELECT id, thread_id, role, content, parts_json, created_at, sequence FROM thread_messages WHERE thread_id = ? ORDER BY sequence DESC LIMIT ?",
+      "SELECT id, thread_id, role, content, parts_json, usage_json, created_at, sequence FROM thread_messages WHERE thread_id = ? ORDER BY sequence DESC LIMIT ?",
       [threadId, limit],
     );
 
@@ -222,13 +230,14 @@ export function appendMessages(storage: Storage, threadId: string, messages: Thr
     for (const msg of messages) {
       seq += 1;
       storage.run(
-        "INSERT INTO thread_messages (id, thread_id, role, content, parts_json, created_at, sequence) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO thread_messages (id, thread_id, role, content, parts_json, usage_json, created_at, sequence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [
           `msg-${randomUUID()}`,
           threadId,
           msg.role,
           msg.content,
           msg.partsJson ?? null,
+          msg.usageJson ?? null,
           msg.createdAt ?? now,
           seq,
         ],
