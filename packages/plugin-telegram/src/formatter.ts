@@ -1,6 +1,39 @@
 /** Convert standard Markdown to Telegram-compatible HTML and handle message splitting. */
 
 const TELEGRAM_MAX_LENGTH = 4096;
+const COMPLEX_CONTENT_THRESHOLD = 2000;
+
+/**
+ * Check whether a response is "complex" — long, or contains tables/code blocks/JSON.
+ * Used to decide whether to attach an HTML document alongside the chat message.
+ */
+export function isComplexContent(text: string): boolean {
+  if (text.length > COMPLEX_CONTENT_THRESHOLD) return true;
+  // Markdown tables (header + separator row)
+  if (/\|.+\|\n\|[\s:|-]+\|/m.test(text)) return true;
+  // Fenced code blocks
+  if (/```[\s\S]{100,}?```/.test(text)) return true;
+  // Large JSON-like blocks
+  if (/\{[\s\S]{200,}\}/.test(text)) return true;
+  return false;
+}
+
+/**
+ * Strip all HTML tags from text, leaving only the text content.
+ * Used as a clean fallback when Telegram rejects our HTML.
+ */
+export function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:p|div|li|h[1-6]|pre|blockquote)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 export interface BriefingSections {
   greeting: string;
@@ -534,6 +567,24 @@ function extractTrailingJson(text: string): { prefix: string; parsed: unknown } 
 }
 
 /**
+ * Strip residual raw JSON objects/arrays that leaked through earlier passes.
+ * Targets standalone `{...}` or `[{...}]` blocks (≥80 chars, looks like JSON)
+ * that appear on their own lines. Replaces them with a compact summary or removes them.
+ */
+function stripResidualJson(text: string): string {
+  return text.replace(/^[ \t]*(\[?\s*\{[\s\S]{80,}?\}\s*\]?)[ \t]*$/gm, (match, json: string) => {
+    try {
+      const parsed = JSON.parse(json);
+      const formatted = formatJsonPayload(parsed);
+      return formatted ?? "";
+    } catch {
+      // Not valid JSON — leave it alone
+      return match;
+    }
+  });
+}
+
+/**
  * Format a model response for Telegram.
  * If the response is raw JSON, convert it into a human-readable markdown summary.
  */
@@ -559,12 +610,20 @@ export function formatTelegramResponse(text: string): string {
 
   // Convert full JSON payloads or prose + trailing JSON payloads.
   const extracted = extractTrailingJson(normalized);
-  if (!extracted) return normalized;
+  if (extracted) {
+    const formatted = formatJsonPayload(extracted.parsed);
+    if (formatted) {
+      normalized = extracted.prefix ? `${extracted.prefix}\n\n${formatted}` : formatted;
+    }
+  }
 
-  const formatted = formatJsonPayload(extracted.parsed);
-  if (!formatted) return normalized;
+  // Final pass: catch any remaining raw JSON blocks that slipped through
+  normalized = stripResidualJson(normalized);
 
-  return extracted.prefix ? `${extracted.prefix}\n\n${formatted}` : formatted;
+  // Collapse excessive whitespace from all the stripping
+  normalized = normalized.replace(/\n{3,}/g, "\n\n").trim();
+
+  return normalized;
 }
 
 /**
@@ -594,44 +653,81 @@ function safeSplitPos(text: string, target: number): number {
 }
 
 /**
+ * Find unclosed HTML tags in a text fragment and return closing/reopening tags.
+ * Tracks Telegram-supported tags: b, i, s, u, code, pre, a.
+ */
+function repairHtmlTags(part: string): { closers: string; openers: string } {
+  const tagStack: string[] = [];
+  const tagRe = /<\/?([a-z]+)(?:\s[^>]*)?>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = tagRe.exec(part)) !== null) {
+    const full = m[0];
+    const tag = m[1]!.toLowerCase();
+    // Only track Telegram-supported tags
+    if (!["b", "i", "s", "u", "code", "pre", "a"].includes(tag)) continue;
+    if (full.startsWith("</")) {
+      // Closing tag — pop if matching
+      if (tagStack.length > 0 && tagStack[tagStack.length - 1] === tag) {
+        tagStack.pop();
+      }
+    } else {
+      tagStack.push(tag);
+    }
+  }
+  // tagStack now has unclosed tags (innermost last)
+  const closers = [...tagStack].reverse().map((t) => `</${t}>`).join("");
+  const openers = tagStack.map((t) => `<${t}>`).join("");
+  return { closers, openers };
+}
+
+/**
  * Split a message into chunks that fit Telegram's 4096-char limit.
  * Tries to split at paragraph boundaries, then newlines, then hard-splits.
- * Avoids splitting inside HTML tags.
+ * Avoids splitting inside HTML tags. Repairs unclosed tags at boundaries.
  */
 export function splitMessage(text: string, maxLength = TELEGRAM_MAX_LENGTH): string[] {
   if (text.length <= maxLength) return [text];
 
   const parts: string[] = [];
   let remaining = text;
+  // Tags left open from the previous chunk that need to be reopened
+  let pendingOpeners = "";
 
   while (remaining.length > maxLength) {
+    // Prepend any reopening tags from the previous split
+    const chunk = pendingOpeners + remaining;
+    const effectiveMax = maxLength;
+
     let splitIdx = -1;
 
     // Try paragraph boundary (double newline)
-    const paraIdx = remaining.lastIndexOf("\n\n", maxLength);
-    if (paraIdx > maxLength * 0.3) {
-      splitIdx = safeSplitPos(remaining, paraIdx);
+    const paraIdx = chunk.lastIndexOf("\n\n", effectiveMax);
+    if (paraIdx > effectiveMax * 0.3) {
+      splitIdx = safeSplitPos(chunk, paraIdx);
     }
 
     // Fall back to single newline
     if (splitIdx === -1) {
-      const nlIdx = remaining.lastIndexOf("\n", maxLength);
-      if (nlIdx > maxLength * 0.3) {
-        splitIdx = safeSplitPos(remaining, nlIdx);
+      const nlIdx = chunk.lastIndexOf("\n", effectiveMax);
+      if (nlIdx > effectiveMax * 0.3) {
+        splitIdx = safeSplitPos(chunk, nlIdx);
       }
     }
 
     // Hard split at maxLength
     if (splitIdx === -1) {
-      splitIdx = safeSplitPos(remaining, maxLength);
+      splitIdx = safeSplitPos(chunk, effectiveMax);
     }
 
-    parts.push(remaining.slice(0, splitIdx).trimEnd());
-    remaining = remaining.slice(splitIdx).trimStart();
+    const rawPart = chunk.slice(0, splitIdx);
+    const { closers, openers } = repairHtmlTags(rawPart);
+    parts.push((rawPart + closers).trimEnd());
+    pendingOpeners = openers;
+    remaining = chunk.slice(splitIdx).trimStart();
   }
 
-  if (remaining.length > 0) {
-    parts.push(remaining);
+  if (remaining.length > 0 || pendingOpeners) {
+    parts.push((pendingOpeners + remaining).trimEnd());
   }
 
   return parts;

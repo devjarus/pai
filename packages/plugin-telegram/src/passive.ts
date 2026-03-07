@@ -3,6 +3,7 @@ import { semanticSearch, knowledgeSearch, getContextBudget, getProviderOptions, 
 import type { LanguageModel } from "ai";
 import type { Api } from "grammy";
 import type { RawApi } from "grammy";
+import { markdownToTelegramHTML, splitMessage } from "./formatter.js";
 
 // --- In-memory group context ---
 
@@ -229,9 +230,19 @@ export async function passiveProcess(
   if (result === "proactive") {
     const response = await generateProactiveResponse(ctx, agentPlugin, chatId);
     if (response) {
-      await api.sendMessage(chatId, response, {
-        reply_parameters: { message_id: message.message_id },
-      }).catch(() => {});
+      const html = markdownToTelegramHTML(response);
+      const parts = splitMessage(html);
+      for (let i = 0; i < parts.length; i++) {
+        await api.sendMessage(chatId, parts[i]!, {
+          parse_mode: "HTML",
+          ...(i === 0 ? { reply_parameters: { message_id: message.message_id } } : {}),
+        }).catch(() => {
+          // Fallback: send without HTML formatting
+          api.sendMessage(chatId, response, {
+            ...(i === 0 ? { reply_parameters: { message_id: message.message_id } } : {}),
+          }).catch(() => {});
+        });
+      }
       gc.lastProactiveTime = Date.now();
     }
   }

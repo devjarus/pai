@@ -14,7 +14,7 @@ import { startResearchPushLoop } from "./push.js";
 // Re-exports
 export { createBot } from "./bot.js";
 export { runAgentChat, createThread, deleteThread, clearThread } from "./chat.js";
-export { markdownToTelegramHTML, markdownToReportHTML, splitMessage, formatBriefingHTML, escapeHTML, formatTelegramResponse } from "./formatter.js";
+export { markdownToTelegramHTML, markdownToReportHTML, splitMessage, formatBriefingHTML, escapeHTML, formatTelegramResponse, isComplexContent, stripHtmlTags } from "./formatter.js";
 export { startResearchPushLoop } from "./push.js";
 export { buildTelegramReportDocument, sendReportDocumentToTelegram } from "./report-document.js";
 

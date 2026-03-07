@@ -49,12 +49,33 @@ async function sendToTelegramChat(bot: Bot, chatId: number, html: string, logger
   }
 }
 
-/** Create a short preview (first ~500 chars) */
+/** Create a short preview (first ~500 chars), avoiding cuts mid-table or mid-code-block. */
 function makePreview(report: string, maxLen = 500): string {
   if (report.length <= maxLen) return report;
-  const cutIdx = report.lastIndexOf("\n", maxLen);
-  const sliced = cutIdx > maxLen * 0.3 ? report.slice(0, cutIdx) : report.slice(0, maxLen);
-  return sliced.trimEnd();
+
+  // Prefer cutting at a paragraph boundary (double newline)
+  const paraIdx = report.lastIndexOf("\n\n", maxLen);
+  if (paraIdx > maxLen * 0.3) {
+    const candidate = report.slice(0, paraIdx).trimEnd();
+    // Don't cut if we're inside a table (line starts with |) or code block
+    const lastLine = candidate.split("\n").pop() ?? "";
+    if (!lastLine.startsWith("|") && !lastLine.startsWith("```")) {
+      return candidate;
+    }
+  }
+
+  // Fall back to a single newline, but skip table/code lines
+  for (let i = maxLen; i > maxLen * 0.3; i--) {
+    if (report[i] === "\n") {
+      const nextLine = report.slice(i + 1, i + 5);
+      if (!nextLine.startsWith("|") && !nextLine.startsWith("```")) {
+        return report.slice(0, i).trimEnd();
+      }
+    }
+  }
+
+  // Last resort: hard cut
+  return report.slice(0, maxLen).trimEnd();
 }
 
 async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger): Promise<void> {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { markdownToTelegramHTML, splitMessage, telegramPlugin } from "../src/index.js";
+import { markdownToTelegramHTML, splitMessage, telegramPlugin, isComplexContent, stripHtmlTags, formatTelegramResponse } from "../src/index.js";
 import { withThreadLock } from "../src/chat.js";
 
 describe("markdownToTelegramHTML", () => {
@@ -291,5 +291,111 @@ describe("withThreadLock", () => {
     });
     await Promise.all([p1, p2]);
     expect(ran).toBe(true);
+  });
+});
+
+describe("isComplexContent", () => {
+  it("returns false for short simple text", () => {
+    expect(isComplexContent("Hello world")).toBe(false);
+  });
+
+  it("returns true for long text", () => {
+    expect(isComplexContent("x".repeat(2001))).toBe(true);
+  });
+
+  it("returns true for markdown tables", () => {
+    const table = "| Key | Value |\n|-----|-------|\n| A | B |";
+    expect(isComplexContent(table)).toBe(true);
+  });
+
+  it("returns true for large code blocks", () => {
+    const code = "```\n" + "x".repeat(101) + "\n```";
+    expect(isComplexContent(code)).toBe(true);
+  });
+
+  it("returns true for large JSON blocks", () => {
+    const json = "{" + '"key": "value", '.repeat(20) + '"end": true}';
+    expect(isComplexContent(json)).toBe(true);
+  });
+});
+
+describe("stripHtmlTags", () => {
+  it("strips all HTML tags", () => {
+    expect(stripHtmlTags("<b>bold</b> and <i>italic</i>")).toBe("bold and italic");
+  });
+
+  it("converts block closing tags to newlines", () => {
+    const result = stripHtmlTags("<p>line one</p><p>line two</p>");
+    expect(result).toContain("line one");
+    expect(result).toContain("line two");
+  });
+
+  it("decodes HTML entities", () => {
+    expect(stripHtmlTags("a &lt; b &gt; c &amp; d")).toBe("a < b > c & d");
+  });
+
+  it("converts <br> to newlines", () => {
+    expect(stripHtmlTags("one<br>two<br/>three")).toBe("one\ntwo\nthree");
+  });
+});
+
+describe("formatTelegramResponse", () => {
+  it("strips jsonrender blocks", () => {
+    const input = "Hello\n```jsonrender\n{\"root\":\"x\"}\n```\nWorld";
+    const result = formatTelegramResponse(input);
+    expect(result).toContain("Hello");
+    expect(result).toContain("World");
+    expect(result).not.toContain("jsonrender");
+  });
+
+  it("converts fenced JSON to readable markdown", () => {
+    const input = '```json\n{"name": "Alice", "age": 30}\n```';
+    const result = formatTelegramResponse(input);
+    expect(result).toContain("Name");
+    expect(result).toContain("Alice");
+    expect(result).not.toContain("```");
+  });
+
+  it("strips residual raw JSON blocks", () => {
+    const json = '{"ticker": "AAPL", "price": 150, "change": 2.5, "volume": 1000000, "marketCap": 2500000000000, "pe": 25.3}';
+    const input = `Here is the data:\n${json}`;
+    const result = formatTelegramResponse(input);
+    expect(result).not.toContain('"ticker"');
+    expect(result).toContain("AAPL");
+  });
+
+  it("collapses excessive whitespace after stripping", () => {
+    const input = "Hello\n\n\n\n\n\nWorld";
+    const result = formatTelegramResponse(input);
+    expect(result).not.toMatch(/\n{3,}/);
+  });
+});
+
+describe("splitMessage tag repair", () => {
+  it("closes and reopens bold tags across split boundaries", () => {
+    const html = "<b>" + "x".repeat(4090) + " continued</b>";
+    const parts = splitMessage(html);
+    expect(parts.length).toBeGreaterThan(1);
+    // First part should have closing </b>
+    expect(parts[0]).toContain("</b>");
+    // Second part should reopen <b>
+    expect(parts[1]).toMatch(/^<b>/);
+  });
+
+  it("handles nested tags across splits", () => {
+    const html = "<b><i>" + "x".repeat(4090) + "</i></b>";
+    const parts = splitMessage(html);
+    expect(parts.length).toBeGreaterThan(1);
+    // First part closes both tags
+    expect(parts[0]).toContain("</i>");
+    expect(parts[0]).toContain("</b>");
+    // Second part reopens both
+    expect(parts[1]).toMatch(/^<b><i>/);
+  });
+
+  it("does not add spurious tags when not needed", () => {
+    const html = "<b>short</b>";
+    const parts = splitMessage(html);
+    expect(parts).toEqual(["<b>short</b>"]);
   });
 });

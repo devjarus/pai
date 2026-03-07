@@ -8,7 +8,7 @@ import { listSwarmJobs } from "@personal-ai/plugin-swarm";
 import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { runAgentChat, createThread, clearThread as clearThreadMessages } from "./chat.js";
-import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse } from "./formatter.js";
+import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse, isComplexContent, stripHtmlTags } from "./formatter.js";
 import { bufferMessage, passiveProcess } from "./passive.js";
 import { sendArtifactsToTelegram } from "./delivery.js";
 import { sendReportDocumentToTelegram } from "./report-document.js";
@@ -316,25 +316,48 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       }
 
       const formattedText = formatTelegramResponse(result.text);
+      const complex = isComplexContent(formattedText);
       const html = markdownToTelegramHTML(formattedText);
       const parts = splitMessage(html);
 
-      try {
-        await bot.api.editMessageText(chatId, placeholder.message_id, parts[0]!, { parse_mode: "HTML" });
-      } catch {
-        const plainParts = splitMessage(formattedText);
-        await bot.api.editMessageText(chatId, placeholder.message_id, plainParts[0]!);
-        for (let i = 1; i < plainParts.length; i++) {
-          await bot.api.sendMessage(chatId, plainParts[i]!);
+      // Helper: send a single part with HTML, falling back to clean plain text
+      const sendPart = async (part: string, editMessageId?: number): Promise<boolean> => {
+        try {
+          if (editMessageId) {
+            await bot.api.editMessageText(chatId, editMessageId, part, { parse_mode: "HTML" });
+          } else {
+            await bot.api.sendMessage(chatId, part, { parse_mode: "HTML" });
+          }
+          return true;
+        } catch {
+          // HTML rejected — send as clean plain text (strip tags properly)
+          const plain = stripHtmlTags(part);
+          if (editMessageId) {
+            await bot.api.editMessageText(chatId, editMessageId, plain);
+          } else {
+            await bot.api.sendMessage(chatId, plain);
+          }
+          return false;
         }
-        return;
+      };
+
+      await sendPart(parts[0]!, placeholder.message_id);
+      for (let i = 1; i < parts.length; i++) {
+        await sendPart(parts[i]!);
       }
 
-      for (let i = 1; i < parts.length; i++) {
+      // Auto-attach HTML document for complex responses (tables, code, long text)
+      if (complex) {
+        const titleMatch = formattedText.match(/^#+\s+(.+)$/m);
+        const docTitle = titleMatch?.[1]?.slice(0, 80) ?? "Response";
         try {
-          await bot.api.sendMessage(chatId, parts[i]!, { parse_mode: "HTML" });
-        } catch {
-          await bot.api.sendMessage(chatId, splitMessage(formattedText)[i] ?? parts[i]!);
+          await sendReportDocumentToTelegram(ctx.storage, bot, chatId, {
+            title: docTitle,
+            markdown: formattedText,
+            fileName: `${docTitle}.html`,
+          }, ctx.logger);
+        } catch (err) {
+          ctx.logger.warn("Failed to send auto-document", { error: err instanceof Error ? err.message : String(err) });
         }
       }
 
