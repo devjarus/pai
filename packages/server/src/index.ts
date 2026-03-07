@@ -374,7 +374,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     await app.register(fastifyStatic, {
       root: uiDistPath,
       prefix: "/",
-      wildcard: false, // Let API routes take priority
+      wildcard: true,
     });
   }
 

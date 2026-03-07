@@ -18,6 +18,38 @@ import {
   Download,
 } from "lucide-react";
 import { useState } from "react";
+import {
+  buildAreaPath,
+  buildDonutSegments,
+  buildLinePath,
+  buildLinePoints,
+  formatChartValue,
+  getChartBounds,
+} from "./chart-utils";
+
+const DEFAULT_CHART_COLORS = ["#60a5fa", "#34d399", "#fbbf24", "#c084fc", "#fb7185", "#22d3ee"];
+
+function ChartShell({
+  title,
+  children,
+  footer,
+}: {
+  title?: string | null;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-zinc-700/50 bg-zinc-900/70 overflow-hidden">
+      {title && <div className="px-4 pt-4 text-sm font-semibold text-zinc-100">{title}</div>}
+      <div className="px-3 py-3">{children}</div>
+      {footer && <div className="border-t border-zinc-700/40 px-4 py-2 text-xs text-zinc-400">{footer}</div>}
+    </div>
+  );
+}
+
+function ChartEmptyState({ message }: { message: string }) {
+  return <div className="rounded-lg border border-dashed border-zinc-700/50 px-4 py-6 text-sm text-zinc-500">{message}</div>;
+}
 
 export const { registry, handlers, executeAction } = defineRegistry(resultCatalog, {
   components: {
@@ -231,6 +263,174 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
             />
           </div>
         </div>
+      );
+    },
+
+    LineChart: ({ props }) => {
+      const labels = props.labels ?? [];
+      const values = props.values ?? [];
+      if (labels.length === 0 || values.length === 0 || labels.length !== values.length) {
+        return <ChartEmptyState message="Line chart data is unavailable." />;
+      }
+
+      const width = 360;
+      const height = 220;
+      const padding = 24;
+      const chartBottom = height - 34;
+      const points = buildLinePoints(values, width, chartBottom, padding, props.minValue, props.maxValue);
+      const linePath = buildLinePath(points);
+      const areaPath = props.showArea ? buildAreaPath(points, chartBottom, padding) : "";
+      const bounds = getChartBounds(values, props.minValue, props.maxValue);
+      const currentValue = values[values.length - 1];
+      const stroke = props.color ?? DEFAULT_CHART_COLORS[0];
+      const gridLines = Array.from({ length: 4 }, (_, index) => {
+        const ratio = index / 3;
+        return padding + ratio * (chartBottom - padding);
+      });
+
+      return (
+        <ChartShell
+          title={props.title}
+          footer={
+            <div className="flex items-center justify-between gap-2">
+              <span>Min {formatChartValue(bounds.min, props.valuePrefix, props.valueSuffix)}</span>
+              <span className="font-medium text-zinc-200">
+                Latest {formatChartValue(currentValue, props.valuePrefix, props.valueSuffix)}
+              </span>
+              <span>Max {formatChartValue(bounds.max, props.valuePrefix, props.valueSuffix)}</span>
+            </div>
+          }
+        >
+          <svg viewBox={`0 0 ${width} ${height}`} className="w-full">
+            {gridLines.map((y, index) => (
+              <line
+                key={index}
+                x1={padding}
+                x2={width - padding}
+                y1={y}
+                y2={y}
+                stroke="rgba(113,113,122,0.35)"
+                strokeDasharray={index === gridLines.length - 1 ? undefined : "3 3"}
+              />
+            ))}
+            {areaPath && <path d={areaPath} fill={stroke} opacity={0.14} />}
+            <path d={linePath} fill="none" stroke={stroke} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            {points.map((point, index) => (
+              <g key={labels[index]}>
+                <circle cx={point.x} cy={point.y} r="4" fill={stroke} />
+                <circle cx={point.x} cy={point.y} r="7" fill={stroke} opacity="0.18" />
+                <text x={point.x} y={height - 8} textAnchor="middle" fontSize="11" fill="#a1a1aa">
+                  {labels[index]}
+                </text>
+              </g>
+            ))}
+          </svg>
+        </ChartShell>
+      );
+    },
+
+    BarChart: ({ props }) => {
+      const data = props.data ?? [];
+      if (data.length === 0) {
+        return <ChartEmptyState message="Bar chart data is unavailable." />;
+      }
+
+      const maxValue = props.maxValue ?? Math.max(...data.map((item) => item.value), 1);
+
+      return (
+        <ChartShell title={props.title}>
+          <div className="flex items-end gap-3">
+            {data.map((item, index) => {
+              const height = Math.max(10, (Math.max(0, item.value) / Math.max(1, maxValue)) * 160);
+              const color = item.color ?? DEFAULT_CHART_COLORS[index % DEFAULT_CHART_COLORS.length];
+              return (
+                <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
+                  <div className="text-[11px] font-medium text-zinc-300">
+                    {formatChartValue(item.value, props.valuePrefix, props.valueSuffix)}
+                  </div>
+                  <div className="flex h-40 w-full items-end justify-center">
+                    <div
+                      className="w-full max-w-16 rounded-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
+                      style={{ height: `${height}px`, backgroundColor: color }}
+                    />
+                  </div>
+                  <div className="text-center text-[11px] text-zinc-400">{item.label}</div>
+                </div>
+              );
+            })}
+          </div>
+        </ChartShell>
+      );
+    },
+
+    DonutChart: ({ props }) => {
+      const data = props.data ?? [];
+      if (data.length === 0) {
+        return <ChartEmptyState message="Donut chart data is unavailable." />;
+      }
+
+      const radius = 44;
+      const circumference = 2 * Math.PI * radius;
+      const segments = buildDonutSegments(data, circumference);
+
+      return (
+        <ChartShell title={props.title}>
+          <div className="flex flex-col gap-4 md:flex-row md:items-center">
+            <div className="mx-auto shrink-0">
+              <svg viewBox="0 0 120 120" className="h-40 w-40 -rotate-90">
+                <circle
+                  cx="60"
+                  cy="60"
+                  r={radius}
+                  fill="none"
+                  stroke="rgba(113,113,122,0.3)"
+                  strokeWidth="16"
+                />
+                {segments.map((segment, index) => (
+                  <circle
+                    key={`${segment.label}-${index}`}
+                    cx="60"
+                    cy="60"
+                    r={radius}
+                    fill="none"
+                    stroke={segment.color ?? DEFAULT_CHART_COLORS[index % DEFAULT_CHART_COLORS.length]}
+                    strokeWidth="16"
+                    strokeLinecap="round"
+                    strokeDasharray={`${segment.dashLength} ${circumference}`}
+                    strokeDashoffset={segment.dashOffset}
+                  />
+                ))}
+                <g transform="rotate(90 60 60)">
+                  <text x="60" y="54" textAnchor="middle" fontSize="12" fill="#a1a1aa">
+                    {props.centerLabel ?? "Total"}
+                  </text>
+                  <text x="60" y="70" textAnchor="middle" fontSize="16" fontWeight="700" fill="#f4f4f5">
+                    {formatChartValue(data.reduce((sum, item) => sum + item.value, 0), null, props.valueSuffix)}
+                  </text>
+                </g>
+              </svg>
+            </div>
+            <div className="flex-1 space-y-2">
+              {segments.map((segment, index) => (
+                <div key={segment.label} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-700/40 bg-zinc-800/40 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-3 w-3 rounded-full"
+                      style={{ backgroundColor: segment.color ?? DEFAULT_CHART_COLORS[index % DEFAULT_CHART_COLORS.length] }}
+                    />
+                    <span className="text-sm text-zinc-200">{segment.label}</span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-medium text-zinc-100">
+                      {formatChartValue(segment.value, null, props.valueSuffix)}
+                    </div>
+                    <div className="text-[11px] text-zinc-400">{Math.round(segment.percentage * 100)}%</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </ChartShell>
       );
     },
 

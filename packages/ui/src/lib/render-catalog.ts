@@ -82,6 +82,47 @@ export const resultCatalog = defineCatalog(schema, {
       }),
       description: "Progress or confidence bar. Use for confidence %, completion, scores.",
     },
+    LineChart: {
+      props: z.object({
+        title: z.string().nullable(),
+        labels: z.array(z.string()),
+        values: z.array(z.number()),
+        color: z.string().nullable(),
+        valuePrefix: z.string().nullable(),
+        valueSuffix: z.string().nullable(),
+        minValue: z.number().nullable(),
+        maxValue: z.number().nullable(),
+        showArea: z.boolean().nullable(),
+      }),
+      description: "Line chart for time-series or trend data. labels and values must have the same length.",
+    },
+    BarChart: {
+      props: z.object({
+        title: z.string().nullable(),
+        data: z.array(z.object({
+          label: z.string(),
+          value: z.number(),
+          color: z.string().nullable().optional(),
+        })),
+        valuePrefix: z.string().nullable(),
+        valueSuffix: z.string().nullable(),
+        maxValue: z.number().nullable(),
+      }),
+      description: "Bar chart for ranked comparisons or categorical values.",
+    },
+    DonutChart: {
+      props: z.object({
+        title: z.string().nullable(),
+        data: z.array(z.object({
+          label: z.string(),
+          value: z.number(),
+          color: z.string().nullable().optional(),
+        })),
+        centerLabel: z.string().nullable(),
+        valueSuffix: z.string().nullable(),
+      }),
+      description: "Donut chart for composition, allocation, or share-of-total data.",
+    },
 
     // Content
     Heading: {
@@ -185,6 +226,7 @@ export function getResultRenderPrompt(): string {
       "Use DataTable for comparing multiple items (flights, stocks, etc.)",
       "Use BulletList for risks, catalysts, recommendations",
       "Use Badge for verdict, status, and category labels",
+      "Use LineChart, BarChart, or DonutChart when quantitative data exists and a native chart communicates it better than a static image",
       "Use ChartImage for static chart artifacts at /api/artifacts/<id> when visuals are available",
       "Use LinkButton for artifact downloads or high-value external links",
       "Use SourceList at the end for all reference links",

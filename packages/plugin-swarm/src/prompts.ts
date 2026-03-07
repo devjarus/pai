@@ -296,6 +296,9 @@ After the markdown report and structured data block (if any), include a json-ren
 - **DataTable**: \`{ columns: [{key, label, align?}], rows: [{key: value}], highlightFirst? }\` — rows keys MUST match column key values
 - **Badge**: \`{ text, variant }\` — variant is "success"/"warning"/"danger"/"info"/"neutral"
 - **BulletList**: \`{ items: string[], icon?, variant? }\` — icon is "bullet"/"check"/"warning"/"arrow-up"/"arrow-down"
+- **LineChart**: \`{ title?, labels: string[], values: number[], valuePrefix?, valueSuffix?, minValue?, maxValue?, showArea? }\` — use for trends and time series
+- **BarChart**: \`{ title?, data: [{label, value, color?}], valuePrefix?, valueSuffix?, maxValue? }\` — use for ranked comparisons
+- **DonutChart**: \`{ title?, data: [{label, value, color?}], centerLabel?, valueSuffix? }\` — use for composition/share-of-total
 - **ChartImage**: \`{ src, alt, caption? }\` — use artifact URLs like /api/artifacts/<id> when visuals are available
 - **LinkButton**: \`{ url, text, icon?, variant? }\` — use for source links or artifact download buttons
 - **SourceList**: \`{ sources: [{title, url}] }\`
@@ -349,6 +352,7 @@ IMPORTANT: Fill in ALL actual values from your analysis — do NOT use placehold
 - Highlight the most important and actionable findings
 - Keep the report focused and readable
 - Include explicit caveats and confidence limits when evidence is incomplete
+- When quantitative data exists, prefer LineChart, BarChart, or DonutChart over static image placeholders unless the artifact itself is the important output
 - When quantitative data exists and artifacts are available, include at least one visual in the json-render spec`;
 }
 

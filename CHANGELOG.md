@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **LLM traffic shaping controls** — Added instance-level queue controls in Settings for max LLM concurrency, background start gap, startup delay, and swarm agent concurrency. Jobs and diagnostics now expose queue position, wait reason, queue wait metrics, and live lane depth.
 - **Swarm-friendly traffic defaults** — Default LLM traffic shaping now allows up to 5 concurrent swarm sub-agents with one reserved interactive slot, so a single swarm can investigate in parallel without fully blocking chat responsiveness.
 - **Inline structured chat visuals** — Web chat now renders valid `jsonrender` blocks inline inside assistant replies, and `run_code` tool cards reuse the shared result renderer for generated image artifacts while keeping downloadable file fallbacks.
+- **Native json-render charts** — Added first-pass `LineChart`, `BarChart`, and `DonutChart` components so structured research results can render real in-app charts when quantitative data exists, while still keeping artifact images as fallback.
 
 ### Changed
 
@@ -63,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Built UI asset routing** — Production server static hosting now serves nested `/assets/*` files correctly, preventing blank-page reloads caused by JavaScript and CSS requests falling through to `index.html`.
 - **Provider setup error visibility** — LLM setup "Test Connection" now performs a tiny inference instead of a shallow provider health check, so billing, quota, auth, and model-access failures surface with the provider's actual error message.
 - **Wasteful thread title token usage** — Short chats now keep cheap heuristic titles instead of immediately invoking the full LLM title path. LLM-generated title refreshes only start on longer threads and the title call itself is capped to a tiny output budget, cutting unnecessary token burn and queue time.
 - **Hung background LLM calls** — Research, swarm, and daily briefing generation now set explicit AI SDK timeouts so a stalled provider step cannot hold the background dispatcher indefinitely and leave jobs stuck in `running`.

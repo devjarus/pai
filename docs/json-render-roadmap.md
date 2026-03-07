@@ -38,10 +38,12 @@ Status: planned.
 
 ## Phase 4 - Native chart components
 
-Status: planned.
+Status: partially implemented.
 
-- Add a small native charting dependency only after the image-backed flow is stable.
-- Introduce tightly scoped `json-render` components such as `BarChart`, `LineChart`, and `DonutChart`.
+- Introduced first-pass native `LineChart`, `BarChart`, and `DonutChart` components implemented with lightweight SVG rendering.
+- Updated chat/research/swarm prompt guidance so quantitative results can prefer native charts when reliable numeric data exists.
+- Keep the current SVG approach dependency-light while we learn which chart patterns deserve deeper investment.
+- Add a small native charting dependency later only if the SVG approach proves too limiting.
 - Keep artifact images as fallback for export, sharing, and surfaces that cannot execute richer chart code.
 
 ## Phase 5 - Structured assistant message transport

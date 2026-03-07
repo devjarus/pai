@@ -437,7 +437,7 @@ After the data JSON block, include a SECOND code fence with a json-render UI spe
 }
 \`\`\`
 
-Fill in the actual values from your research. DataTable rows MUST be objects with keys matching column "key" fields. Available components: Section, Grid, MetricCard, DataTable, Badge, FlightOption, SourceList, BulletList, Text, Markdown.
+Fill in the actual values from your research. DataTable rows MUST be objects with keys matching column "key" fields. Available components: Section, Grid, MetricCard, DataTable, Badge, FlightOption, SourceList, BulletList, Text, Markdown, LineChart, BarChart, DonutChart, ChartImage. Use native chart components when quantitative data clearly benefits from a chart.
 
 ## Budget
 You have limited searches and page reads. Be efficient — focus on the most useful flight aggregator sites.`;
@@ -523,7 +523,7 @@ After the data JSON block, include a SECOND code fence with a json-render UI spe
     "stock-analysis": {
       "type": "Section",
       "props": { "title": "NVDA — NVIDIA Corporation", "subtitle": "Strong AI/data center tailwinds support continued growth" },
-      "children": ["verdict-row", "key-metrics", "risks-catalysts", "sources"]
+      "children": ["verdict-row", "price-history", "key-metrics", "risks-catalysts", "sources"]
     },
     "verdict-row": {
       "type": "Grid",
@@ -541,6 +541,16 @@ After the data JSON block, include a SECOND code fence with a json-render UI spe
     "price-metric": {
       "type": "MetricCard",
       "props": { "label": "Price", "value": "$131.42", "description": "P/E 58.3 · MCap $3.2T" }
+    },
+    "price-history": {
+      "type": "LineChart",
+      "props": {
+        "title": "Price History (Last 7 Days)",
+        "labels": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        "values": [95.4, 96.8, 96.2, 98.7, 98.1, 99.9, 100.8],
+        "valuePrefix": "$",
+        "showArea": true
+      }
     },
     "key-metrics": {
       "type": "Grid",
@@ -584,7 +594,7 @@ After the data JSON block, include a SECOND code fence with a json-render UI spe
 }
 \`\`\`
 
-Fill in the actual values from your research. For DataTable, columns MUST be objects with "key" and "label" fields, and rows MUST be objects with keys matching column "key" values. Badge variant must be one of: success, warning, danger, info, neutral. Available components: Section, Grid, MetricCard, DataTable, Badge, SourceList, BulletList, Text, Markdown.
+Fill in the actual values from your research. For DataTable, columns MUST be objects with "key" and "label" fields, and rows MUST be objects with keys matching column "key" values. Badge variant must be one of: success, warning, danger, info, neutral. Available components: Section, Grid, MetricCard, DataTable, Badge, SourceList, BulletList, Text, Markdown, LineChart, BarChart, DonutChart, ChartImage. Prefer LineChart, BarChart, or DonutChart when you have real numeric data.
 
 ## Budget
 You have limited searches and page reads. Prioritize authoritative financial sources.`;
@@ -733,7 +743,7 @@ After the data JSON block, include a SECOND code fence with a json-render UI spe
 }
 \`\`\`
 
-Fill in the actual values from your research. For DataTable, columns MUST be objects with "key" and "label" fields, and rows MUST be objects with keys matching column "key" values. Badge variant must be one of: success, warning, danger, info, neutral. Available components: Section, Grid, MetricCard, DataTable, Badge, SourceList, BulletList, Text, Markdown.
+Fill in the actual values from your research. For DataTable, columns MUST be objects with "key" and "label" fields, and rows MUST be objects with keys matching column "key" values. Badge variant must be one of: success, warning, danger, info, neutral. Available components: Section, Grid, MetricCard, DataTable, Badge, SourceList, BulletList, Text, Markdown, LineChart, BarChart, DonutChart, ChartImage. Prefer LineChart, BarChart, or DonutChart when you have real numeric data.
 
 ## Budget
 You have limited searches and page reads. Prioritize authoritative crypto data sources.`;
@@ -849,7 +859,7 @@ After the data JSON block, include a SECOND code fence with a json-render UI spe
 }
 \`\`\`
 
-Fill in the actual values from your research. For DataTable, columns MUST be objects with "key" and "label" fields, and rows MUST be objects with keys matching column "key" values. Available components: Section, Grid, MetricCard, DataTable, Badge, SourceList, BulletList, Text, Markdown.
+Fill in the actual values from your research. For DataTable, columns MUST be objects with "key" and "label" fields, and rows MUST be objects with keys matching column "key" values. Available components: Section, Grid, MetricCard, DataTable, Badge, SourceList, BulletList, Text, Markdown, LineChart, BarChart, DonutChart, ChartImage. Prefer LineChart, BarChart, or DonutChart when you have real numeric data.
 
 ## Budget
 You have limited searches and page reads. Focus on authoritative news sources and cross-reference key claims.`;
@@ -984,7 +994,7 @@ After the data JSON block, include a SECOND code fence with a json-render UI spe
 }
 \`\`\`
 
-Fill in the actual values from your research. For DataTable, columns MUST be objects with "key" and "label" fields, and rows MUST be objects with keys matching column "key" values. Available components: Section, Grid, MetricCard, DataTable, Badge, SourceList, BulletList, Text, Markdown.
+Fill in the actual values from your research. For DataTable, columns MUST be objects with "key" and "label" fields, and rows MUST be objects with keys matching column "key" values. Available components: Section, Grid, MetricCard, DataTable, Badge, SourceList, BulletList, Text, Markdown, LineChart, BarChart, DonutChart, ChartImage. Prefer LineChart, BarChart, or DonutChart when you have real numeric data.
 
 ## Budget
 You have limited searches and page reads. Research each entity fairly and use comparable metrics.`;
