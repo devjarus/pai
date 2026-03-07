@@ -97,6 +97,62 @@ describe("markdownToTelegramHTML", () => {
     expect(output).not.toContain("|");
   });
 
+  it("converts LLM-emitted HTML bold/italic to Telegram HTML", () => {
+    expect(markdownToTelegramHTML("<strong>hello</strong>")).toBe("<b>hello</b>");
+    expect(markdownToTelegramHTML("<em>world</em>")).toBe("<i>world</i>");
+    expect(markdownToTelegramHTML("<b>bold</b> and <i>italic</i>")).toBe("<b>bold</b> and <i>italic</i>");
+  });
+
+  it("converts LLM-emitted HTML lists to bullets", () => {
+    const input = "<ul><li>one</li><li>two</li></ul>";
+    const output = markdownToTelegramHTML(input);
+    expect(output).toContain("\u2022 one");
+    expect(output).toContain("\u2022 two");
+  });
+
+  it("converts LLM-emitted <a> links to Telegram links", () => {
+    const input = 'Visit <a href="https://example.com">Example</a> now';
+    const output = markdownToTelegramHTML(input);
+    expect(output).toContain('<a href="https://example.com">Example</a>');
+  });
+
+  it("converts <br> tags to newlines", () => {
+    const output = markdownToTelegramHTML("line one<br>line two<br/>line three");
+    expect(output).toContain("line one\nline two\nline three");
+    expect(output).not.toContain("<br");
+  });
+
+  it("converts horizontal rules to visual separator", () => {
+    const output = markdownToTelegramHTML("above\n\n---\n\nbelow");
+    expect(output).toContain("\u2500");
+    expect(output).not.toContain("---");
+  });
+
+  it("preserves links with & in URLs without double-encoding", () => {
+    const input = "[search](https://example.com/?a=1&b=2)";
+    const output = markdownToTelegramHTML(input);
+    // Link extracted before escapeHTML, so & stays raw (correct for href attributes)
+    expect(output).toContain('href="https://example.com/?a=1&b=2"');
+    // Must NOT double-encode
+    expect(output).not.toContain("&amp;amp;");
+    expect(output).not.toContain("&amp;b=2");
+  });
+
+  it("converts image markdown to clickable link", () => {
+    const input = "![chart](https://example.com/chart.png)";
+    const output = markdownToTelegramHTML(input);
+    expect(output).toContain('<a href="https://example.com/chart.png">chart</a>');
+  });
+
+  it("strips unknown HTML tags from LLM output", () => {
+    const input = "<div>Hello <span>world</span></div>";
+    const output = markdownToTelegramHTML(input);
+    expect(output).toContain("Hello");
+    expect(output).toContain("world");
+    expect(output).not.toContain("<div>");
+    expect(output).not.toContain("<span>");
+  });
+
   it("converts 3+ column tables to pre-formatted HTML blocks", () => {
     const input = "| Tier | Cost | Benefits |\n|------|------|----------|\n| Free | $0 | Basic CDN |\n| Pro | $20 | Enhanced WAF |";
     const output = markdownToTelegramHTML(input);

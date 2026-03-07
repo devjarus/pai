@@ -126,29 +126,110 @@ function replaceMarkdownLinks(text: string, render: (label: string, rawUrl: stri
 }
 
 /**
+ * Normalize LLM-emitted HTML tags to their Markdown equivalents before conversion.
+ * This runs early so the markdown pipeline handles them uniformly.
+ */
+function normalizeHtmlToMarkdown(text: string): string {
+  let result = text;
+
+  // Block-level: strip <p>, <div> wrappers (keep content)
+  result = result.replace(/<\/?(?:p|div)(?:\s[^>]*)?>/gi, "\n");
+
+  // <br> → newline
+  result = result.replace(/<br\s*\/?>/gi, "\n");
+
+  // Headings: <h1>…</h1> → # …
+  result = result.replace(/<h([1-6])(?:\s[^>]*)?>(.+?)<\/h\1>/gi, (_m, level: string, content: string) =>
+    "#".repeat(parseInt(level, 10)) + " " + content,
+  );
+
+  // Bold: <strong> / <b> → **…**
+  result = result.replace(/<\/?(?:strong|b)(?:\s[^>]*)?>/gi, "**");
+
+  // Italic: <em> / <i> → *…*
+  result = result.replace(/<\/?(?:em|i)(?:\s[^>]*)?>/gi, "*");
+
+  // Strikethrough: <del> / <s> → ~~…~~
+  result = result.replace(/<\/?(?:del|s|strike)(?:\s[^>]*)?>/gi, "~~");
+
+  // Code: <code> → ` (but not inside <pre>)
+  result = result.replace(/<\/?code(?:\s[^>]*)?>/gi, "`");
+
+  // Links: <a href="url">label</a> → [label](url)
+  result = result.replace(/<a\s+href="([^"]*)"[^>]*>(.+?)<\/a>/gi, "[$2]($1)");
+
+  // List items: <li> → "- " prefix, </li> → newline
+  result = result.replace(/<li(?:\s[^>]*)?>/gi, "- ");
+  result = result.replace(/<\/li>/gi, "\n");
+
+  // Strip list wrappers
+  result = result.replace(/<\/?(?:ul|ol)(?:\s[^>]*)?>/gi, "\n");
+
+  // Horizontal rules: <hr> → ---
+  result = result.replace(/<hr\s*\/?>/gi, "\n---\n");
+
+  // Strip any remaining HTML tags we don't recognize
+  result = result.replace(/<\/?[a-z][a-z0-9]*(?:\s[^>]*)?>/gi, "");
+
+  // Collapse excessive newlines from tag stripping
+  result = result.replace(/\n{3,}/g, "\n\n");
+
+  return result;
+}
+
+/**
  * Convert Markdown to Telegram HTML format.
- * Supports: bold, italic, code, code blocks, links, headers, strikethrough, blockquotes.
+ * Supports: bold, italic, code, code blocks, links, headers, strikethrough,
+ * blockquotes, tables, horizontal rules, and images.
+ *
+ * Uses a placeholder/marker system to protect pre-built HTML fragments
+ * from the escapeHTML pass that sanitizes remaining text.
  */
 export function markdownToTelegramHTML(md: string): string {
   let result = md;
 
-  // Preserve code blocks first (replace with placeholders)
-  const codeBlocks: string[] = [];
+  // --- Marker arrays: content stored here bypasses escapeHTML ---
+  const codeBlocks: string[] = [];   // \x00CB<idx>\x00
+  const inlineCodes: string[] = [];  // \x00IC<idx>\x00
+  const linkMarkers: string[] = [];  // \x00LK<idx>\x00
+
+  // 1. Preserve code blocks FIRST (before HTML normalization, so tags inside code are safe)
   result = result.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, _lang: string, code: string) => {
     const idx = codeBlocks.length;
     codeBlocks.push(`<pre>${escapeHTML(code.trimEnd())}</pre>`);
     return `\x00CB${idx}\x00`;
   });
 
-  // Preserve inline code (replace with placeholders)
-  const inlineCodes: string[] = [];
+  // 2. Preserve inline code
   result = result.replace(/`([^`\n]+)`/g, (_match, code: string) => {
     const idx = inlineCodes.length;
     inlineCodes.push(`<code>${escapeHTML(code)}</code>`);
     return `\x00IC${idx}\x00`;
   });
 
-  // Convert markdown tables to readable key-value or pre-formatted text
+  // 3. Normalize any LLM-emitted HTML tags to markdown (now safe — code blocks are protected)
+  result = normalizeHtmlToMarkdown(result);
+
+  // 4. Preserve links as markers BEFORE escapeHTML (prevents double-encoding of & in URLs)
+  //    Also handles images: ![alt](url) → link to the image
+  result = replaceMarkdownLinks(result, (label: string, rawUrl: string) => {
+    const safeUrl = sanitizeUrl(rawUrl);
+    if (!safeUrl) return label;
+    const idx = linkMarkers.length;
+    linkMarkers.push(`<a href="${safeUrl}">${escapeHTML(label)}</a>`);
+    return `\x00LK${idx}\x00`;
+  });
+  // Image syntax: ![alt](url) → clickable link (Telegram doesn't inline images in text)
+  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, rawUrl: string) => {
+    const safeUrl = sanitizeUrl(rawUrl);
+    if (!safeUrl) return alt || "";
+    const label = alt || "image";
+    const idx = linkMarkers.length;
+    linkMarkers.push(`<a href="${safeUrl}">${escapeHTML(label)}</a>`);
+    return `\x00LK${idx}\x00`;
+  });
+
+  // 5. Convert markdown tables to readable format (using markers for wide tables)
   result = result.replace(
     /^(\|.+\|)\n(\|[\s:|-]+\|)\n((?:\|.+\|\n?)+)/gm,
     (_m, headerRow: string, _sep: string, bodyRows: string) => {
@@ -156,12 +237,9 @@ export function markdownToTelegramHTML(md: string): string {
       const rows = bodyRows.trim().split("\n").map((row: string) =>
         row.split("|").slice(1, -1).map((c: string) => c.trim())
       );
-      // For 2-column tables (key-value), use bullet format
       if (headers.length === 2) {
         return rows.map((cols) => `\u2022 ${cols[0]}: ${cols[1]}`).join("\n");
       }
-      // For wider tables, use pre-formatted HTML directly (not markdown code blocks,
-      // since code block extraction already happened)
       const colWidths = headers.map((h, i) =>
         Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length))
       );
@@ -172,16 +250,19 @@ export function markdownToTelegramHTML(md: string): string {
         cols.map((c, i) => pad(c, colWidths[i] ?? c.length)).join(" | ")
       );
       const tableText = headerLine + "\n" + sepLine + "\n" + bodyLines.join("\n");
-      // Store as pre-formatted HTML placeholder (like code blocks)
       const idx = codeBlocks.length;
       codeBlocks.push(`<pre>${escapeHTML(tableText)}</pre>`);
       return `\x00CB${idx}\x00`;
     }
   );
 
-  // Escape HTML in remaining text
+  // 6. Horizontal rules: --- or *** or ___ (3+ chars, standalone line) → visual separator
+  result = result.replace(/^[-*_]{3,}\s*$/gm, "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+
+  // --- Now safe to escape remaining text ---
   result = escapeHTML(result);
 
+  // 7. Convert remaining markdown syntax to Telegram HTML tags
   // Headers → bold
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>");
 
@@ -196,24 +277,16 @@ export function markdownToTelegramHTML(md: string): string {
   // Strikethrough: ~~text~~
   result = result.replace(/~~(.+?)~~/g, "<s>$1</s>");
 
-  // Links: [text](url)
-  result = replaceMarkdownLinks(result, (label: string, rawUrl: string) => {
-    const safeUrl = sanitizeUrl(rawUrl);
-    if (!safeUrl) return label;
-    return `<a href="${safeUrl}">${label}</a>`;
-  });
-
   // Blockquotes: > text (Telegram doesn't support blockquote tag well, use italic)
   result = result.replace(/^&gt;\s?(.+)$/gm, "<i>$1</i>");
 
   // List bullets: - or * at start of line → bullet character
   result = result.replace(/^[-*]\s+/gm, "\u2022 ");
 
-  // Numbered lists: keep as-is (already readable)
-
-  // Restore code blocks and inline code
+  // 8. Restore all markers
   result = result.replace(/\x00CB(\d+)\x00/g, (_match, idx: string) => codeBlocks[parseInt(idx, 10)] ?? "");
   result = result.replace(/\x00IC(\d+)\x00/g, (_match, idx: string) => inlineCodes[parseInt(idx, 10)] ?? "");
+  result = result.replace(/\x00LK(\d+)\x00/g, (_match, idx: string) => linkMarkers[parseInt(idx, 10)] ?? "");
 
   return result.trim();
 }
