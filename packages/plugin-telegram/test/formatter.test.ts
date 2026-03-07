@@ -127,6 +127,16 @@ describe("formatTelegramResponse", () => {
     expect(output).not.toContain('{"topic"');
   });
 
+  it("strips <br> tags from LLM output", () => {
+    const input = "• OpenAI blog<br>• arXiv papers<br/>• TechCrunch";
+    const output = formatTelegramResponse(input);
+    expect(output).not.toContain("<br>");
+    expect(output).not.toContain("<br/>");
+    expect(output).toContain("OpenAI blog");
+    expect(output).toContain("arXiv papers");
+    expect(output).toContain("TechCrunch");
+  });
+
   it("formats fenced json blocks in mixed responses", () => {
     const input = `Research finished.
 

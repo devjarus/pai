@@ -88,6 +88,26 @@ describe("markdownToTelegramHTML", () => {
   it("converts blockquotes to italic", () => {
     expect(markdownToTelegramHTML("> quoted text")).toBe("<i>quoted text</i>");
   });
+
+  it("converts 2-column tables to bullet format", () => {
+    const input = "| Key | Value |\n|-----|-------|\n| Name | Alice |\n| Age | 30 |";
+    const output = markdownToTelegramHTML(input);
+    expect(output).toContain("\u2022 Name: Alice");
+    expect(output).toContain("\u2022 Age: 30");
+    expect(output).not.toContain("|");
+  });
+
+  it("converts 3+ column tables to pre-formatted HTML blocks", () => {
+    const input = "| Tier | Cost | Benefits |\n|------|------|----------|\n| Free | $0 | Basic CDN |\n| Pro | $20 | Enhanced WAF |";
+    const output = markdownToTelegramHTML(input);
+    expect(output).toContain("<pre>");
+    expect(output).toContain("</pre>");
+    expect(output).toContain("Tier");
+    expect(output).toContain("Free");
+    expect(output).toContain("Pro");
+    // Should NOT contain raw backticks
+    expect(output).not.toContain("```");
+  });
 });
 
 describe("splitMessage", () => {
@@ -137,6 +157,16 @@ describe("splitMessage", () => {
   it("handles custom max length", () => {
     const msg = "Hello world, this is a test message";
     const result = splitMessage(msg, 10);
+    expect(result.length).toBeGreaterThan(1);
+  });
+
+  it("avoids splitting inside HTML tags", () => {
+    // Build a message where the natural split point falls inside an <a> tag
+    const padding = "x".repeat(4080);
+    const msg = `${padding}<a href="https://example.com">link</a> more text here`;
+    const result = splitMessage(msg);
+    // The first part should not contain a truncated tag
+    expect(result[0]).not.toMatch(/<a[^>]*$/);
     expect(result.length).toBeGreaterThan(1);
   });
 });

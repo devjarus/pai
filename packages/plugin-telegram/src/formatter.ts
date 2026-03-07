@@ -160,7 +160,8 @@ export function markdownToTelegramHTML(md: string): string {
       if (headers.length === 2) {
         return rows.map((cols) => `\u2022 ${cols[0]}: ${cols[1]}`).join("\n");
       }
-      // For wider tables, use pre-formatted block
+      // For wider tables, use pre-formatted HTML directly (not markdown code blocks,
+      // since code block extraction already happened)
       const colWidths = headers.map((h, i) =>
         Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length))
       );
@@ -170,7 +171,11 @@ export function markdownToTelegramHTML(md: string): string {
       const bodyLines = rows.map((cols) =>
         cols.map((c, i) => pad(c, colWidths[i] ?? c.length)).join(" | ")
       );
-      return "```\n" + headerLine + "\n" + sepLine + "\n" + bodyLines.join("\n") + "\n```";
+      const tableText = headerLine + "\n" + sepLine + "\n" + bodyLines.join("\n");
+      // Store as pre-formatted HTML placeholder (like code blocks)
+      const idx = codeBlocks.length;
+      codeBlocks.push(`<pre>${escapeHTML(tableText)}</pre>`);
+      return `\x00CB${idx}\x00`;
     }
   );
 
@@ -472,6 +477,9 @@ export function formatTelegramResponse(text: string): string {
   // Strip jsonrender blocks (UI render specs, not for humans)
   let normalized = trimmed.replace(/```jsonrender\s*[\s\S]*?```/gi, "").trim();
 
+  // Strip HTML <br> / <br/> tags that LLMs sometimes emit (they'd appear as literal text)
+  normalized = normalized.replace(/<br\s*\/?>/gi, "\n");
+
   // Convert fenced JSON blocks (```json ... ```) into readable markdown summaries.
   normalized = normalized.replace(/```json\s*([\s\S]*?)```/gi, (match, payload: string) => {
     try {
@@ -493,8 +501,35 @@ export function formatTelegramResponse(text: string): string {
 }
 
 /**
+ * Check whether a candidate split position falls inside an HTML tag.
+ * Returns true if the position is between an unmatched `<` and `>`.
+ */
+function isInsideHtmlTag(text: string, pos: number): boolean {
+  // Scan backwards from pos for the nearest '<' or '>'
+  for (let i = pos - 1; i >= 0; i--) {
+    if (text[i] === ">") return false; // tag closed before us
+    if (text[i] === "<") return true;  // inside an open tag
+  }
+  return false;
+}
+
+/**
+ * Find a safe split position at or before `target` that is not inside an HTML tag.
+ * Falls back to the original position if no safe alternative is found within 200 chars.
+ */
+function safeSplitPos(text: string, target: number): number {
+  if (!isInsideHtmlTag(text, target)) return target;
+  // Walk backwards to find a position just before the opening '<'
+  for (let i = target - 1; i >= Math.max(0, target - 200); i--) {
+    if (text[i] === "<") return i;
+  }
+  return target;
+}
+
+/**
  * Split a message into chunks that fit Telegram's 4096-char limit.
  * Tries to split at paragraph boundaries, then newlines, then hard-splits.
+ * Avoids splitting inside HTML tags.
  */
 export function splitMessage(text: string, maxLength = TELEGRAM_MAX_LENGTH): string[] {
   if (text.length <= maxLength) return [text];
@@ -508,20 +543,20 @@ export function splitMessage(text: string, maxLength = TELEGRAM_MAX_LENGTH): str
     // Try paragraph boundary (double newline)
     const paraIdx = remaining.lastIndexOf("\n\n", maxLength);
     if (paraIdx > maxLength * 0.3) {
-      splitIdx = paraIdx;
+      splitIdx = safeSplitPos(remaining, paraIdx);
     }
 
     // Fall back to single newline
     if (splitIdx === -1) {
       const nlIdx = remaining.lastIndexOf("\n", maxLength);
       if (nlIdx > maxLength * 0.3) {
-        splitIdx = nlIdx;
+        splitIdx = safeSplitPos(remaining, nlIdx);
       }
     }
 
     // Hard split at maxLength
     if (splitIdx === -1) {
-      splitIdx = maxLength;
+      splitIdx = safeSplitPos(remaining, maxLength);
     }
 
     parts.push(remaining.slice(0, splitIdx).trimEnd());
