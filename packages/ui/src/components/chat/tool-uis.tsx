@@ -25,6 +25,12 @@ import { ToolScheduleAction } from "../tools/ToolScheduleAction";
 import { ToolDocumentReport } from "../tools/ToolDocumentReport";
 import { ToolBrowseAction } from "../tools/ToolBrowseAction";
 import { ArtifactGallery } from "../results/ArtifactGallery";
+import { ResultRenderer } from "../results/ResultRenderer";
+import {
+  artifactReferencesToVisuals,
+  buildVisualResultSpec,
+} from "@/lib/report-presentation";
+import type { ArtifactReference } from "@/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -203,7 +209,7 @@ export const RunCodeToolUI = makeAssistantToolUI({
   toolName: "run_code",
   render: ({ args, result, status }) => {
     const state = mapStatus(status);
-    const input = args as { language?: string; code?: string };
+    const input = args as { language?: string; code?: string; purpose?: string };
     const output = result as {
       stdout?: string;
       stderr?: string;
@@ -211,7 +217,14 @@ export const RunCodeToolUI = makeAssistantToolUI({
       artifacts?: Array<{ id: string; name: string; mimeType: string }>;
       error?: string;
     } | undefined;
-    const artifacts = output?.artifacts ?? [];
+    const artifacts: ArtifactReference[] = output?.artifacts ?? [];
+    const visuals = artifactReferencesToVisuals(artifacts);
+    const files = artifacts.filter((artifact) => !artifact.mimeType.startsWith("image/"));
+    const generatedSpec = buildVisualResultSpec({
+      title: visuals.length > 1 ? "Generated visuals" : "Generated visual",
+      subtitle: input.purpose ?? (input.language ? `Created with ${input.language}` : undefined),
+      visuals,
+    });
     const hasError = state === "output-error" || Boolean(output?.error);
 
     if (state === "input-available") {
@@ -247,6 +260,11 @@ export const RunCodeToolUI = makeAssistantToolUI({
             </div>
           )}
         </div>
+        {generatedSpec && (
+          <div className="rounded-lg border border-border/20 bg-background/40 p-3">
+            <ResultRenderer spec={generatedSpec} />
+          </div>
+        )}
         {input.code && (
           <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{input.code}</pre>
         )}
@@ -273,8 +291,8 @@ export const RunCodeToolUI = makeAssistantToolUI({
             Generated files were still saved and may be usable.
           </p>
         )}
-        {artifacts.length > 0 && (
-          <ArtifactGallery artifacts={artifacts} title={hasError ? "Generated files" : "Files"} />
+        {files.length > 0 && (
+          <ArtifactGallery artifacts={files} title={hasError ? "Generated files" : "Files"} />
         )}
       </div>
     );

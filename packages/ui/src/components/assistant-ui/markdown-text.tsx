@@ -8,20 +8,48 @@ import {
   unstable_memoizeMarkdownComponents as memoizeMarkdownComponents,
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
+import { TextMessagePartProvider, useMessagePartText } from "@assistant-ui/react";
 import remarkGfm from "remark-gfm";
-import { type FC, memo, useState } from "react";
+import { type FC, memo, useMemo, useState } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { ResultRenderer } from "@/components/results/ResultRenderer";
+import { extractPresentationBlocks } from "@/lib/report-presentation";
 import { cn } from "@/lib/utils";
 
 const MarkdownTextImpl = () => {
+  const { text } = useMessagePartText();
+  const presentation = useMemo(() => extractPresentationBlocks(text), [text]);
+
+  if (!presentation.renderSpec) {
+    return (
+      <MarkdownTextPrimitive
+        remarkPlugins={[remarkGfm]}
+        className="aui-md"
+        components={defaultComponents}
+      />
+    );
+  }
+
   return (
-    <MarkdownTextPrimitive
-      remarkPlugins={[remarkGfm]}
-      className="aui-md"
-      components={defaultComponents}
-    />
+    <div className="space-y-4">
+      {presentation.markdown && (
+        <TextMessagePartProvider text={presentation.markdown}>
+          <MarkdownTextPrimitive
+            remarkPlugins={[remarkGfm]}
+            className="aui-md"
+            components={defaultComponents}
+          />
+        </TextMessagePartProvider>
+      )}
+      <div className="rounded-xl border border-border/40 bg-card/40 p-4">
+        <ResultRenderer
+          spec={presentation.renderSpec}
+          structuredResult={presentation.structuredResult}
+        />
+      </div>
+    </div>
   );
 };
 

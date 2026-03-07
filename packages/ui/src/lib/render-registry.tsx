@@ -15,6 +15,7 @@ import {
   Plane,
   FileText,
   BarChart2,
+  Download,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -334,9 +335,16 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
     ChartImage: ({ props }) => (
       <div className="rounded-lg overflow-hidden border border-zinc-700/50">
         <img src={props.src} alt={props.alt} className="w-full" />
-        {props.caption && (
-          <div className="text-xs text-zinc-500 px-3 py-2 bg-zinc-800/50">
-            {props.caption}
+        {(props.caption || props.src) && (
+          <div className="flex items-center justify-between gap-3 text-xs text-zinc-500 px-3 py-2 bg-zinc-800/50">
+            <span className="min-w-0 flex-1">{props.caption}</span>
+            <a
+              href={props.src}
+              download
+              className="shrink-0 text-zinc-400 transition-colors hover:text-zinc-200"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </a>
           </div>
         )}
       </div>

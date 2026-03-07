@@ -389,6 +389,13 @@ export interface ReportVisual {
   order: number;
 }
 
+export interface ArtifactReference {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: number;
+}
+
 export interface ReportPresentation {
   report: string;
   structuredResult?: string;

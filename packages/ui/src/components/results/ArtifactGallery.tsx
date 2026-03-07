@@ -5,16 +5,10 @@ import {
   ImageIcon,
   TableIcon,
 } from "lucide-react";
-
-interface ArtifactItem {
-  id: string;
-  name: string;
-  mimeType: string;
-  size?: number;
-}
+import type { ArtifactReference } from "@/types";
 
 interface ArtifactGalleryProps {
-  artifacts: ArtifactItem[];
+  artifacts: ArtifactReference[];
   title?: string;
 }
 
