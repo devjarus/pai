@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cerebras default model** — Setup wizard, Settings presets, and `pai init` now default Cerebras to `gpt-oss-120b` instead of `zai-glm-4.7` so fresh configurations land on a model that works with the currently tested account access path.
 - **Memory insight persistence** — `remember()` now persists extracted insight beliefs alongside the primary fact belief, so insight-type memories populate during normal usage instead of only via manual creation paths.
 - **Recall type balancing** — Semantic recall now caps `insight`/`meta` entries to about one-third of the requested limit when concrete fact/preference/procedural/architectural matches exist, preventing high-level beliefs from crowding out actionable memories.
+- **Research/swarm chart fallback in Inbox + Jobs** — Report detail endpoints now fall back to artifact-derived visuals when persisted briefing metadata contains an empty `visuals` array, restoring chart rendering for existing research and swarm reports in both Inbox and Jobs views.
 
 ### Security
 

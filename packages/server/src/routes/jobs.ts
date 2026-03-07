@@ -31,9 +31,10 @@ function getStoredPresentation(
       const extracted = extractPresentationBlocks(
         typeof sections.report === "string" ? sections.report : reportText ?? "",
       );
-      const visuals = Array.isArray(sections.visuals)
-        ? sections.visuals as Parameters<typeof buildReportPresentation>[0]["visuals"]
-        : fallbackVisuals;
+      const storedVisuals: NonNullable<Parameters<typeof buildReportPresentation>[0]["visuals"]> = Array.isArray(sections.visuals)
+        ? sections.visuals as NonNullable<Parameters<typeof buildReportPresentation>[0]["visuals"]>
+        : [];
+      const visuals = storedVisuals.length > 0 ? storedVisuals : fallbackVisuals;
       return buildReportPresentation({
         report: extracted.report,
         structuredResult: typeof sections.structuredResult === "string"

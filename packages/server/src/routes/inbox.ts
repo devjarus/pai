@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
 import { getLatestBriefing, getBriefingById, listBriefings, listAllBriefings, clearAllBriefings, getResearchBriefings, getDailyBriefingState } from "../briefing.js";
-import type { ResearchResultType } from "@personal-ai/core";
+import { deriveReportVisuals, type ReportVisual, type ResearchResultType } from "@personal-ai/core";
 
 export function registerInboxRoutes(app: FastifyInstance, { ctx, backgroundDispatcher }: ServerContext): void {
   app.get("/api/inbox", async () => {
@@ -40,6 +40,30 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx, backgroundDispa
   app.get<{ Params: { id: string } }>("/api/inbox/:id", async (request, reply) => {
     const briefing = getBriefingById(ctx.storage, request.params.id);
     if (!briefing) return reply.status(404).send({ error: "Briefing not found" });
+
+    if (briefing.type === "research" && briefing.sections && typeof briefing.sections === "object") {
+      const sections = briefing.sections as unknown as Record<string, unknown>;
+      const storedVisuals: ReportVisual[] = Array.isArray(sections.visuals)
+        ? sections.visuals as ReportVisual[]
+        : [];
+      if (storedVisuals.length === 0) {
+        const artifactJobId = request.params.id.startsWith("research-")
+          ? request.params.id.slice("research-".length)
+          : request.params.id.startsWith("swarm-")
+            ? request.params.id.slice("swarm-".length)
+            : request.params.id;
+
+        const hydratedBriefing = {
+          ...briefing,
+          sections: {
+            ...sections,
+            visuals: deriveReportVisuals(ctx.storage, artifactJobId),
+          },
+        };
+        return { briefing: hydratedBriefing };
+      }
+    }
+
     return { briefing };
   });
 

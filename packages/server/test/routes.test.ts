@@ -20,6 +20,7 @@ import jwt from "jsonwebtoken";
 // ---------------------------------------------------------------------------
 const mockGetArtifact = vi.fn();
 const mockListArtifacts = vi.fn();
+const mockDeriveReportVisuals = vi.fn();
 
 // ---------------------------------------------------------------------------
 // Mock @personal-ai/core — isolate route handlers from real storage/LLM
@@ -62,6 +63,7 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     loadConfigFile: (...args: unknown[]) => mockLoadConfigFile(...args),
     getArtifact: (...args: unknown[]) => mockGetArtifact(...args),
     listArtifacts: (...args: unknown[]) => mockListArtifacts(...args),
+    deriveReportVisuals: (...args: unknown[]) => mockDeriveReportVisuals(...args),
     createLLMClient: (...args: unknown[]) => mockCreateLLMClient(...args),
     getObservabilityOverview: (...args: unknown[]) => mockGetObservabilityOverview(...args),
     listProcessAggregates: (...args: unknown[]) => mockListProcessAggregates(...args),
@@ -2220,6 +2222,36 @@ describe("Inbox routes", () => {
     expect(res.json().briefing.id).toBe("brief_456");
   });
 
+  it("GET /api/inbox/:id derives visuals for research briefings when visuals are empty", async () => {
+    mockGetBriefingById.mockReturnValue({
+      id: "research-job123",
+      generatedAt: "2026-02-25T10:00:00Z",
+      type: "research",
+      sections: {
+        goal: "Research markets",
+        report: "Report body",
+        visuals: [],
+      },
+      status: "ready",
+    });
+    mockDeriveReportVisuals.mockReturnValue([
+      {
+        artifactId: "art-1",
+        mimeType: "image/png",
+        kind: "chart",
+        title: "Price trend",
+        order: 1,
+      },
+    ]);
+
+    const res = await app.inject({ method: "GET", url: "/api/inbox/research-job123" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(mockDeriveReportVisuals).toHaveBeenCalledWith(serverCtx.ctx.storage, "job123");
+    expect(body.briefing.sections.visuals).toHaveLength(1);
+    expect(body.briefing.sections.visuals[0].artifactId).toBe("art-1");
+  });
+
   it("POST /api/inbox/clear clears all briefings", async () => {
     mockClearAllBriefings.mockReturnValue(3);
     const res = await app.inject({ method: "POST", url: "/api/inbox/clear", payload: {} });
@@ -2385,6 +2417,7 @@ describe("jobs routes", () => {
     mockGetBriefingById.mockReturnValue(null);
     mockListArtifacts.mockReturnValue([]);
     mockGetArtifact.mockReturnValue(null);
+    mockDeriveReportVisuals.mockReturnValue([]);
     app = Fastify();
     serverCtx = createMockServerCtx();
     registerJobRoutes(app, serverCtx);
@@ -2637,6 +2670,43 @@ describe("jobs routes", () => {
     expect(body.presentation.report).toBe("Normalized report body");
     expect(body.presentation.execution).toBe("analysis");
     expect(body.presentation.visuals[0].artifactId).toBe("art-1");
+  });
+
+  it("GET /api/jobs/:id derives visuals when briefing visuals are empty", async () => {
+    mockGetResearchJob.mockReturnValue({
+      id: "rj3",
+      goal: "Research markets",
+      status: "done",
+      report: "Legacy report body",
+      briefingId: "research-rj3",
+      resultType: "stock",
+    });
+    mockGetBriefingById.mockReturnValue({
+      id: "research-rj3",
+      status: "ready",
+      type: "research",
+      sections: {
+        goal: "Research markets",
+        report: "Normalized report body",
+        resultType: "stock",
+        visuals: [],
+      },
+    });
+    mockDeriveReportVisuals.mockReturnValue([
+      {
+        artifactId: "art-fallback-1",
+        mimeType: "image/png",
+        kind: "chart",
+        title: "NVDA Price Chart",
+        order: 1,
+      },
+    ]);
+
+    const res = await app.inject({ method: "GET", url: "/api/jobs/rj3" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.presentation.visuals).toHaveLength(1);
+    expect(body.presentation.visuals[0].artifactId).toBe("art-fallback-1");
   });
 
   // ---- GET /api/jobs/:id/agents ----
