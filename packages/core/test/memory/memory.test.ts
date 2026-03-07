@@ -676,6 +676,37 @@ describe("Embeddings", () => {
     expect(results[0]!.cosine).toBeGreaterThan(0.9);
   });
 
+
+  it("should cap insight/meta recall results when primary belief types exist", () => {
+    const factualA = createBelief(storage, { statement: "Project uses TypeScript", confidence: 0.8, type: "factual" });
+    const factualB = createBelief(storage, { statement: "Prefers Vitest", confidence: 0.8, type: "preference" });
+    const insight = createBelief(storage, { statement: "Smaller PRs merge faster", confidence: 0.8, type: "insight" });
+    const meta = createBelief(storage, { statement: "Testing beliefs were synthesized", confidence: 0.8, type: "meta" });
+
+    storeEmbedding(storage, factualA.id, [1.0, 0.0, 0.0]);
+    storeEmbedding(storage, factualB.id, [0.99, 0.01, 0.0]);
+    storeEmbedding(storage, insight.id, [0.98, 0.02, 0.0]);
+    storeEmbedding(storage, meta.id, [0.97, 0.03, 0.0]);
+
+    const results = semanticSearch(storage, [1.0, 0.0, 0.0], 3);
+    expect(results).toHaveLength(3);
+
+    const insightMetaCount = results.filter((r) => r.type === "insight" || r.type === "meta").length;
+    expect(insightMetaCount).toBeLessThanOrEqual(1);
+  });
+
+  it("should still return insight/meta results when no primary beliefs match", () => {
+    const insight = createBelief(storage, { statement: "Morning routines improve focus", confidence: 0.8, type: "insight" });
+    const meta = createBelief(storage, { statement: "Memory synthesis found routine pattern", confidence: 0.8, type: "meta" });
+
+    storeEmbedding(storage, insight.id, [1.0, 0.0, 0.0]);
+    storeEmbedding(storage, meta.id, [0.99, 0.01, 0.0]);
+
+    const results = semanticSearch(storage, [1.0, 0.0, 0.0], 3);
+    expect(results).toHaveLength(2);
+    expect(results.every((r) => r.type === "insight" || r.type === "meta")).toBe(true);
+  });
+
   it("should synthesize meta-beliefs from clusters", async () => {
     // Create a cluster of similar beliefs with embeddings
     const b1 = createBelief(storage, { statement: "TypeScript strict mode is helpful", confidence: 0.6, type: "factual" });

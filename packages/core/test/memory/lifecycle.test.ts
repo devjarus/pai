@@ -397,7 +397,7 @@ describe("Belief Lifecycle", () => {
     const llm = createMockLLM({
       chatResponses: [
         // 1st remember: extract fact
-        { text: '{"fact":"Project uses Zod for validation","insight":"Schema validation prevents runtime errors"}' },
+        { text: '{"fact":"Project uses Zod for validation","insight":null}' },
         // 2nd remember: same fact → reinforce
         { text: '{"fact":"Project uses Zod for validation","insight":null}' },
         // 3rd remember: contradicting fact + contradiction check
@@ -406,7 +406,7 @@ describe("Belief Lifecycle", () => {
       ],
       embedResponses: [
         { embedding: [0.5, 0.5, 0.0] }, // episode 1
-        { embedding: [1.0, 0.0, 0.0] }, // fact 1 (Zod) — insight is no longer stored
+        { embedding: [1.0, 0.0, 0.0] }, // fact 1 (Zod)
         { embedding: [0.5, 0.5, 0.0] }, // episode 2
         { embedding: [1.0, 0.0, 0.0] }, // fact 2 (same as Zod → reinforce)
         { embedding: [0.5, 0.5, 0.0] }, // episode 3
@@ -416,7 +416,7 @@ describe("Belief Lifecycle", () => {
 
     // Step 1: Agent learns project uses Zod
     const r1 = await remember(storage, llm, "This project uses Zod for schema validation");
-    expect(r1.beliefIds).toHaveLength(1); // fact only (insights no longer stored)
+    expect(r1.beliefIds).toHaveLength(1); // fact only (no insight extracted in this case)
     expect(r1.isReinforcement).toBe(false);
 
     // Step 2: Agent confirms Zod usage → should reinforce
@@ -441,7 +441,7 @@ describe("Belief Lifecycle", () => {
     );
     expect(zodStatus[0]!.status).toBe("invalidated");
 
-    // Final state: Joi belief (active), Zod (invalidated) — insights no longer stored
+    // Final state: Joi belief (active), Zod (invalidated)
     const active = listBeliefs(storage);
     expect(active.length).toBe(1); // Joi only
 

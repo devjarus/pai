@@ -154,6 +154,35 @@ export interface Belief {
 
 const BASE_HALF_LIFE_DAYS = 30;
 
+function prioritizeRecallTypes<T extends { beliefId: string; type: string }>(results: T[], limit: number): T[] {
+  if (results.length <= limit) return results;
+
+  const maxInsightMeta = Math.max(1, Math.floor(limit / 3));
+  const selected: T[] = [];
+  const selectedIds = new Set<string>();
+  let insightMetaCount = 0;
+
+  for (const row of results) {
+    if (selected.length >= limit) break;
+    const isInsightOrMeta = row.type === "insight" || row.type === "meta";
+    if (isInsightOrMeta && insightMetaCount >= maxInsightMeta) continue;
+    selected.push(row);
+    selectedIds.add(row.beliefId);
+    if (isInsightOrMeta) insightMetaCount += 1;
+  }
+
+  if (selected.length < limit) {
+    for (const row of results) {
+      if (selected.length >= limit) break;
+      if (selectedIds.has(row.beliefId)) continue;
+      selected.push(row);
+      selectedIds.add(row.beliefId);
+    }
+  }
+
+  return selected;
+}
+
 function decayConfidence(confidence: number, updatedAt: string, stability = 1.0): number {
   // normalizeTimestamp handles both SQLite UTC ("2026-01-01 00:00:00") and ISO ("2026-01-01T00:00:00Z")
   const normalized = updatedAt.trim().replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/, "$1T$2Z");
@@ -531,10 +560,12 @@ export function semanticSearch(
     .filter((r): r is SimilarBelief & { cosine: number } => r !== null);
 
   // Filter by cosine similarity threshold, then sort by ranking score
-  const results = scored
-    .filter((r) => r.cosine >= COSINE_THRESHOLD)
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, limit);
+  const results = prioritizeRecallTypes(
+    scored
+      .filter((r) => r.cosine >= COSINE_THRESHOLD)
+      .sort((a, b) => b.similarity - a.similarity),
+    limit,
+  );
 
   // Graph traversal: batch-fetch linked neighbors for top-3 results (avoids N+1)
   const resultIds = new Set(results.map((r) => r.beliefId));
@@ -581,7 +612,7 @@ export function semanticSearch(
       }
     }
   }
-  const combined = [...results, ...neighbors].slice(0, limit);
+  const combined = prioritizeRecallTypes([...results, ...neighbors], limit);
 
   // Batch-record access for returned beliefs (single UPDATE instead of N)
   if (combined.length > 0) {

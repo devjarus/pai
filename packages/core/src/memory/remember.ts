@@ -339,8 +339,20 @@ export async function remember(
   beliefIds.push(factResult.beliefId);
   if (factResult.isReinforcement) isReinforcement = true;
 
-  // Skip insight storage — insights are almost always generic noise
-  // (e.g., "Simple APIs are preferred over complex abstractions")
+  if (extracted.insight && extracted.insight.trim()) {
+    const insightResult = await processNewBelief(
+      storage,
+      llm,
+      extracted.insight.trim(),
+      "insight",
+      episode.id,
+      logger,
+      Math.max(1, Math.min(10, extracted.importance - 1)),
+      extracted.subject,
+    );
+    beliefIds.push(insightResult.beliefId);
+    if (insightResult.isReinforcement) isReinforcement = true;
+  }
 
   return { episodeId: episode.id, beliefIds, isReinforcement };
 }
