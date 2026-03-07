@@ -27,7 +27,14 @@ import {
   getChartBounds,
 } from "./chart-utils";
 
-const DEFAULT_CHART_COLORS = ["#60a5fa", "#34d399", "#fbbf24", "#c084fc", "#fb7185", "#22d3ee"];
+const DEFAULT_CHART_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--primary)",
+];
 
 function ChartShell({
   title,
@@ -39,16 +46,16 @@ function ChartShell({
   footer?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-zinc-700/50 bg-zinc-900/70 overflow-hidden">
-      {title && <div className="px-4 pt-4 text-sm font-semibold text-zinc-100">{title}</div>}
+    <div className="overflow-hidden rounded-lg border border-border/50 bg-card/70 text-card-foreground">
+      {title && <div className="px-4 pt-4 text-sm font-semibold text-foreground">{title}</div>}
       <div className="px-3 py-3">{children}</div>
-      {footer && <div className="border-t border-zinc-700/40 px-4 py-2 text-xs text-zinc-400">{footer}</div>}
+      {footer && <div className="border-t border-border/40 px-4 py-2 text-xs text-muted-foreground">{footer}</div>}
     </div>
   );
 }
 
 function ChartEmptyState({ message }: { message: string }) {
-  return <div className="rounded-lg border border-dashed border-zinc-700/50 px-4 py-6 text-sm text-zinc-500">{message}</div>;
+  return <div className="rounded-lg border border-dashed border-border/50 px-4 py-6 text-sm text-muted-foreground">{message}</div>;
 }
 
 export const { registry, handlers, executeAction } = defineRegistry(resultCatalog, {
@@ -57,21 +64,21 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
       const [open, setOpen] = useState(props.defaultOpen !== false);
       if (props.collapsible) {
         return (
-          <div className="border border-zinc-700/50 rounded-lg mb-5 overflow-hidden">
+          <div className="mb-5 overflow-hidden rounded-lg border border-border/50 bg-card/60">
             <button
-              className="w-full flex items-center justify-between px-4 py-3 bg-zinc-800/50 hover:bg-zinc-800 text-left"
+              className="flex w-full items-center justify-between bg-card/40 px-4 py-3 text-left transition-colors hover:bg-accent/50"
               onClick={() => setOpen(!open)}
             >
               <div>
-                <span className="font-semibold text-zinc-100">{props.title}</span>
+                <span className="font-semibold text-foreground">{props.title}</span>
                 {props.subtitle && (
-                  <span className="ml-2 text-sm text-zinc-400">{props.subtitle}</span>
+                  <span className="ml-2 text-sm text-muted-foreground">{props.subtitle}</span>
                 )}
               </div>
               {open ? (
-                <ChevronDown className="w-4 h-4 text-zinc-400" />
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
               ) : (
-                <ChevronRight className="w-4 h-4 text-zinc-400" />
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               )}
             </button>
             {open && <div className="px-4 py-4 space-y-3">{children}</div>}
@@ -80,8 +87,8 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
       }
       return (
         <div className="mb-6">
-          <h3 className="font-semibold text-zinc-100 mb-3">{props.title}</h3>
-          {props.subtitle && <p className="text-sm text-zinc-400 mb-3">{props.subtitle}</p>}
+          <h3 className="mb-3 font-semibold text-foreground">{props.title}</h3>
+          {props.subtitle && <p className="mb-3 text-sm text-muted-foreground">{props.subtitle}</p>}
           {children}
         </div>
       );
@@ -113,24 +120,24 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
     MetricCard: ({ props }) => {
       const trendIcon =
         props.trend === "up" ? (
-          <TrendingUp className="w-4 h-4 text-green-400" />
+          <TrendingUp className="h-4 w-4 text-emerald-500" />
         ) : props.trend === "down" ? (
-          <TrendingDown className="w-4 h-4 text-red-400" />
+          <TrendingDown className="h-4 w-4 text-rose-500" />
         ) : props.trend === "neutral" ? (
-          <Minus className="w-4 h-4 text-zinc-400" />
+          <Minus className="h-4 w-4 text-muted-foreground" />
         ) : null;
       return (
-        <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3">
-          <div className="text-xs text-zinc-400 mb-1">{props.label}</div>
+        <div className="rounded-lg border border-border/50 bg-card/60 p-3">
+          <div className="mb-1 text-xs text-muted-foreground">{props.label}</div>
           <div className="flex items-center gap-2">
-            <span className="text-lg font-bold text-zinc-100">
+            <span className="text-lg font-bold text-foreground">
               {props.value}
               {props.unit ? ` ${props.unit}` : ""}
             </span>
             {trendIcon}
           </div>
           {props.description && (
-            <div className="text-xs text-zinc-500 mt-1">{props.description}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{props.description}</div>
           )}
         </div>
       );
@@ -294,7 +301,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
           footer={
             <div className="flex items-center justify-between gap-2">
               <span>Min {formatChartValue(bounds.min, props.valuePrefix, props.valueSuffix)}</span>
-              <span className="font-medium text-zinc-200">
+              <span className="font-medium text-foreground">
                 Latest {formatChartValue(currentValue, props.valuePrefix, props.valueSuffix)}
               </span>
               <span>Max {formatChartValue(bounds.max, props.valuePrefix, props.valueSuffix)}</span>
@@ -309,7 +316,8 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
                 x2={width - padding}
                 y1={y}
                 y2={y}
-                stroke="rgba(113,113,122,0.35)"
+                stroke="var(--border)"
+                strokeOpacity="0.9"
                 strokeDasharray={index === gridLines.length - 1 ? undefined : "3 3"}
               />
             ))}
@@ -319,7 +327,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
               <g key={labels[index]}>
                 <circle cx={point.x} cy={point.y} r="4" fill={stroke} />
                 <circle cx={point.x} cy={point.y} r="7" fill={stroke} opacity="0.18" />
-                <text x={point.x} y={height - 8} textAnchor="middle" fontSize="11" fill="#a1a1aa">
+                <text x={point.x} y={height - 8} textAnchor="middle" fontSize="11" fill="var(--muted-foreground)">
                   {labels[index]}
                 </text>
               </g>
@@ -345,7 +353,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
               const color = item.color ?? DEFAULT_CHART_COLORS[index % DEFAULT_CHART_COLORS.length];
               return (
                 <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
-                  <div className="text-[11px] font-medium text-zinc-300">
+                  <div className="text-[11px] font-medium text-foreground/80">
                     {formatChartValue(item.value, props.valuePrefix, props.valueSuffix)}
                   </div>
                   <div className="flex h-40 w-full items-end justify-center">
@@ -354,7 +362,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
                       style={{ height: `${height}px`, backgroundColor: color }}
                     />
                   </div>
-                  <div className="text-center text-[11px] text-zinc-400">{item.label}</div>
+                  <div className="text-center text-[11px] text-muted-foreground">{item.label}</div>
                 </div>
               );
             })}
@@ -383,7 +391,8 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
                   cy="60"
                   r={radius}
                   fill="none"
-                  stroke="rgba(113,113,122,0.3)"
+                  stroke="var(--border)"
+                  strokeOpacity="0.8"
                   strokeWidth="16"
                 />
                 {segments.map((segment, index) => (
@@ -401,10 +410,10 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
                   />
                 ))}
                 <g transform="rotate(90 60 60)">
-                  <text x="60" y="54" textAnchor="middle" fontSize="12" fill="#a1a1aa">
+                  <text x="60" y="54" textAnchor="middle" fontSize="12" fill="var(--muted-foreground)">
                     {props.centerLabel ?? "Total"}
                   </text>
-                  <text x="60" y="70" textAnchor="middle" fontSize="16" fontWeight="700" fill="#f4f4f5">
+                  <text x="60" y="70" textAnchor="middle" fontSize="16" fontWeight="700" fill="var(--foreground)">
                     {formatChartValue(data.reduce((sum, item) => sum + item.value, 0), null, props.valueSuffix)}
                   </text>
                 </g>
@@ -412,19 +421,19 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
             </div>
             <div className="flex-1 space-y-2">
               {segments.map((segment, index) => (
-                <div key={segment.label} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-700/40 bg-zinc-800/40 px-3 py-2">
+                <div key={segment.label} className="flex items-center justify-between gap-3 rounded-lg border border-border/40 bg-card/50 px-3 py-2">
                   <div className="flex items-center gap-2">
                     <span
                       className="h-3 w-3 rounded-full"
                       style={{ backgroundColor: segment.color ?? DEFAULT_CHART_COLORS[index % DEFAULT_CHART_COLORS.length] }}
                     />
-                    <span className="text-sm text-zinc-200">{segment.label}</span>
+                    <span className="text-sm text-foreground">{segment.label}</span>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-medium text-zinc-100">
+                    <div className="text-sm font-medium text-foreground">
                       {formatChartValue(segment.value, null, props.valueSuffix)}
                     </div>
-                    <div className="text-[11px] text-zinc-400">{Math.round(segment.percentage * 100)}%</div>
+                    <div className="text-[11px] text-muted-foreground">{Math.round(segment.percentage * 100)}%</div>
                   </div>
                 </div>
               ))}
