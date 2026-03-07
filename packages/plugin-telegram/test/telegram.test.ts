@@ -153,16 +153,16 @@ describe("markdownToTelegramHTML", () => {
     expect(output).not.toContain("<span>");
   });
 
-  it("converts 3+ column tables to pre-formatted HTML blocks", () => {
+  it("converts 3+ column tables to card-style blocks", () => {
     const input = "| Tier | Cost | Benefits |\n|------|------|----------|\n| Free | $0 | Basic CDN |\n| Pro | $20 | Enhanced WAF |";
     const output = markdownToTelegramHTML(input);
-    expect(output).toContain("<pre>");
-    expect(output).toContain("</pre>");
-    expect(output).toContain("Tier");
-    expect(output).toContain("Free");
-    expect(output).toContain("Pro");
-    // Should NOT contain raw backticks
+    // Each row rendered as labeled fields
+    expect(output).toContain("Tier: Free");
+    expect(output).toContain("Cost: $20");
+    expect(output).toContain("Benefits: Enhanced WAF");
+    // Should NOT contain raw backticks or ASCII table separators
     expect(output).not.toContain("```");
+    expect(output).not.toContain("-+-");
   });
 });
 

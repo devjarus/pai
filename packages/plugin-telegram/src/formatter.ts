@@ -229,7 +229,7 @@ export function markdownToTelegramHTML(md: string): string {
     return `\x00LK${idx}\x00`;
   });
 
-  // 5. Convert markdown tables to readable format (using markers for wide tables)
+  // 5. Convert markdown tables to readable card-style format
   result = result.replace(
     /^(\|.+\|)\n(\|[\s:|-]+\|)\n((?:\|.+\|\n?)+)/gm,
     (_m, headerRow: string, _sep: string, bodyRows: string) => {
@@ -240,18 +240,12 @@ export function markdownToTelegramHTML(md: string): string {
       if (headers.length === 2) {
         return rows.map((cols) => `\u2022 ${cols[0]}: ${cols[1]}`).join("\n");
       }
-      const colWidths = headers.map((h, i) =>
-        Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length))
-      );
-      const pad = (s: string, w: number) => s + " ".repeat(Math.max(0, w - s.length));
-      const headerLine = headers.map((h, i) => pad(h, colWidths[i] ?? h.length)).join(" | ");
-      const sepLine = colWidths.map((w) => "-".repeat(w)).join("-+-");
-      const bodyLines = rows.map((cols) =>
-        cols.map((c, i) => pad(c, colWidths[i] ?? c.length)).join(" | ")
-      );
-      const tableText = headerLine + "\n" + sepLine + "\n" + bodyLines.join("\n");
+      // 3+ columns: render each row as a labeled card block
+      const cards = rows.map((cols) => {
+        return cols.map((val, i) => `  ${headers[i] ?? `Col ${i + 1}`}: ${val}`).join("\n");
+      });
       const idx = codeBlocks.length;
-      codeBlocks.push(`<pre>${escapeHTML(tableText)}</pre>`);
+      codeBlocks.push(cards.map((c) => `${escapeHTML(c)}`).join("\n\u2500\u2500\u2500\n"));
       return `\x00CB${idx}\x00`;
     }
   );
