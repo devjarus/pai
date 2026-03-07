@@ -135,11 +135,17 @@ def execute_code(language: str, code: str, timeout: int) -> dict:
     ext = ".py" if language == "python" else ".js"
     script_path = os.path.join(work_dir, f"script{ext}")
 
-    # Inject output directory path so scripts can save files there
+    # Inject OUTPUT_DIR and switch into it so ordinary relative writes become artifacts.
     if language == "python":
-        header = f'import os; os.environ["OUTPUT_DIR"] = {repr(output_dir)}\n'
+        header = (
+            f'import os; os.environ["OUTPUT_DIR"] = {repr(output_dir)}\n'
+            'os.chdir(os.environ["OUTPUT_DIR"])\n'
+        )
     else:
-        header = f'process.env.OUTPUT_DIR = {json.dumps(output_dir)};\n'
+        header = (
+            f'process.env.OUTPUT_DIR = {json.dumps(output_dir)};\n'
+            'process.chdir(process.env.OUTPUT_DIR);\n'
+        )
 
     with open(script_path, "w") as f:
         f.write(header + code)
@@ -156,7 +162,7 @@ def execute_code(language: str, code: str, timeout: int) -> dict:
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=work_dir,
+            cwd=output_dir,
             env={**SAFE_ENV, "OUTPUT_DIR": output_dir},
             # Run in new process group so we can kill all children
             preexec_fn=os.setsid,

@@ -211,6 +211,8 @@ export const RunCodeToolUI = makeAssistantToolUI({
       artifacts?: Array<{ id: string; name: string; mimeType: string }>;
       error?: string;
     } | undefined;
+    const artifacts = output?.artifacts ?? [];
+    const hasError = state === "output-error" || Boolean(output?.error);
 
     if (state === "input-available") {
       return (
@@ -223,28 +225,30 @@ export const RunCodeToolUI = makeAssistantToolUI({
       );
     }
 
-    if (state === "output-error" || output?.error) {
-      return (
-        <div className="my-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-2">
-          <div className="text-sm font-medium text-red-400">Code execution failed</div>
-          {input.code && (
-            <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{input.code}</pre>
-          )}
-          {output?.error && (
-            <pre className="overflow-x-auto rounded bg-red-500/10 p-2 text-xs font-mono text-red-400 whitespace-pre-wrap">{output.error}</pre>
+    return (
+      <div
+        className={`my-2 rounded-lg p-3 space-y-2 ${
+          hasError
+            ? "border border-red-500/30 bg-red-500/5"
+            : "border border-border/30 bg-card/50"
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div
+            className={`text-xs font-medium uppercase tracking-wide ${
+              hasError ? "text-red-400" : "text-muted-foreground"
+            }`}
+          >
+            {hasError ? "Code execution completed with errors" : input.language ?? "Code"}
+          </div>
+          {typeof output?.exitCode === "number" && (
+            <div className={`text-xs ${hasError ? "text-red-300/80" : "text-muted-foreground"}`}>
+              Exit code: {output.exitCode}
+            </div>
           )}
         </div>
-      );
-    }
-
-    return (
-      <div className="my-2 rounded-lg border border-border/30 bg-card/50 p-3 space-y-2">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{input.language ?? "Code"}</div>
         {input.code && (
           <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{input.code}</pre>
-        )}
-        {typeof output?.exitCode === "number" && (
-          <div className="text-xs text-muted-foreground">Exit code: {output.exitCode}</div>
         )}
         {output?.stdout && (
           <>
@@ -258,8 +262,19 @@ export const RunCodeToolUI = makeAssistantToolUI({
             <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{output.stderr}</pre>
           </>
         )}
-        {output?.artifacts && output.artifacts.length > 0 && (
-          <ArtifactGallery artifacts={output.artifacts} title="Files" />
+        {output?.error && (
+          <>
+            <div className="text-xs font-medium uppercase tracking-wide text-red-400">Error</div>
+            <pre className="overflow-x-auto rounded bg-red-500/10 p-2 text-xs font-mono text-red-400 whitespace-pre-wrap">{output.error}</pre>
+          </>
+        )}
+        {hasError && artifacts.length > 0 && (
+          <p className="text-xs text-red-200/80">
+            Generated files were still saved and may be usable.
+          </p>
+        )}
+        {artifacts.length > 0 && (
+          <ArtifactGallery artifacts={artifacts} title={hasError ? "Generated files" : "Files"} />
         )}
       </div>
     );

@@ -59,7 +59,7 @@ Every claim from search results MUST have its citation inline, right next to the
 - **task_list**: Show tasks
 - **task_add**: Create a new task
 - **task_done**: Mark a task complete
-- **run_code**: Execute Python/JS code in a sandboxed environment — for data analysis, charting, calculations. Output files are saved as artifacts.
+- **run_code**: Execute Python/JS code in a sandboxed environment — for data analysis, charting, calculations. The sandbox starts inside OUTPUT_DIR so relative file saves become artifacts automatically. When generating charts for inline display, save PNG/JPEG/WebP images instead of HTML-only files unless the user asks for interactive HTML.
 - **generate_report**: Create a downloadable Markdown report — use when the user asks to generate a report, analysis document, or summary they can download and share
 - **browse_navigate**: Navigate the browser to a URL — use for JavaScript-rendered pages, SPAs, or login-gated content that read_page can't handle
 - **browse_snapshot**: Get interactive elements on the current page (buttons, links, inputs) — use to understand page structure before taking actions

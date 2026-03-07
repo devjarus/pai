@@ -543,7 +543,7 @@ export function createAgentTools(ctx: AgentContext) {
     // Conditionally add sandbox tool
     ...(resolveSandboxUrl(ctx.config.sandboxUrl) ? {
       run_code: tool({
-        description: "Execute Python or JavaScript code in an isolated sandbox. Use for data analysis, chart generation, calculations, or file processing. Files written to the OUTPUT_DIR directory will be saved as artifacts. Available packages: matplotlib, pandas, numpy, plotly, yfinance.",
+        description: "Execute Python or JavaScript code in an isolated sandbox. Use for data analysis, chart generation, calculations, or file processing. The sandbox starts inside OUTPUT_DIR, so relative file writes like `plt.savefig(\"chart.png\")` are saved as artifacts automatically. For charts the UI can preview inline, write PNG, JPEG, or WebP image files instead of HTML-only outputs unless the user explicitly asks for an interactive HTML file. Available packages: matplotlib, pandas, numpy, plotly, yfinance.",
         inputSchema: z.object({
           language: z.enum(["python", "node"]).describe("Programming language to execute"),
           code: z.string().describe("The code to execute"),

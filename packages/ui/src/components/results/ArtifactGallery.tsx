@@ -71,7 +71,8 @@ export function ArtifactGallery({ artifacts, title = "Artifacts" }: ArtifactGall
                 <img
                   src={`/api/artifacts/${artifact.id}`}
                   alt={artifact.name}
-                  className="mt-2 max-h-56 rounded border border-border/20 object-contain"
+                  className="mt-2 max-h-56 w-full rounded border border-border/20 bg-black/10 object-contain"
+                  loading="lazy"
                 />
               )}
             </div>
