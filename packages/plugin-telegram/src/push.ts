@@ -97,6 +97,7 @@ async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger):
             title,
             markdown: presentation.report,
             fileName: `${title}.html`,
+            renderSpec: presentation.renderSpec,
             visuals: presentation.visuals.map((visual) => ({
               artifactId: visual.artifactId,
               title: visual.title,

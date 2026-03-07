@@ -299,7 +299,10 @@ When knowledge_search returns previous research reports on the same topic:
 - If nothing has changed, say so clearly rather than restating old information
 
 ## Report Format
-Your final response MUST be a structured markdown report:
+Your final response MUST contain TWO parts:
+
+### Part 1: Markdown Report
+A structured markdown report with your findings:
 
 # Research Report: [Topic]
 
@@ -314,6 +317,53 @@ Your final response MUST be a structured markdown report:
 ## Sources
 - [URL 1] — [what it contributed]
 - [URL 2] — [what it contributed]
+
+### Part 2: Render Spec
+After the markdown report, include a json-render UI spec in a \`\`\`jsonrender code fence that describes how to render the key findings visually. IMPORTANT: Fill in ALL actual values — do NOT use placeholders.
+
+\`\`\`jsonrender
+{
+  "root": "research-report",
+  "elements": {
+    "research-report": {
+      "type": "Section",
+      "props": { "title": "Research Report: Topic Name", "subtitle": "Key findings and analysis" },
+      "children": ["summary", "key-metrics", "findings", "sources"]
+    },
+    "summary": {
+      "type": "Text",
+      "props": { "content": "2-3 sentence overview of findings.", "variant": "body" }
+    },
+    "key-metrics": {
+      "type": "Grid",
+      "props": { "columns": 3 },
+      "children": ["metric-1", "metric-2", "metric-3"]
+    },
+    "metric-1": {
+      "type": "MetricCard",
+      "props": { "label": "Key Metric", "value": "42", "trend": "up", "description": "Brief context" }
+    },
+    "metric-2": {
+      "type": "MetricCard",
+      "props": { "label": "Another Metric", "value": "85%", "trend": "neutral", "description": "Brief context" }
+    },
+    "metric-3": {
+      "type": "MetricCard",
+      "props": { "label": "Third Metric", "value": "$1.2M", "trend": "down", "description": "Brief context" }
+    },
+    "findings": {
+      "type": "BulletList",
+      "props": { "items": ["Finding 1 with detail", "Finding 2 with detail", "Finding 3 with detail"], "icon": "check", "variant": "default" }
+    },
+    "sources": {
+      "type": "SourceList",
+      "props": { "sources": [{"title": "Source 1", "url": "https://example.com"}, {"title": "Source 2", "url": "https://example.com"}] }
+    }
+  }
+}
+\`\`\`
+
+Fill in actual values from your research. For DataTable, columns MUST be objects with "key" and "label" fields, and rows MUST be objects with keys matching column "key" values. Available components: Section, Grid, MetricCard, DataTable, Badge, SourceList, BulletList, Text, Markdown, Heading, LineChart, BarChart, DonutChart, LinkButton, ProgressBar. Adapt the structure to fit your findings — use DataTable for comparisons, LineChart/BarChart for numeric trends, MetricCard for key stats. Only include components that add value; skip metrics/charts if the topic is purely qualitative.
 
 ## Budget
 You have a limited budget for searches and page reads. When a tool tells you the budget is exhausted, stop searching and synthesize what you have into the report.

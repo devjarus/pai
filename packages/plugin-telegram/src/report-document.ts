@@ -1,6 +1,6 @@
 import { InputFile } from "grammy";
 import type { Bot } from "grammy";
-import { getArtifact } from "@personal-ai/core";
+import { getArtifact, specToStaticHtml } from "@personal-ai/core";
 import type { Logger, Storage } from "@personal-ai/core";
 import { escapeHTML, markdownToReportHTML } from "./formatter.js";
 
@@ -16,6 +16,8 @@ interface TelegramReportDocumentOptions {
   markdown: string;
   fileName?: string;
   visuals?: TelegramReportVisual[];
+  /** json-render spec (parsed object or JSON string) */
+  renderSpec?: unknown;
 }
 
 const REPORT_DOCUMENT_STYLE = `
@@ -184,12 +186,46 @@ function buildVisualGallery(
   return `<section class="report-visuals"><h2>Visuals</h2><div class="report-visuals-grid">${figures.join("")}</div></section>`;
 }
 
+function buildSpecSection(
+  storage: Storage,
+  spec: unknown,
+  logger: Logger,
+): string {
+  if (!spec) return "";
+  const parsed = typeof spec === "string"
+    ? (() => { try { return JSON.parse(spec); } catch { return null; } })()
+    : spec;
+  if (!parsed) return "";
+
+  // Build an image resolver that converts /api/artifacts/<id> → base64 data URIs
+  const resolveImageSrc = (src: string): string => {
+    const match = src.match(/\/api\/artifacts\/([^/?#]+)/);
+    if (!match?.[1]) return src;
+    try {
+      const artifact = getArtifact(storage, match[1]);
+      if (artifact && artifact.mimeType.startsWith("image/")) {
+        return `data:${artifact.mimeType};base64,${artifact.data.toString("base64")}`;
+      }
+    } catch (err) {
+      logger.warn("Failed to inline spec artifact for Telegram document", {
+        artifactId: match[1],
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return src;
+  };
+
+  const html = specToStaticHtml(parsed, { resolveImageSrc });
+  return html ?? "";
+}
+
 export function buildTelegramReportDocument(
   storage: Storage,
   options: TelegramReportDocumentOptions,
   logger: Logger,
 ): { data: Buffer; fileName: string } {
   const title = options.title.trim() || "Report";
+  const specSection = buildSpecSection(storage, options.renderSpec, logger);
   const body = markdownToReportHTML(options.markdown);
   const visuals = buildVisualGallery(storage, options.visuals, logger);
   const html = `<!DOCTYPE html>
@@ -207,6 +243,7 @@ export function buildTelegramReportDocument(
       <h1>${escapeHTML(title)}</h1>
       <p class="report-meta">Delivered privately by Personal AI via Telegram.</p>
     </header>
+    ${specSection}
     ${body}
     ${visuals}
   </main>

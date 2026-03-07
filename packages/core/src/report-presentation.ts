@@ -245,6 +245,15 @@ export function extractPresentationBlocks(text: string): {
     }
   }
 
+  // Strip any remaining json/jsonrender fenced blocks (LLM sometimes produces multiples)
+  report = report.replace(/```(?:json|jsonrender)\s*[\s\S]*?```/g, "");
+
+  // Strip leftover section headings that were just labels for the extracted blocks
+  report = report.replace(/^#{1,4}\s*(?:Part\s*\d+[:\s]*)?(?:Render(?:ed)?\s*Spec|Structured\s*(?:Data|Result)|JSON\s*(?:Data|Output|Render))\s*$/gim, "");
+
+  // Strip LLM-echoed instruction text about the render spec
+  report = report.replace(/^(?:Fill in (?:the )?actual values|IMPORTANT:.*Fill in|Available components:).*$/gim, "");
+
   return { report: trimReport(report), structuredResult, renderSpec };
 }
 

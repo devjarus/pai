@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import MarkdownContent from "@/components/MarkdownContent";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
 import { parseApiDate } from "@/lib/datetime";
+import { specToStaticHtml } from "@/lib/render-to-html";
 import {
   RefreshCwIcon,
   CheckCircle2Icon,
@@ -94,13 +95,66 @@ blockquote{border-left:3px solid #2563eb;padding:0.5em 1em;margin:1em 0;backgrou
 @media print{body{margin:0;padding:0}h2{break-after:avoid}tr{break-inside:avoid}table{font-size:10pt}}
 `;
 
-function printResearchAsPdf(sections: { goal?: string; report?: string }): void {
+interface ReportVisual {
+  artifactId: string;
+  mimeType: string;
+  kind: "chart" | "image";
+  title: string;
+  caption?: string;
+  order: number;
+}
+
+function printResearchAsPdf(sections: {
+  goal?: string;
+  report?: string;
+  renderSpec?: unknown;
+  visuals?: ReportVisual[];
+}): void {
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) return;
   const title = (sections.goal ?? "Research Report").replace(/</g, "&lt;");
+
+  let specHtml = "";
+  let parsedSpec: Record<string, unknown> | null = null;
+  if (sections.renderSpec) {
+    parsedSpec = typeof sections.renderSpec === "string"
+      ? (() => { try { return JSON.parse(sections.renderSpec); } catch { return null; } })()
+      : sections.renderSpec as Record<string, unknown>;
+    specHtml = specToStaticHtml(parsedSpec) ?? "";
+  }
+
+  // Render visuals not already referenced in the spec (same logic as ResultRenderer)
+  let visualsHtml = "";
+  if (sections.visuals && sections.visuals.length > 0) {
+    const referencedIds = new Set<string>();
+    if (parsedSpec && typeof parsedSpec === "object" && parsedSpec.elements) {
+      for (const el of Object.values(parsedSpec.elements as Record<string, { props?: Record<string, unknown> }>)) {
+        for (const candidate of [el.props?.src, el.props?.url]) {
+          if (typeof candidate !== "string") continue;
+          const match = candidate.match(/\/api\/artifacts\/([^/?#]+)/);
+          if (match?.[1]) referencedIds.add(match[1]);
+        }
+      }
+    }
+    const remaining = sections.visuals
+      .filter((v) => !referencedIds.has(v.artifactId))
+      .sort((a, b) => a.order - b.order);
+    if (remaining.length > 0) {
+      visualsHtml = remaining.map((v) => {
+        const caption = v.caption ? `<div style="font-size:0.8em;color:#6b7280;padding:6px 12px;border-top:1px solid #e5e7eb">${v.caption}</div>` : "";
+        const src = `${window.location.origin}/api/artifacts/${v.artifactId}`;
+        return `<div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin:12px 0">
+          <img src="${src}" alt="${v.title.replace(/"/g, '&quot;')}" style="width:100%;display:block"/>
+          ${caption}
+        </div>`;
+      }).join("");
+    }
+  }
+
   const cleaned = stripRenderBlocks(sections.report ?? "");
-  const body = marked.parse(cleaned, { gfm: true, breaks: false, async: false }) as string;
-  w.document.write(`<html><head><title>${title}</title><style>${REPORT_CSS}</style></head><body>${body}</body></html>`);
+  const markdownHtml = marked.parse(cleaned, { gfm: true, breaks: false, async: false }) as string;
+  const body = specHtml + visualsHtml + markdownHtml;
+  w.document.write(`<html><head><base href="${window.location.origin}/"><title>${title}</title><style>${REPORT_CSS}</style></head><body>${body}</body></html>`);
   w.document.close();
   w.focus();
   w.print();
@@ -298,7 +352,12 @@ function InboxDetail({ id }: { id: string }) {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => printResearchAsPdf(sections)}
+                  onClick={() => printResearchAsPdf({
+                    goal: sections.goal,
+                    report: sections.report,
+                    renderSpec: (sections as Record<string, unknown>).renderSpec,
+                    visuals: sections.visuals,
+                  })}
                   className="gap-2"
                 >
                   <PrinterIcon className="h-3 w-3" />

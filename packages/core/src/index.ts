@@ -123,5 +123,13 @@ export { getProviderOptions } from "./provider-options.js";
 export { artifactMigrations, storeArtifact, getArtifact, listArtifacts, deleteJobArtifacts, cleanupOldArtifacts, guessMimeType } from "./artifacts.js";
 export type { Artifact, ArtifactMeta } from "./artifacts.js";
 
+// Chart utilities (pure math, no DOM)
+export { getChartBounds, buildLinePoints, buildLinePath, buildAreaPath, buildDonutSegments, formatChartValue } from "./chart-utils.js";
+export type { ChartPoint, ChartBounds, DonutSegmentInput, DonutSegment } from "./chart-utils.js";
+
+// Spec-to-HTML renderer (json-render spec → static HTML string)
+export { specToStaticHtml } from "./spec-to-html.js";
+export type { SpecToHtmlOptions } from "./spec-to-html.js";
+
 // Document parsing (PDF, Excel)
 export { parseBinaryDocument, isBinaryDocument, parsePdf, parseExcel } from "./document-parser.js";
