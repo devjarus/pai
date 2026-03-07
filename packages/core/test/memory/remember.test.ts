@@ -92,21 +92,28 @@ describe("remember", () => {
     expect(embRows).toHaveLength(1);
   });
 
-  it("should only store fact belief and skip insight (insights are generic noise)", async () => {
+  it("should store both fact and insight beliefs when insight is extracted", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn().mockResolvedValue({
-        text: '{"fact":"User likes coffee in the morning","insight":"Morning routines provide consistency"}',
+        text: '{"fact":"User likes coffee in the morning","factType":"preference","importance":7,"insight":"Morning routines provide consistency"}',
         usage: { inputTokens: 10, outputTokens: 15 },
       }),
       embed: vi.fn()
         .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })   // episode embedding
-        .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] }),   // fact embedding only
+        .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })   // fact embedding
+        .mockResolvedValueOnce({ embedding: [0.0, 1.0, 0.0] }),  // insight embedding
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
     const result = await remember(storage, mockLLM, "I like coffee in the morning");
-    expect(result.beliefIds).toHaveLength(1); // Only fact, no insight
+    expect(result.beliefIds).toHaveLength(2); // Fact + insight
     expect(result.isReinforcement).toBe(false);
+
+    const beliefTypes = storage.query<{ type: string }>(
+      "SELECT type FROM beliefs WHERE id IN (?, ?) ORDER BY type",
+      [result.beliefIds[0], result.beliefIds[1]],
+    ).map((row) => row.type);
+    expect(beliefTypes).toEqual(["insight", "preference"]);
   });
 
   it("should reinforce existing belief when semantically similar", async () => {

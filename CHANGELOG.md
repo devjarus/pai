@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **End-to-end telemetry coverage** — Chat, Telegram, background learning, briefings, research, swarm execution, memory extraction, and knowledge embeddings now emit standardized process-level telemetry. Assistant thread messages also persist compact usage summaries for diagnostics without exposing raw metrics in normal user-facing flows.
 - **Background dispatch smoothing** — Research, swarm, and daily briefing generation now enqueue into a single background dispatcher instead of starting immediately. Restarts requeue unfinished research/swarm/briefing work as `pending`, scheduled jobs dedupe by schedule, manual work is prioritized ahead of scheduled and maintenance work, and swarm agent execution is staggered to avoid bursting the LLM server.
 - **Cerebras default model** — Setup wizard, Settings presets, and `pai init` now default Cerebras to `gpt-oss-120b` instead of `zai-glm-4.7` so fresh configurations land on a model that works with the currently tested account access path.
+- **Memory insight persistence** — `remember()` now persists extracted insight beliefs alongside the primary fact belief, so insight-type memories populate during normal usage instead of only via manual creation paths.
+- **Recall type balancing** — Semantic recall now caps `insight`/`meta` entries to about one-third of the requested limit when concrete fact/preference/procedural/architectural matches exist, preventing high-level beliefs from crowding out actionable memories.
 
 ### Security
 
