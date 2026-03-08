@@ -161,10 +161,6 @@ describe("Research jobs", () => {
       const { generateText } = await import("ai");
       (generateText as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(async (options: Record<string, unknown>) => {
-          const stopWhen = options.stopWhen as unknown[];
-          expect(Array.isArray(stopWhen)).toBe(true);
-          expect(stopWhen.some((condition) => typeof condition === "function")).toBe(true);
-
           const tools = options.tools as Record<string, { execute: (input: Record<string, unknown>) => Promise<unknown> }>;
           for (let index = 0; index < 5; index++) {
             await tools.web_search!.execute({ query: `query-${index}` });

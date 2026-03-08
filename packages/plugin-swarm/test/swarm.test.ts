@@ -550,10 +550,6 @@ describe("Swarm jobs", () => {
         if (process === "swarm.agent") {
           const message = ((options as { messages?: Array<{ content?: string }> }).messages ?? [])[0]?.content ?? "";
           if (message.includes("Research the budget-limited topic")) {
-            const stopWhen = (options as { stopWhen?: unknown }).stopWhen;
-            expect(Array.isArray(stopWhen)).toBe(true);
-            expect((stopWhen as unknown[]).some((condition) => typeof condition === "function")).toBe(true);
-
             const tools = (options as { tools?: Record<string, { execute: (input: Record<string, unknown>) => Promise<unknown> }> }).tools ?? {};
             for (let index = 0; index < 4; index++) {
               await tools.web_search!.execute({ query: `query-${index}` });

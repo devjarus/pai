@@ -122,12 +122,6 @@ function isBudgetSignal(value: unknown): value is BudgetExhaustedSignal {
     && typeof candidate.max === "number";
 }
 
-function hasBudgetSignalInLastStep(steps: StepLike[]): boolean {
-  const lastStep = steps[steps.length - 1];
-  if (!lastStep) return false;
-  return (lastStep.toolResults ?? []).some((toolResult) => isBudgetSignal(getToolPayload(toolResult)));
-}
-
 function isBudgetPlaceholderText(text: string | undefined): boolean {
   if (!text) return false;
   return /budget exhausted/i.test(text)
@@ -591,10 +585,7 @@ async function runSubAgent(
       ],
       tools,
       toolChoice: "auto",
-      stopWhen: [
-        stepCountIs(AGENT_STEP_LIMIT),
-        ({ steps }) => hasBudgetSignalInLastStep(steps as StepLike[]),
-      ],
+      stopWhen: stepCountIs(AGENT_STEP_LIMIT),
       maxRetries: 1,
       timeout: SWARM_LLM_TIMEOUT,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

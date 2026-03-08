@@ -157,12 +157,6 @@ function hasBudgetSignal(steps: StepLike[]): boolean {
   );
 }
 
-function hasBudgetSignalInLastStep(steps: StepLike[]): boolean {
-  const lastStep = steps[steps.length - 1];
-  if (!lastStep) return false;
-  return (lastStep.toolResults ?? []).some((toolResult) => isBudgetSignal(getToolPayload(toolResult)));
-}
-
 function isBudgetPlaceholderText(text: string | undefined): boolean {
   if (!text) return false;
   return /budget exhausted/i.test(text)
@@ -1398,10 +1392,7 @@ export async function runResearchInBackground(
         ],
         tools,
         toolChoice: "auto",
-        stopWhen: [
-          stepCountIs(15),
-          ({ steps }) => hasBudgetSignalInLastStep(steps as StepLike[]),
-        ],
+        stopWhen: stepCountIs(15),
         maxRetries: 1,
         timeout: RESEARCH_LLM_TIMEOUT,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
