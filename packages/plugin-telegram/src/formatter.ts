@@ -262,7 +262,11 @@ export function markdownToTelegramHTML(md: string): string {
     return `\x00LK${idx}\x00`;
   });
 
-  // 5. Convert markdown tables to readable card-style format
+  // 5. Collapse blank lines between markdown table rows so the table regex matches.
+  //    LLMs often emit tables with blank lines between header, separator, and body rows.
+  result = result.replace(/(\|[^\n]+\|)\n(?:\s*\n)+(?=\|)/gm, "$1\n");
+
+  // Convert markdown tables to readable card-style format
   result = result.replace(
     /^(\|.+\|)\n(\|[\s:|-]+\|)\n((?:\|.+\|\n?)+)/gm,
     (_m, headerRow: string, _sep: string, bodyRows: string) => {

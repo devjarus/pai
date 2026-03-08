@@ -22,26 +22,26 @@ interface TelegramReportDocumentOptions {
 
 const REPORT_DOCUMENT_STYLE = `
   :root {
-    color-scheme: light dark;
-    --bg: #ffffff;
-    --fg: #132238;
-    --muted: #5b6b82;
-    --border: #d9e0ea;
-    --accent: #0f766e;
-    --accent-bg: #f0fdfa;
-    --code-bg: #f4f7fb;
-    --card-bg: #f8fafc;
+    color-scheme: dark light;
+    --bg: #0b1220;
+    --fg: #e6edf7;
+    --muted: #9eb0c7;
+    --border: #243247;
+    --accent: #5eead4;
+    --accent-bg: #0f2230;
+    --code-bg: #111b2c;
+    --card-bg: #101827;
   }
-  @media (prefers-color-scheme: dark) {
+  @media (prefers-color-scheme: light) {
     :root {
-      --bg: #0b1220;
-      --fg: #e6edf7;
-      --muted: #9eb0c7;
-      --border: #243247;
-      --accent: #5eead4;
-      --accent-bg: #0f2230;
-      --code-bg: #111b2c;
-      --card-bg: #101827;
+      --bg: #ffffff;
+      --fg: #132238;
+      --muted: #5b6b82;
+      --border: #d9e0ea;
+      --accent: #0f766e;
+      --accent-bg: #f0fdfa;
+      --code-bg: #f4f7fb;
+      --card-bg: #f8fafc;
     }
   }
   * { box-sizing: border-box; }
@@ -233,7 +233,7 @@ export function buildTelegramReportDocument(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="dark light">
   <title>${escapeHTML(title)}</title>
   <style>${REPORT_DOCUMENT_STYLE}</style>
 </head>

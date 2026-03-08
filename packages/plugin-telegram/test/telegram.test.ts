@@ -164,6 +164,24 @@ describe("markdownToTelegramHTML", () => {
     expect(output).not.toContain("```");
     expect(output).not.toContain("-+-");
   });
+
+  it("converts tables with blank lines between rows", () => {
+    const input = "| Dimension | Finnhub | Alpha Vantage |\n\n|-----------|---------|---------------|\n\n| Coverage | Global | US only |\n\n| Latency | 15s | 20min |";
+    const output = markdownToTelegramHTML(input);
+    // Should convert to card-style (3 columns), not show raw pipes
+    expect(output).toContain("Dimension: Coverage");
+    expect(output).toContain("Finnhub: Global");
+    expect(output).toContain("Alpha Vantage: US only");
+    expect(output).not.toContain("|");
+  });
+
+  it("converts 2-column tables with blank lines between rows", () => {
+    const input = "| Key | Value |\n\n|-----|-------|\n\n| Name | Alice |\n\n| Age | 30 |";
+    const output = markdownToTelegramHTML(input);
+    expect(output).toContain("\u2022 Name: Alice");
+    expect(output).toContain("\u2022 Age: 30");
+    expect(output).not.toContain("|");
+  });
 });
 
 describe("splitMessage", () => {
