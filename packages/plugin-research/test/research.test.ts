@@ -156,6 +156,66 @@ describe("Research jobs", () => {
       expect(tracked!.status).toBe("done");
       expect(tracked!.type).toBe("research");
     });
+
+    it("synthesizes from structured budget signals instead of persisting placeholder text", async () => {
+      const { generateText } = await import("ai");
+      (generateText as ReturnType<typeof vi.fn>)
+        .mockImplementationOnce(async (options: Record<string, unknown>) => {
+          const stopWhen = options.stopWhen as unknown[];
+          expect(Array.isArray(stopWhen)).toBe(true);
+          expect(stopWhen.some((condition) => typeof condition === "function")).toBe(true);
+
+          const tools = options.tools as Record<string, { execute: (input: Record<string, unknown>) => Promise<unknown> }>;
+          for (let index = 0; index < 5; index++) {
+            await tools.web_search!.execute({ query: `query-${index}` });
+          }
+          const budgetResult = await tools.web_search!.execute({ query: "query-overflow" });
+          expect(budgetResult).toEqual(expect.objectContaining({
+            status: "budget_exhausted",
+            resource: "search",
+            used: 5,
+            max: 5,
+          }));
+
+          return {
+            text: "Budget exhausted — you've used all your web searches.",
+            steps: [
+              {
+                toolCalls: [{ toolName: "web_search", args: { query: "typescript frameworks" } }],
+                toolResults: [{ result: "Authoritative source result." }],
+              },
+              {
+                toolCalls: [{ toolName: "web_search", args: { query: "query-overflow" } }],
+                toolResults: [{ result: budgetResult }],
+              },
+            ],
+          };
+        })
+        .mockImplementationOnce(async (options: Record<string, unknown>) => {
+          const messages = options.messages as Array<{ role: string; content: string }>;
+          expect(messages[1]!.content).toContain("Tool: web_search");
+          expect(messages[1]!.content).toContain("Budget exhausted: used 5/5 web searches");
+          expect(messages[1]!.content).not.toContain("[object Object]");
+
+          return {
+            text: "# Research Report\n\n## Summary\nRecovered from partial findings.",
+            steps: [],
+          };
+        });
+
+      const ctx = makeCtx();
+      const id = createResearchJob(storage, {
+        goal: "Budget-limited research",
+        threadId: null,
+      });
+
+      await runResearchInBackground(ctx, id);
+
+      const job = getResearchJob(storage, id);
+      expect(job!.status).toBe("done");
+      expect(job!.report).toContain("Recovered from partial findings");
+      expect(job!.report).not.toContain("Budget exhausted");
+    });
   });
 
   describe("report delivery", () => {

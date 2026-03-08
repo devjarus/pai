@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Graceful search-budget exits for research and swarm** — Background research and swarm agents now treat exhausted search/page budgets as structured stop signals, stop tool loops deterministically, and synthesize partial findings from collected evidence instead of surfacing raw "budget exhausted" text or empty agent output.
 - **Built UI asset routing** — Production server static hosting now serves nested `/assets/*` files correctly, preventing blank-page reloads caused by JavaScript and CSS requests falling through to `index.html`.
 - **Provider setup error visibility** — LLM setup "Test Connection" now performs a tiny inference instead of a shallow provider health check, so billing, quota, auth, and model-access failures surface with the provider's actual error message.
 - **Wasteful thread title token usage** — Short chats now keep cheap heuristic titles instead of immediately invoking the full LLM title path. LLM-generated title refreshes only start on longer threads and the title call itself is capped to a tiny output budget, cutting unnecessary token burn and queue time.

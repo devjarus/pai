@@ -531,5 +531,117 @@ describe("Swarm jobs", () => {
       expect(tracked).toBeDefined();
       expect(tracked!.status).toBe("done");
     });
+
+    it("summarizes partial tool results when a sub-agent exhausts its search budget", async () => {
+      mockInstrumentedGenerateText.mockImplementation(async (_runtime, options, telemetry) => {
+        const process = (telemetry as { process?: string }).process;
+
+        if (process === "swarm.plan") {
+          return {
+            result: {
+              text: '```json\n[{"role":"researcher","task":"Research the budget-limited topic","tools":["web_search"]},{"role":"analyst","task":"Analyze the gathered evidence","tools":["knowledge_search"]},{"role":"chart_generator","task":"Summarize visuals","tools":["knowledge_search"]}]\n```',
+              steps: [],
+            },
+            traceId: "trace-plan",
+            spanId: "span-plan",
+          };
+        }
+
+        if (process === "swarm.agent") {
+          const message = ((options as { messages?: Array<{ content?: string }> }).messages ?? [])[0]?.content ?? "";
+          if (message.includes("Research the budget-limited topic")) {
+            const stopWhen = (options as { stopWhen?: unknown }).stopWhen;
+            expect(Array.isArray(stopWhen)).toBe(true);
+            expect((stopWhen as unknown[]).some((condition) => typeof condition === "function")).toBe(true);
+
+            const tools = (options as { tools?: Record<string, { execute: (input: Record<string, unknown>) => Promise<unknown> }> }).tools ?? {};
+            for (let index = 0; index < 4; index++) {
+              await tools.web_search!.execute({ query: `query-${index}` });
+            }
+            const budgetResult = await tools.web_search!.execute({ query: "query-overflow" });
+            expect(budgetResult).toEqual(expect.objectContaining({
+              status: "budget_exhausted",
+              resource: "search",
+              used: 4,
+              max: 4,
+            }));
+
+            return {
+              result: {
+                text: "",
+                steps: [
+                  {
+                    toolCalls: [{ toolName: "web_search", args: { query: "topic facts" } }],
+                    toolResults: [{ result: "Authoritative source A" }],
+                  },
+                  {
+                    toolCalls: [{ toolName: "web_search", args: { query: "query-overflow" } }],
+                    toolResults: [{ result: budgetResult }],
+                  },
+                ],
+              },
+              traceId: "trace-agent-budget",
+              spanId: "span-agent-budget",
+            };
+          }
+
+          if (message.includes("Analyze the gathered evidence")) {
+            return {
+              result: {
+                text: "Analysis highlights the strongest evidence.",
+                steps: [],
+              },
+              traceId: "trace-agent-analyst",
+              spanId: "span-agent-analyst",
+            };
+          }
+
+          return {
+            result: {
+              text: "No chart generated, but the available evidence is summarized.",
+              steps: [],
+            },
+            traceId: "trace-agent-chart",
+            spanId: "span-agent-chart",
+          };
+        }
+
+        if (process === "swarm.synthesize") {
+          const message = ((options as { messages?: Array<{ content?: string }> }).messages ?? [])[0]?.content ?? "";
+          expect(message).toContain("Authoritative source A");
+          expect(message).toContain("Budget exhausted: used 4/4 web searches");
+
+          return {
+            result: {
+              text: "# Swarm Report\n\nBudget-limited findings were synthesized correctly.",
+              steps: [],
+            },
+            traceId: "trace-synth",
+            spanId: "span-synth",
+          };
+        }
+
+        throw new Error(`Unexpected process: ${process ?? "unknown"}`);
+      });
+
+      const ctx = makeCtx();
+      const id = createSwarmJob(storage, {
+        goal: "Budget-limited swarm",
+        threadId: null,
+      });
+
+      await runSwarmInBackground(ctx, id);
+
+      const job = getSwarmJob(storage, id);
+      expect(job!.status).toBe("done");
+      expect(job!.synthesis).toContain("Budget-limited findings were synthesized correctly");
+
+      const agents = getSwarmAgents(storage, id);
+      const researcher = agents.find((agent) => agent.role === "researcher");
+      expect(researcher).toBeDefined();
+      expect(researcher!.result).toContain("Authoritative source A");
+      expect(researcher!.result).toContain("Budget exhausted: used 4/4 web searches");
+      expect(researcher!.result).not.toContain("produced no text output");
+    });
   });
 });

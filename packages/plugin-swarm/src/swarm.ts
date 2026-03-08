@@ -67,6 +67,118 @@ export interface SwarmContext {
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;
 }
 
+type ToolCallLike = {
+  toolName?: string;
+  args?: unknown;
+};
+
+type ToolResultLike = {
+  result?: unknown;
+  output?: unknown;
+};
+
+type StepLike = {
+  toolCalls?: ToolCallLike[];
+  toolResults?: ToolResultLike[];
+};
+
+type BudgetResource = "search" | "page";
+
+interface BudgetExhaustedSignal {
+  status: "budget_exhausted";
+  resource: BudgetResource;
+  used: number;
+  max: number;
+  nextAction: "summarize";
+  message: string;
+}
+
+function createBudgetSignal(resource: BudgetResource, used: number, max: number): BudgetExhaustedSignal {
+  const label = resource === "search" ? "web searches" : "page reads";
+  return {
+    status: "budget_exhausted",
+    resource,
+    used,
+    max,
+    nextAction: "summarize",
+    message: `Budget exhausted: used ${used}/${max} ${label}. Summarize existing findings and stop calling search tools.`,
+  };
+}
+
+function getToolPayload(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const maybe = value as ToolResultLike;
+  if ("output" in maybe && maybe.output !== undefined) return maybe.output;
+  if ("result" in maybe && maybe.result !== undefined) return maybe.result;
+  return value;
+}
+
+function isBudgetSignal(value: unknown): value is BudgetExhaustedSignal {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<BudgetExhaustedSignal>;
+  return candidate.status === "budget_exhausted"
+    && (candidate.resource === "search" || candidate.resource === "page")
+    && typeof candidate.used === "number"
+    && typeof candidate.max === "number";
+}
+
+function hasBudgetSignalInLastStep(steps: StepLike[]): boolean {
+  const lastStep = steps[steps.length - 1];
+  if (!lastStep) return false;
+  return (lastStep.toolResults ?? []).some((toolResult) => isBudgetSignal(getToolPayload(toolResult)));
+}
+
+function isBudgetPlaceholderText(text: string | undefined): boolean {
+  if (!text) return false;
+  return /budget exhausted/i.test(text)
+    || /used all your web searches/i.test(text)
+    || /used all your page reads/i.test(text);
+}
+
+function stringifyForSummary(value: unknown, maxChars = 1600): string {
+  if (typeof value === "string") {
+    return value.slice(0, maxChars);
+  }
+  if (isBudgetSignal(value)) {
+    return `${value.message} (${value.used}/${value.max})`;
+  }
+  try {
+    return JSON.stringify(value, null, 2).slice(0, maxChars);
+  } catch {
+    return String(value).slice(0, maxChars);
+  }
+}
+
+function summarizeToolResults(steps: StepLike[], maxChars = 4_000): string {
+  const sections: string[] = [];
+  let usedChars = 0;
+
+  for (const step of steps) {
+    const toolCalls = step.toolCalls ?? [];
+    const toolResults = step.toolResults ?? [];
+    const count = Math.max(toolCalls.length, toolResults.length);
+    for (let index = 0; index < count; index++) {
+      const toolCall = toolCalls[index];
+      const raw = getToolPayload(toolResults[index]);
+      if (raw == null) continue;
+
+      const body = stringifyForSummary(raw);
+      if (!body.trim()) continue;
+
+      const args = toolCall?.args !== undefined ? ` ${stringifyForSummary(toolCall.args, 240)}` : "";
+      const header = toolCall?.toolName ? `Tool: ${toolCall.toolName}${args}` : "Tool result";
+      const section = `${header}\n${body}`.slice(0, 2200);
+      if (usedChars + section.length > maxChars) {
+        return [...sections, "[truncated]"].join("\n\n---\n\n");
+      }
+      sections.push(section);
+      usedChars += section.length + 10;
+    }
+  }
+
+  return sections.join("\n\n---\n\n");
+}
+
 function getSubAgentPrompt(role: string, resultType: string, timezone?: string): string {
   // Domain-specific roles first
   if (role === "flight_researcher") return getFlightResearcherPrompt(timezone);
@@ -479,7 +591,10 @@ async function runSubAgent(
       ],
       tools,
       toolChoice: "auto",
-      stopWhen: stepCountIs(AGENT_STEP_LIMIT),
+      stopWhen: [
+        stepCountIs(AGENT_STEP_LIMIT),
+        ({ steps }) => hasBudgetSignalInLastStep(steps as StepLike[]),
+      ],
       maxRetries: 1,
       timeout: SWARM_LLM_TIMEOUT,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -497,7 +612,10 @@ async function runSubAgent(
     },
   );
 
-  const agentResult = result.text || "Agent completed but produced no text output.";
+  const toolSummary = summarizeToolResults(result.steps as StepLike[]);
+  const agentResult = (!result.text?.trim() || isBudgetPlaceholderText(result.text))
+    ? (toolSummary || "Agent completed but produced no text output.")
+    : result.text;
 
   // Post final result to blackboard if not already posted
   insertBlackboardEntry(ctx.storage, {
@@ -536,7 +654,7 @@ function createSubAgentTools(
       }),
       execute: async ({ query }: { query: string }) => {
         if (searchesUsed >= MAX_SEARCHES_PER_AGENT) {
-          return "Budget exhausted — you've used all your web searches. Post your findings to the blackboard now.";
+          return createBudgetSignal("search", searchesUsed, MAX_SEARCHES_PER_AGENT);
         }
         searchesUsed++;
         try {
@@ -556,7 +674,7 @@ function createSubAgentTools(
       }),
       execute: async ({ url }: { url: string }) => {
         if (pagesRead >= MAX_PAGES_PER_AGENT) {
-          return "Budget exhausted — you've used all your page reads. Post your findings to the blackboard now.";
+          return createBudgetSignal("page", pagesRead, MAX_PAGES_PER_AGENT);
         }
         pagesRead++;
         try {

@@ -96,6 +96,124 @@ export interface ResearchContext {
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;
 }
 
+type ToolCallLike = {
+  toolName?: string;
+  args?: unknown;
+};
+
+type ToolResultLike = {
+  result?: unknown;
+  output?: unknown;
+};
+
+type StepLike = {
+  toolCalls?: ToolCallLike[];
+  toolResults?: ToolResultLike[];
+};
+
+type BudgetResource = "search" | "page";
+
+interface BudgetExhaustedSignal {
+  status: "budget_exhausted";
+  resource: BudgetResource;
+  used: number;
+  max: number;
+  nextAction: "synthesize";
+  message: string;
+}
+
+function createBudgetSignal(resource: BudgetResource, used: number, max: number): BudgetExhaustedSignal {
+  const label = resource === "search" ? "web searches" : "page reads";
+  return {
+    status: "budget_exhausted",
+    resource,
+    used,
+    max,
+    nextAction: "synthesize",
+    message: `Budget exhausted: used ${used}/${max} ${label}. Synthesize findings from existing information.`,
+  };
+}
+
+function getToolPayload(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const maybe = value as ToolResultLike;
+  if ("output" in maybe && maybe.output !== undefined) return maybe.output;
+  if ("result" in maybe && maybe.result !== undefined) return maybe.result;
+  return value;
+}
+
+function isBudgetSignal(value: unknown): value is BudgetExhaustedSignal {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<BudgetExhaustedSignal>;
+  return candidate.status === "budget_exhausted"
+    && (candidate.resource === "search" || candidate.resource === "page")
+    && typeof candidate.used === "number"
+    && typeof candidate.max === "number";
+}
+
+function hasBudgetSignal(steps: StepLike[]): boolean {
+  return steps.some((step) =>
+    (step.toolResults ?? []).some((toolResult) => isBudgetSignal(getToolPayload(toolResult))),
+  );
+}
+
+function hasBudgetSignalInLastStep(steps: StepLike[]): boolean {
+  const lastStep = steps[steps.length - 1];
+  if (!lastStep) return false;
+  return (lastStep.toolResults ?? []).some((toolResult) => isBudgetSignal(getToolPayload(toolResult)));
+}
+
+function isBudgetPlaceholderText(text: string | undefined): boolean {
+  if (!text) return false;
+  return /budget exhausted/i.test(text)
+    || /used all your web searches/i.test(text)
+    || /used all your page reads/i.test(text);
+}
+
+function stringifyForPrompt(value: unknown, maxChars = 1600): string {
+  if (typeof value === "string") {
+    return value.slice(0, maxChars);
+  }
+  if (isBudgetSignal(value)) {
+    return `${value.message} (${value.used}/${value.max})`;
+  }
+  try {
+    return JSON.stringify(value, null, 2).slice(0, maxChars);
+  } catch {
+    return String(value).slice(0, maxChars);
+  }
+}
+
+function summarizeToolResults(steps: StepLike[], maxChars = 30_000): string {
+  const sections: string[] = [];
+  let usedChars = 0;
+
+  for (const step of steps) {
+    const toolCalls = step.toolCalls ?? [];
+    const toolResults = step.toolResults ?? [];
+    const count = Math.max(toolCalls.length, toolResults.length);
+    for (let index = 0; index < count; index++) {
+      const toolCall = toolCalls[index];
+      const raw = getToolPayload(toolResults[index]);
+      if (raw == null) continue;
+
+      const body = stringifyForPrompt(raw);
+      if (!body.trim()) continue;
+
+      const args = toolCall?.args !== undefined ? ` ${stringifyForPrompt(toolCall.args, 240)}` : "";
+      const header = toolCall?.toolName ? `Tool: ${toolCall.toolName}${args}` : "Tool result";
+      const section = `${header}\n${body}`.slice(0, 2200);
+      if (usedChars + section.length > maxChars) {
+        return [...sections, "[truncated]"].join("\n\n---\n\n");
+      }
+      sections.push(section);
+      usedChars += section.length + 10;
+    }
+  }
+
+  return sections.join("\n\n---\n\n");
+}
+
 // ---- Data Access ----
 
 export function createResearchJob(
@@ -1058,7 +1176,7 @@ function createResearchTools(
       }),
       execute: async ({ query }: { query: string }) => {
         if (searchesUsed >= job.budgetMaxSearches) {
-          return "Budget exhausted — you've used all your web searches. Synthesize your findings into the report now.";
+          return createBudgetSignal("search", searchesUsed, job.budgetMaxSearches);
         }
         searchesUsed++;
         updateJob(ctx.storage, jobId, { searches_used: searchesUsed });
@@ -1080,7 +1198,7 @@ function createResearchTools(
       }),
       execute: async ({ url }: { url: string }) => {
         if (pagesRead >= job.budgetMaxPages) {
-          return "Budget exhausted — you've used all your page reads. Synthesize your findings into the report now.";
+          return createBudgetSignal("page", pagesRead, job.budgetMaxPages);
         }
         pagesRead++;
         updateJob(ctx.storage, jobId, { pages_learned: pagesRead });
@@ -1280,7 +1398,10 @@ export async function runResearchInBackground(
         ],
         tools,
         toolChoice: "auto",
-        stopWhen: stepCountIs(15),
+        stopWhen: [
+          stepCountIs(15),
+          ({ steps }) => hasBudgetSignalInLastStep(steps as StepLike[]),
+        ],
         maxRetries: 1,
         timeout: RESEARCH_LLM_TIMEOUT,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1299,19 +1420,16 @@ export async function runResearchInBackground(
     );
 
     let rawReport = result.text;
+    const summarizedToolResults = summarizeToolResults(result.steps as StepLike[]);
 
-    // If the LLM exhausted all steps on tool calls without producing a report,
-    // do a follow-up call to synthesize findings from the tool results.
-    if (!rawReport) {
-      ctx.logger.warn(`Research job ${jobId}: no report text, running synthesis pass`);
-      const toolResults = result.steps
-        .flatMap((s) => s.toolResults ?? [])
-        .map((r) => String((r as Record<string, unknown>).result ?? ""))
-        .filter((r) => r.length > 10)
-        .join("\n\n---\n\n")
-        .slice(0, 30_000);
+    // If the tool loop stopped at a limit or produced placeholder text,
+    // force a synthesis pass from collected tool output.
+    if (!rawReport?.trim() || isBudgetPlaceholderText(rawReport)) {
+      ctx.logger.warn(`Research job ${jobId}: incomplete report text, running synthesis pass`, {
+        budgetExhausted: hasBudgetSignal(result.steps as StepLike[]),
+      });
 
-      if (toolResults) {
+      if (summarizedToolResults) {
         const { result: synthResult } = await instrumentedGenerateText(
           { storage: ctx.storage, logger: ctx.logger },
           {
@@ -1319,7 +1437,7 @@ export async function runResearchInBackground(
             system: systemPrompt,
             messages: [
               { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
-              { role: "assistant", content: `I've gathered the following research data:\n\n${toolResults}` },
+              { role: "assistant", content: `I've gathered the following research data:\n\n${summarizedToolResults}` },
               { role: "user", content: "Now synthesize all findings into the structured markdown report." },
             ],
             maxRetries: 1,
@@ -1334,7 +1452,7 @@ export async function runResearchInBackground(
             jobId,
             provider: ctx.provider ?? "ollama",
             model: ctx.model ?? "",
-            requestSizeChars: toolResults.length,
+            requestSizeChars: summarizedToolResults.length,
           },
         );
         rawReport = synthResult.text || "";
