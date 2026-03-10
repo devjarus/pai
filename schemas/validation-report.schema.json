@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pai.dev/schemas/validation-report.schema.json",
+  "title": "ValidationReport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_type",
+    "generated_at",
+    "status",
+    "summary",
+    "checks",
+    "blockers",
+    "warnings",
+    "artifacts",
+    "todo"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "run_type": { "type": "string", "enum": ["core-loop", "regressions"] },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "status": { "type": "string", "enum": ["pass", "warn", "fail"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "details", "blockers", "warnings"],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["pass", "warn", "fail"] },
+          "details": { "type": "string" },
+          "blockers": { "type": "array", "items": { "type": "string" } },
+          "warnings": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "blockers": { "type": "array", "items": { "type": "string" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "artifacts": { "type": "array", "items": { "type": "string" } },
+    "todo": { "type": "array", "items": { "type": "string" } }
+  }
+}

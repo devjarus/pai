@@ -1,0 +1,46 @@
+id: work-watch
+name: Project Atlas launch readiness
+initial_user_message: >
+  Keep track of Project Atlas launch readiness for me. The target launch is next month. I care most about release blockers,
+  rollback readiness, and docs signoff. Brief me when readiness changes materially.
+expected_program_behavior:
+  program_title: Project Atlas launch readiness
+  program_family: work
+  why_recurring: Launch readiness changes as blockers clear, dependencies shift, and launch criteria move.
+  cadence: weekly, with immediate briefs for material blocker changes
+  expected_actions:
+    - summarize readiness state
+    - identify blockers and owners
+    - recommend whether to proceed, hold, or escalate
+expected_memory_captured:
+  preferences:
+    - prioritize blocker clarity over verbose status updates
+    - prefer clear escalation guidance
+  constraints:
+    - target launch is next month
+    - rollback readiness and docs signoff are required
+  open_questions:
+    - final go/no-go authority may need confirmation
+expected_brief_sections:
+  - recommendation
+  - what_changed
+  - evidence
+  - memory_assumptions
+  - next_actions
+correction_step:
+  user_message: >
+    Correction: security signoff is now a launch blocker too, and I only want escalation if the blocker is outside the core team.
+  expected_memory_update:
+    - add security signoff as a required launch criterion
+    - narrow escalation preference to blockers outside the core team
+  expected_brief_change:
+    - future briefs must treat missing security signoff as blocking
+    - escalation recommendations should be more selective
+expected_next_brief_behavior:
+  should_reflect_correction: true
+  suppressed_old_assumptions:
+    - security signoff is optional
+    - every unresolved blocker should trigger escalation
+  expected_changes:
+    - recommendation and next actions reflect the new blocker rule
+    - memory assumptions section shows the revised escalation preference
