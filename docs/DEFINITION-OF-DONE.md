@@ -10,6 +10,7 @@ Work is only done when all of the following are true:
 - relevant validations were actually run
 - an evidence pack exists for multi-step work or behavior-changing work
 - regressions were considered using the relevant checklist and harness command
+- reactive restore work names the failure signal, restore condition, and prevention step
 - uncertainty is stated honestly
 - no success claim is made without proof
 
@@ -46,6 +47,25 @@ At minimum, select the validations that match the work:
 - `pnpm harness:core-loop` for Program, Brief, correction, provenance, or recurring follow-through changes
 - `pnpm harness:regressions` for repo-level harness integrity or cross-cutting changes
 
+## Reactive Restore Work
+
+Reactive work includes CI failures, coverage regressions, flaky tests, broken builds, or other side-loop fixes that are triggered by an existing guardrail rather than a new feature request.
+
+Reactive work is only done when all of the following are true:
+
+- the failing signal is named concretely
+- the restore condition is explicit
+- the failing gate was rerun after the fix when possible
+- the evidence pack states the root cause, not just the symptom
+- a prevention step was added or the absence of one is stated as an explicit residual risk
+
+Reactive fixes should end by promoting the discovered invariant into a durable guard when possible:
+
+- a test
+- a harness assertion
+- a checklist rule
+- a documented accepted risk
+
 ## Evidence Requirements
 
 Evidence must be specific enough that another maintainer can understand what was checked.
@@ -56,6 +76,7 @@ Acceptable evidence includes:
 - generated validation reports
 - updated evidence packs
 - file references for the implemented change
+- for reactive work: the failing signal, proof of restore, and prevention added
 
 Unacceptable evidence includes:
 

@@ -9,6 +9,15 @@
 
 - path/to/file
 
+## Failure Signal
+
+- direct user request, failing CI job, coverage drift, flaky test, production report, or `none`
+
+## Root Cause
+
+- what actually caused the issue
+- use `not applicable` if this was planned feature work rather than a reactive fix
+
 ## Validations Run
 
 - command:
@@ -25,9 +34,21 @@
 - what passed
 - what was verified
 
+## Proof Of Restore
+
+- the exact gate or behavior that is now restored
+
+## Prevention Added
+
+- test, harness assertion, checklist rule, or documented accepted risk
+
 ## Failures
 
 - none, or list failures and their impact
+
+## Residual Risk
+
+- what risk remains after the fix, or `none`
 
 ## Remaining Uncertainty
 

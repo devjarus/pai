@@ -51,6 +51,7 @@ Before coding:
 - Create a task contract from [harness/task-contract.template.yaml](harness/task-contract.template.yaml) for any multi-step task, architecture change, or core-loop change.
 - Save it under `harness/runs/`.
 - Keep per-task files in `harness/runs/` local to the working tree; do not commit them.
+- Set `work_mode` in the task contract. Use `reactive` when the task is triggered by CI, coverage, build, regression, or another failing guardrail.
 - Confirm scope, success criteria, validations, and escalation conditions before editing code.
 
 During work:
@@ -58,6 +59,7 @@ During work:
 - Stay within scope.
 - Avoid unrelated cleanup unless the task contract is updated first.
 - Keep an evidence pack updated during long sessions using [harness/evidence-pack.template.md](harness/evidence-pack.template.md).
+- For reactive work, record the failure signal, restore condition, root cause, proof of restore, and prevention step in the evidence pack.
 - Record meaningful architectural or product tradeoffs in `docs/decisions/*` when the task changes repo expectations.
 
 Before claiming completion:
@@ -65,6 +67,7 @@ Before claiming completion:
 - Run the relevant tests and harness checks.
 - Use at least one relevant checklist from `harness/checklists/*`.
 - Produce or update an evidence pack.
+- For reactive work, rerun the failing gate when possible and capture whether the fix added a durable guard.
 - State uncertainty honestly.
 - Escalate if ambiguity, missing validation, or scope drift remains.
 
@@ -94,6 +97,7 @@ For work that spans multiple steps, multiple files, or touches the Ask -> Progra
 - Pick the checklist that matches the work:
   - `core-loop-change-checklist.md`
   - `memory-change-checklist.md`
+  - `reactive-fix-checklist.md`
   - `ui-change-checklist.md`
 
 ## Repo Conventions That Still Apply

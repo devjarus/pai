@@ -6,6 +6,10 @@ why_now: >
   Why this task matters now.
 status: draft
 owner: any-agent
+work_mode: planned
+trigger_signal: "User request / roadmap milestone / failing guardrail"
+restore_condition: "What condition must be true before this work is considered restored or complete."
+prevention_followup: "What durable guard should be added, or state not applicable."
 related_request: ""
 in_scope:
   - ""

@@ -260,11 +260,16 @@ export function validateTaskContractTemplate(relativePath: string): ValidationCh
     "title",
     "objective",
     "why_now",
+    "work_mode",
+    "trigger_signal",
+    "restore_condition",
+    "prevention_followup",
     "in_scope",
     "out_of_scope",
     "affected_systems",
     "success_criteria",
     "validations_required",
+    "evidence_pack",
     "risks",
     "escalation_conditions",
   ];
@@ -277,6 +282,10 @@ export function validateTaskContractTemplate(relativePath: string): ValidationCh
 
   if (!Array.isArray(template.checklists_required)) {
     warnings.push(`${relativePath}: checklists_required should be present to guide agent workflow`);
+  }
+
+  if (template.work_mode !== "planned" && template.work_mode !== "reactive") {
+    blockers.push(`${relativePath}: work_mode must be either "planned" or "reactive"`);
   }
 
   return makeCheck(`template:${path.basename(relativePath)}`, "Checked task contract template structure.", blockers, warnings);

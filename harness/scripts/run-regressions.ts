@@ -48,9 +48,14 @@ function run(): ValidationReport {
     validateMarkdownSections("harness/evidence-pack.template.md", [
       "## Summary Of Change",
       "## Files Changed",
+      "## Failure Signal",
+      "## Root Cause",
       "## Validations Run",
       "## Results",
+      "## Proof Of Restore",
+      "## Prevention Added",
       "## Failures",
+      "## Residual Risk",
       "## Remaining Uncertainty",
       "## Confidence",
       "## Next Best Step",
@@ -60,6 +65,7 @@ function run(): ValidationReport {
   for (const checklistPath of [
     "harness/checklists/core-loop-change-checklist.md",
     "harness/checklists/memory-change-checklist.md",
+    "harness/checklists/reactive-fix-checklist.md",
     "harness/checklists/ui-change-checklist.md",
   ]) {
     checks.push(
@@ -120,7 +126,7 @@ function run(): ValidationReport {
     generated_at: new Date().toISOString(),
     status: reportStatus(checks),
     summary:
-      "Scaffold regression harness run. This validates repo-native harness artifacts, scenario/schema presence, and package wiring. It does not replace package tests or runtime integration checks.",
+      "Scaffold regression harness run. This validates repo-native harness artifacts, scenario/schema presence, reactive-work workflow artifacts, and package wiring. It does not replace package tests or runtime integration checks.",
     checks,
     blockers,
     warnings,
@@ -129,6 +135,7 @@ function run(): ValidationReport {
       "Integrate real runtime assertions for Program persistence and Brief rendering.",
       "Attach harness checks to targeted package tests or CI once the contracts stabilize.",
       "Add memory-governance regression cases that exercise live retrieval and correction suppression.",
+      "Validate actual task contracts and evidence packs, not only the templates, once the reactive workflow stabilizes.",
     ],
   };
 
