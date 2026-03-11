@@ -28,7 +28,7 @@ export default function Chat() {
 
   const { data: threads = [] } = useThreads();
 
-  useEffect(() => { document.title = "Chat - pai"; }, []);
+  useEffect(() => { document.title = "Ask - pai"; }, []);
 
   // On mobile, sidebars start closed
   useEffect(() => {

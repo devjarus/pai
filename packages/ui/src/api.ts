@@ -650,6 +650,84 @@ export async function getLearningRuns(): Promise<{ runs: LearningRun[] }> {
 }
 
 // ---------------------------------------------------------------------------
+// Programs
+// ---------------------------------------------------------------------------
+
+export interface Program {
+  id: string;
+  title: string;
+  question: string;
+  family: "general" | "work" | "travel" | "buying";
+  executionMode: ReportExecution;
+  intervalHours: number;
+  chatId: number | null;
+  threadId: string | null;
+  lastRunAt: string | null;
+  nextRunAt: string;
+  status: string;
+  createdAt: string;
+  preferences: string[];
+  constraints: string[];
+  openQuestions: string[];
+}
+
+export function getPrograms(): Promise<Program[]> {
+  return request("/programs");
+}
+
+export function createProgramApi(data: {
+  title: string;
+  question: string;
+  family?: "general" | "work" | "travel" | "buying";
+  executionMode?: ReportExecution;
+  intervalHours?: number;
+  startAt?: string;
+  preferences?: string[];
+  constraints?: string[];
+  openQuestions?: string[];
+}): Promise<Program> {
+  return request("/programs", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateProgramApi(id: string, data: {
+  title?: string;
+  question?: string;
+  family?: "general" | "work" | "travel" | "buying";
+  executionMode?: ReportExecution;
+  intervalHours?: number;
+  startAt?: string;
+  preferences?: string[];
+  constraints?: string[];
+  openQuestions?: string[];
+}): Promise<Program> {
+  return request(`/programs/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteProgramApi(id: string): Promise<{ ok: boolean }> {
+  return request(`/programs/${id}`, { method: "DELETE" });
+}
+
+export function pauseProgramApi(id: string): Promise<{ ok: boolean }> {
+  return request(`/programs/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "pause" }),
+  });
+}
+
+export function resumeProgramApi(id: string): Promise<{ ok: boolean }> {
+  return request(`/programs/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "resume" }),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Schedules
 // ---------------------------------------------------------------------------
 

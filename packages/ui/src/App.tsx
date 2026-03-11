@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import Layout from "./components/Layout";
 import Chat from "./pages/Chat";
 import Memory from "./pages/Memory";
+import Programs from "./pages/Programs";
 import Timeline from "./pages/Timeline";
 import Settings from "./pages/Settings";
 import Knowledge from "./pages/Knowledge";
@@ -86,7 +87,9 @@ export default function App() {
           <Route element={<AuthGate><Layout /></AuthGate>}>
             <Route path="/" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
             <Route path="/inbox/:id" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
+            <Route path="/programs" element={<ErrorBoundary><Programs /></ErrorBoundary>} />
             <Route path="/grid" element={<ErrorBoundary><Grid /></ErrorBoundary>} />
+            <Route path="/ask" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
             <Route path="/chat" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
             <Route path="/memory" element={<ErrorBoundary><Memory /></ErrorBoundary>} />
             <Route path="/timeline" element={<ErrorBoundary><Timeline /></ErrorBoundary>} />

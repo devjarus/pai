@@ -31,14 +31,14 @@ export default function Onboarding() {
 
     if (promises.length === 0) {
       localStorage.setItem("pai_onboarded", "1");
-      navigate("/chat", { replace: true });
+      navigate("/ask", { replace: true });
       return;
     }
 
     try {
       await Promise.all(promises);
       localStorage.setItem("pai_onboarded", "1");
-      navigate("/chat", { replace: true });
+      navigate("/ask", { replace: true });
     } catch {
       setSaving(false);
       setError(
@@ -50,7 +50,7 @@ export default function Onboarding() {
 
   const handleSkip = () => {
     localStorage.setItem("pai_onboarded", "1");
-    navigate("/chat", { replace: true });
+    navigate("/ask", { replace: true });
   };
 
   return (

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createStorage } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
+import { scheduleMigrations } from "@personal-ai/plugin-schedules";
 import {
   briefingMigrations,
   getLatestBriefing,
@@ -233,6 +234,7 @@ describe("generateBriefing", () => {
     dir = mkdtempSync(join(tmpdir(), "pai-briefing-gen-"));
     storage = createStorage(dir);
     storage.migrate("briefing", briefingMigrations);
+    storage.migrate("schedules", scheduleMigrations);
     vi.clearAllMocks();
   });
 
@@ -243,7 +245,7 @@ describe("generateBriefing", () => {
 
   function makeCtx(healthOk = true) {
     return {
-      config: { llm: { provider: "ollama", model: "test-model" } } as never,
+      config: { timezone: "America/Los_Angeles", llm: { provider: "ollama", model: "test-model" } } as never,
       storage,
       llm: {
         health: vi.fn().mockResolvedValue({ ok: healthOk }),
@@ -259,29 +261,33 @@ describe("generateBriefing", () => {
   }
 
   const sampleSections: BriefingSection = {
-    greeting: "Good morning!",
-    taskFocus: {
-      summary: "You have tasks.",
-      items: [{ id: "t1", title: "Do stuff", priority: "high", insight: "Important" }],
+    title: "Project Atlas launch readiness",
+    recommendation: {
+      summary: "Keep Project Atlas as the top watch for the next brief.",
+      confidence: "medium",
+      rationale: "Release blockers still matter more than broad status updates.",
     },
-    memoryInsights: {
-      summary: "Memory is growing.",
-      highlights: [{ statement: "You like TS", type: "preference", detail: "Noted" }],
-    },
-    suggestions: [{ title: "Review beliefs", reason: "Some are stale" }],
+    what_changed: ["Rollback readiness is still unresolved."],
+    evidence: [{ title: "Program definition", detail: "Track launch readiness and blockers.", sourceLabel: "Program" }],
+    memory_assumptions: [{ statement: "Prioritize blocker clarity over verbose status updates", confidence: "high", provenance: "Program preference" }],
+    next_actions: [{ title: "Confirm blocker owners", timing: "Today", detail: "Make sure each open blocker has an owner and next step." }],
+    correction_hook: { prompt: "Correction: tell pai what changed or what should matter more next time." },
   };
 
-  it("returns null when LLM health check fails", async () => {
+  it("falls back to a deterministic brief when LLM health check fails", async () => {
     const ctx = makeCtx(false);
     const result = await generateBriefing(ctx);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("ready");
+    expect(result!.sections.recommendation.summary).toContain("watch");
   });
 
-  it("returns null when LLM health check throws", async () => {
+  it("falls back to a deterministic brief when LLM health check throws", async () => {
     const ctx = makeCtx();
     (ctx as { llm: { health: ReturnType<typeof vi.fn> } }).llm.health = vi.fn().mockRejectedValue(new Error("connection refused"));
     const result = await generateBriefing(ctx);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.sections.evidence.length).toBeGreaterThan(0);
   });
 
   it("generates a briefing successfully with plain JSON response", async () => {
@@ -295,9 +301,9 @@ describe("generateBriefing", () => {
 
     expect(result).not.toBeNull();
     expect(result!.status).toBe("ready");
-    expect(result!.sections.greeting).toBe("Good morning!");
-    expect(result!.sections.taskFocus.items).toHaveLength(1);
-    expect(result!.sections.suggestions).toHaveLength(1);
+    expect(result!.sections.recommendation.summary).toBe("Keep Project Atlas as the top watch for the next brief.");
+    expect(result!.sections.what_changed).toHaveLength(1);
+    expect(result!.sections.next_actions).toHaveLength(1);
 
     // Verify it was persisted in the DB
     const fromDb = getBriefingById(storage, result!.id);
@@ -315,27 +321,22 @@ describe("generateBriefing", () => {
     const result = await generateBriefing(ctx);
 
     expect(result).not.toBeNull();
-    expect(result!.sections.greeting).toBe("Good morning!");
+    expect(result!.sections.recommendation.summary).toBe("Keep Project Atlas as the top watch for the next brief.");
   });
 
-  it("marks briefing as failed when generateText throws", async () => {
+  it("falls back to a deterministic brief when generateText throws", async () => {
     const { generateText } = await import("ai");
     (generateText as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("LLM unavailable"));
 
     const ctx = makeCtx(true);
     const result = await generateBriefing(ctx);
 
-    expect(result).toBeNull();
-
-    // The row should exist with status 'failed'
-    const rows = storage.query<{ id: string; status: string }>(
-      "SELECT id, status FROM briefings WHERE status = 'failed'",
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.status).toBe("failed");
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("ready");
+    expect(result!.sections.correction_hook.prompt).toContain("Correction");
   });
 
-  it("marks briefing as failed when response is invalid JSON", async () => {
+  it("falls back to a deterministic brief when response is invalid JSON", async () => {
     const { generateText } = await import("ai");
     (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
       text: "This is not JSON at all",
@@ -344,12 +345,9 @@ describe("generateBriefing", () => {
     const ctx = makeCtx(true);
     const result = await generateBriefing(ctx);
 
-    expect(result).toBeNull();
-
-    const rows = storage.query<{ status: string }>(
-      "SELECT status FROM briefings WHERE status = 'failed'",
-    );
-    expect(rows).toHaveLength(1);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("ready");
+    expect(result!.sections.memory_assumptions.length).toBeGreaterThan(0);
   });
 
   it("calls generateText with the LLM model from context", async () => {

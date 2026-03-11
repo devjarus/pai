@@ -26,7 +26,7 @@ export default function Login() {
   // If already authenticated, redirect to chat
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      navigate("/chat", { replace: true });
+      navigate("/ask", { replace: true });
     }
   }, [loading, isAuthenticated, navigate]);
 
@@ -44,7 +44,7 @@ export default function Login() {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (tz) updateConfig({ timezone: tz }).catch(() => {});
       await refresh();
-      navigate("/chat", { replace: true });
+      navigate("/ask", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed.");
     }

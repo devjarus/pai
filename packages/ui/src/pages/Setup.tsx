@@ -98,13 +98,13 @@ export default function Setup() {
     if (preferences.trim()) promises.push(remember(preferences.trim()));
     if (promises.length === 0) {
       localStorage.setItem("pai_onboarded", "1");
-      navigate("/chat", { replace: true });
+      navigate("/ask", { replace: true });
       return;
     }
     try {
       await Promise.all(promises);
       localStorage.setItem("pai_onboarded", "1");
-      navigate("/chat", { replace: true });
+      navigate("/ask", { replace: true });
     } catch {
       setIntroSaving(false);
       setIntroError("Could not save — you can skip and set up later in Settings.");
@@ -113,7 +113,7 @@ export default function Setup() {
 
   const handleSkipIntro = () => {
     localStorage.setItem("pai_onboarded", "1");
-    navigate("/chat", { replace: true });
+    navigate("/ask", { replace: true });
   };
 
   return (

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Programs v1 surface** — Added a first-class Programs API and UI built as a thin wrapper over scheduled jobs, including create/edit/pause/resume/delete flows and roadmap-aligned navigation to `Programs` and `Ask`.
 - **Agent-agnostic implementation harness** — Added a repo-native agent harness with a thin coordinating `AGENTS.md`, product and boundary docs, short decision logs, task/evidence templates, validation checklists, core-loop scenarios, practical JSON schemas, and runnable `harness:core-loop` / `harness:regressions` scripts for portable agent discipline.
 - **Cerebras provider support** — Added first-class Cerebras support across the core LLM client, config validation, CLI setup, settings/onboarding flows, health checks, and context budgeting. Cerebras uses the official `@ai-sdk/cerebras` provider with local embedding fallback.
 - **Per-instance diagnostics** — Added a local observability system that records LLM, embed, tool, HTTP, and worker spans in SQLite. New owner-facing diagnostics panel lives in Settings with Overview, Processes, Threads, Jobs, and Errors tabs for token, latency, and failure visibility.
@@ -19,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Recommendation-first Briefs v2** — Daily brief generation now produces recommendation, what changed, evidence, memory assumptions, next actions, and correction hooks, with Inbox compatibility for both the new brief shape and legacy stored briefings.
+- **Executable core-loop proof** — `harness:core-loop` now runs a real runtime scenario for `work-watch`: it creates a Program, generates a structured brief, applies a correction, regenerates the brief, and asserts stale assumptions are suppressed.
 - **End-to-end telemetry coverage** — Chat, Telegram, background learning, briefings, research, swarm execution, memory extraction, and knowledge embeddings now emit standardized process-level telemetry. Assistant thread messages also persist compact usage summaries for diagnostics without exposing raw metrics in normal user-facing flows.
 - **Background dispatch smoothing** — Research, swarm, and daily briefing generation now enqueue into a single background dispatcher instead of starting immediately. Restarts requeue unfinished research/swarm/briefing work as `pending`, scheduled jobs dedupe by schedule, manual work is prioritized ahead of scheduled and maintenance work, and swarm agent execution is staggered to avoid bursting the LLM server.
 - **Cerebras default model** — Setup wizard, Settings presets, and `pai init` now default Cerebras to `gpt-oss-120b` instead of `zai-glm-4.7` so fresh configurations land on a model that works with the currently tested account access path.

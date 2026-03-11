@@ -17,8 +17,9 @@ import {
   validateTaskContractTemplate,
   writeReport,
 } from "./_shared";
+import { runExecutableCoreLoopScenario } from "./core-loop-runtime";
 
-function run(): ValidationReport {
+async function run(): Promise<ValidationReport> {
   const checks: ValidationCheck[] = [];
   const scenarioFiles = listFiles("harness/scenarios", ".yaml");
 
@@ -77,6 +78,8 @@ function run(): ValidationReport {
     );
   }
 
+  checks.push(await runExecutableCoreLoopScenario());
+
   const blockers = flattenIssues(checks, "blockers");
   const warnings = flattenIssues(checks, "warnings");
   const report: ValidationReport = {
@@ -85,15 +88,15 @@ function run(): ValidationReport {
     generated_at: new Date().toISOString(),
     status: reportStatus(checks),
     summary:
-      "Scaffold core-loop harness run. This validates scenario completeness, harness artifact presence, and checklist/template coverage. It does not execute real Program or Brief flows yet.",
+      "Core-loop harness run. This validates harness artifacts and executes the work-watch scenario against real Program and Brief runtime paths using deterministic fallback generation.",
     checks,
     blockers,
     warnings,
     artifacts: ["harness/reports/latest-core-loop.json"],
     todo: [
-      "Execute scenarios against real Ask -> Program -> Brief flows once stable runtime hooks exist.",
-      "Assert that corrections suppress stale assumptions in future Brief generation, not just in scenario docs.",
-      "Connect provenance checks to rendered Brief output and memory trust surfaces.",
+      "Add at least one more executable scenario beyond work-watch so travel and buying paths are also covered.",
+      "Expand runtime assertions to cover chat-created Programs instead of direct Program creation only.",
+      "Connect executable harness checks to rendered UI and correction entrypoints, not just storage and generation paths.",
     ],
   };
 
@@ -101,7 +104,7 @@ function run(): ValidationReport {
   return report;
 }
 
-const report = run();
+const report = await run();
 const reportPath = rootPath("harness/reports/latest-core-loop.json");
 console.log(`[harness:core-loop] ${report.status.toUpperCase()} ${relativeToRoot(reportPath)}`);
 console.log(`[harness:core-loop] ${report.summary}`);

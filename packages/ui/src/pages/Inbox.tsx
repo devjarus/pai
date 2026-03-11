@@ -201,6 +201,55 @@ interface InboxItem {
   type: string;
 }
 
+interface DailyBriefingV2 {
+  title?: string;
+  recommendation?: {
+    summary?: string;
+    confidence?: "low" | "medium" | "high";
+    rationale?: string;
+  };
+  what_changed?: string[];
+  evidence?: Array<{
+    title?: string;
+    detail?: string;
+    sourceLabel?: string;
+    sourceUrl?: string;
+    freshness?: string;
+  }>;
+  memory_assumptions?: Array<{
+    statement?: string;
+    confidence?: "low" | "medium" | "high";
+    provenance?: string;
+  }>;
+  next_actions?: Array<{
+    title?: string;
+    timing?: string;
+    detail?: string;
+    owner?: string;
+  }>;
+  correction_hook?: {
+    prompt?: string;
+  };
+}
+
+interface DailyBriefingLegacy {
+  greeting?: string;
+  taskFocus?: { summary: string; items: Array<{ id: string; title: string; priority: string; insight: string }> };
+  memoryInsights?: { summary: string; highlights: Array<{ statement: string; type: string; detail: string }> };
+  suggestions?: Array<{ title: string; reason: string; action?: string }>;
+}
+
+function isDailyBriefingV2(raw: Record<string, unknown>): raw is Record<string, unknown> & DailyBriefingV2 {
+  return typeof raw.recommendation === "object" && raw.recommendation !== null;
+}
+
+function dailyBriefingTitle(raw: Record<string, unknown>): string {
+  if (isDailyBriefingV2(raw)) {
+    return raw.title ?? raw.recommendation?.summary ?? "Daily Briefing";
+  }
+  return (raw as DailyBriefingLegacy).greeting ?? "Daily Briefing";
+}
+
 export default function Inbox() {
   const { id } = useParams<{ id: string }>();
   const [readIds, setReadIds] = useState<Set<string>>(loadReadIds);
@@ -267,17 +316,17 @@ function InboxDetail({ id }: { id: string }) {
     if (!item) return;
     setCreating(true);
     try {
-      const sections = item.sections as { goal?: string; report?: string; greeting?: string };
+      const sections = item.sections as { goal?: string; report?: string };
       const rawTitle = item.type === "research"
         ? `Research: ${sections.goal ?? "Report"}`
-        : sections.greeting?.slice(0, 60) ?? "Briefing Discussion";
+        : dailyBriefingTitle(item.sections).slice(0, 60) || "Briefing Discussion";
       const title = rawTitle.length > 200 ? rawTitle.slice(0, 197) + "..." : rawTitle;
       const thread = await createThreadMut.mutateAsync({ title });
       const context = item.type === "research"
         ? `I'd like to discuss this research report:\n\n**Goal:** ${sections.goal}\n\n${sections.report ?? ""}`
         : `I'd like to discuss today's briefing.`;
       sessionStorage.setItem("pai-chat-auto-send", JSON.stringify({ threadId: thread.id, message: context }));
-      navigate(`/chat?thread=${thread.id}`);
+      navigate(`/ask?thread=${thread.id}`);
     } catch {
       toast.error("Failed to create chat thread");
     } finally {
@@ -310,7 +359,6 @@ function InboxDetail({ id }: { id: string }) {
   const sections = item.sections as {
     goal?: string;
     report?: string;
-    greeting?: string;
     execution?: "research" | "analysis";
     visuals?: Array<{
       artifactId: string;
@@ -406,7 +454,7 @@ function InboxDetail({ id }: { id: string }) {
             <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
           </div>
           <h1 className="text-xl font-semibold text-foreground">
-            {item.type === "research" ? (sections.goal ?? "Research Report") : (sections.greeting ?? "Daily Briefing")}
+            {item.type === "research" ? (sections.goal ?? "Research Report") : dailyBriefingTitle(item.sections)}
           </h1>
         </div>
 
@@ -434,12 +482,160 @@ function InboxDetail({ id }: { id: string }) {
 }
 
 function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<string, unknown>; navigate: ReturnType<typeof useNavigate> }) {
-  const sections = raw as {
-    taskFocus?: { summary: string; items: Array<{ id: string; title: string; priority: string; insight: string }> };
-    memoryInsights?: { summary: string; highlights: Array<{ statement: string; type: string; detail: string }> };
-    suggestions?: Array<{ title: string; reason: string; action?: string }>;
-  };
+  return isDailyBriefingV2(raw)
+    ? <DailyBriefingV2Detail sections={raw} navigate={navigate} />
+    : <DailyBriefingLegacyDetail sections={raw as DailyBriefingLegacy} navigate={navigate} />;
+}
 
+function DailyBriefingV2Detail({ sections, navigate }: { sections: DailyBriefingV2; navigate: ReturnType<typeof useNavigate> }) {
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-center gap-2">
+          <SparklesIcon className="h-4 w-4 text-primary" />
+          <span className="font-mono text-sm font-semibold text-foreground">Recommendation</span>
+          {sections.recommendation?.confidence && (
+            <Badge variant="outline" className="text-[10px] uppercase">
+              {sections.recommendation.confidence}
+            </Badge>
+          )}
+        </div>
+        <p className="mt-3 text-base font-medium text-foreground">
+          {sections.recommendation?.summary ?? "No recommendation available"}
+        </p>
+        {sections.recommendation?.rationale && (
+          <p className="mt-2 text-sm text-muted-foreground">{sections.recommendation.rationale}</p>
+        )}
+      </div>
+
+      {(sections.what_changed?.length ?? 0) > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <RefreshCwIcon className="h-4 w-4 text-primary" />
+            <span className="font-mono text-sm font-semibold text-foreground">What Changed</span>
+          </div>
+          <div className="space-y-2">
+            {sections.what_changed!.map((item, index) => (
+              <div key={index} className="rounded-md border border-border/20 bg-card/40 px-4 py-3 text-sm text-muted-foreground">
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(sections.evidence?.length ?? 0) > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <BookOpenIcon className="h-4 w-4 text-blue-400" />
+            <span className="font-mono text-sm font-semibold text-foreground">Evidence</span>
+          </div>
+          <div className="space-y-3">
+            {sections.evidence!.map((item, index) => (
+              <div key={index} className="rounded-md border border-border/20 bg-card/40 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">{item.title}</span>
+                  {item.sourceLabel && (
+                    <Badge variant="outline" className="text-[10px]">
+                      {item.sourceLabel}
+                    </Badge>
+                  )}
+                  {item.freshness && (
+                    <span className="text-[11px] text-muted-foreground">{item.freshness}</span>
+                  )}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">{item.detail}</p>
+                {item.sourceUrl && (
+                  <a
+                    href={item.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex text-xs text-primary hover:underline"
+                  >
+                    Open source
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(sections.memory_assumptions?.length ?? 0) > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <BrainIcon className="h-4 w-4 text-violet-400" />
+            <span className="font-mono text-sm font-semibold text-foreground">Memory Assumptions</span>
+          </div>
+          <div className="space-y-3">
+            {sections.memory_assumptions!.map((item, index) => (
+              <div
+                key={index}
+                className="cursor-pointer rounded-md border border-border/20 bg-card/40 p-4 transition-colors hover:border-violet-500/30"
+                onClick={() => navigate("/memory")}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">{item.statement}</span>
+                  <Badge variant="outline" className="text-[10px] uppercase">
+                    {item.confidence ?? "medium"}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">{item.provenance}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(sections.next_actions?.length ?? 0) > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2Icon className="h-4 w-4 text-amber-400" />
+            <span className="font-mono text-sm font-semibold text-foreground">Next Actions</span>
+          </div>
+          <div className="space-y-3">
+            {sections.next_actions!.map((action, index) => (
+              <div key={index} className="rounded-md border border-border/20 bg-card/40 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">{action.title}</span>
+                  {action.timing && (
+                    <Badge variant="outline" className="text-[10px]">
+                      {action.timing}
+                    </Badge>
+                  )}
+                  {action.owner && (
+                    <span className="text-[11px] text-muted-foreground">Owner: {action.owner}</span>
+                  )}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">{action.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sections.correction_hook?.prompt && (
+        <div className="rounded-lg border border-border/20 bg-card/40 p-4">
+          <div className="flex items-center gap-2">
+            <MessageCircleIcon className="h-4 w-4 text-primary" />
+            <span className="font-mono text-sm font-semibold text-foreground">Correction Hook</span>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">{sections.correction_hook.prompt}</p>
+          <div className="mt-3 flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate("/programs")}>
+              Review Programs
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/ask")}>
+              Open Ask
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DailyBriefingLegacyDetail({ sections, navigate }: { sections: DailyBriefingLegacy; navigate: ReturnType<typeof useNavigate> }) {
   return (
     <div className="space-y-4 md:space-y-6">
       {(sections.taskFocus?.items?.length ?? 0) > 0 && (
@@ -449,17 +645,19 @@ function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<str
             <span className="font-mono text-sm font-semibold text-foreground">Task Focus</span>
           </div>
           <p className="text-sm text-muted-foreground">{sections.taskFocus!.summary}</p>
-          {sections.taskFocus!.items.map((t, i) => (
+          {sections.taskFocus!.items.map((item, index) => (
             <div
-              key={t.id || i}
+              key={item.id || index}
               className="cursor-pointer rounded-md border border-border/20 bg-card/40 p-4 transition-colors hover:border-border/40"
               onClick={() => navigate("/tasks")}
             >
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-foreground">{t.title}</span>
-                <Badge variant="outline" className={`text-[9px] ${priorityStyles[t.priority] ?? priorityStyles.low}`}>{t.priority}</Badge>
+                <span className="text-sm font-medium text-foreground">{item.title}</span>
+                <Badge variant="outline" className={`text-[9px] ${priorityStyles[item.priority] ?? priorityStyles.low}`}>
+                  {item.priority}
+                </Badge>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{t.insight}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.insight}</p>
             </div>
           ))}
         </div>
@@ -472,17 +670,19 @@ function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<str
             <span className="font-mono text-sm font-semibold text-foreground">Memory Insights</span>
           </div>
           <p className="text-sm text-muted-foreground">{sections.memoryInsights!.summary}</p>
-          {sections.memoryInsights!.highlights.map((h, i) => (
+          {sections.memoryInsights!.highlights.map((item, index) => (
             <div
-              key={i}
+              key={index}
               className="cursor-pointer rounded-md border border-border/20 bg-card/40 p-4 transition-colors hover:border-violet-500/30"
               onClick={() => navigate("/memory")}
             >
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-foreground">{h.statement}</span>
-                <Badge variant="outline" className="text-[9px] border-violet-500/20 bg-violet-500/10 text-violet-400">{h.type}</Badge>
+                <span className="text-sm font-medium text-foreground">{item.statement}</span>
+                <Badge variant="outline" className="text-[9px] border-violet-500/20 bg-violet-500/10 text-violet-400">
+                  {item.type}
+                </Badge>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{h.detail}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
             </div>
           ))}
         </div>
@@ -494,24 +694,24 @@ function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<str
             <LightbulbIcon className="h-4 w-4 text-amber-400" />
             <span className="font-mono text-sm font-semibold text-foreground">Suggestions</span>
           </div>
-          {sections.suggestions!.map((s, i) => (
-            <div key={i} className="flex items-start justify-between gap-2 rounded-md border border-border/20 bg-card/40 p-4">
+          {sections.suggestions!.map((item, index) => (
+            <div key={index} className="flex items-start justify-between gap-2 rounded-md border border-border/20 bg-card/40 p-4">
               <div className="min-w-0 flex-1">
-                <span className="text-sm font-medium text-foreground">{s.title}</span>
-                <p className="mt-1 text-xs text-muted-foreground">{s.reason}</p>
+                <span className="text-sm font-medium text-foreground">{item.title}</span>
+                <p className="mt-1 text-xs text-muted-foreground">{item.reason}</p>
               </div>
-              {s.action && (
+              {item.action && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="shrink-0 text-xs text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
                   onClick={() => {
-                    if (s.action === "recall") navigate("/memory");
-                    else if (s.action === "task") navigate("/tasks");
-                    else if (s.action === "learn") navigate("/knowledge");
+                    if (item.action === "recall") navigate("/memory");
+                    else if (item.action === "task") navigate("/tasks");
+                    else if (item.action === "learn") navigate("/knowledge");
                   }}
                 >
-                  {s.action === "recall" ? "Recall" : s.action === "task" ? "Tasks" : s.action === "learn" ? "Learn" : s.action}
+                  {item.action === "recall" ? "Recall" : item.action === "task" ? "Tasks" : item.action === "learn" ? "Learn" : item.action}
                   <ArrowRightIcon className="ml-1 h-3 w-3" />
                 </Button>
               )}
@@ -602,14 +802,14 @@ function InboxFeed() {
               Start by chatting — I'll learn about you as we talk.
             </p>
           </div>
-          <Button onClick={() => navigate("/chat")} className="gap-2">
+          <Button onClick={() => navigate("/ask")} className="gap-2">
             <MessageCircleIcon className="h-4 w-4" />
-            Start chatting
+            Start asking
           </Button>
           <Separator className="w-full" />
           <div className="grid w-full gap-3 text-left">
             {[
-              { icon: MessageCircleIcon, label: "Chat", desc: "Talk to me — I remember what matters" },
+              { icon: MessageCircleIcon, label: "Ask", desc: "Start with a question and turn it into a recurring watch" },
               { icon: BrainIcon, label: "Memory", desc: "What I know about you, always evolving" },
               { icon: BookOpenIcon, label: "Knowledge", desc: "Teach me web pages to reference later" },
               { icon: ListTodoIcon, label: "Tasks", desc: "Your to-do list with AI prioritization" },
@@ -705,14 +905,137 @@ function InboxFeed() {
 }
 
 function DailyBriefingCard({ item, onCardClick, isRead }: { item: InboxItem; onCardClick: (id: string) => void; isRead: boolean }) {
+  return isDailyBriefingV2(item.sections)
+    ? <DailyBriefingV2Card item={item} onCardClick={onCardClick} isRead={isRead} />
+    : <DailyBriefingLegacyCard item={item} onCardClick={onCardClick} isRead={isRead} />;
+}
+
+function DailyBriefingV2Card({ item, onCardClick, isRead }: { item: InboxItem; onCardClick: (id: string) => void; isRead: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const navigate = useNavigate();
-  const sections = item.sections as {
-    greeting?: string;
-    taskFocus?: { summary: string; items: Array<{ id: string; title: string; priority: string; insight: string }> };
-    memoryInsights?: { summary: string; highlights: Array<{ statement: string; type: string; detail: string }> };
-    suggestions?: Array<{ title: string; reason: string; action?: string }>;
-  };
+  const sections = item.sections as DailyBriefingV2;
+  const counts: string[] = [];
+  if ((sections.what_changed?.length ?? 0) > 0) counts.push(`${sections.what_changed!.length} changes`);
+  if ((sections.evidence?.length ?? 0) > 0) counts.push(`${sections.evidence!.length} evidence`);
+  if ((sections.next_actions?.length ?? 0) > 0) counts.push(`${sections.next_actions!.length} actions`);
+
+  return (
+    <Card className="relative border-border/30 bg-card/40 transition-all duration-200">
+      {!isRead && (
+        <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-blue-500" />
+      )}
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onCardClick(item.id)}>
+            <div className="flex items-center gap-2">
+              <SparklesIcon className="h-4 w-4 shrink-0 text-primary" />
+              <Badge variant="outline" className="text-[10px] border-primary/20 bg-primary/10 text-primary">
+                Daily Brief
+              </Badge>
+              {sections.recommendation?.confidence && (
+                <Badge variant="outline" className="text-[10px] uppercase">
+                  {sections.recommendation.confidence}
+                </Badge>
+              )}
+              <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
+            </div>
+            <p className="mt-2 text-sm font-medium text-foreground leading-relaxed">
+              {dailyBriefingTitle(item.sections)}
+            </p>
+            {sections.recommendation?.rationale && (
+              <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                {sections.recommendation.rationale}
+              </p>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setExpanded(!expanded)}
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            {expanded ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
+          </Button>
+        </div>
+
+        {!expanded && counts.length > 0 && (
+          <div className="mt-2 text-[10px] text-muted-foreground">{counts.join(" \u00B7 ")}</div>
+        )}
+
+        {expanded && (
+          <div className="mt-4 space-y-4">
+            {(sections.what_changed?.length ?? 0) > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <RefreshCwIcon className="h-3.5 w-3.5 text-primary" />
+                  <span className="font-mono text-xs font-semibold text-foreground">What Changed</span>
+                </div>
+                {sections.what_changed!.slice(0, 2).map((change, index) => (
+                  <div key={index} className="rounded-md border border-border/20 bg-background/40 p-3 text-[11px] text-muted-foreground">
+                    {change}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(sections.memory_assumptions?.length ?? 0) > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <BrainIcon className="h-3.5 w-3.5 text-violet-400" />
+                  <span className="font-mono text-xs font-semibold text-foreground">Memory Assumptions</span>
+                </div>
+                {sections.memory_assumptions!.slice(0, 2).map((assumption, index) => (
+                  <div
+                    key={index}
+                    className="cursor-pointer rounded-md border border-border/20 bg-background/40 p-3 transition-colors hover:border-violet-500/30"
+                    onClick={() => navigate("/memory")}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-foreground">{assumption.statement}</span>
+                      {assumption.confidence && (
+                        <Badge variant="outline" className="text-[9px] uppercase">
+                          {assumption.confidence}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{assumption.provenance}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(sections.next_actions?.length ?? 0) > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2Icon className="h-3.5 w-3.5 text-amber-400" />
+                  <span className="font-mono text-xs font-semibold text-foreground">Next Actions</span>
+                </div>
+                {sections.next_actions!.slice(0, 2).map((action, index) => (
+                  <div key={index} className="rounded-md border border-border/20 bg-background/40 p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-foreground">{action.title}</span>
+                      {action.timing && (
+                        <Badge variant="outline" className="text-[9px]">
+                          {action.timing}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{action.detail}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DailyBriefingLegacyCard({ item, onCardClick, isRead }: { item: InboxItem; onCardClick: (id: string) => void; isRead: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const navigate = useNavigate();
+  const sections = item.sections as DailyBriefingLegacy;
 
   const counts: string[] = [];
   if ((sections.taskFocus?.items?.length ?? 0) > 0) {
@@ -969,9 +1292,9 @@ function GenericBriefingCard({ item }: { item: InboxItem }) {
           <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          {(item.sections as { greeting?: string }).greeting
-            ?? (item.sections as { goal?: string }).goal
-            ?? "No preview available"}
+          {item.type === "daily"
+            ? dailyBriefingTitle(item.sections)
+            : (item.sections as { goal?: string }).goal ?? "No preview available"}
         </p>
       </CardContent>
     </Card>

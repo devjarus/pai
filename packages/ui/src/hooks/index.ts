@@ -6,6 +6,7 @@ export * from "./use-knowledge";
 export * from "./use-agents";
 export * from "./use-inbox";
 export * from "./use-jobs";
+export * from "./use-programs";
 export * from "./use-schedules";
 export * from "./use-config";
 export * from "./use-health";
