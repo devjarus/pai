@@ -23,7 +23,7 @@ test.describe("Authentication", () => {
 
   test("unauthenticated user is redirected to login", async ({ page }) => {
     await page.context().clearCookies();
-    await page.goto("/chat");
+    await page.goto("/ask");
 
     // SPA checks /api/auth/status, sees not authenticated, redirects to /login
     await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
@@ -38,8 +38,8 @@ test.describe("Authentication", () => {
     await page.getByPlaceholder("Your password").fill("testpass123");
     await page.getByRole("button", { name: "Sign In" }).click();
 
-    // Should redirect to chat after login
-    await expect(page).toHaveURL(/\/chat/, { timeout: 10_000 });
+    // Should redirect to Ask after login
+    await expect(page).toHaveURL(/\/ask/, { timeout: 10_000 });
   });
 
   test("login with wrong password shows error", async ({ page }) => {
@@ -63,7 +63,7 @@ test.describe("Authentication", () => {
     await page.getByPlaceholder("you@example.com").fill("test@example.com");
     await page.getByPlaceholder("Your password").fill("testpass123");
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL(/\/chat/, { timeout: 10_000 });
+    await expect(page).toHaveURL(/\/ask/, { timeout: 10_000 });
 
     // Logout via API (POST /api/auth/logout clears cookies)
     await page.request.post(`${BASE}/api/auth/logout`);
@@ -71,8 +71,8 @@ test.describe("Authentication", () => {
     // Clear cookies client-side to match
     await page.context().clearCookies();
 
-    // Now navigating to /chat should redirect to /login
-    await page.goto("/chat");
+    // Now navigating to /ask should redirect to /login
+    await page.goto("/ask");
     await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
   });
 

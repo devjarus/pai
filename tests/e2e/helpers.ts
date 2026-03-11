@@ -26,7 +26,7 @@ export async function ensureOwner(): Promise<void> {
 }
 
 /**
- * Login via the UI form. Waits for redirect to /chat.
+ * Login via the UI form. Waits for redirect to /ask.
  */
 export async function loginViaUI(page: Page): Promise<void> {
   await page.context().clearCookies();
@@ -34,7 +34,7 @@ export async function loginViaUI(page: Page): Promise<void> {
   await page.getByPlaceholder("you@example.com").fill("test@example.com");
   await page.getByPlaceholder("Your password").fill("testpass123");
   await page.getByRole("button", { name: "Sign In" }).click();
-  await expect(page).toHaveURL(/\/chat/, { timeout: 10_000 });
+  await expect(page).toHaveURL(/\/ask/, { timeout: 10_000 });
 }
 
 /**
@@ -62,9 +62,9 @@ export async function loginViaAPI(page: Page): Promise<void> {
     throw new Error(`Login API failed with status ${result.status}`);
   }
 
-  // Navigate to chat — cookies are set from the fetch above
-  await page.goto("/chat");
-  await expect(page).toHaveURL(/\/chat/, { timeout: 10_000 });
+  // Navigate to the primary Ask surface — cookies are set from the fetch above
+  await page.goto("/ask");
+  await expect(page).toHaveURL(/\/ask/, { timeout: 10_000 });
 }
 
 /**

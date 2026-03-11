@@ -50,7 +50,7 @@ test.describe("Setup wizard", () => {
     // Skip intro
     await page.getByText("Skip for now").click();
 
-    // Should redirect to inbox
-    await expect(page).toHaveURL(/\/chat/, { timeout: 15_000 });
+    // Should redirect to the primary Ask surface
+    await expect(page).toHaveURL(/\/ask/, { timeout: 15_000 });
   });
 });
