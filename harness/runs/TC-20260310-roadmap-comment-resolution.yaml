@@ -1,0 +1,44 @@
+id: TC-20260310-roadmap-comment-resolution
+title: "Resolve roadmap comments in source markdown"
+objective: >
+  Update the source tech vision roadmap so the Word comments are addressed with clearer
+  product language, corrected assumptions, and a tighter execution timeline.
+why_now: >
+  The roadmap already has substantive review comments on product framing, chat-vs-Program
+  entry points, cadence, Grid, and roadmap timing. Leaving them unresolved keeps the
+  strategy document internally inconsistent.
+status: completed
+owner: codex
+related_request: "Check comments on doc see how we can address them"
+in_scope:
+  - "Revise docs/TECH-VISION-ROADMAP.md to address extracted review comments."
+  - "Clarify chat-first implicit Program creation and Program cadence language."
+  - "Adjust Grid/navigation language so overview needs are preserved without keeping Grid as a peer surface."
+  - "Tighten execution-plan timing and wording where the comments identified inflated duration."
+out_of_scope:
+  - "Editing the downloaded DOCX directly."
+  - "Changing product code or UI behavior."
+  - "Adding new roadmap themes unrelated to the extracted comments."
+affected_systems:
+  - "docs/TECH-VISION-ROADMAP.md"
+  - "harness/runs task-contract and evidence-pack artifacts"
+success_criteria:
+  - "The roadmap source reflects clear resolutions for the extracted comments."
+  - "Chat remains the primary recurring entry point in the document."
+  - "Program cadence and material-change briefing are explicit in the roadmap."
+  - "Grid is reframed as an overview behavior to absorb into Home rather than a standalone product surface."
+  - "The execution timeline distinguishes fast decision/alignment work from longer migration work."
+validations_required:
+  - "pnpm harness:regressions"
+checklists_required:
+  - "harness/checklists/core-loop-change-checklist.md"
+decision_logs_expected:
+  - "docs/decisions/0001-roadmap-focus.md"
+  - "docs/decisions/0002-programs-implicit.md"
+evidence_pack: harness/runs/TC-20260310-roadmap-comment-resolution.evidence.md
+risks:
+  - "The worktree contains unrelated dirty and untracked changes, including docs, so edits must stay tightly scoped."
+  - "The roadmap is strategic prose, so overcorrecting wording could accidentally drift from the product charter."
+escalation_conditions:
+  - "If the requested revisions conflict with the current product charter or decisions."
+  - "If the repo validation path is unavailable or fails for reasons unrelated to this documentation-only change."
