@@ -1,0 +1,47 @@
+id: travel-watch
+name: Japan trip in October
+initial_user_message: >
+  I want to go to Japan in October from SFO. I prefer nonstop flights if they are not wildly more expensive,
+  I want to stay near good transit, and my total flight budget target is under $1,000. Keep watching this for me.
+expected_program_behavior:
+  program_title: Japan trip in October
+  program_family: travel
+  why_recurring: Flight prices, hotel pricing, exchange rate, and trip-preparation requirements change over time.
+  cadence: weekly, with event-triggered briefs when price or rule changes are material
+  expected_actions:
+    - explore flight and stay options
+    - recommend when to book
+    - surface preparation tasks closer to departure
+expected_memory_captured:
+  preferences:
+    - prefers SFO origin
+    - prefers nonstop unless price premium is too high
+    - prefers neighborhoods with good transit
+  constraints:
+    - target flight budget under $1,000
+    - trip window is October
+  open_questions:
+    - final travel dates may still need confirmation
+expected_brief_sections:
+  - recommendation
+  - what_changed
+  - evidence
+  - memory_assumptions
+  - next_actions
+correction_step:
+  user_message: >
+    Update this: I can tolerate one stop if it saves at least $250, and I care more about Kyoto time than Tokyo now.
+  expected_memory_update:
+    - downgrade nonstop preference from strong to conditional
+    - update itinerary preference to favor Kyoto time
+  expected_brief_change:
+    - future recommendations should not over-prioritize nonstop flights
+    - future recommendations should weigh Kyoto-compatible routing and stays higher
+expected_next_brief_behavior:
+  should_reflect_correction: true
+  suppressed_old_assumptions:
+    - nonstop is always preferred regardless of savings
+    - Tokyo-first itinerary is still primary
+  expected_changes:
+    - recommendation accounts for the new stopover tradeoff
+    - memory assumptions section reflects the corrected travel priorities

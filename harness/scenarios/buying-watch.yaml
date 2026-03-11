@@ -1,0 +1,47 @@
+id: buying-watch
+name: Buy a used EV this spring
+initial_user_message: >
+  Help me buy a used EV this spring. My budget is under $25,000, I care a lot about reliability and total ownership cost,
+  and I do not want something that is hard to service locally. Keep watching listings and pricing shifts for me.
+expected_program_behavior:
+  program_title: Buy a used EV this spring
+  program_family: buying
+  why_recurring: Listings, incentives, pricing, and tradeoffs change over time and need repeated comparison.
+  cadence: weekly, with event-triggered briefs for standout listings or pricing changes
+  expected_actions:
+    - compare candidate vehicles against the stated priorities
+    - surface standout listings
+    - recommend when a listing is worth acting on
+expected_memory_captured:
+  preferences:
+    - prioritize reliability
+    - prioritize total ownership cost
+    - avoid vehicles that are hard to service locally
+  constraints:
+    - budget under $25,000
+    - purchase window is this spring
+  open_questions:
+    - acceptable mileage threshold may need clarification
+expected_brief_sections:
+  - recommendation
+  - what_changed
+  - evidence
+  - memory_assumptions
+  - next_actions
+correction_step:
+  user_message: >
+    Update this: I am okay stretching to $27,000 if the battery health is excellent, but I no longer want compact cars.
+  expected_memory_update:
+    - raise budget ceiling conditionally to $27,000 for excellent battery health
+    - suppress compact-car recommendations
+  expected_brief_change:
+    - later briefs can recommend higher-priced options only when battery health justifies it
+    - compact listings should stop appearing as top recommendations
+expected_next_brief_behavior:
+  should_reflect_correction: true
+  suppressed_old_assumptions:
+    - budget hard-stops at $25,000 with no exceptions
+    - compact cars are still acceptable options
+  expected_changes:
+    - recommendation logic reflects the conditional budget stretch
+    - brief assumptions reflect the updated body-style preference

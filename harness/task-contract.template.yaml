@@ -1,0 +1,28 @@
+id: TC-YYYYMMDD-slug
+title: "Short task title"
+objective: >
+  One-sentence description of the user outcome this task must deliver.
+why_now: >
+  Why this task matters now.
+status: draft
+owner: any-agent
+related_request: ""
+in_scope:
+  - ""
+out_of_scope:
+  - ""
+affected_systems:
+  - ""
+success_criteria:
+  - ""
+validations_required:
+  - pnpm harness:regressions
+checklists_required:
+  - harness/checklists/core-loop-change-checklist.md
+decision_logs_expected:
+  - docs/decisions/0001-roadmap-focus.md
+evidence_pack: harness/runs/TC-YYYYMMDD-slug.evidence.md
+risks:
+  - ""
+escalation_conditions:
+  - ""

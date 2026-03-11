@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent-agnostic implementation harness** — Added a repo-native agent harness with a thin coordinating `AGENTS.md`, product and boundary docs, short decision logs, task/evidence templates, validation checklists, core-loop scenarios, practical JSON schemas, and runnable `harness:core-loop` / `harness:regressions` scripts for portable agent discipline.
 - **Cerebras provider support** — Added first-class Cerebras support across the core LLM client, config validation, CLI setup, settings/onboarding flows, health checks, and context budgeting. Cerebras uses the official `@ai-sdk/cerebras` provider with local embedding fallback.
 - **Per-instance diagnostics** — Added a local observability system that records LLM, embed, tool, HTTP, and worker spans in SQLite. New owner-facing diagnostics panel lives in Settings with Overview, Processes, Threads, Jobs, and Errors tabs for token, latency, and failure visibility.
 - **LLM traffic shaping controls** — Added instance-level queue controls in Settings for max LLM concurrency, background start gap, startup delay, and swarm agent concurrency. Jobs and diagnostics now expose queue position, wait reason, queue wait metrics, and live lane depth.
