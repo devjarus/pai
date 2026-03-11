@@ -2,7 +2,7 @@
 
 This file is the front door for any coding agent working in `pai`. It is intentionally short. Treat it as the coordinator, not the full handbook.
 
-For runtime/setup detail, use [docs/SETUP.md](/Users/suraj-devloper/workspace/personal-ai/docs/SETUP.md). For system internals, use [docs/ARCHITECTURE.md](/Users/suraj-devloper/workspace/personal-ai/docs/ARCHITECTURE.md) and [docs/MEMORY-LIFECYCLE.md](/Users/suraj-devloper/workspace/personal-ai/docs/MEMORY-LIFECYCLE.md).
+For runtime/setup detail, use [docs/SETUP.md](docs/SETUP.md). For system internals, use [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/MEMORY-LIFECYCLE.md](docs/MEMORY-LIFECYCLE.md).
 
 ## Repo Quick Start
 
@@ -31,24 +31,24 @@ Useful existing entrypoints:
 
 Read these in order before making non-trivial changes:
 
-1. [docs/PRODUCT-CHARTER.md](/Users/suraj-devloper/workspace/personal-ai/docs/PRODUCT-CHARTER.md)
-2. [docs/PRIMITIVES.md](/Users/suraj-devloper/workspace/personal-ai/docs/PRIMITIVES.md)
-3. [docs/DEFINITION-OF-DONE.md](/Users/suraj-devloper/workspace/personal-ai/docs/DEFINITION-OF-DONE.md)
-4. Relevant files under [docs/decisions](/Users/suraj-devloper/workspace/personal-ai/docs/decisions)
-5. Relevant checklists under [harness/checklists](/Users/suraj-devloper/workspace/personal-ai/harness/checklists)
+1. [docs/PRODUCT-CHARTER.md](docs/PRODUCT-CHARTER.md)
+2. [docs/PRIMITIVES.md](docs/PRIMITIVES.md)
+3. [docs/DEFINITION-OF-DONE.md](docs/DEFINITION-OF-DONE.md)
+4. Relevant files under [docs/decisions](docs/decisions)
+5. Relevant checklists under [harness/checklists](harness/checklists)
 
 Read these as needed for implementation detail:
 
-- [docs/ARCHITECTURE-BOUNDARIES.md](/Users/suraj-devloper/workspace/personal-ai/docs/ARCHITECTURE-BOUNDARIES.md)
-- [docs/ARCHITECTURE.md](/Users/suraj-devloper/workspace/personal-ai/docs/ARCHITECTURE.md)
-- [docs/MEMORY-LIFECYCLE.md](/Users/suraj-devloper/workspace/personal-ai/docs/MEMORY-LIFECYCLE.md)
-- [docs/SETUP.md](/Users/suraj-devloper/workspace/personal-ai/docs/SETUP.md)
+- [docs/ARCHITECTURE-BOUNDARIES.md](docs/ARCHITECTURE-BOUNDARIES.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/MEMORY-LIFECYCLE.md](docs/MEMORY-LIFECYCLE.md)
+- [docs/SETUP.md](docs/SETUP.md)
 
 ## Mandatory Workflow
 
 Before coding:
 
-- Create a task contract from [harness/task-contract.template.yaml](/Users/suraj-devloper/workspace/personal-ai/harness/task-contract.template.yaml) for any multi-step task, architecture change, or core-loop change.
+- Create a task contract from [harness/task-contract.template.yaml](harness/task-contract.template.yaml) for any multi-step task, architecture change, or core-loop change.
 - Save it under `harness/runs/`.
 - Confirm scope, success criteria, validations, and escalation conditions before editing code.
 
@@ -56,7 +56,7 @@ During work:
 
 - Stay within scope.
 - Avoid unrelated cleanup unless the task contract is updated first.
-- Keep an evidence pack updated during long sessions using [harness/evidence-pack.template.md](/Users/suraj-devloper/workspace/personal-ai/harness/evidence-pack.template.md).
+- Keep an evidence pack updated during long sessions using [harness/evidence-pack.template.md](harness/evidence-pack.template.md).
 - Record meaningful architectural or product tradeoffs in `docs/decisions/*` when the task changes repo expectations.
 
 Before claiming completion:
@@ -86,7 +86,7 @@ For work that spans multiple steps, multiple files, or touches the Ask -> Progra
 
 ## Validation Expectations
 
-- The source of truth for completion is [docs/DEFINITION-OF-DONE.md](/Users/suraj-devloper/workspace/personal-ai/docs/DEFINITION-OF-DONE.md).
+- The source of truth for completion is [docs/DEFINITION-OF-DONE.md](docs/DEFINITION-OF-DONE.md).
 - Release blockers and warn-only issues are defined there and must be reflected in the evidence pack.
 - Use `pnpm harness:core-loop` when the change touches Programs, Briefs, memory trust, correction handling, or recurring follow-through.
 - Use `pnpm harness:regressions` for repo-wide harness integrity checks.

@@ -2,6 +2,8 @@
 
 Date: 2026-03-08
 
+Reference note: this is the long-form strategy rationale for `pai`. The operational source of truth for day-to-day work remains `docs/PRODUCT-CHARTER.md`, `docs/PRIMITIVES.md`, `docs/ARCHITECTURE-BOUNDARIES.md`, and `docs/DEFINITION-OF-DONE.md`.
+
 ## 1. Executive Summary
 
 `pai` should stop positioning itself as a broad personal AI platform and instead become a self-hosted recurring decision agent with trustworthy memory.

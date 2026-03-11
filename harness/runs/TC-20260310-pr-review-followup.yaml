@@ -1,0 +1,39 @@
+id: TC-20260310-pr-review-followup
+title: "Address harness PR review follow-up"
+objective: >
+  Resolve the actionable review feedback on the harness PR by fixing AGENTS.md link portability
+  and clarifying the role of the long-form roadmap document.
+why_now: >
+  The PR received review feedback identifying one concrete portability issue and one
+  documentation-structure concern that should be handled before merge.
+status: completed
+owner: codex
+related_request: "update pr"
+in_scope:
+  - "Convert AGENTS.md doc links from absolute local paths to repo-relative links."
+  - "Clarify in the roadmap that it is a long-form reference document, not the day-to-day handbook."
+  - "Record validation and review disposition in an evidence pack."
+out_of_scope:
+  - "Large-scale trimming or restructuring of the roadmap document."
+  - "Changing harness script architecture without a concrete correctness issue."
+  - "Editing unrelated PR content."
+affected_systems:
+  - "AGENTS.md"
+  - "docs/TECH-VISION-ROADMAP.md"
+  - "harness/runs follow-up artifacts"
+success_criteria:
+  - "AGENTS.md no longer contains contributor-specific absolute filesystem links."
+  - "TECH-VISION-ROADMAP.md clearly states its role as a reference artifact."
+  - "Validation evidence is captured for the follow-up."
+validations_required:
+  - "pnpm harness:regressions"
+checklists_required:
+  - "harness/checklists/core-loop-change-checklist.md"
+decision_logs_expected:
+  - "docs/decisions/0001-roadmap-focus.md"
+evidence_pack: harness/runs/TC-20260310-pr-review-followup.evidence.md
+risks:
+  - "Overreacting to the roadmap-length comment could collapse useful rationale into the wrong document."
+  - "AGENTS.md link changes must preserve markdown usability inside the repo."
+escalation_conditions:
+  - "If review feedback requires a broad reorganization of the docs set rather than a scoped follow-up."
