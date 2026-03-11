@@ -50,6 +50,7 @@ Before coding:
 
 - Create a task contract from [harness/task-contract.template.yaml](harness/task-contract.template.yaml) for any multi-step task, architecture change, or core-loop change.
 - Save it under `harness/runs/`.
+- Keep per-task files in `harness/runs/` local to the working tree; do not commit them.
 - Confirm scope, success criteria, validations, and escalation conditions before editing code.
 
 During work:
