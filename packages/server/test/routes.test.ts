@@ -6,6 +6,7 @@ import { registerMemoryRoutes } from "../src/routes/memory.js";
 import { registerAgentRoutes, threadMigrations } from "../src/routes/agents.js";
 import { registerConfigRoutes } from "../src/routes/config.js";
 import { registerTaskRoutes } from "../src/routes/tasks.js";
+import { registerProgramRoutes } from "../src/routes/programs.js";
 import { registerAuthRoutes } from "../src/routes/auth.js";
 import { registerInboxRoutes } from "../src/routes/inbox.js";
 import { registerJobRoutes } from "../src/routes/jobs.js";
@@ -120,6 +121,12 @@ const mockAddGoal = vi.fn();
 const mockListGoals = vi.fn();
 const mockCompleteGoal = vi.fn();
 const mockDeleteGoal = vi.fn();
+const mockListPrograms = vi.fn();
+const mockCreateProgram = vi.fn();
+const mockUpdateProgram = vi.fn();
+const mockDeleteProgram = vi.fn();
+const mockPauseProgram = vi.fn();
+const mockResumeProgram = vi.fn();
 
 vi.mock("@personal-ai/plugin-tasks", () => ({
   addTask: (...args: unknown[]) => mockAddTask(...args),
@@ -132,6 +139,15 @@ vi.mock("@personal-ai/plugin-tasks", () => ({
   listGoals: (...args: unknown[]) => mockListGoals(...args),
   completeGoal: (...args: unknown[]) => mockCompleteGoal(...args),
   deleteGoal: (...args: unknown[]) => mockDeleteGoal(...args),
+}));
+
+vi.mock("@personal-ai/plugin-schedules", () => ({
+  listPrograms: (...args: unknown[]) => mockListPrograms(...args),
+  createProgram: (...args: unknown[]) => mockCreateProgram(...args),
+  updateProgram: (...args: unknown[]) => mockUpdateProgram(...args),
+  deleteProgram: (...args: unknown[]) => mockDeleteProgram(...args),
+  pauseProgram: (...args: unknown[]) => mockPauseProgram(...args),
+  resumeProgram: (...args: unknown[]) => mockResumeProgram(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -1608,6 +1624,194 @@ describe("task routes", () => {
     mockDeleteGoal.mockReturnValue(undefined);
     const res = await app.inject({ method: "DELETE", url: "/api/goals/g1" });
     expect(res.statusCode).toBe(200);
+  });
+});
+
+// ==========================================================================
+// Program Routes
+// ==========================================================================
+
+describe("program routes", () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    app = Fastify();
+    addTestErrorHandler(app);
+    const serverCtx = createMockServerCtx();
+    registerProgramRoutes(app, serverCtx);
+    await app.ready();
+
+    mockListPrograms.mockReset();
+    mockCreateProgram.mockReset();
+    mockUpdateProgram.mockReset();
+    mockDeleteProgram.mockReset();
+    mockPauseProgram.mockReset();
+    mockResumeProgram.mockReset();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("GET /api/programs returns program list", async () => {
+    const program = {
+      id: "prog-1",
+      title: "Atlas watch",
+      question: "Keep watching Atlas launch readiness",
+      family: "work",
+      executionMode: "research",
+      intervalHours: 24,
+      chatId: null,
+      threadId: null,
+      lastRunAt: null,
+      nextRunAt: "2026-03-11T15:00:00.000Z",
+      status: "active",
+      createdAt: "2026-03-10T15:00:00.000Z",
+      preferences: ["Prioritize blockers"],
+      constraints: ["Avoid noisy updates"],
+      openQuestions: ["Are rollback docs signed off?"],
+    };
+    mockListPrograms.mockReturnValue([program]);
+
+    const res = await app.inject({ method: "GET", url: "/api/programs" });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual([program]);
+    expect(mockListPrograms).toHaveBeenCalledWith(expect.anything());
+  });
+
+  it("POST /api/programs creates a program", async () => {
+    const created = {
+      id: "prog-2",
+      title: "Atlas watch",
+      question: "Keep watching Atlas launch readiness",
+      family: "work",
+      executionMode: "analysis",
+      intervalHours: 12,
+      chatId: null,
+      threadId: null,
+      lastRunAt: null,
+      nextRunAt: "2026-03-11T12:00:00.000Z",
+      status: "active",
+      createdAt: "2026-03-10T12:00:00.000Z",
+      preferences: ["Lead with blockers"],
+      constraints: ["Only material changes"],
+      openQuestions: ["Who owns rollback verification?"],
+    };
+    mockCreateProgram.mockReturnValue(created);
+
+    const payload = {
+      title: "Atlas watch",
+      question: "Keep watching Atlas launch readiness",
+      family: "work",
+      executionMode: "analysis",
+      intervalHours: 12,
+      preferences: ["Lead with blockers"],
+      constraints: ["Only material changes"],
+      openQuestions: ["Who owns rollback verification?"],
+    };
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/programs",
+      payload,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual(created);
+    expect(mockCreateProgram).toHaveBeenCalledWith(expect.anything(), payload);
+  });
+
+  it("POST /api/programs returns 400 for invalid payload", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/programs",
+      payload: { question: "Missing title" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBeDefined();
+  });
+
+  it("PATCH /api/programs/:id updates a program", async () => {
+    const updated = {
+      id: "prog-1",
+      title: "Atlas watch",
+      question: "Keep watching Atlas launch readiness",
+      family: "work",
+      executionMode: "research",
+      intervalHours: 24,
+      chatId: null,
+      threadId: null,
+      lastRunAt: null,
+      nextRunAt: "2026-03-11T15:00:00.000Z",
+      status: "active",
+      createdAt: "2026-03-10T15:00:00.000Z",
+      preferences: ["Prioritize blockers"],
+      constraints: ["Avoid noisy updates"],
+      openQuestions: ["Are rollback docs signed off?"],
+    };
+    mockUpdateProgram.mockReturnValue(updated);
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/programs/prog-1",
+      payload: { constraints: ["Avoid noisy updates"] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual(updated);
+    expect(mockUpdateProgram).toHaveBeenCalledWith(expect.anything(), "prog-1", { constraints: ["Avoid noisy updates"] });
+  });
+
+  it("PATCH /api/programs/:id returns 404 when program is missing", async () => {
+    mockUpdateProgram.mockReturnValue(null);
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/programs/missing",
+      payload: { title: "Updated title" },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: "Program not found" });
+  });
+
+  it("PATCH /api/programs/:id/status pauses and resumes a program", async () => {
+    mockPauseProgram.mockReturnValue(true);
+    mockResumeProgram.mockReturnValue(true);
+
+    const pauseRes = await app.inject({
+      method: "PATCH",
+      url: "/api/programs/prog-1/status",
+      payload: { action: "pause" },
+    });
+    const resumeRes = await app.inject({
+      method: "PATCH",
+      url: "/api/programs/prog-1/status",
+      payload: { action: "resume" },
+    });
+
+    expect(pauseRes.statusCode).toBe(200);
+    expect(pauseRes.json()).toEqual({ ok: true });
+    expect(mockPauseProgram).toHaveBeenCalledWith(expect.anything(), "prog-1");
+
+    expect(resumeRes.statusCode).toBe(200);
+    expect(resumeRes.json()).toEqual({ ok: true });
+    expect(mockResumeProgram).toHaveBeenCalledWith(expect.anything(), "prog-1");
+  });
+
+  it("DELETE /api/programs/:id deletes a program", async () => {
+    mockDeleteProgram.mockReturnValue(true);
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/api/programs/prog-1",
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(mockDeleteProgram).toHaveBeenCalledWith(expect.anything(), "prog-1");
   });
 });
 
