@@ -428,6 +428,43 @@ describe("generateBriefing", () => {
     expect(rawContext?.actionSignals?.[0]?.openCount).toBe(1);
   });
 
+  it("does not relabel briefing-linked actions as Program follow-through", async () => {
+    createProgram(storage, {
+      title: "Project Atlas launch readiness",
+      question: "Track blockers, rollback readiness, and launch signoff for Project Atlas.",
+      family: "work",
+      executionMode: "research",
+      intervalHours: 168,
+    });
+
+    mockListTasks.mockImplementation((_storage: Storage, status = "open") => {
+      if (status === "done") return [];
+      return [{
+        id: "task_briefing_action_1",
+        title: "Clarify the blocker summary",
+        description: "Tighten the previous brief so the blocker is unambiguous.",
+        status: "open",
+        priority: "medium",
+        goal_id: null,
+        due_date: null,
+        created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        completed_at: null,
+        source_type: "briefing",
+        source_id: "brief_123",
+        source_label: "Daily Briefing",
+      }];
+    });
+
+    const ctx = makeCtx(false);
+    const result = await generateBriefing(ctx);
+
+    expect(result).not.toBeNull();
+    expect(result!.sections.recommendation.summary).toBe("Finish the open linked follow-through before adding more work.");
+    expect(result!.sections.recommendation.summary).not.toContain("Project Atlas launch readiness");
+    expect(result!.sections.evidence[0]?.sourceLabel).toBe("Brief action");
+    expect(result!.sections.evidence[0]?.detail).toContain("Daily Briefing");
+  });
+
   it("uses completed linked actions as a change signal and removes them from next actions", async () => {
     const { generateText } = await import("ai");
     const program = createProgram(storage, {
@@ -477,6 +514,117 @@ describe("generateBriefing", () => {
         prompt: expect.stringContaining("LINKED ACTION SIGNALS (1):"),
       }),
     );
+  });
+
+  it("orders recently completed linked actions by completion time before truncating", async () => {
+    const program = createProgram(storage, {
+      title: "Project Atlas launch readiness",
+      question: "Track blockers, rollback readiness, and launch signoff for Project Atlas.",
+      family: "work",
+      executionMode: "research",
+      intervalHours: 168,
+    });
+
+    const now = Date.now();
+    mockListTasks.mockImplementation((_storage: Storage, status = "open") => {
+      if (status !== "done") return [];
+      return [
+        {
+          id: "task_done_1",
+          title: "Older completion 1",
+          description: null,
+          status: "done",
+          priority: "high",
+          goal_id: null,
+          due_date: null,
+          created_at: new Date(now - 6 * 24 * 60 * 60 * 1000).toISOString(),
+          completed_at: new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString(),
+          source_type: "program",
+          source_id: program.id,
+          source_label: program.title,
+        },
+        {
+          id: "task_done_2",
+          title: "Older completion 2",
+          description: null,
+          status: "done",
+          priority: "high",
+          goal_id: null,
+          due_date: null,
+          created_at: new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString(),
+          completed_at: new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString(),
+          source_type: "program",
+          source_id: program.id,
+          source_label: program.title,
+        },
+        {
+          id: "task_done_3",
+          title: "Older completion 3",
+          description: null,
+          status: "done",
+          priority: "high",
+          goal_id: null,
+          due_date: null,
+          created_at: new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString(),
+          completed_at: new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(),
+          source_type: "program",
+          source_id: program.id,
+          source_label: program.title,
+        },
+        {
+          id: "task_done_4",
+          title: "Older completion 4",
+          description: null,
+          status: "done",
+          priority: "high",
+          goal_id: null,
+          due_date: null,
+          created_at: new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(),
+          completed_at: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+          source_type: "program",
+          source_id: program.id,
+          source_label: program.title,
+        },
+        {
+          id: "task_done_5",
+          title: "Older completion 5",
+          description: null,
+          status: "done",
+          priority: "high",
+          goal_id: null,
+          due_date: null,
+          created_at: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+          completed_at: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+          source_type: "program",
+          source_id: program.id,
+          source_label: program.title,
+        },
+        {
+          id: "task_done_recent",
+          title: "Most recent follow-through",
+          description: null,
+          status: "done",
+          priority: "low",
+          goal_id: null,
+          due_date: null,
+          created_at: new Date(now - 90 * 60 * 1000).toISOString(),
+          completed_at: new Date(now - 30 * 60 * 1000).toISOString(),
+          source_type: "program",
+          source_id: program.id,
+          source_label: program.title,
+        },
+      ];
+    });
+
+    const ctx = makeCtx(false);
+    const result = await generateBriefing(ctx);
+
+    expect(result).not.toBeNull();
+    expect(result!.sections.evidence[0]?.detail).toContain("Most recent follow-through");
+
+    const persisted = getBriefingById(storage, result!.id);
+    const rawContext = persisted?.rawContext as { actionSignals?: Array<{ recentlyCompletedTitles: string[] }> } | undefined;
+    expect(rawContext?.actionSignals?.[0]?.recentlyCompletedTitles[0]).toBe("Most recent follow-through");
   });
 
   it("calls generateText with the LLM model from context", async () => {

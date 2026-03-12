@@ -492,24 +492,31 @@ function buildActionSignals(
         Date.parse(right.completedAt ?? right.createdAt) - Date.parse(left.completedAt ?? left.createdAt),
       );
       return {
-        sourceType: group.sourceType,
-        sourceId: group.sourceId,
-        sourceLabel: group.sourceLabel,
-        openCount: group.openTasks.length,
-        staleOpenCount: group.openTasks.filter((task) => isStaleAction(task, now)).length,
-        recentlyCompletedCount: group.completedTasks.length,
-        highestPriorityOpen: sortedOpen[0] ? normalizeTaskPriority(sortedOpen[0].priority) : null,
-        openTitles: dedupeStrings(sortedOpen.map((task) => task.title)),
-        recentlyCompletedTitles: dedupeStrings(sortedCompleted.map((task) => task.title)),
+        signal: {
+          sourceType: group.sourceType,
+          sourceId: group.sourceId,
+          sourceLabel: group.sourceLabel,
+          openCount: group.openTasks.length,
+          staleOpenCount: group.openTasks.filter((task) => isStaleAction(task, now)).length,
+          recentlyCompletedCount: group.completedTasks.length,
+          highestPriorityOpen: sortedOpen[0] ? normalizeTaskPriority(sortedOpen[0].priority) : null,
+          openTitles: dedupeStrings(sortedOpen.map((task) => task.title)),
+          recentlyCompletedTitles: dedupeStrings(sortedCompleted.map((task) => task.title)),
+        },
+        latestCompletedAt: Date.parse(sortedCompleted[0]?.completedAt ?? sortedCompleted[0]?.createdAt ?? ""),
       };
     })
     .sort((left, right) => {
-      const leftScore = left.staleOpenCount * 100 + left.openCount * 20 + left.recentlyCompletedCount * 8 + (left.highestPriorityOpen === "high" ? 5 : left.highestPriorityOpen === "medium" ? 2 : 0);
-      const rightScore = right.staleOpenCount * 100 + right.openCount * 20 + right.recentlyCompletedCount * 8 + (right.highestPriorityOpen === "high" ? 5 : right.highestPriorityOpen === "medium" ? 2 : 0);
+      const leftScore = left.signal.staleOpenCount * 100 + left.signal.openCount * 20 + left.signal.recentlyCompletedCount * 8 + (left.signal.highestPriorityOpen === "high" ? 5 : left.signal.highestPriorityOpen === "medium" ? 2 : 0);
+      const rightScore = right.signal.staleOpenCount * 100 + right.signal.openCount * 20 + right.signal.recentlyCompletedCount * 8 + (right.signal.highestPriorityOpen === "high" ? 5 : right.signal.highestPriorityOpen === "medium" ? 2 : 0);
       if (rightScore !== leftScore) return rightScore - leftScore;
-      if (left.sourceType !== right.sourceType) return left.sourceType === "program" ? -1 : 1;
-      return left.sourceLabel.localeCompare(right.sourceLabel);
-    });
+      const leftLatestCompletedAt = Number.isNaN(left.latestCompletedAt) ? Number.NEGATIVE_INFINITY : left.latestCompletedAt;
+      const rightLatestCompletedAt = Number.isNaN(right.latestCompletedAt) ? Number.NEGATIVE_INFINITY : right.latestCompletedAt;
+      if (rightLatestCompletedAt !== leftLatestCompletedAt) return rightLatestCompletedAt - leftLatestCompletedAt;
+      if (left.signal.sourceType !== right.signal.sourceType) return left.signal.sourceType === "program" ? -1 : 1;
+      return left.signal.sourceLabel.localeCompare(right.signal.sourceLabel);
+    })
+    .map(({ signal }) => signal);
 }
 
 function scoreActionSignal(signal: BriefingActionSignal | undefined): number {
@@ -560,20 +567,21 @@ function buildActionLead(
   const signal = programSignal ?? rawContext.actionSignals[0];
   if (!signal) return null;
 
-  const signalLabel = programSignal && primaryProgram ? primaryProgram.title : signal.sourceLabel;
+  const activeProgram = programSignal && primaryProgram ? primaryProgram : undefined;
+  const signalLabel = activeProgram ? activeProgram.title : signal.sourceLabel;
   const sourceLabel = signal.sourceType === "program" ? "Program action" : "Brief action";
   const topOpenTitle = signal.openTitles[0];
   const plural = signal.openCount === 1 ? "" : "s";
   const completedPlural = signal.recentlyCompletedCount === 1 ? "" : "s";
 
   if (signal.openCount > 0) {
-    const recommendationSummary = primaryProgram
+    const recommendationSummary = activeProgram
       ? signal.staleOpenCount > 0
-        ? `Resolve the stale linked action blocking ${primaryProgram.title} before expanding the watch.`
-        : `Close the open linked action for ${primaryProgram.title} before broadening the next watch.`
+        ? `Resolve the stale linked action blocking ${activeProgram.title} before expanding the watch.`
+        : `Close the open linked action for ${activeProgram.title} before broadening the next watch.`
       : `Finish the open linked follow-through before adding more work.`;
-    const recommendationRationale = primaryProgram
-      ? `${signal.openCount} linked action${plural} ${signal.staleOpenCount > 0 ? "are stale or overdue" : "remain open"} for ${primaryProgram.title}. ${topOpenTitle ? `${topOpenTitle} is the clearest follow-through to close first.` : ""}`.trim()
+    const recommendationRationale = activeProgram
+      ? `${signal.openCount} linked action${plural} ${signal.staleOpenCount > 0 ? "are stale or overdue" : "remain open"} for ${activeProgram.title}. ${topOpenTitle ? `${topOpenTitle} is the clearest follow-through to close first.` : ""}`.trim()
       : `${signal.openCount} linked action${plural} ${signal.staleOpenCount > 0 ? "are stale or overdue" : "remain open"} for ${signalLabel}.`;
     return {
       recommendationSummary,
@@ -581,8 +589,8 @@ function buildActionLead(
       recommendationRationale,
       forceRecommendation: signal.sourceType === "program",
       whatChanged: [
-        primaryProgram
-          ? `${signal.openCount} linked action${plural} ${signal.staleOpenCount > 0 ? "are stale or overdue" : "remain open"} for ${primaryProgram.title}.`
+        activeProgram
+          ? `${signal.openCount} linked action${plural} ${signal.staleOpenCount > 0 ? "are stale or overdue" : "remain open"} for ${activeProgram.title}.`
           : `${signal.openCount} linked action${plural} ${signal.staleOpenCount > 0 ? "are stale or overdue" : "remain open"} for ${signalLabel}.`,
       ],
       evidence: [{
@@ -606,8 +614,8 @@ function buildActionLead(
 
   if (signal.recentlyCompletedCount > 0) {
     const recentTitles = signal.recentlyCompletedTitles.slice(0, 2);
-    const recommendationSummary = primaryProgram
-      ? `Keep ${primaryProgram.title} on watch and wait for the next material change instead of reopening completed follow-through.`
+    const recommendationSummary = activeProgram
+      ? `Keep ${activeProgram.title} on watch and wait for the next material change instead of reopening completed follow-through.`
       : `Use the recent action completion as the new baseline before adding more follow-through.`;
     return {
       recommendationSummary,
@@ -934,11 +942,14 @@ export async function generateBriefing(
   const sources = listSources(ctx.storage).slice(0, 10);
   const programs = listPrograms(ctx.storage, "active").slice(0, 10);
 
-  const recentlyDone = listTasks(ctx.storage, "done").filter((task) => {
-    if (!task.completed_at) return false;
-    const age = Date.now() - new Date(task.completed_at).getTime();
-    return age < 7 * 24 * 60 * 60 * 1000;
-  }).slice(0, 5);
+  const recentlyDone = listTasks(ctx.storage, "done")
+    .filter((task) => {
+      if (!task.completed_at) return false;
+      const age = Date.now() - new Date(task.completed_at).getTime();
+      return age < 7 * 24 * 60 * 60 * 1000;
+    })
+    .sort((left, right) => Date.parse(right.completed_at ?? right.created_at) - Date.parse(left.completed_at ?? left.created_at))
+    .slice(0, 5);
 
   const allBeliefs = listBeliefs(ctx.storage, "active");
   const recentBeliefs = allBeliefs

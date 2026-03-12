@@ -346,46 +346,50 @@ export async function correctBelief(
     throw new Error("Correction must change the belief statement");
   }
 
-  const correctionEpisode = createEpisode(storage, {
-    context: input.note?.trim() || `User corrected belief ${oldBelief.id}`,
-    action: `Corrected belief: ${oldBelief.statement}`,
-    outcome: newStatement,
-    tags: ["belief-correction", "memory"],
-  });
+  const { correctionEpisode, replacementBelief } = storage.db.transaction(() => {
+    const correctionEpisode = createEpisode(storage, {
+      context: input.note?.trim() || `User corrected belief ${oldBelief.id}`,
+      action: `Corrected belief: ${oldBelief.statement}`,
+      outcome: newStatement,
+      tags: ["belief-correction", "memory"],
+    });
 
-  storage.run(
-    "UPDATE beliefs SET status = 'invalidated', updated_at = datetime('now') WHERE id = ?",
-    [oldBelief.id],
-  );
+    storage.run(
+      "UPDATE beliefs SET status = 'invalidated', updated_at = datetime('now') WHERE id = ?",
+      [oldBelief.id],
+    );
 
-  const replacementBelief = createBelief(storage, {
-    statement: newStatement,
-    confidence: Math.max(oldBelief.confidence, 0.85),
-    type: oldBelief.type,
-    importance: oldBelief.importance,
-    subject: oldBelief.subject,
-  });
+    const replacementBelief = createBelief(storage, {
+      statement: newStatement,
+      confidence: Math.max(oldBelief.confidence, 0.85),
+      type: oldBelief.type,
+      importance: oldBelief.importance,
+      subject: oldBelief.subject,
+    });
 
-  storage.run(
-    "UPDATE beliefs SET stability = ? WHERE id = ?",
-    [oldBelief.stability, replacementBelief.id],
-  );
+    storage.run(
+      "UPDATE beliefs SET stability = ? WHERE id = ?",
+      [oldBelief.stability, replacementBelief.id],
+    );
 
-  linkBeliefToEpisode(storage, replacementBelief.id, correctionEpisode.id);
-  linkSupersession(storage, oldBelief.id, replacementBelief.id);
+    linkBeliefToEpisode(storage, replacementBelief.id, correctionEpisode.id);
+    linkSupersession(storage, oldBelief.id, replacementBelief.id);
 
-  logBeliefChange(storage, {
-    beliefId: oldBelief.id,
-    changeType: "invalidated",
-    detail: `Corrected by user: ${newStatement}`,
-    episodeId: correctionEpisode.id,
-  });
-  logBeliefChange(storage, {
-    beliefId: replacementBelief.id,
-    changeType: "created",
-    detail: `Replacement for corrected belief: ${oldBelief.statement}`,
-    episodeId: correctionEpisode.id,
-  });
+    logBeliefChange(storage, {
+      beliefId: oldBelief.id,
+      changeType: "invalidated",
+      detail: `Corrected by user: ${newStatement}`,
+      episodeId: correctionEpisode.id,
+    });
+    logBeliefChange(storage, {
+      beliefId: replacementBelief.id,
+      changeType: "created",
+      detail: `Replacement for corrected belief: ${oldBelief.statement}`,
+      episodeId: correctionEpisode.id,
+    });
+
+    return { correctionEpisode, replacementBelief };
+  })();
 
   try {
     const { embedding } = await llmClient.embed(newStatement, {

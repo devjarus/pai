@@ -264,6 +264,52 @@ describe("Memory", () => {
     });
   });
 
+  it("should roll back belief correction if a write fails mid-transaction", async () => {
+    const belief = createBelief(storage, {
+      statement: "User prefers broad status updates",
+      confidence: 0.7,
+      type: "preference",
+      importance: 7,
+      subject: "owner",
+    });
+    const llm = {
+      embed: vi.fn().mockResolvedValue({ embedding: [0.2, 0.3, 0.4] }),
+    } as unknown as LLMClient;
+    const originalRun = storage.run.bind(storage);
+
+    storage.run = ((sql: string, params: unknown[] = []) => {
+      if (sql.includes("UPDATE beliefs SET stability = ? WHERE id = ?")) {
+        throw new Error("simulated write failure");
+      }
+      return originalRun(sql, params);
+    }) as typeof storage.run;
+
+    await expect(correctBelief(storage, llm, belief.id, {
+      statement: "User prefers concise blocker-focused updates",
+    })).rejects.toThrow("simulated write failure");
+
+    storage.run = originalRun;
+
+    const beliefRows = storage.query<{
+      id: string;
+      statement: string;
+      status: string;
+      superseded_by: string | null;
+      supersedes: string | null;
+    }>("SELECT id, statement, status, superseded_by, supersedes FROM beliefs ORDER BY created_at ASC");
+    expect(beliefRows).toEqual([
+      expect.objectContaining({
+        id: belief.id,
+        statement: "User prefers broad status updates",
+        status: "active",
+        superseded_by: null,
+        supersedes: null,
+      }),
+    ]);
+    expect(listEpisodes(storage).filter((episode) => episode.action.includes("Corrected belief:"))).toHaveLength(0);
+    expect(vi.mocked(llm.embed)).not.toHaveBeenCalled();
+  });
+
   it("should prune beliefs below threshold", () => {
     // Create a belief with very old updated_at so decay makes it near zero
     const b = createBelief(storage, { statement: "Ancient belief", confidence: 0.1 });
