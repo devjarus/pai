@@ -44,11 +44,11 @@ test.describe("Setup wizard", () => {
     await page.getByText("Skip").click();
 
     // Step 3: Personal intro
-    await expect(page.getByText("Welcome to pai")).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText("Tell me a bit about yourself")).toBeVisible();
+    await expect(page.getByText("Set your first context")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Open Ask", exact: true })).toBeVisible();
 
     // Skip intro
-    await page.getByText("Skip for now").click();
+    await page.getByText("Skip and open Ask").click();
 
     // Should redirect to the primary Ask surface
     await expect(page).toHaveURL(/\/ask/, { timeout: 15_000 });
