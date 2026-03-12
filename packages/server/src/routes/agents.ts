@@ -136,6 +136,8 @@ async function forwardSafeUIMessageChunks(
           toolCallId: String(chunk.toolCallId),
         });
         break;
+      case "error":
+        throw chunk.error ?? new Error("LLM stream failed");
       default:
         // Drop provider-specific and unsupported chunk types (for example raw item references)
         break;

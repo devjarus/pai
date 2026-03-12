@@ -316,7 +316,10 @@ function setupDefaultAIMocks(responseText = "Hello from AI"): void {
             controller.enqueue(encoder.encode(body));
             controller.close();
           } catch (e) {
-            if (onError) onError(e);
+            const errorText = onError?.(e);
+            if (errorText) {
+              controller.enqueue(encoder.encode(String(errorText)));
+            }
             controller.close();
           }
         },
@@ -1218,6 +1221,25 @@ describe("agent routes", () => {
         onError: expect.any(Function),
       }),
     );
+  });
+
+  it("POST /api/chat surfaces stream error parts instead of ending with an empty response", async () => {
+    mockStreamText.mockImplementation(() => ({
+      fullStream: {
+        async *[Symbol.asyncIterator]() {
+          yield { type: "error", error: new Error("unauthorized") };
+        },
+      },
+    }));
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: { message: "test" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload).toContain("unauthorized");
   });
 
   it("POST /api/chat selects agent by name", async () => {
