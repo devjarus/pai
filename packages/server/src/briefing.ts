@@ -59,14 +59,50 @@ export interface BriefingBeliefInput {
   subject?: string;
 }
 
+export type BriefingTaskSourceType = "briefing" | "program";
+
+export interface BriefingTaskInput {
+  id: string;
+  title: string;
+  priority: string;
+  dueDate: string | null;
+  createdAt: string;
+  sourceType: BriefingTaskSourceType | null;
+  sourceId: string | null;
+  sourceLabel: string | null;
+}
+
+export interface BriefingCompletedTaskInput {
+  title: string;
+  completedAt: string | null;
+  priority: string;
+  createdAt: string;
+  sourceType: BriefingTaskSourceType | null;
+  sourceId: string | null;
+  sourceLabel: string | null;
+}
+
+export interface BriefingActionSignal {
+  sourceType: BriefingTaskSourceType;
+  sourceId: string;
+  sourceLabel: string;
+  openCount: number;
+  staleOpenCount: number;
+  recentlyCompletedCount: number;
+  highestPriorityOpen: "low" | "medium" | "high" | null;
+  openTitles: string[];
+  recentlyCompletedTitles: string[];
+}
+
 export interface BriefingContextInput {
   ownerName: string;
   date: string;
   time: string;
-  tasks: Array<{ id: string; title: string; priority: string; dueDate: string | null }>;
-  recentlyCompleted: Array<{ title: string; completedAt: string | null }>;
+  tasks: BriefingTaskInput[];
+  recentlyCompleted: BriefingCompletedTaskInput[];
   goals: Array<{ title: string }>;
   programs: BriefingProgramInput[];
+  actionSignals: BriefingActionSignal[];
   beliefs: BriefingBeliefInput[];
   recentActivity: string[];
   stats: {
@@ -343,9 +379,293 @@ function confidenceLabel(value: number): "low" | "medium" | "high" {
   return "low";
 }
 
+const TASK_PRIORITY_ORDER: Record<string, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
+const ACTION_STALE_MS: Record<string, number> = {
+  high: 24 * 60 * 60 * 1000,
+  medium: 3 * 24 * 60 * 60 * 1000,
+  low: 7 * 24 * 60 * 60 * 1000,
+};
+
 function safeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function normalizeTaskPriority(value: string | null | undefined): "low" | "medium" | "high" {
+  if (value === "high" || value === "medium" || value === "low") return value;
+  return "medium";
+}
+
+function compareTaskPriority(a: string | null | undefined, b: string | null | undefined): number {
+  return (TASK_PRIORITY_ORDER[normalizeTaskPriority(a)] ?? 1) - (TASK_PRIORITY_ORDER[normalizeTaskPriority(b)] ?? 1);
+}
+
+function dedupeStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const value of values) {
+    const key = value.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(value);
+  }
+  return deduped;
+}
+
+function dedupeEvidence(items: BriefingSection["evidence"]): BriefingSection["evidence"] {
+  const seen = new Set<string>();
+  const deduped: BriefingSection["evidence"] = [];
+  for (const item of items) {
+    const key = `${item.title.toLowerCase()}|${item.detail.toLowerCase()}|${item.sourceLabel.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
+function isStaleAction(task: BriefingTaskInput, now: Date): boolean {
+  if (task.dueDate) {
+    const dueAt = Date.parse(task.dueDate);
+    if (!Number.isNaN(dueAt) && dueAt < now.getTime()) {
+      return true;
+    }
+  }
+
+  const createdAt = Date.parse(task.createdAt);
+  if (Number.isNaN(createdAt)) return false;
+  const threshold = ACTION_STALE_MS[normalizeTaskPriority(task.priority)]!;
+  return now.getTime() - createdAt >= threshold;
+}
+
+function buildActionSignals(
+  tasks: BriefingTaskInput[],
+  recentlyCompleted: BriefingCompletedTaskInput[],
+  now: Date,
+): BriefingActionSignal[] {
+  const grouped = new Map<string, {
+    sourceType: BriefingTaskSourceType;
+    sourceId: string;
+    sourceLabel: string;
+    openTasks: BriefingTaskInput[];
+    completedTasks: BriefingCompletedTaskInput[];
+  }>();
+
+  const ensureGroup = (sourceType: BriefingTaskSourceType, sourceId: string, sourceLabel: string) => {
+    const key = `${sourceType}:${sourceId}`;
+    const existing = grouped.get(key);
+    if (existing) return existing;
+    const created = {
+      sourceType,
+      sourceId,
+      sourceLabel,
+      openTasks: [] as BriefingTaskInput[],
+      completedTasks: [] as BriefingCompletedTaskInput[],
+    };
+    grouped.set(key, created);
+    return created;
+  };
+
+  for (const task of tasks) {
+    if (!task.sourceType || !task.sourceId) continue;
+    const group = ensureGroup(task.sourceType, task.sourceId, task.sourceLabel ?? task.title);
+    group.openTasks.push(task);
+  }
+
+  for (const task of recentlyCompleted) {
+    if (!task.sourceType || !task.sourceId) continue;
+    const group = ensureGroup(task.sourceType, task.sourceId, task.sourceLabel ?? task.title);
+    group.completedTasks.push(task);
+  }
+
+  return [...grouped.values()]
+    .map((group) => {
+      const sortedOpen = [...group.openTasks].sort((left, right) =>
+        compareTaskPriority(left.priority, right.priority) || Date.parse(right.createdAt) - Date.parse(left.createdAt),
+      );
+      const sortedCompleted = [...group.completedTasks].sort((left, right) =>
+        Date.parse(right.completedAt ?? right.createdAt) - Date.parse(left.completedAt ?? left.createdAt),
+      );
+      return {
+        sourceType: group.sourceType,
+        sourceId: group.sourceId,
+        sourceLabel: group.sourceLabel,
+        openCount: group.openTasks.length,
+        staleOpenCount: group.openTasks.filter((task) => isStaleAction(task, now)).length,
+        recentlyCompletedCount: group.completedTasks.length,
+        highestPriorityOpen: sortedOpen[0] ? normalizeTaskPriority(sortedOpen[0].priority) : null,
+        openTitles: dedupeStrings(sortedOpen.map((task) => task.title)),
+        recentlyCompletedTitles: dedupeStrings(sortedCompleted.map((task) => task.title)),
+      };
+    })
+    .sort((left, right) => {
+      const leftScore = left.staleOpenCount * 100 + left.openCount * 20 + left.recentlyCompletedCount * 8 + (left.highestPriorityOpen === "high" ? 5 : left.highestPriorityOpen === "medium" ? 2 : 0);
+      const rightScore = right.staleOpenCount * 100 + right.openCount * 20 + right.recentlyCompletedCount * 8 + (right.highestPriorityOpen === "high" ? 5 : right.highestPriorityOpen === "medium" ? 2 : 0);
+      if (rightScore !== leftScore) return rightScore - leftScore;
+      if (left.sourceType !== right.sourceType) return left.sourceType === "program" ? -1 : 1;
+      return left.sourceLabel.localeCompare(right.sourceLabel);
+    });
+}
+
+function scoreActionSignal(signal: BriefingActionSignal | undefined): number {
+  if (!signal) return 0;
+  return signal.staleOpenCount * 100
+    + signal.openCount * 20
+    + signal.recentlyCompletedCount * 8
+    + (signal.highestPriorityOpen === "high" ? 5 : signal.highestPriorityOpen === "medium" ? 2 : 0);
+}
+
+function selectPrimaryProgram(
+  programs: BriefingProgramInput[],
+  actionSignals: BriefingActionSignal[],
+): BriefingProgramInput | undefined {
+  let best: BriefingProgramInput | undefined;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const program of programs) {
+    const signal = actionSignals.find((entry) => entry.sourceType === "program" && entry.sourceId === program.id);
+    const score = scoreActionSignal(signal);
+    if (!best || score > bestScore) {
+      best = program;
+      bestScore = score;
+    }
+  }
+
+  return best;
+}
+
+interface BriefingActionLead {
+  recommendationSummary: string;
+  recommendationConfidence: "low" | "medium" | "high";
+  recommendationRationale: string;
+  forceRecommendation: boolean;
+  whatChanged: string[];
+  evidence: BriefingSection["evidence"];
+  nextActions: BriefingSection["next_actions"];
+  completedActionTitlesLower: string[];
+}
+
+function buildActionLead(
+  rawContext: BriefingContextInput,
+  primaryProgram?: BriefingProgramInput,
+): BriefingActionLead | null {
+  const programSignal = primaryProgram
+    ? rawContext.actionSignals.find((entry) => entry.sourceType === "program" && entry.sourceId === primaryProgram.id)
+    : undefined;
+  const signal = programSignal ?? rawContext.actionSignals[0];
+  if (!signal) return null;
+
+  const signalLabel = programSignal && primaryProgram ? primaryProgram.title : signal.sourceLabel;
+  const sourceLabel = signal.sourceType === "program" ? "Program action" : "Brief action";
+  const topOpenTitle = signal.openTitles[0];
+  const plural = signal.openCount === 1 ? "" : "s";
+  const completedPlural = signal.recentlyCompletedCount === 1 ? "" : "s";
+
+  if (signal.openCount > 0) {
+    const recommendationSummary = primaryProgram
+      ? signal.staleOpenCount > 0
+        ? `Resolve the stale linked action blocking ${primaryProgram.title} before expanding the watch.`
+        : `Close the open linked action for ${primaryProgram.title} before broadening the next watch.`
+      : `Finish the open linked follow-through before adding more work.`;
+    const recommendationRationale = primaryProgram
+      ? `${signal.openCount} linked action${plural} ${signal.staleOpenCount > 0 ? "are stale or overdue" : "remain open"} for ${primaryProgram.title}. ${topOpenTitle ? `${topOpenTitle} is the clearest follow-through to close first.` : ""}`.trim()
+      : `${signal.openCount} linked action${plural} ${signal.staleOpenCount > 0 ? "are stale or overdue" : "remain open"} for ${signalLabel}.`;
+    return {
+      recommendationSummary,
+      recommendationConfidence: signal.staleOpenCount > 0 ? "high" : "medium",
+      recommendationRationale,
+      forceRecommendation: signal.sourceType === "program",
+      whatChanged: [
+        primaryProgram
+          ? `${signal.openCount} linked action${plural} ${signal.staleOpenCount > 0 ? "are stale or overdue" : "remain open"} for ${primaryProgram.title}.`
+          : `${signal.openCount} linked action${plural} ${signal.staleOpenCount > 0 ? "are stale or overdue" : "remain open"} for ${signalLabel}.`,
+      ],
+      evidence: [{
+        title: signal.staleOpenCount > 0 ? "Stale linked action" : "Open linked action",
+        detail: topOpenTitle
+          ? `${topOpenTitle} is already tracked as follow-through for ${signalLabel}.`
+          : `${signal.openCount} linked action${plural} remain open for ${signalLabel}.`,
+        sourceLabel,
+        freshness: signal.staleOpenCount > 0 ? `${signal.staleOpenCount} stale or overdue` : `${signal.openCount} open`,
+      }],
+      nextActions: [{
+        title: topOpenTitle || "Close linked action",
+        timing: signal.staleOpenCount > 0 ? "Now" : "Before the next brief",
+        detail: topOpenTitle
+          ? `${topOpenTitle} is already open for ${signalLabel}; close it or explicitly reprioritize it before adding more follow-through.`
+          : `Close or reprioritize the linked follow-through for ${signalLabel} before adding more work.`,
+      }],
+      completedActionTitlesLower: signal.recentlyCompletedTitles.map((title) => title.toLowerCase()),
+    };
+  }
+
+  if (signal.recentlyCompletedCount > 0) {
+    const recentTitles = signal.recentlyCompletedTitles.slice(0, 2);
+    const recommendationSummary = primaryProgram
+      ? `Keep ${primaryProgram.title} on watch and wait for the next material change instead of reopening completed follow-through.`
+      : `Use the recent action completion as the new baseline before adding more follow-through.`;
+    return {
+      recommendationSummary,
+      recommendationConfidence: "medium",
+      recommendationRationale: recentTitles.length > 0
+        ? `${recentTitles.join(" and ")} ${signal.recentlyCompletedCount === 1 ? "was" : "were"} completed recently for ${signalLabel}, so the next brief should move forward from that completion instead of repeating it.`
+        : `${signal.recentlyCompletedCount} linked action${completedPlural} were completed recently for ${signalLabel}.`,
+      forceRecommendation: false,
+      whatChanged: [
+        `${signal.recentlyCompletedCount} linked action${completedPlural} were completed recently for ${signalLabel}.`,
+      ],
+      evidence: [{
+        title: "Completed linked action",
+        detail: recentTitles.length > 0
+          ? `${recentTitles.join("; ")} ${signal.recentlyCompletedCount === 1 ? "was" : "were"} completed recently for ${signalLabel}.`
+          : `${signal.recentlyCompletedCount} linked action${completedPlural} were completed recently for ${signalLabel}.`,
+        sourceLabel,
+        freshness: "Completed recently",
+      }],
+      nextActions: [{
+        title: "Watch for the next material change",
+        timing: "Until the next brief",
+        detail: `The latest linked follow-through for ${signalLabel} is complete, so the next useful move is to capture a new blocker, external change, or decision signal.`,
+      }],
+      completedActionTitlesLower: signal.recentlyCompletedTitles.map((title) => title.toLowerCase()),
+    };
+  }
+
+  return null;
+}
+
+function mergeActionLeadIntoBriefing(
+  sections: BriefingSection,
+  actionLead: BriefingActionLead | null,
+): BriefingSection {
+  if (!actionLead) return sections;
+
+  const completedTitles = new Set(actionLead.completedActionTitlesLower);
+  const filteredNextActions = sections.next_actions.filter((action) => !completedTitles.has(action.title.trim().toLowerCase()));
+  const existingActionTitles = new Set(filteredNextActions.map((action) => action.title.trim().toLowerCase()));
+  const mergedNextActions = [
+    ...actionLead.nextActions.filter((action) => !existingActionTitles.has(action.title.trim().toLowerCase())),
+    ...filteredNextActions,
+  ].slice(0, 3);
+
+  return {
+    ...sections,
+    recommendation: actionLead.forceRecommendation
+      ? {
+        summary: actionLead.recommendationSummary,
+        confidence: actionLead.recommendationConfidence,
+        rationale: actionLead.recommendationRationale,
+      }
+      : sections.recommendation,
+    what_changed: dedupeStrings([...actionLead.whatChanged, ...sections.what_changed]).slice(0, 4),
+    evidence: dedupeEvidence([...actionLead.evidence, ...sections.evidence]).slice(0, 4),
+    next_actions: mergedNextActions.length > 0 ? mergedNextActions : sections.next_actions,
+  };
 }
 
 function normalizeBriefingSections(raw: unknown, fallback: BriefingSection): BriefingSection {
@@ -418,20 +738,28 @@ function normalizeBriefingSections(raw: unknown, fallback: BriefingSection): Bri
 }
 
 function buildFallbackBriefing(rawContext: BriefingContextInput): BriefingSection {
-  const primaryProgram = rawContext.programs[0];
+  const primaryProgram = selectPrimaryProgram(rawContext.programs, rawContext.actionSignals);
   const recentBeliefs = rawContext.beliefs.slice(0, 2);
-  const recommendationSummary = primaryProgram
-    ? `Keep ${primaryProgram.title} as the top watch for the next brief.`
-    : rawContext.tasks[0]
-      ? `Keep momentum on ${rawContext.tasks[0].title} before starting something new.`
-      : "Keep the current watchlist active and tighten the next follow-up around the clearest open question.";
-  const recommendationRationale = primaryProgram
-    ? `${primaryProgram.question} ${primaryProgram.constraints.length > 0 ? `Current constraints: ${primaryProgram.constraints.slice(0, 2).join("; ")}.` : ""}`.trim()
-    : rawContext.recentlyCompleted.length > 0
-      ? `${rawContext.recentlyCompleted.length} recent completion${rawContext.recentlyCompleted.length === 1 ? "" : "s"} give enough signal for a concise next-step brief.`
-      : "This fallback brief is grounded in the stored Program, memory, and activity context.";
+  const actionLead = buildActionLead(rawContext, primaryProgram);
+  const recommendationSummary = actionLead
+    ? actionLead.recommendationSummary
+    : primaryProgram
+      ? `Keep ${primaryProgram.title} as the top watch for the next brief.`
+      : rawContext.tasks[0]
+        ? `Keep momentum on ${rawContext.tasks[0].title} before starting something new.`
+        : "Keep the current watchlist active and tighten the next follow-up around the clearest open question.";
+  const recommendationRationale = actionLead
+    ? actionLead.recommendationRationale
+    : primaryProgram
+      ? `${primaryProgram.question} ${primaryProgram.constraints.length > 0 ? `Current constraints: ${primaryProgram.constraints.slice(0, 2).join("; ")}.` : ""}`.trim()
+      : rawContext.tasks[0]
+        ? `Keep momentum on ${rawContext.tasks[0].title} before starting something new.`
+        : rawContext.recentlyCompleted.length > 0
+          ? `${rawContext.recentlyCompleted.length} recent completion${rawContext.recentlyCompleted.length === 1 ? "" : "s"} give enough signal for a concise next-step brief.`
+          : "This fallback brief is grounded in the stored Program, memory, and activity context.";
 
-  const whatChanged = [
+  const whatChanged = dedupeStrings([
+    ...(actionLead?.whatChanged ?? []),
     primaryProgram
       ? `${primaryProgram.title} remains active with ${primaryProgram.intervalHours >= 24 ? "a recurring brief cadence" : "short-interval follow-through"}.`
       : "No active Program was selected, so this brief is using the strongest recent context instead.",
@@ -441,9 +769,10 @@ function buildFallbackBriefing(rawContext: BriefingContextInput): BriefingSectio
     recentBeliefs.length > 0
       ? `${recentBeliefs.length} recent memory signal${recentBeliefs.length === 1 ? "" : "s"} are available for the next recommendation.`
       : "No recent memory updates were detected, so assumptions are coming from the Program definition.",
-  ];
+  ]).slice(0, 4);
 
-  const evidence = [
+  const evidence = dedupeEvidence([
+    ...(actionLead?.evidence ?? []),
     primaryProgram
       ? {
         title: "Program definition",
@@ -467,7 +796,7 @@ function buildFallbackBriefing(rawContext: BriefingContextInput): BriefingSectio
       sourceLabel: "Knowledge source",
       sourceUrl: source.url,
     })),
-  ].filter((item) => item.detail.trim().length > 0);
+  ].filter((item) => item.detail.trim().length > 0));
 
   const memoryAssumptions = [
     ...primaryProgram?.preferences.slice(0, 2).map((preference) => ({
@@ -488,6 +817,7 @@ function buildFallbackBriefing(rawContext: BriefingContextInput): BriefingSectio
   ];
 
   const nextActions = [
+    ...(actionLead?.nextActions ?? []),
     primaryProgram?.openQuestions[0]
       ? {
         title: "Resolve the top open question",
@@ -509,13 +839,16 @@ function buildFallbackBriefing(rawContext: BriefingContextInput): BriefingSectio
         detail: `${rawContext.tasks[0].title} is the clearest actionable item in the current context.`,
       }
       : null,
-  ].filter((item): item is NonNullable<typeof item> => item !== null);
+  ]
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.title.trim().toLowerCase() === item.title.trim().toLowerCase()) === index)
+    .slice(0, 3);
 
   return {
     title: primaryProgram?.title ?? "Daily Briefing",
     recommendation: {
       summary: recommendationSummary,
-      confidence: primaryProgram || rawContext.tasks.length > 0 ? "medium" : "low",
+      confidence: actionLead?.recommendationConfidence ?? (primaryProgram || rawContext.tasks.length > 0 ? "medium" : "low"),
       rationale: recommendationRationale,
     },
     what_changed: whatChanged,
@@ -657,20 +990,33 @@ export async function generateBriefing(
     ownerName = "there";
   }
 
+  const openTaskContext: BriefingTaskInput[] = tasks.map((task) => ({
+    id: task.id,
+    title: task.title,
+    priority: task.priority,
+    dueDate: task.due_date,
+    createdAt: task.created_at,
+    sourceType: task.source_type,
+    sourceId: task.source_id,
+    sourceLabel: task.source_label,
+  }));
+  const completedTaskContext: BriefingCompletedTaskInput[] = recentlyDone.map((task) => ({
+    title: task.title,
+    completedAt: task.completed_at,
+    priority: task.priority,
+    createdAt: task.created_at,
+    sourceType: task.source_type,
+    sourceId: task.source_id,
+    sourceLabel: task.source_label,
+  }));
+  const actionSignals = buildActionSignals(openTaskContext, completedTaskContext, now);
+
   const rawContext: BriefingContextInput = {
     ownerName,
     date: formatDateTime(ctx.config.timezone, now).date,
     time: formatDateTime(ctx.config.timezone, now).time,
-    tasks: tasks.map((task) => ({
-      id: task.id,
-      title: task.title,
-      priority: task.priority,
-      dueDate: task.due_date,
-    })),
-    recentlyCompleted: recentlyDone.map((task) => ({
-      title: task.title,
-      completedAt: task.completed_at,
-    })),
+    tasks: openTaskContext,
+    recentlyCompleted: completedTaskContext,
     goals: goals.map((goal) => ({ title: goal.title })),
     programs: programs.map((program) => ({
       id: program.id,
@@ -685,6 +1031,7 @@ export async function generateBriefing(
       constraints: program.constraints,
       openQuestions: program.openQuestions,
     })),
+    actionSignals,
     beliefs: topBeliefs.map((belief) => ({
       id: belief.id,
       statement: belief.statement,
@@ -723,6 +1070,9 @@ ${JSON.stringify(rawContext.goals, null, 2)}
 ACTIVE PROGRAMS (${programs.length}):
 ${JSON.stringify(rawContext.programs, null, 2)}
 
+LINKED ACTION SIGNALS (${rawContext.actionSignals.length}):
+${JSON.stringify(rawContext.actionSignals, null, 2)}
+
 MEMORY — RECENT & TOP BELIEFS (${topBeliefs.length} shown, ${stats.beliefs.active} total active):
 ${JSON.stringify(rawContext.beliefs, null, 2)}
 
@@ -736,6 +1086,9 @@ ${previousBriefingSummary ? `PREVIOUS BRIEFINGS (you MUST NOT repeat these — c
 Guidelines:
 - Recommendation comes first. The briefing should tell the user what to do, hold, or watch next.
 - Use active Programs as the primary object when they exist. Avoid talking about raw schedules, jobs, or internal mechanics.
+- Linked actions are existing follow-through attached to Programs or previous Briefs. Treat them as product context, not as anonymous tasks.
+- If a linked action is already complete, use that completion as a change signal and do not repeat it as a next action.
+- If a linked action is still open or stale, make that explicit in the recommendation, evidence, or next actions instead of inventing duplicate follow-through.
 - what_changed should be concise and specific. Prefer 2-4 bullets.
 - evidence should cite either an external source or an observed product artifact (Program definition, memory belief, recent activity, task state).
 - memory_assumptions should name the assumptions that materially influenced the recommendation and explain where they came from.
@@ -806,7 +1159,10 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
       let jsonText = result.text.trim();
       const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (fenceMatch?.[1]) jsonText = fenceMatch[1].trim();
-      parsed = normalizeBriefingSections(JSON.parse(jsonText), fallbackSections);
+      parsed = mergeActionLeadIntoBriefing(
+        normalizeBriefingSections(JSON.parse(jsonText), fallbackSections),
+        buildActionLead(rawContext, selectPrimaryProgram(rawContext.programs, rawContext.actionSignals)),
+      );
     } catch (error) {
       ctx.logger.warn("Briefing generation fell back to deterministic brief", {
         error: error instanceof Error ? error.message : String(error),

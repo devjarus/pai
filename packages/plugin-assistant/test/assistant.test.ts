@@ -166,6 +166,36 @@ describe("createTools", () => {
     expect(result).toContain("Program created");
   });
 
+  it("program_create forwards thread and chat context from Ask", async () => {
+    mockCreateProgram.mockReturnValue({
+      id: "prog_234",
+      title: "Atlas launch readiness",
+      executionMode: "research",
+      intervalHours: 24,
+      nextRunAt: "2026-03-12T16:00:00.000Z",
+    });
+
+    const ctx = createMockCtx({
+      config: { timezone: "America/Los_Angeles" } as any,
+    });
+    (ctx as unknown as Record<string, unknown>).threadId = "thread-123";
+    (ctx as unknown as Record<string, unknown>).chatId = 42;
+
+    const tools = assistantPlugin.agent!.createTools!(ctx) as Record<string, any>;
+    await tools.program_create.execute({
+      title: "Atlas launch readiness",
+      question: "Keep watching Atlas launch readiness and brief me when blockers change.",
+    });
+
+    expect(mockCreateProgram).toHaveBeenCalledWith(
+      ctx.storage,
+      expect.objectContaining({
+        threadId: "thread-123",
+        chatId: 42,
+      }),
+    );
+  });
+
   it("program_list returns Programs from the adapter", async () => {
     mockListPrograms.mockReturnValue([
       {

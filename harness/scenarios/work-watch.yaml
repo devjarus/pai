@@ -36,6 +36,13 @@ correction_step:
   expected_brief_change:
     - future briefs must treat missing security signoff as blocking
     - escalation recommendations should be more selective
+action_follow_through:
+  linked_action_title: Confirm blocker owners
+  expected_first_brief_focus:
+    - first brief should prioritize the open linked action before inventing more follow-through
+  expected_next_brief_change:
+    - next brief should treat the completed linked action as a change signal
+    - next brief should not repeat the completed linked action as a next step
 expected_next_brief_behavior:
   should_reflect_correction: true
   suppressed_old_assumptions:

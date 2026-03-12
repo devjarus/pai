@@ -88,14 +88,14 @@ async function run(): Promise<ValidationReport> {
     generated_at: new Date().toISOString(),
     status: reportStatus(checks),
     summary:
-      "Core-loop harness run. This validates harness artifacts and executes the work-watch scenario against real Program and Brief runtime paths using deterministic fallback generation.",
+      "Core-loop harness run. This validates harness artifacts and executes the work-watch scenario against real Ask-created Program, linked Action, and Brief runtime paths using deterministic fallback generation.",
     checks,
     blockers,
     warnings,
     artifacts: ["harness/reports/latest-core-loop.json"],
     todo: [
       "Add at least one more executable scenario beyond work-watch so travel and buying paths are also covered.",
-      "Expand runtime assertions to cover chat-created Programs instead of direct Program creation only.",
+      "Cover the streamed chat transport or Keep watching UI path, not just the assistant tool/runtime layer.",
       "Connect executable harness checks to rendered UI and correction entrypoints, not just storage and generation paths.",
     ],
   };

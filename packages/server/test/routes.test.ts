@@ -15,6 +15,7 @@ import { registerArtifactRoutes } from "../src/routes/artifacts.js";
 import { registerObservabilityRoutes } from "../src/routes/observability.js";
 import type { ServerContext } from "../src/index.js";
 import jwt from "jsonwebtoken";
+import { assistantPlugin } from "../../plugin-assistant/src/index.js";
 
 // ---------------------------------------------------------------------------
 // Artifact mock functions (declared before vi.mock hoisting)
@@ -1057,6 +1058,105 @@ describe("agent routes", () => {
     const threadsRes = await app.inject({ method: "GET", url: "/api/threads" });
     const threads = JSON.parse(threadsRes.payload) as Array<{ id: string }>;
     expect(threads.some((t) => t.id === headerId)).toBe(true);
+  });
+
+  it("POST /api/chat can create a Program through the assistant flow and preserve thread continuity", async () => {
+    serverCtx.agents[0] = {
+      ...assistantPlugin,
+      agent: {
+        ...assistantPlugin.agent!,
+        afterResponse: vi.fn().mockResolvedValue(undefined),
+      },
+    } as typeof serverCtx.agents[number];
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { title: "Atlas watch" },
+    });
+    const thread = JSON.parse(createRes.payload) as { id: string };
+
+    mockCreateProgram.mockImplementation((_storage: unknown, input: Record<string, unknown>) => ({
+      id: "prog_123",
+      title: input.title ?? "Atlas launch readiness",
+      question: input.question ?? "Keep watching Atlas launch readiness and brief me when blockers change.",
+      family: input.family ?? "work",
+      executionMode: input.executionMode ?? "research",
+      intervalHours: input.intervalHours ?? 24,
+      chatId: input.chatId ?? null,
+      threadId: input.threadId ?? null,
+      nextRunAt: "2026-03-12T16:00:00.000Z",
+      lastRunAt: null,
+      status: "active",
+      createdAt: "2026-03-12T08:00:00.000Z",
+      preferences: input.preferences ?? [],
+      constraints: input.constraints ?? [],
+      openQuestions: input.openQuestions ?? [],
+    }));
+
+    mockStreamText.mockImplementation((opts: Record<string, unknown>) => {
+      const onFinish = opts.onFinish as ((result: { text: string; steps: unknown[] }) => void) | undefined;
+      const tools = opts.tools as Record<string, { execute?: (input: Record<string, unknown>) => Promise<unknown> }> | undefined;
+      const args = {
+        title: "Atlas launch readiness",
+        question: "Keep watching Atlas launch readiness and brief me when blockers change.",
+        family: "work",
+        execution_mode: "research",
+        interval_hours: 24,
+        preferences: ["prioritize blockers"],
+        constraints: ["security signoff required"],
+      };
+
+      return {
+        fullStream: {
+          async *[Symbol.asyncIterator]() {
+            const output = await tools?.program_create?.execute?.(args);
+            const responseText = typeof output === "string" ? output : "Program created.";
+            onFinish?.({
+              text: responseText,
+              steps: [
+                {
+                  toolCalls: [{ toolName: "program_create", args }],
+                  toolResults: [{ result: responseText }],
+                },
+              ],
+            });
+            yield { type: "text-start", id: "txt-1" };
+            yield { type: "text-delta", id: "txt-1", text: responseText };
+            yield { type: "text-end", id: "txt-1" };
+          },
+        },
+      };
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/chat",
+      payload: {
+        message: "Keep watching Atlas launch readiness and brief me when blockers change.",
+        sessionId: thread.id,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockCreateProgram).toHaveBeenCalledWith(
+      serverCtx.ctx.storage,
+      expect.objectContaining({
+        title: "Atlas launch readiness",
+        threadId: thread.id,
+        chatId: null,
+      }),
+    );
+
+    const messagesRes = await app.inject({
+      method: "GET",
+      url: `/api/threads/${thread.id}/messages`,
+    });
+    const messages = JSON.parse(messagesRes.payload) as Array<{ role: string; content: string }>;
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.role).toBe("user");
+    expect(messages[1]?.role).toBe("assistant");
+    expect(messages[1]?.content).toContain("Program created.");
   });
 
   it("POST /api/chat calls createTools on agent", async () => {

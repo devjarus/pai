@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createStorage } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
-import { scheduleMigrations } from "@personal-ai/plugin-schedules";
+import { createProgram, scheduleMigrations } from "@personal-ai/plugin-schedules";
 import {
   briefingMigrations,
   getLatestBriefing,
@@ -23,6 +23,11 @@ vi.mock("ai", () => ({
   generateText: vi.fn(),
 }));
 
+const { mockListTasks, mockListGoals } = vi.hoisted(() => ({
+  mockListTasks: vi.fn(),
+  mockListGoals: vi.fn(),
+}));
+
 vi.mock("@personal-ai/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@personal-ai/core")>();
   return {
@@ -38,8 +43,8 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
 });
 
 vi.mock("@personal-ai/plugin-tasks", () => ({
-  listTasks: vi.fn().mockReturnValue([]),
-  listGoals: vi.fn().mockReturnValue([]),
+  listTasks: mockListTasks,
+  listGoals: mockListGoals,
 }));
 
 // ---------------------------------------------------------------------------
@@ -263,6 +268,8 @@ describe("generateBriefing", () => {
     storage.migrate("briefing", briefingMigrations);
     storage.migrate("schedules", scheduleMigrations);
     vi.clearAllMocks();
+    mockListTasks.mockImplementation((_storage: Storage, status = "open") => (status === "done" ? [] : []));
+    mockListGoals.mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -375,6 +382,101 @@ describe("generateBriefing", () => {
     expect(result).not.toBeNull();
     expect(result!.status).toBe("ready");
     expect(result!.sections.memory_assumptions.length).toBeGreaterThan(0);
+  });
+
+  it("prioritizes open linked program actions in deterministic fallback briefs", async () => {
+    const program = createProgram(storage, {
+      title: "Project Atlas launch readiness",
+      question: "Track blockers, rollback readiness, and launch signoff for Project Atlas.",
+      family: "work",
+      executionMode: "research",
+      intervalHours: 168,
+      preferences: ["Prioritize blocker clarity over verbose updates."],
+      constraints: ["Rollback readiness is required."],
+      openQuestions: ["Who owns the last blocker?"],
+    });
+
+    mockListTasks.mockImplementation((_storage: Storage, status = "open") => {
+      if (status === "done") return [];
+      return [{
+        id: "task_action_1",
+        title: "Confirm blocker owners",
+        description: "Make sure each blocker has an owner and next step.",
+        status: "open",
+        priority: "high",
+        goal_id: null,
+        due_date: null,
+        created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        completed_at: null,
+        source_type: "program",
+        source_id: program.id,
+        source_label: program.title,
+      }];
+    });
+
+    const ctx = makeCtx(false);
+    const result = await generateBriefing(ctx);
+
+    expect(result).not.toBeNull();
+    expect(result!.sections.recommendation.summary).toBe(`Close the open linked action for ${program.title} before broadening the next watch.`);
+    expect(result!.sections.next_actions[0]?.title).toBe("Confirm blocker owners");
+    expect(result!.sections.evidence[0]?.sourceLabel).toBe("Program action");
+
+    const persisted = getBriefingById(storage, result!.id);
+    const rawContext = persisted?.rawContext as { actionSignals?: Array<{ sourceId: string; openCount: number }> } | undefined;
+    expect(rawContext?.actionSignals?.[0]?.sourceId).toBe(program.id);
+    expect(rawContext?.actionSignals?.[0]?.openCount).toBe(1);
+  });
+
+  it("uses completed linked actions as a change signal and removes them from next actions", async () => {
+    const { generateText } = await import("ai");
+    const program = createProgram(storage, {
+      title: "Project Atlas launch readiness",
+      question: "Track blockers, rollback readiness, and launch signoff for Project Atlas.",
+      family: "work",
+      executionMode: "research",
+      intervalHours: 168,
+    });
+
+    mockListTasks.mockImplementation((_storage: Storage, status = "open") => {
+      if (status === "done") {
+        return [{
+          id: "task_action_done",
+          title: "Confirm blocker owners",
+          description: "Make sure each blocker has an owner and next step.",
+          status: "done",
+          priority: "high",
+          goal_id: null,
+          due_date: null,
+          created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          completed_at: new Date().toISOString(),
+          source_type: "program",
+          source_id: program.id,
+          source_label: program.title,
+        }];
+      }
+      return [];
+    });
+
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: JSON.stringify({
+        ...sampleSections,
+        next_actions: [{ title: "Confirm blocker owners", timing: "Today", detail: "Repeat the already-completed follow-through." }],
+      }),
+    });
+
+    const ctx = makeCtx(true);
+    const result = await generateBriefing(ctx);
+
+    expect(result).not.toBeNull();
+    expect(result!.sections.next_actions.map((action) => action.title)).not.toContain("Confirm blocker owners");
+    expect(result!.sections.what_changed[0]).toContain("completed recently");
+    expect(result!.sections.evidence[0]?.title).toBe("Completed linked action");
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining("LINKED ACTION SIGNALS (1):"),
+      }),
+    );
   });
 
   it("calls generateText with the LLM model from context", async () => {

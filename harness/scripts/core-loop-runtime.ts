@@ -2,10 +2,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createStorage, knowledgeMigrations, memoryMigrations } from "../../packages/core/src/index.js";
-import type { PluginContext } from "../../packages/core/src/index.js";
-import { taskMigrations } from "../../packages/plugin-tasks/src/tasks.js";
-import { createProgram, scheduleMigrations, updateProgram } from "../../packages/plugin-schedules/src/index.js";
+import { createStorage, createThread, knowledgeMigrations, memoryMigrations, threadMigrations } from "../../packages/core/src/index.js";
+import type { AgentContext, PluginContext } from "../../packages/core/src/index.js";
+import { addTask, completeTask, taskMigrations } from "../../packages/plugin-tasks/src/tasks.js";
+import { listPrograms, scheduleMigrations, updateProgram } from "../../packages/plugin-schedules/src/index.js";
+import { assistantPlugin } from "../../packages/plugin-assistant/src/index.js";
 
 import { generateBriefing, briefingMigrations } from "../../packages/server/src/briefing.js";
 import {
@@ -40,12 +41,28 @@ function createHarnessContext(storage: ReturnType<typeof createStorage>): Plugin
   } as unknown as PluginContext;
 }
 
+function createHarnessAgentContext(storage: ReturnType<typeof createStorage>, threadId: string, userMessage: string): AgentContext {
+  const base = createHarnessContext(storage);
+  const ctx = {
+    ...base,
+    userMessage,
+    conversationHistory: [],
+  } as unknown as AgentContext;
+  (ctx as unknown as Record<string, unknown>).threadId = threadId;
+  return ctx;
+}
+
 function hasStatement(
   assumptions: Array<{ statement: string }>,
   expected: string,
 ): boolean {
   const target = expected.toLowerCase();
   return assumptions.some((item) => item.statement.toLowerCase().includes(target));
+}
+
+function hasText(haystack: string[], expected: string): boolean {
+  const target = expected.toLowerCase();
+  return haystack.some((item) => item.toLowerCase().includes(target));
 }
 
 export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> {
@@ -59,19 +76,64 @@ export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> 
     storage.migrate("memory", memoryMigrations);
     storage.migrate("tasks", taskMigrations);
     storage.migrate("knowledge", knowledgeMigrations);
+    storage.migrate("threads", threadMigrations);
     storage.migrate("schedules", scheduleMigrations);
     storage.migrate("briefing", briefingMigrations);
 
     const ctx = createHarnessContext(storage);
-    const initialProgram = createProgram(storage, {
+    const thread = createThread(storage, {
+      title: scenario.expected_program_behavior.program_title,
+      agentName: "assistant",
+    });
+    const agentCtx = createHarnessAgentContext(storage, thread.id, scenario.initial_user_message);
+    const tools = assistantPlugin.agent?.createTools?.(agentCtx) as Record<string, { execute?: (input: Record<string, unknown>) => Promise<unknown> }> | undefined;
+    const programCreate = tools?.program_create;
+    if (!programCreate?.execute) {
+      blockers.push("work-watch: assistant program_create tool is unavailable in the harness context");
+      return makeCheck(
+        "runtime-scenario:work-watch",
+        "Executable work-watch scenario failed.",
+        blockers,
+        warnings,
+      );
+    }
+
+    const programCreateResult = await programCreate.execute({
       title: scenario.expected_program_behavior.program_title,
       question: scenario.initial_user_message,
-      family: scenario.expected_program_behavior.program_family as "general" | "work" | "travel" | "buying",
-      executionMode: "research",
-      intervalHours: 168,
+      family: scenario.expected_program_behavior.program_family,
+      execution_mode: "research",
+      interval_hours: 168,
       preferences: scenario.expected_memory_captured.preferences,
       constraints: scenario.expected_memory_captured.constraints,
-      openQuestions: scenario.expected_memory_captured.open_questions,
+      open_questions: scenario.expected_memory_captured.open_questions,
+    });
+
+    if (typeof programCreateResult !== "string" || !programCreateResult.includes("Program created")) {
+      blockers.push("work-watch: assistant program_create tool did not report successful Program creation");
+    }
+
+    const initialProgram = listPrograms(storage, "active")[0];
+    if (!initialProgram) {
+      blockers.push("work-watch: assistant program_create did not persist an active Program");
+      return makeCheck(
+        "runtime-scenario:work-watch",
+        "Executable work-watch scenario failed.",
+        blockers,
+        warnings,
+      );
+    }
+    if (initialProgram.threadId !== thread.id) {
+      blockers.push("work-watch: Ask-created Program did not preserve the originating thread id");
+    }
+    const linkedActionTitle = scenario.action_follow_through?.linked_action_title ?? "Confirm blocker owners";
+    const linkedAction = addTask(storage, {
+      title: linkedActionTitle,
+      description: "Make sure each launch blocker has an owner and next step before the next brief.",
+      priority: "high",
+      sourceType: "program",
+      sourceId: initialProgram.id,
+      sourceLabel: initialProgram.title,
     });
 
     const firstBrief = await generateBriefing(ctx);
@@ -93,6 +155,12 @@ export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> 
       if ((firstBrief.sections.next_actions?.length ?? 0) === 0) {
         blockers.push("work-watch: first briefing is missing next actions");
       }
+      if (!firstBrief.sections.recommendation?.summary.toLowerCase().includes("linked action")) {
+        blockers.push("work-watch: first briefing did not prioritize the open linked action");
+      }
+      if (!hasText(firstBrief.sections.next_actions.map((action) => action.title), linkedAction.title)) {
+        blockers.push("work-watch: first briefing next actions do not surface the existing linked action");
+      }
     }
 
     const correctedProgram = updateProgram(storage, initialProgram.id, {
@@ -106,6 +174,7 @@ export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> 
     if (!correctedProgram) {
       blockers.push("work-watch: correction step failed to update the Program");
     }
+    completeTask(storage, linkedAction.id);
 
     const secondBrief = await generateBriefing(ctx);
     if (!secondBrief) {
@@ -121,8 +190,21 @@ export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> 
           blockers.push(`work-watch: corrected briefing still surfaces suppressed assumption "${suppressed}"`);
         }
       }
+      if (firstBrief && secondBrief.sections.recommendation.summary === firstBrief.sections.recommendation.summary) {
+        blockers.push("work-watch: recommendation did not change after linked action completion and correction");
+      }
       if (!secondBrief.sections.recommendation?.summary.includes(initialProgram.title)) {
         warnings.push("work-watch: corrected briefing recommendation no longer references the Program title");
+      }
+      if (hasText(secondBrief.sections.next_actions.map((action) => action.title), linkedAction.title)) {
+        blockers.push("work-watch: corrected briefing still repeats the completed linked action");
+      }
+      const secondBriefSignals = [
+        ...secondBrief.sections.what_changed,
+        ...secondBrief.sections.evidence.map((item) => item.detail),
+      ];
+      if (!hasText(secondBriefSignals, "completed recently")) {
+        blockers.push("work-watch: corrected briefing does not surface the linked action completion as a change signal");
       }
       if (!secondBrief.sections.correction_hook?.prompt) {
         blockers.push("work-watch: corrected briefing is missing a correction hook");
@@ -139,7 +221,7 @@ export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> 
     "runtime-scenario:work-watch",
     blockers.length > 0
       ? "Executable work-watch scenario failed."
-      : "Executed work-watch against real Program and Brief runtime paths using deterministic fallback generation.",
+      : "Executed work-watch against real Ask-created Program, linked Action, and Brief runtime paths using deterministic fallback generation.",
     blockers,
     warnings,
   );

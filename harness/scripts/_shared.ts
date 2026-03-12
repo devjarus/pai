@@ -49,6 +49,11 @@ export interface HarnessScenario {
     expected_memory_update: string[];
     expected_brief_change: string[];
   };
+  action_follow_through?: {
+    linked_action_title: string;
+    expected_first_brief_focus: string[];
+    expected_next_brief_change: string[];
+  };
   expected_next_brief_behavior: {
     should_reflect_correction: boolean;
     suppressed_old_assumptions: string[];
@@ -211,6 +216,23 @@ export function validateScenario(relativePath: string, scenario: Partial<Harness
     }
     if (!isStringArray(correction.expected_brief_change)) {
       blockers.push(`${relativePath}: correction_step.expected_brief_change must be a non-empty string array`);
+    }
+  }
+
+  const actionFollowThrough = scenario.action_follow_through;
+  if (actionFollowThrough !== undefined) {
+    if (!actionFollowThrough || typeof actionFollowThrough !== "object") {
+      blockers.push(`${relativePath}: action_follow_through must be an object when present`);
+    } else {
+      if (!isNonEmptyString(actionFollowThrough.linked_action_title)) {
+        blockers.push(`${relativePath}: action_follow_through.linked_action_title is required when action_follow_through is present`);
+      }
+      if (!isStringArray(actionFollowThrough.expected_first_brief_focus)) {
+        blockers.push(`${relativePath}: action_follow_through.expected_first_brief_focus must be a non-empty string array when action_follow_through is present`);
+      }
+      if (!isStringArray(actionFollowThrough.expected_next_brief_change)) {
+        blockers.push(`${relativePath}: action_follow_through.expected_next_brief_change must be a non-empty string array when action_follow_through is present`);
+      }
     }
   }
 
