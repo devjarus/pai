@@ -92,6 +92,30 @@ describe("Tasks", () => {
     expect(tasks[0]!.title).toBe("High priority"); // high first
   });
 
+  it("should persist task source linkage for actions", () => {
+    const task = addTask(storage, {
+      title: "Review blocker owners",
+      sourceType: "program",
+      sourceId: "program-123",
+      sourceLabel: "Project Atlas launch readiness",
+    });
+
+    const [stored] = storage.query<{
+      source_type: string | null;
+      source_id: string | null;
+      source_label: string | null;
+    }>(
+      "SELECT source_type, source_id, source_label FROM tasks WHERE id = ?",
+      [task.id],
+    );
+
+    expect(stored).toEqual({
+      source_type: "program",
+      source_id: "program-123",
+      source_label: "Project Atlas launch readiness",
+    });
+  });
+
   it("should edit a task title", () => {
     const task = addTask(storage, { title: "Old title", priority: "low" });
     editTask(storage, task.id, { title: "New title" });

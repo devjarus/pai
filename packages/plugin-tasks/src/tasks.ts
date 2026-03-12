@@ -26,6 +26,15 @@ export const taskMigrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    up: `
+      ALTER TABLE tasks ADD COLUMN source_type TEXT;
+      ALTER TABLE tasks ADD COLUMN source_id TEXT;
+      ALTER TABLE tasks ADD COLUMN source_label TEXT;
+      CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source_type, source_id);
+    `,
+  },
 ];
 
 export interface Task {
@@ -38,6 +47,9 @@ export interface Task {
   due_date: string | null;
   created_at: string;
   completed_at: string | null;
+  source_type: TaskSourceType | null;
+  source_id: string | null;
+  source_label: string | null;
 }
 
 export interface Goal {
@@ -49,6 +61,7 @@ export interface Goal {
 }
 
 export type TaskStatusFilter = "open" | "done" | "all";
+export type TaskSourceType = "briefing" | "program";
 
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
@@ -56,16 +69,38 @@ const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
 
 export function addTask(
   storage: Storage,
-  input: { title: string; description?: string; priority?: string; goalId?: string; dueDate?: string },
+  input: {
+    title: string;
+    description?: string;
+    priority?: string;
+    goalId?: string;
+    dueDate?: string;
+    sourceType?: TaskSourceType;
+    sourceId?: string;
+    sourceLabel?: string;
+  },
 ): Task {
   const title = input.title.trim();
   if (!title) throw new Error("Task title cannot be empty.");
   const priority = input.priority ?? "medium";
   if (!VALID_PRIORITIES.has(priority)) throw new Error(`Invalid priority "${priority}". Use: low, medium, high.`);
+  if (input.sourceType && !input.sourceId?.trim()) {
+    throw new Error("Task sourceId is required when sourceType is provided.");
+  }
   const id = nanoid();
   storage.run(
-    "INSERT INTO tasks (id, title, description, priority, goal_id, due_date) VALUES (?, ?, ?, ?, ?, ?)",
-    [id, title, input.description ?? null, priority, input.goalId ?? null, input.dueDate ?? null],
+    "INSERT INTO tasks (id, title, description, priority, goal_id, due_date, source_type, source_id, source_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [
+      id,
+      title,
+      input.description ?? null,
+      priority,
+      input.goalId ?? null,
+      input.dueDate ?? null,
+      input.sourceType ?? null,
+      input.sourceId ?? null,
+      input.sourceLabel ?? null,
+    ],
   );
   return storage.query<Task>("SELECT * FROM tasks WHERE id = ?", [id])[0]!;
 }

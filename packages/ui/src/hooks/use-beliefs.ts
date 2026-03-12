@@ -4,6 +4,7 @@ import {
   searchMemory,
   remember,
   forgetBelief,
+  correctBelief,
   updateBelief,
   clearAllMemory,
   getStats,
@@ -78,6 +79,18 @@ export function useUpdateBelief() {
       updateBelief(input.id, input.statement),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: beliefKeys.all });
+    },
+  });
+}
+
+export function useCorrectBelief() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; statement: string; note?: string }) =>
+      correctBelief(input.id, { statement: input.statement, note: input.note }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: beliefKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["inbox"] });
     },
   });
 }

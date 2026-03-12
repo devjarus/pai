@@ -82,9 +82,9 @@ export { knowledgeMigrations, chunkContent, hasSource, listSources, getSourceChu
 export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult, KnowledgeCleanupResult } from "./knowledge.js";
 
 // Memory
-export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, updateBeliefContent, memoryStats, memoryCommands, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, generateMemoryFile, backfillSubjects, consolidateConversation, findContradictions, getCorePreferences } from "./memory/index.js";
+export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, correctBelief, updateBeliefContent, memoryStats, memoryCommands, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, generateMemoryFile, backfillSubjects, consolidateConversation, findContradictions, getCorePreferences } from "./memory/index.js";
 export { remember } from "./memory/index.js";
-export type { Belief, Episode, BeliefChange, MemoryStats, MemoryExport, MemoryExportV1, MemoryExportV2, SimilarBelief, ReflectionResult, UnifiedRetrievalResult, ConsolidationResult } from "./memory/index.js";
+export type { Belief, Episode, BeliefChange, CorrectBeliefResult, MemoryStats, MemoryExport, MemoryExportV1, MemoryExportV2, SimilarBelief, ReflectionResult, UnifiedRetrievalResult, ConsolidationResult } from "./memory/index.js";
 
 // Timezone
 export { formatDateTime, currentDateBlock } from "./timezone.js";

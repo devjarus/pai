@@ -9,16 +9,19 @@ interface ToolScheduleActionProps {
 }
 
 const labels: Record<string, string> = {
+  program_create: "Creating program",
+  program_list: "Listing programs",
+  program_delete: "Deleting program",
   schedule_create: "Creating schedule",
   schedule_list: "Listing schedules",
   schedule_delete: "Deleting schedule",
 };
 
 export function ToolScheduleAction({ toolName, state, input, output }: ToolScheduleActionProps) {
-  const label = labels[toolName] ?? "Managing schedule";
+  const label = labels[toolName] ?? "Managing program";
 
   if (state === "input-available") {
-    const detail = input?.label ?? input?.id ?? "";
+    const detail = input?.title ?? input?.label ?? input?.id ?? "";
     return (
       <Card className="gap-0 rounded-lg border-border/50 py-0 shadow-none">
         <CardContent className="flex items-center gap-2 px-3 py-2.5">

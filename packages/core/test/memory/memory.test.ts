@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
-import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, pruneBeliefs, reflect, mergeDuplicates, exportMemory, importMemory, memoryStats, semanticSearch, linkBeliefs, getLinkedBeliefs, recordAccess, countSupportingEpisodes, synthesize, findContradictions } from "../../src/memory/memory.js";
+import { memoryMigrations, createEpisode, listEpisodes, createBelief, searchBeliefs, listBeliefs, linkBeliefToEpisode, reinforceBelief, effectiveConfidence, logBeliefChange, getBeliefHistory, getMemoryContext, cosineSimilarity, storeEmbedding, findSimilarBeliefs, storeEpisodeEmbedding, findSimilarEpisodes, forgetBelief, correctBelief, pruneBeliefs, reflect, mergeDuplicates, exportMemory, importMemory, memoryStats, semanticSearch, linkBeliefs, getLinkedBeliefs, recordAccess, countSupportingEpisodes, synthesize, findContradictions } from "../../src/memory/memory.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -229,6 +229,39 @@ describe("Memory", () => {
     forgetBelief(storage, belief.id);
     const history = getBeliefHistory(storage, belief.id);
     expect(history.some((h) => h.change_type === "forgotten")).toBe(true);
+  });
+
+  it("should correct a belief by invalidating it and creating a replacement", async () => {
+    const belief = createBelief(storage, {
+      statement: "User prefers broad status updates",
+      confidence: 0.7,
+      type: "preference",
+      importance: 7,
+      subject: "owner",
+    });
+    const llm = {
+      embed: vi.fn().mockResolvedValue({ embedding: [0.2, 0.3, 0.4] }),
+    } as unknown as LLMClient;
+
+    const result = await correctBelief(storage, llm, belief.id, {
+      statement: "User prefers concise blocker-focused updates",
+    });
+
+    expect(result.invalidatedBelief.status).toBe("invalidated");
+    expect(result.invalidatedBelief.superseded_by).toBe(result.replacementBelief.id);
+    expect(result.replacementBelief.statement).toBe("User prefers concise blocker-focused updates");
+    expect(result.replacementBelief.supersedes).toBe(belief.id);
+    expect(result.replacementBelief.type).toBe("preference");
+    expect(result.replacementBelief.importance).toBe(7);
+    expect(result.replacementBelief.subject).toBe("owner");
+    expect(listBeliefs(storage).map((item) => item.id)).toContain(result.replacementBelief.id);
+    expect(listBeliefs(storage).map((item) => item.id)).not.toContain(belief.id);
+
+    const history = getBeliefHistory(storage, belief.id);
+    expect(history.some((item) => item.change_type === "invalidated")).toBe(true);
+    expect(vi.mocked(llm.embed)).toHaveBeenCalledWith("User prefers concise blocker-focused updates", {
+      telemetry: { process: "embed.memory" },
+    });
   });
 
   it("should prune beliefs below threshold", () => {

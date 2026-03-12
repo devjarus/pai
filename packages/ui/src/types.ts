@@ -304,6 +304,8 @@ export interface RecentError {
   startedAt: string;
 }
 
+export type TaskSourceType = "briefing" | "program";
+
 export interface Task {
   id: string;
   title: string;
@@ -314,6 +316,9 @@ export interface Task {
   due_date: string | null;
   created_at: string;
   completed_at: string | null;
+  source_type: TaskSourceType | null;
+  source_id: string | null;
+  source_label: string | null;
 }
 
 export interface Goal {
@@ -358,12 +363,28 @@ export interface BriefingSection {
   }>;
 }
 
+export interface BriefingRawContextBelief {
+  id: string;
+  statement: string;
+  type: BeliefType;
+  confidence: number;
+  updatedAt: string;
+  accessCount: number;
+  isNew: boolean;
+  subject?: string;
+}
+
+export interface BriefingRawContext {
+  beliefs?: BriefingRawContextBelief[];
+}
+
 export interface Briefing {
   id: string;
   generatedAt: string;
-  sections: BriefingSection;
+  sections: BriefingSection | Record<string, unknown>;
   status: string;
   type?: "daily" | "research";
+  rawContext?: BriefingRawContext | null;
 }
 
 export interface ResearchBriefing {

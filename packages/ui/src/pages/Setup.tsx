@@ -94,7 +94,7 @@ export default function Setup() {
     setIntroError("");
     const promises: Promise<unknown>[] = [];
     if (name.trim()) promises.push(remember(`My name is ${name.trim()}`));
-    if (work.trim()) promises.push(remember(`I work on ${work.trim()}`));
+    if (work.trim()) promises.push(remember(`I want pai to keep track of ${work.trim()}`));
     if (preferences.trim()) promises.push(remember(preferences.trim()));
     if (promises.length === 0) {
       localStorage.setItem("pai_onboarded", "1");
@@ -124,7 +124,7 @@ export default function Setup() {
             <SparklesIcon className="size-6 text-primary" />
           </div>
           <CardTitle className="text-center font-mono text-lg font-semibold">
-            {step === "account" ? "Set up pai" : step === "llm" ? "Connect your AI" : "Welcome to pai"}
+            {step === "account" ? "Set up pai" : step === "llm" ? "Connect your AI" : "Set your first context"}
           </CardTitle>
           <StepIndicator current={step} />
         </CardHeader>
@@ -170,27 +170,27 @@ export default function Setup() {
           {step === "intro" && (
             <>
               <p className="mb-4 text-center text-xs text-muted-foreground">
-                Tell me a bit about yourself so I can be more helpful.
+                Tell me what you want me to keep track of so your next brief starts with the right preferences and constraints.
               </p>
               <form onSubmit={handleIntroSubmit} className="space-y-4">
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">What do you work on?</label>
-                  <textarea value={work} onChange={(e) => setWork(e.target.value)} placeholder="e.g. Full-stack web apps with React and Python" rows={2} autoFocus
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">What decisions or commitments matter most right now?</label>
+                  <textarea value={work} onChange={(e) => setWork(e.target.value)} placeholder="e.g. launch readiness, vendor evaluations, travel planning" rows={2} autoFocus
                     className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25" />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Any preferences I should know?</label>
-                  <textarea value={preferences} onChange={(e) => setPreferences(e.target.value)} placeholder="e.g. I prefer TypeScript, dark mode, and concise answers" rows={2}
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">What preferences or constraints should I remember?</label>
+                  <textarea value={preferences} onChange={(e) => setPreferences(e.target.value)} placeholder="e.g. brief me concisely, cite evidence, prioritize blockers over status theater" rows={2}
                     className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25" />
                 </div>
                 {introError && <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{introError}</p>}
                 <Button type="submit" className="w-full" disabled={introSaving}>
-                  {introSaving ? "Saving..." : "Get Started"}
+                  {introSaving ? "Saving..." : "Open Ask"}
                 </Button>
               </form>
               <button type="button" onClick={handleSkipIntro} disabled={introSaving}
                 className="mt-3 w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground">
-                Skip for now
+                Skip and open Ask
               </button>
             </>
           )}

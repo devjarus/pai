@@ -6,6 +6,7 @@ import {
   PanelLeftCloseIcon,
   GitBranchIcon,
   ChevronRightIcon,
+  CalendarClockIcon,
 } from "lucide-react";
 import { useAgents } from "@/hooks/use-agents";
 import { useThreads } from "@/hooks/use-threads";
@@ -24,6 +25,11 @@ interface ChatHeaderProps {
   showMemories: boolean;
   onToggleMemories: () => void;
   memoryCount: number;
+  canKeepWatching?: boolean;
+  keepWatchingPending?: boolean;
+  keepWatchingLabel?: string;
+  keepWatchingTooltip?: string;
+  onKeepWatching?: () => void;
   onClear: () => void;
   onSelectThread?: (threadId: string) => void;
 }
@@ -38,6 +44,11 @@ export function ChatHeader({
   showMemories,
   onToggleMemories,
   memoryCount,
+  canKeepWatching = false,
+  keepWatchingPending = false,
+  keepWatchingLabel = "Keep watching",
+  keepWatchingTooltip = "Turn this thread into a Program",
+  onKeepWatching,
   onClear,
   onSelectThread,
 }: ChatHeaderProps) {
@@ -125,6 +136,29 @@ export function ChatHeader({
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          {activeThreadId && onKeepWatching && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onKeepWatching}
+                  disabled={!canKeepWatching || keepWatchingPending}
+                  aria-label="Keep watching this"
+                  className="gap-1.5"
+                >
+                  <CalendarClockIcon className="size-3.5" />
+                  <span className="hidden text-xs lg:inline">
+                    {keepWatchingPending ? "Creating..." : keepWatchingLabel}
+                  </span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {keepWatchingTooltip}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

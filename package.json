@@ -1,7 +1,7 @@
 {
   "name": "personal-ai",
   "private": true,
-  "description": "Personal AI agent platform — chat, memory, knowledge base, tasks, web search, and plugins",
+  "description": "Self-hosted AI for recurring decisions, recommendation-first briefs, and remembered preferences",
   "keywords": [
     "ai-memory",
     "agent-memory",

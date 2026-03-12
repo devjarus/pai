@@ -226,6 +226,16 @@ export function updateBelief(id: string, statement: string): Promise<Belief> {
   });
 }
 
+export function correctBelief(id: string, input: { statement: string; note?: string }): Promise<{
+  invalidatedBelief: Belief;
+  replacementBelief: Belief;
+}> {
+  return request(`/beliefs/${id}/correct`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function clearAllMemory(): Promise<{ ok: boolean; cleared: number }> {
   return request("/memory/clear", { method: "POST", body: "{}" });
 }
@@ -431,10 +441,12 @@ export function browseDir(path?: string): Promise<BrowseResult> {
 
 // ---- Tasks ----
 
-export function getTasks(params?: { status?: string; goalId?: string }): Promise<Task[]> {
+export function getTasks(params?: { status?: string; goalId?: string; sourceType?: "briefing" | "program"; sourceId?: string }): Promise<Task[]> {
   const qs = new URLSearchParams();
   if (params?.status) qs.set("status", params.status);
   if (params?.goalId) qs.set("goalId", params.goalId);
+  if (params?.sourceType) qs.set("sourceType", params.sourceType);
+  if (params?.sourceId) qs.set("sourceId", params.sourceId);
   const query = qs.toString();
   return request<Task[]>(`/tasks${query ? `?${query}` : ""}`);
 }
@@ -445,6 +457,9 @@ export function createTask(input: {
   priority?: string;
   dueDate?: string;
   goalId?: string;
+  sourceType?: "briefing" | "program";
+  sourceId?: string;
+  sourceLabel?: string;
 }): Promise<Task> {
   return request<Task>("/tasks", {
     method: "POST",
@@ -682,6 +697,8 @@ export function createProgramApi(data: {
   executionMode?: ReportExecution;
   intervalHours?: number;
   startAt?: string;
+  chatId?: number | null;
+  threadId?: string | null;
   preferences?: string[];
   constraints?: string[];
   openQuestions?: string[];

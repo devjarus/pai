@@ -12,11 +12,11 @@ import type { Task } from "../types";
 
 export const taskKeys = {
   all: ["tasks"] as const,
-  list: (params?: { status?: string; goalId?: string }) =>
+  list: (params?: { status?: string; goalId?: string; sourceType?: "briefing" | "program"; sourceId?: string }) =>
     ["tasks", "list", params] as const,
 };
 
-export function useTasks(params?: { status?: string; goalId?: string }) {
+export function useTasks(params?: { status?: string; goalId?: string; sourceType?: "briefing" | "program"; sourceId?: string }) {
   return useQuery({
     queryKey: taskKeys.list(params),
     queryFn: () => getTasks(params),
@@ -32,6 +32,9 @@ export function useCreateTask() {
       priority?: string;
       dueDate?: string;
       goalId?: string;
+      sourceType?: "briefing" | "program";
+      sourceId?: string;
+      sourceLabel?: string;
     }) => createTask(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.all });

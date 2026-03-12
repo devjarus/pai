@@ -48,6 +48,35 @@ export interface BriefingSection {
   };
 }
 
+export interface BriefingBeliefInput {
+  id: string;
+  statement: string;
+  type: string;
+  confidence: number;
+  updatedAt: string;
+  accessCount: number;
+  isNew: boolean;
+  subject?: string;
+}
+
+export interface BriefingContextInput {
+  ownerName: string;
+  date: string;
+  time: string;
+  tasks: Array<{ id: string; title: string; priority: string; dueDate: string | null }>;
+  recentlyCompleted: Array<{ title: string; completedAt: string | null }>;
+  goals: Array<{ title: string }>;
+  programs: BriefingProgramInput[];
+  beliefs: BriefingBeliefInput[];
+  recentActivity: string[];
+  stats: {
+    totalBeliefs: number;
+    avgConfidence: number;
+    episodes: number;
+  };
+  knowledgeSources: Array<{ title: string; url: string }>;
+}
+
 export interface BriefingRow {
   id: string;
   generated_at: string;
@@ -73,6 +102,7 @@ export interface Briefing {
   attemptCount?: number;
   lastAttemptAt?: string | null;
   sourceKind?: BackgroundJobSourceKind;
+  rawContext?: BriefingContextInput | null;
 }
 
 export const briefingMigrations: Migration[] = [
@@ -108,6 +138,15 @@ export const briefingMigrations: Migration[] = [
     `,
   },
 ];
+
+function parseRawContext(rawContext: string | null): BriefingContextInput | null {
+  if (!rawContext) return null;
+  try {
+    return JSON.parse(rawContext) as BriefingContextInput;
+  } catch {
+    return null;
+  }
+}
 
 export function getLatestBriefing(storage: PluginContext["storage"]): Briefing | null {
   const rows = storage.query<BriefingRow>(
@@ -148,6 +187,7 @@ export function getBriefingById(storage: PluginContext["storage"], id: string): 
     attemptCount: row.attempt_count ?? 0,
     lastAttemptAt: row.last_attempt_at,
     sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "maintenance",
+    rawContext: parseRawContext(row.raw_context),
   };
 }
 
@@ -283,7 +323,7 @@ function pruneOldBriefings(storage: PluginContext["storage"]): void {
   );
 }
 
-interface BriefingProgramInput {
+export interface BriefingProgramInput {
   id: string;
   title: string;
   question: string;
@@ -295,33 +335,6 @@ interface BriefingProgramInput {
   preferences: string[];
   constraints: string[];
   openQuestions: string[];
-}
-
-interface BriefingBeliefInput {
-  statement: string;
-  type: string;
-  confidence: number;
-  updatedAt: string;
-  accessCount: number;
-  isNew: boolean;
-}
-
-interface BriefingContextInput {
-  ownerName: string;
-  date: string;
-  time: string;
-  tasks: Array<{ id: string; title: string; priority: string; dueDate: string | null }>;
-  recentlyCompleted: Array<{ title: string; completedAt: string | null }>;
-  goals: Array<{ title: string }>;
-  programs: BriefingProgramInput[];
-  beliefs: BriefingBeliefInput[];
-  recentActivity: string[];
-  stats: {
-    totalBeliefs: number;
-    avgConfidence: number;
-    episodes: number;
-  };
-  knowledgeSources: Array<{ title: string; url: string }>;
 }
 
 function confidenceLabel(value: number): "low" | "medium" | "high" {
@@ -673,12 +686,14 @@ export async function generateBriefing(
       openQuestions: program.openQuestions,
     })),
     beliefs: topBeliefs.map((belief) => ({
+      id: belief.id,
       statement: belief.statement,
       type: belief.type,
       confidence: belief.confidence,
       updatedAt: belief.updated_at,
       accessCount: belief.access_count,
       isNew: Date.now() - new Date(belief.updated_at).getTime() < 24 * 60 * 60 * 1000,
+      subject: belief.subject,
     })),
     recentActivity: recentEpisodes.map((episode) => episode.content.slice(0, 100)),
     stats: {

@@ -33,6 +33,8 @@ export function useCreateProgram() {
       executionMode?: "research" | "analysis";
       intervalHours?: number;
       startAt?: string;
+      chatId?: number | null;
+      threadId?: string | null;
       preferences?: string[];
       constraints?: string[];
       openQuestions?: string[];

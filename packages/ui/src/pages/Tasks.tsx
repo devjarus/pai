@@ -57,6 +57,12 @@ const priorityStyles: Record<string, string> = {
   low: "bg-muted text-muted-foreground",
 };
 
+function taskSourceLabel(task: Task): string | null {
+  if (!task.source_type) return null;
+  const prefix = task.source_type === "program" ? "Program" : "Brief";
+  return task.source_label ? `${prefix}: ${task.source_label}` : prefix;
+}
+
 export default function Tasks() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"tasks" | "goals">("tasks");
@@ -897,6 +903,11 @@ function TaskRow({
             >
               <TargetIcon className="mr-1 size-3" />
               {goalName}
+            </Badge>
+          )}
+          {taskSourceLabel(task) && (
+            <Badge variant="secondary" className="text-[10px] text-muted-foreground">
+              {taskSourceLabel(task)}
             </Badge>
           )}
         </div>

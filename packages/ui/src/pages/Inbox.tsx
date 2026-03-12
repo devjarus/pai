@@ -2,15 +2,19 @@ import { useState, useEffect, useCallback, useRef, useMemo, createContext, useCo
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { marked } from "marked";
-import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig } from "@/hooks";
+import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig, useCreateProgram, useCorrectBelief, useCreateTask, useTasks } from "@/hooks";
+import type { BriefingRawContextBelief, Task } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import MarkdownContent from "@/components/MarkdownContent";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
 import { parseApiDate } from "@/lib/datetime";
+import { buildInboxProgramDraft } from "@/lib/program-drafts";
 import { specToStaticHtml } from "@/lib/render-to-html";
 import {
   RefreshCwIcon,
@@ -21,8 +25,9 @@ import {
   ArrowLeftIcon,
   SparklesIcon,
   Trash2Icon,
-  SearchIcon,
   ClockIcon,
+  CalendarClockIcon,
+  SearchIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   LoaderIcon,
@@ -193,6 +198,28 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function beliefConfidenceLabel(value: number): "low" | "medium" | "high" {
+  if (value >= 0.8) return "high";
+  if (value >= 0.55) return "medium";
+  return "low";
+}
+
+function actionPriorityForTiming(timing?: string): "low" | "medium" | "high" {
+  const normalized = timing?.toLowerCase() ?? "";
+  if (normalized.includes("now") || normalized.includes("today")) return "high";
+  return "medium";
+}
+
+function buildBriefActionDescription(briefTitle: string, action: { detail?: string; timing?: string }): string {
+  return [
+    action.detail?.trim(),
+    action.timing ? `Timing: ${action.timing}` : null,
+    `From brief: ${briefTitle}`,
+  ]
+    .filter((item): item is string => !!item && item.length > 0)
+    .join("\n\n");
+}
+
 interface InboxItem {
   id: string;
   generatedAt: string;
@@ -283,8 +310,15 @@ export default function Inbox() {
 function InboxDetail({ id }: { id: string }) {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
+  const [selectedBeliefSource, setSelectedBeliefSource] = useState<BriefingRawContextBelief | null>(null);
+  const [correctionStatement, setCorrectionStatement] = useState("");
+  const [correctedBeliefIds, setCorrectedBeliefIds] = useState<Set<string>>(() => new Set());
   const { markRead } = useContext(ReadContext);
+  const { data: tasks = [] } = useTasks({ status: "all" });
   const createThreadMut = useCreateThread();
+  const createProgramMut = useCreateProgram();
+  const createTaskMut = useCreateTask();
+  const correctBeliefMutation = useCorrectBelief();
   const rerunMutation = useRerunResearch();
   const { data: configData } = useConfig();
 
@@ -302,15 +336,70 @@ function InboxDetail({ id }: { id: string }) {
     };
   }, [briefingData]);
 
+  const beliefSources = useMemo(() => {
+    if (item?.type !== "daily") return [];
+    const beliefs = briefingData?.briefing.rawContext?.beliefs;
+    return Array.isArray(beliefs) ? beliefs : [];
+  }, [briefingData, item?.type]);
+  const briefLinkedActions = useMemo(
+    () => tasks.filter((task) => task.source_type === "briefing" && task.source_id === id),
+    [tasks, id],
+  );
+
   useEffect(() => {
     markRead(id);
   }, [id, markRead]);
+
+  useEffect(() => {
+    setCorrectedBeliefIds(new Set());
+    setSelectedBeliefSource(null);
+    setCorrectionStatement("");
+  }, [id]);
 
   useEffect(() => {
     if (briefingData === undefined && !loading) {
       // query finished but no data (error case handled by react-query)
     }
   }, [briefingData, loading]);
+
+  const openCorrectionDialog = (belief: BriefingRawContextBelief) => {
+    setSelectedBeliefSource(belief);
+    setCorrectionStatement(belief.statement);
+  };
+
+  const closeCorrectionDialog = () => {
+    if (correctBeliefMutation.isPending) return;
+    setSelectedBeliefSource(null);
+    setCorrectionStatement("");
+  };
+
+  const handleSubmitCorrection = async () => {
+    if (!selectedBeliefSource) return;
+    const statement = correctionStatement.trim();
+    if (!statement) {
+      toast.error("Enter the corrected belief");
+      return;
+    }
+    if (statement === selectedBeliefSource.statement.trim()) {
+      toast.error("Update the statement before saving the correction");
+      return;
+    }
+    try {
+      await correctBeliefMutation.mutateAsync({
+        id: selectedBeliefSource.id,
+        statement,
+      });
+      setCorrectedBeliefIds((prev) => {
+        const next = new Set(prev);
+        next.add(selectedBeliefSource.id);
+        return next;
+      });
+      toast.success("Correction saved. Future briefs will use the replacement belief.");
+      closeCorrectionDialog();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save correction");
+    }
+  };
 
   const handleStartChat = async () => {
     if (!item) return;
@@ -331,6 +420,50 @@ function InboxDetail({ id }: { id: string }) {
       toast.error("Failed to create chat thread");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleKeepWatching = async () => {
+    if (!item) return;
+    try {
+      const draft = item.type === "research"
+        ? buildInboxProgramDraft({
+            type: "research",
+            title: sections.goal ?? "Research follow-through",
+            goal: sections.goal,
+            executionMode: sections.execution ?? "research",
+          })
+        : buildInboxProgramDraft({
+            type: "daily",
+            title: dailyBriefingTitle(item.sections),
+            recommendationSummary: isDailyBriefingV2(item.sections) ? item.sections.recommendation?.summary : undefined,
+            rationale: isDailyBriefingV2(item.sections) ? item.sections.recommendation?.rationale : undefined,
+          });
+      await createProgramMut.mutateAsync(draft);
+      toast.success("Program created. pai will keep watching this.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create program");
+    }
+  };
+
+  const handleCreateBriefAction = async (action: { title?: string; detail?: string; timing?: string }) => {
+    if (!item || item.type !== "daily" || !action.title) return;
+    if (briefLinkedActions.some((task) => task.title === action.title)) {
+      toast.message("Action already exists for this brief");
+      return;
+    }
+    try {
+      await createTaskMut.mutateAsync({
+        title: action.title,
+        description: buildBriefActionDescription(dailyBriefingTitle(item.sections), action),
+        priority: actionPriorityForTiming(action.timing),
+        sourceType: "briefing",
+        sourceId: id,
+        sourceLabel: dailyBriefingTitle(item.sections),
+      });
+      toast.success("Action created");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create action");
     }
   };
 
@@ -377,7 +510,7 @@ function InboxDetail({ id }: { id: string }) {
           <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-2 text-muted-foreground hover:text-foreground">
             <ArrowLeftIcon className="h-4 w-4" /> Inbox
           </Button>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {item?.type === "research" && (
               <>
                 <Button
@@ -430,6 +563,15 @@ function InboxDetail({ id }: { id: string }) {
               </>
             )}
             <Button
+              size="sm"
+              onClick={handleKeepWatching}
+              disabled={createProgramMut.isPending}
+              className="gap-2"
+            >
+              <CalendarClockIcon className="h-4 w-4" />
+              {createProgramMut.isPending ? "Creating..." : "Keep watching this"}
+            </Button>
+            <Button
               variant="outline"
               size="sm"
               onClick={handleStartChat}
@@ -461,7 +603,15 @@ function InboxDetail({ id }: { id: string }) {
         <Separator className="mb-4 opacity-30 md:mb-6" />
 
         {item.type === "daily" ? (
-          <DailyBriefingDetail sections={item.sections} navigate={navigate} />
+          <DailyBriefingDetail
+            sections={item.sections}
+            navigate={navigate}
+            beliefSources={beliefSources}
+            linkedActions={briefLinkedActions}
+            correctedBeliefIds={correctedBeliefIds}
+            onCorrectBelief={openCorrectionDialog}
+            onCreateAction={handleCreateBriefAction}
+          />
         ) : (
           <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
             <ResultRenderer
@@ -475,19 +625,111 @@ function InboxDetail({ id }: { id: string }) {
           </div>
         )}
 
+        <Dialog
+          open={!!selectedBeliefSource}
+          onOpenChange={(open) => {
+            if (!open) closeCorrectionDialog();
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Correct belief</DialogTitle>
+              <DialogDescription>
+                Replace the belief that influenced this brief. The next brief will use the new belief instead of the old one.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="rounded-md border border-border/30 bg-muted/20 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Current belief</div>
+                <p className="mt-1 text-sm text-foreground">{selectedBeliefSource?.statement}</p>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="belief-correction" className="text-sm font-medium text-foreground">
+                  Replacement belief
+                </label>
+                <Textarea
+                  id="belief-correction"
+                  value={correctionStatement}
+                  onChange={(event) => setCorrectionStatement(event.target.value)}
+                  rows={4}
+                  placeholder="Describe the corrected belief"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={closeCorrectionDialog} disabled={correctBeliefMutation.isPending}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmitCorrection}
+                disabled={
+                  correctBeliefMutation.isPending ||
+                  !selectedBeliefSource ||
+                  correctionStatement.trim().length === 0 ||
+                  correctionStatement.trim() === selectedBeliefSource.statement.trim()
+                }
+              >
+                {correctBeliefMutation.isPending ? "Saving..." : "Save correction"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <div className="h-12" />
       </div>
     </div>
   );
 }
 
-function DailyBriefingDetail({ sections: raw, navigate }: { sections: Record<string, unknown>; navigate: ReturnType<typeof useNavigate> }) {
+function DailyBriefingDetail({
+  sections: raw,
+  navigate,
+  beliefSources,
+  linkedActions,
+  correctedBeliefIds,
+  onCorrectBelief,
+  onCreateAction,
+}: {
+  sections: Record<string, unknown>;
+  navigate: ReturnType<typeof useNavigate>;
+  beliefSources: BriefingRawContextBelief[];
+  linkedActions: Task[];
+  correctedBeliefIds: Set<string>;
+  onCorrectBelief: (belief: BriefingRawContextBelief) => void;
+  onCreateAction: (action: { title?: string; detail?: string; timing?: string }) => void;
+}) {
   return isDailyBriefingV2(raw)
-    ? <DailyBriefingV2Detail sections={raw} navigate={navigate} />
+    ? (
+      <DailyBriefingV2Detail
+        sections={raw}
+        navigate={navigate}
+        beliefSources={beliefSources}
+        linkedActions={linkedActions}
+        correctedBeliefIds={correctedBeliefIds}
+        onCorrectBelief={onCorrectBelief}
+        onCreateAction={onCreateAction}
+      />
+    )
     : <DailyBriefingLegacyDetail sections={raw as DailyBriefingLegacy} navigate={navigate} />;
 }
 
-function DailyBriefingV2Detail({ sections, navigate }: { sections: DailyBriefingV2; navigate: ReturnType<typeof useNavigate> }) {
+function DailyBriefingV2Detail({
+  sections,
+  navigate,
+  beliefSources,
+  linkedActions,
+  correctedBeliefIds,
+  onCorrectBelief,
+  onCreateAction,
+}: {
+  sections: DailyBriefingV2;
+  navigate: ReturnType<typeof useNavigate>;
+  beliefSources: BriefingRawContextBelief[];
+  linkedActions: Task[];
+  correctedBeliefIds: Set<string>;
+  onCorrectBelief: (belief: BriefingRawContextBelief) => void;
+  onCreateAction: (action: { title?: string; detail?: string; timing?: string }) => void;
+}) {
   return (
     <div className="space-y-4 md:space-y-6">
       <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
@@ -587,6 +829,60 @@ function DailyBriefingV2Detail({ sections, navigate }: { sections: DailyBriefing
         </div>
       )}
 
+      {beliefSources.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <BrainIcon className="h-4 w-4 text-emerald-400" />
+            <span className="font-mono text-sm font-semibold text-foreground">Beliefs Behind This Brief</span>
+          </div>
+          <div className="space-y-3">
+            {beliefSources.map((belief) => {
+              const corrected = correctedBeliefIds.has(belief.id);
+              return (
+                <div key={belief.id} className="rounded-md border border-border/20 bg-card/40 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">{belief.statement}</span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {belief.type}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] uppercase">
+                      {beliefConfidenceLabel(belief.confidence)}
+                    </Badge>
+                    {belief.isNew && (
+                      <Badge variant="outline" className="text-[10px] border-emerald-500/20 bg-emerald-500/10 text-emerald-300">
+                        new
+                      </Badge>
+                    )}
+                    {corrected && (
+                      <Badge variant="outline" className="text-[10px] border-emerald-500/20 bg-emerald-500/10 text-emerald-300">
+                        corrected
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {belief.subject && belief.subject !== "owner" ? `About ${belief.subject} · ` : ""}
+                    Updated {timeAgo(belief.updatedAt)} · Used {belief.accessCount} time{belief.accessCount === 1 ? "" : "s"}
+                  </p>
+                  {corrected && (
+                    <p className="mt-2 text-xs text-emerald-300">
+                      Saved as a replacement belief for future briefs.
+                    </p>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={() => navigate("/memory")}>
+                      View Memory
+                    </Button>
+                    <Button size="sm" onClick={() => onCorrectBelief(belief)}>
+                      Correct Belief
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {(sections.next_actions?.length ?? 0) > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -608,6 +904,41 @@ function DailyBriefingV2Detail({ sections, navigate }: { sections: DailyBriefing
                   )}
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">{action.detail}</p>
+                <div className="mt-3">
+                  {linkedActions.some((task) => task.title === action.title) ? (
+                    <Button variant="outline" size="sm" onClick={() => navigate("/tasks")}>
+                      Action Added
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={() => onCreateAction(action)}>
+                      Add Action
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {linkedActions.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <ListTodoIcon className="h-4 w-4 text-amber-400" />
+            <span className="font-mono text-sm font-semibold text-foreground">Actions From This Brief</span>
+          </div>
+          <div className="space-y-3">
+            {linkedActions.map((task) => (
+              <div key={task.id} className="rounded-md border border-border/20 bg-card/40 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">{task.title}</span>
+                  <Badge variant="outline" className="text-[10px] uppercase">
+                    {task.status}
+                  </Badge>
+                </div>
+                {task.description && (
+                  <p className="mt-2 text-xs text-muted-foreground whitespace-pre-line">{task.description}</p>
+                )}
               </div>
             ))}
           </div>
@@ -813,7 +1144,7 @@ function InboxFeed() {
               { icon: BrainIcon, label: "Memory", desc: "What I know about you, always evolving" },
               { icon: BookOpenIcon, label: "Knowledge", desc: "Teach me web pages to reference later" },
               { icon: ListTodoIcon, label: "Tasks", desc: "Your to-do list with AI prioritization" },
-              { icon: SearchIcon, label: "Jobs", desc: "Deep research and swarm analyses" },
+              { icon: CalendarClockIcon, label: "Programs", desc: "Recurring decisions and commitments pai keeps watching" },
               { icon: InboxIcon, label: "Inbox", desc: "Daily briefings appear here as you use the app" },
             ].map(({ icon: Icon, label, desc }) => (
               <div key={label} className="flex items-start gap-3 rounded-md border border-border/30 px-3 py-2.5">

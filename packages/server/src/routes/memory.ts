@@ -7,6 +7,7 @@ import {
   searchBeliefs,
   semanticSearch,
   forgetBelief,
+  correctBelief,
   updateBeliefContent,
   memoryStats,
   remember,
@@ -19,6 +20,11 @@ const rememberSchema = z.object({
 
 const updateBeliefSchema = z.object({
   statement: z.string().min(1, "statement is required").max(10_000, "Statement too long"),
+});
+
+const correctBeliefSchema = z.object({
+  statement: z.string().min(1, "statement is required").max(10_000, "Statement too long"),
+  note: z.string().max(5_000, "Note too long").optional(),
 });
 
 export function registerMemoryRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
@@ -46,6 +52,22 @@ export function registerMemoryRoutes(app: FastifyInstance, { ctx }: ServerContex
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update belief";
       const status = message.includes("not found") ? 404 : 500;
+      return reply.status(status).send({ error: message });
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/beliefs/:id/correct", async (request, reply) => {
+    const { statement, note } = validate(correctBeliefSchema, request.body);
+    try {
+      return await correctBelief(ctx.storage, ctx.llm, request.params.id, { statement, note });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to correct belief";
+      const normalized = message.toLowerCase();
+      const status = normalized.includes("not found")
+        ? 404
+        : normalized.includes("ambiguous") || normalized.includes("must change")
+          ? 400
+          : 500;
       return reply.status(status).send({ error: message });
     }
   });

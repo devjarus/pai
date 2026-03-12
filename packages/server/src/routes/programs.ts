@@ -20,6 +20,8 @@ const createProgramSchema = z.object({
   executionMode: z.enum(["research", "analysis"]).optional(),
   intervalHours: z.number().int().positive().max(720).optional(),
   startAt: z.string().max(30).optional(),
+  chatId: z.number().int().nullable().optional(),
+  threadId: z.string().min(1).max(255).nullable().optional(),
   preferences: z.array(z.string().min(1).max(500)).max(10).optional(),
   constraints: z.array(z.string().min(1).max(500)).max(10).optional(),
   openQuestions: z.array(z.string().min(1).max(500)).max(10).optional(),

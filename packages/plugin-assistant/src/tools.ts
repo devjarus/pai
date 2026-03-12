@@ -8,7 +8,7 @@ import type { BackgroundJob } from "@personal-ai/core";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
-import { createSchedule, listSchedules, deleteSchedule } from "@personal-ai/plugin-schedules";
+import { createProgram, listPrograms, deleteProgram } from "@personal-ai/plugin-schedules";
 import { webSearch, formatSearchResults, type SearchCategory, type TimeRange } from "./web-search.js";
 import { fetchPageAsMarkdown, discoverSubPages } from "./page-fetch.js";
 
@@ -413,61 +413,70 @@ export function createAgentTools(ctx: AgentContext) {
       },
     }),
 
-    schedule_create: tool({
-      description: "Create a recurring scheduled job. Use type='research' for lighter research reports and type='analysis' for deeper multi-agent analysis with visuals. Prefer type='analysis' when the request includes analyze, compare, trend, forecast, chart, graph, visualize, or quantitative reporting. Use start_at to schedule the first run at a specific date/time (e.g., 'tomorrow at 8am').",
+    program_create: tool({
+      description: "Create a Program for an ongoing decision or commitment. Use this when the user asks you to keep watching something, monitor it, check back regularly, or brief them over time. Use execution_mode='analysis' for deeper multi-agent reports with visuals and execution_mode='research' for lighter recurring research. Keep Program setup lightweight and prefer this over schedule language in user-facing flows.",
       inputSchema: z.object({
-        label: z.string().describe("Short name for the schedule (e.g., 'AI news daily')"),
-        goal: z.string().describe("Detailed goal — what to do each time the schedule runs"),
-        type: z.enum(["research", "analysis"]).optional().describe("Execution mode. Use 'analysis' for deeper multi-agent analysis with chart visuals; otherwise use 'research'. Defaults to 'research'."),
-        interval_hours: z.number().optional().describe("Hours between runs (default: 24 = daily). Use 168 for weekly, 12 for twice daily."),
-        start_at: z.string().optional().describe("ISO 8601 date-time for the first run (e.g., '2026-02-27T08:00:00'). If omitted, first run is interval_hours from now."),
+        title: z.string().describe("Short Program title (e.g., 'Atlas launch readiness')"),
+        question: z.string().describe("The recurring question or commitment this Program should keep watching"),
+        family: z.enum(["general", "work", "travel", "buying"]).optional().describe("Optional Program family when the domain is clear"),
+        execution_mode: z.enum(["research", "analysis"]).optional().describe("Use 'analysis' for deeper multi-agent analysis with chart visuals; otherwise use 'research'. Defaults to 'research'."),
+        interval_hours: z.number().optional().describe("Hours between briefs (default: 24 = daily). Use 168 for weekly, 12 for twice daily."),
+        start_at: z.string().optional().describe("ISO 8601 date-time for the first run (e.g., '2026-02-27T08:00:00'). If omitted, the first brief is interval_hours from now."),
+        preferences: z.array(z.string()).optional().describe("Optional user preferences that should shape future briefs"),
+        constraints: z.array(z.string()).optional().describe("Optional constraints or requirements the Program should remember"),
+        open_questions: z.array(z.string()).optional().describe("Optional unresolved questions to keep in view"),
       }),
-      execute: async ({ label, goal, type, interval_hours, start_at }) => {
+      execute: async ({ title, question, family, execution_mode, interval_hours, start_at, preferences, constraints, open_questions }) => {
         try {
           const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
           const chatId = (ctx as unknown as Record<string, unknown>).chatId as number | undefined;
-          const schedule = createSchedule(ctx.storage, {
-            label,
-            goal,
-            type,
+          const program = createProgram(ctx.storage, {
+            title,
+            question,
+            family,
+            executionMode: execution_mode,
             intervalHours: interval_hours,
             startAt: start_at,
             chatId: chatId ?? null,
             threadId: threadId ?? null,
+            preferences,
+            constraints,
+            openQuestions: open_questions,
           });
-          return `Schedule created! "${label}" will run every ${schedule.intervalHours} hours in ${schedule.type} mode. First run at ${formatDateTime(ctx.config.timezone, new Date(schedule.nextRunAt)).full}. Reports will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
+          return `Program created. "${title}" will brief every ${program.intervalHours} hours in ${program.executionMode} mode. First run at ${formatDateTime(ctx.config.timezone, new Date(program.nextRunAt)).full}. Future updates will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
         } catch (err) {
-          return `Failed to create schedule: ${err instanceof Error ? err.message : "unknown error"}`;
+          return `Failed to create Program: ${err instanceof Error ? err.message : "unknown error"}`;
         }
       },
     }),
 
-    schedule_list: tool({
-      description: "List all active scheduled jobs. Use when the user asks about their schedules or recurring tasks.",
+    program_list: tool({
+      description: "List active Programs. Use when the user asks what pai is keeping track of, what recurring decisions are active, or what ongoing watches exist.",
       inputSchema: z.object({}),
       execute: async () => {
-        const schedules = listSchedules(ctx.storage, "active");
-        if (schedules.length === 0) return "No active schedules. You can create one by asking me to schedule a recurring task.";
-        return schedules.map((s) => ({
-          id: s.id,
-          label: s.label,
-          type: s.type,
-          goal: s.goal.slice(0, 100),
-          intervalHours: s.intervalHours,
-          nextRunAt: s.nextRunAt,
-          lastRunAt: s.lastRunAt,
+        const programs = listPrograms(ctx.storage, "active");
+        if (programs.length === 0) return "No active Programs. You can ask me to keep watching something and I'll create one.";
+        return programs.map((program) => ({
+          id: program.id,
+          title: program.title,
+          family: program.family,
+          executionMode: program.executionMode,
+          question: program.question.slice(0, 140),
+          intervalHours: program.intervalHours,
+          nextRunAt: program.nextRunAt,
+          lastRunAt: program.lastRunAt,
         }));
       },
     }),
 
-    schedule_delete: tool({
-      description: "Delete a scheduled job. Use when the user wants to stop/cancel a recurring schedule.",
+    program_delete: tool({
+      description: "Delete a Program. Use when the user wants to stop keeping track of something or cancel a recurring Program.",
       inputSchema: z.object({
-        id: z.string().describe("Schedule ID to delete"),
+        id: z.string().describe("Program ID to delete"),
       }),
       execute: async ({ id }) => {
-        const ok = deleteSchedule(ctx.storage, id);
-        return ok ? "Schedule deleted." : "Schedule not found or already deleted.";
+        const ok = deleteProgram(ctx.storage, id);
+        return ok ? "Program deleted." : "Program not found or already deleted.";
       },
     }),
 

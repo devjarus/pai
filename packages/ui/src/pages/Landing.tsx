@@ -3,13 +3,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   BrainIcon,
-  GlobeIcon,
-  SearchIcon,
-  FlaskConicalIcon,
-  ListTodoIcon,
-  CodeIcon,
-  SmartphoneIcon,
+  FileTextIcon,
   ShieldCheckIcon,
+  RadarIcon,
+  SmartphoneIcon,
   GithubIcon,
   ArrowRightIcon,
   ChevronDownIcon,
@@ -22,39 +19,36 @@ import Orb from "@/components/Orb";
 const features = [
   {
     icon: BrainIcon,
-    title: "Memory that evolves",
-    desc: "Beliefs reinforced, contradicted, decayed, and synthesized over time. Ask it something from three months ago — it remembers.",
+    title: "Programs for recurring decisions",
+    desc: "Track launch readiness, vendor choices, travel plans, buying decisions, and other questions you need revisited over time.",
   },
   {
-    icon: GlobeIcon,
-    title: "Learns from the web",
-    desc: "Point it at any URL and it learns the content. Semantic search and re-ranking, not just keyword matching.",
+    icon: FileTextIcon,
+    title: "Briefs that recommend",
+    desc: "The main output is a decision-ready brief with a recommendation, what changed, evidence, remembered assumptions, and next actions.",
   },
   {
-    icon: SearchIcon,
-    title: "Web search with citations",
-    desc: "Real-time search powered by SearXNG. Every claim backed by an inline source link. Like Perplexity, but private.",
+    icon: ShieldCheckIcon,
+    title: "Memory you can work with",
+    desc: "Preferences, constraints, and corrections stay durable across sessions so the next brief starts with your actual context instead of a blank slate.",
   },
   {
-    icon: FlaskConicalIcon,
-    title: "Deep research",
-    desc: "Spawns specialized agents — flights, stocks, crypto, news — working in parallel to deliver comprehensive reports.",
-  },
-  {
-    icon: ListTodoIcon,
-    title: "Tasks & scheduling",
-    desc: "AI-prioritized tasks. Recurring research — daily briefings, weekly summaries — delivered to your inbox automatically.",
-  },
-  {
-    icon: CodeIcon,
-    title: "Code execution",
-    desc: "Run Python and JavaScript in a sandboxed environment. Data analysis, charts, calculations — right in the conversation.",
+    icon: RadarIcon,
+    title: "Background analysis when it matters",
+    desc: "Use lightweight research or deeper analysis behind the same brief workflow. The execution engine stays behind the scenes.",
   },
   {
     icon: SmartphoneIcon,
-    title: "Works everywhere",
-    desc: "Web UI, Telegram bot, CLI, or integrate with Claude Code / Cursor / Windsurf via the built-in MCP server.",
+    title: "Companion surfaces, not clutter",
+    desc: "The web app is the control center. Telegram, CLI, and MCP extend delivery and follow-through without becoming separate product stories.",
   },
+];
+
+const examples = [
+  "Launch readiness",
+  "Vendor evaluation",
+  "Japan trip planning",
+  "Used EV search",
 ];
 
 export default function Landing() {
@@ -89,11 +83,22 @@ export default function Landing() {
             pai
           </div>
           <p className="mb-4 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            Your Personal AI that actually knows you.
+            Keeps track of ongoing decisions and briefs you with your preferences in mind.
           </p>
-          <p className="mx-auto mb-8 max-w-lg text-base leading-relaxed text-foreground/50">
-            <span className="text-teal-400">Persistent memory.</span> <span className="text-cyan-400">Web search.</span> <span className="text-teal-400">Deep research.</span><br /><span className="text-cyan-400">Knowledge base.</span> <span className="text-teal-400">Tasks.</span> <span className="text-cyan-400">Code execution.</span><br />Self-hosted. Private. Yours.
+          <p className="mx-auto mb-5 max-w-xl text-base leading-relaxed text-foreground/60">
+            Set a recurring question once. pai remembers what matters, keeps watching in the background,
+            and sends recommendation-first briefs when something materially changes.
           </p>
+          <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
+            {examples.map((example) => (
+              <span
+                key={example}
+                className="rounded-full border border-border/60 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur"
+              >
+                {example}
+              </span>
+            ))}
+          </div>
           <div className="flex items-center justify-center gap-3">
             <Button onClick={() => navigate("/login")} className="gap-2">
               Get Started <ArrowRightIcon className="h-4 w-4" />
@@ -118,12 +123,13 @@ export default function Landing() {
 
       {/* Features */}
       <section id="features" className="mx-auto max-w-5xl px-6 py-16">
-        <p className="mb-2 text-center text-sm font-medium uppercase tracking-widest text-muted-foreground">Features</p>
+        <p className="mb-2 text-center text-sm font-medium uppercase tracking-widest text-muted-foreground">Product Loop</p>
         <h2 className="mb-3 text-center text-2xl font-semibold tracking-tight sm:text-3xl">
-          Not another chatbot.
+          One opinionated workflow instead of ten equal surfaces.
         </h2>
-        <p className="mx-auto mb-10 max-w-lg text-center text-base text-muted-foreground">
-          A full agent system with persistent memory, knowledge base, and multi-channel access — running on your machine or your cloud.
+        <p className="mx-auto mb-10 max-w-2xl text-center text-base text-muted-foreground">
+          Ask, keep watching, get briefed, correct what changed, and let the next brief improve.
+          The breadth still exists under the hood, but the product stays centered on Programs, Briefs, Memory, and follow-through.
         </p>
 
         <div className="flex flex-wrap justify-center gap-4">
@@ -141,9 +147,9 @@ export default function Landing() {
       <section className="border-t border-border py-16">
         <div className="mx-auto max-w-2xl px-6 text-center">
           <ShieldCheckIcon className="mx-auto mb-3 h-7 w-7 text-muted-foreground" />
-          <h2 className="mb-2 text-xl font-semibold tracking-tight sm:text-2xl">Your data stays yours.</h2>
+          <h2 className="mb-2 text-xl font-semibold tracking-tight sm:text-2xl">Trust is part of the product.</h2>
           <p className="mx-auto max-w-md text-base text-muted-foreground">
-            Single SQLite file. No cloud dependency. No telemetry. Run it on your laptop, a Raspberry Pi, or Railway. Bring your own LLM — Ollama, OpenAI, Anthropic, Google, or Cerebras.
+            Self-hosted by default, with local storage and your own model provider. The goal is not just automation, but recurring briefs you can trust enough to correct and use.
           </p>
         </div>
       </section>

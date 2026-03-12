@@ -1,26 +1,20 @@
-# pai — Personal AI with Persistent Memory
+# pai — Self-Hosted AI for Recurring Decisions
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/sFecIN?referralCode=g0LiHY&utm_medium=integration&utm_source=template&utm_campaign=generic)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/devjarus/pai)
 
-Personal AI agent platform. Chat via web UI or Telegram, learn from web pages, manage tasks, search the web, and extend with plugins — all running locally on your machine.
+Self-hosted AI for recurring decisions. Start with Ask, let `pai` keep track of what matters in the background, and get recommendation-first briefs shaped by your preferences, constraints, and corrections.
 
-**What makes pai different:** A full agent system with persistent memory, knowledge base, and multi-channel access. Memory evolves over time — beliefs are reinforced, contradicted, decayed, and synthesized. Multi-person aware.
+**What makes pai different:** It is organized around Programs and Briefs instead of broad assistant surface area. Memory evolves over time, recurring questions stay in context, and the next brief improves when you correct the system.
 
 ## Features
 
-- **Web UI** — streaming chat with tool cards, memory explorer, knowledge browser, settings, timeline
-- **Telegram bot** — same agent pipeline, multi-user aware (owner vs. others)
-- **Knowledge base** — learn from web pages, FTS5 prefilter + cosine re-ranking
-- **Persistent memory** — beliefs with lifecycle (reinforce, contradict, decay, synthesize), semantic search
-- **Web search** — SearXNG web search for current information, self-hosted, no rate limits
-- **Background research** — deep research with domain-specific agents (flight, stock, crypto, news)
-- **Sub-agent swarm** — parallel multi-agent task decomposition
-- **Code sandbox** — isolated Python/Node execution for charts and analysis
-- **Task management** — tasks + goals with AI prioritization
-- **MCP server** — 19 tools for Claude Code, Cursor, Windsurf integration
-- **CLI** — `pai` commands with `--json` output and prefix-matched IDs
-- **Plugin architecture** — extend with custom agents, tools, and commands
+- **Programs** — recurring decisions or commitments with cadence, preferences, constraints, and follow-through context
+- **Brief-first home** — recommendation, what changed, evidence, memory assumptions, and next actions delivered in one place
+- **Persistent memory** — beliefs with lifecycle (reinforce, contradict, decay, synthesize), semantic search, and correction-aware context reuse
+- **Background research and analysis** — lighter research or deeper analysis runs feeding the same brief workflow
+- **Companion surfaces** — web UI as the control center, with Telegram, CLI, and MCP as supporting delivery and power-user surfaces
+- **Supporting tools** — web search, knowledge ingestion, sandbox execution, and task tracking remain available without becoming the main product story
 
 ## Quick Start
 
@@ -73,14 +67,13 @@ Open `http://127.0.0.1:3141` after starting the server:
 
 | Page | Description |
 |------|-------------|
-| **Inbox** (`/`) | AI briefing home screen with research reports, domain badges, and refresh. |
-| **Chat** | Streaming chat with tool cards (memory, search, tasks). Thread sidebar. Responsive mobile. |
-| **Jobs** | Background job tracker for research and swarm jobs with agent progress. |
-| **Memory** | Browse beliefs by type/status, semantic search, detail view with confidence/stability. |
-| **Knowledge** | Browse learned sources, view chunks, search knowledge base, learn from URLs. |
-| **Tasks** | Full CRUD with priorities, due dates, goals, and AI suggestions. |
-| **Settings** | LLM provider, model, API key, data directory, Telegram bot config. |
-| **Timeline** | Chronological episodes and belief changes. |
+| **Home** (`/`) | Brief feed for daily and research updates, with recommendation-first detail views and refresh. |
+| **Programs** | Recurring decisions or commitments that `pai` keeps watching over time. |
+| **Ask** | Chat control surface for one-off questions, follow-ups, and creating/refining ongoing work. |
+| **Memory** | Browse remembered preferences, constraints, and other beliefs that shape future briefs. |
+| **Settings** | LLM provider, model, API key, data directory, Telegram bot config, and advanced controls. |
+
+Supporting routes such as Tasks, Knowledge, Jobs, Timeline, and Schedules remain available, but they are secondary surfaces rather than the primary product loop.
 
 ## Telegram Bot
 

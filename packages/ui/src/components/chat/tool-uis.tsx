@@ -177,6 +177,27 @@ export const SwarmStartToolUI = makeAssistantToolUI({
   ),
 });
 
+export const ProgramCreateToolUI = makeAssistantToolUI({
+  toolName: "program_create",
+  render: ({ args, result, status }) => (
+    <ToolScheduleAction state={mapStatus(status)} toolName="program_create" input={args} output={result as any} />
+  ),
+});
+
+export const ProgramListToolUI = makeAssistantToolUI({
+  toolName: "program_list",
+  render: ({ args, result, status }) => (
+    <ToolScheduleAction state={mapStatus(status)} toolName="program_list" input={args} output={result as any} />
+  ),
+});
+
+export const ProgramDeleteToolUI = makeAssistantToolUI({
+  toolName: "program_delete",
+  render: ({ args, result, status }) => (
+    <ToolScheduleAction state={mapStatus(status)} toolName="program_delete" input={args} output={result as any} />
+  ),
+});
+
 export const ScheduleCreateToolUI = makeAssistantToolUI({
   toolName: "schedule_create",
   render: ({ args, result, status }) => (
@@ -388,6 +409,9 @@ export const AllToolUIs = () => (
     <ListBeliefsToolUI />
     <ResearchStartToolUI />
     <SwarmStartToolUI />
+    <ProgramCreateToolUI />
+    <ProgramListToolUI />
+    <ProgramDeleteToolUI />
     <ScheduleCreateToolUI />
     <ScheduleListToolUI />
     <ScheduleDeleteToolUI />

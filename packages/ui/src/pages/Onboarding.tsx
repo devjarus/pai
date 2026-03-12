@@ -23,7 +23,7 @@ export default function Onboarding() {
       promises.push(remember(`My name is ${name.trim()}`));
     }
     if (work.trim()) {
-      promises.push(remember(`I work on ${work.trim()}`));
+      promises.push(remember(`I want pai to keep track of ${work.trim()}`));
     }
     if (preferences.trim()) {
       promises.push(remember(preferences.trim()));
@@ -64,7 +64,7 @@ export default function Onboarding() {
             Welcome to pai
           </CardTitle>
           <p className="text-center text-xs text-muted-foreground">
-            Tell me a bit about yourself so I can be more helpful.
+            Tell me what you want me to keep track of so your future briefs start with the right context.
           </p>
         </CardHeader>
         <CardContent>
@@ -84,24 +84,24 @@ export default function Onboarding() {
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                What do you work on?
+                What decisions or commitments matter most right now?
               </label>
               <textarea
                 value={work}
                 onChange={(e) => setWork(e.target.value)}
-                placeholder="e.g. Full-stack web apps with React and Python"
+                placeholder="e.g. launch readiness, vendor evaluations, travel planning"
                 rows={2}
                 className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
               />
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                Any preferences I should know?
+                What preferences or constraints should I remember?
               </label>
               <textarea
                 value={preferences}
                 onChange={(e) => setPreferences(e.target.value)}
-                placeholder="e.g. I prefer TypeScript, dark mode, and concise answers"
+                placeholder="e.g. brief me concisely, cite evidence, prioritize blockers over status theater"
                 rows={2}
                 className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
               />
@@ -112,7 +112,7 @@ export default function Onboarding() {
               </p>
             )}
             <Button type="submit" className="w-full" disabled={saving}>
-              {saving ? "Saving..." : "Get Started"}
+              {saving ? "Saving..." : "Open Ask"}
             </Button>
           </form>
           <button
@@ -121,7 +121,7 @@ export default function Onboarding() {
             disabled={saving}
             className="mt-3 w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            Skip for now
+            Skip and open Ask
           </button>
         </CardContent>
       </Card>

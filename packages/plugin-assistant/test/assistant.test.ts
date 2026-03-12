@@ -2,13 +2,26 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AgentContext } from "@personal-ai/core";
 import { assistantPlugin } from "../src/index.js";
 
+const { mockCreateProgram, mockListPrograms, mockDeleteProgram } = vi.hoisted(() => ({
+  mockCreateProgram: vi.fn(),
+  mockListPrograms: vi.fn().mockReturnValue([]),
+  mockDeleteProgram: vi.fn(),
+}));
+
 vi.mock("@personal-ai/core", () => ({
   getMemoryContext: vi.fn(),
   remember: vi.fn(),
   listBeliefs: vi.fn().mockReturnValue([]),
+  formatDateTime: vi.fn().mockReturnValue({ full: "Mar 12, 2026 09:00" }),
   resolveSandboxUrl: vi.fn().mockReturnValue(null),
   resolveBrowserUrl: vi.fn().mockReturnValue(null),
   createBrowserTools: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock("@personal-ai/plugin-schedules", () => ({
+  createProgram: mockCreateProgram,
+  listPrograms: mockListPrograms,
+  deleteProgram: mockDeleteProgram,
 }));
 
 vi.mock("@personal-ai/plugin-tasks", () => ({
@@ -31,6 +44,7 @@ function createMockCtx(overrides?: Partial<AgentContext>): AgentContext {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockListPrograms.mockReturnValue([]);
 });
 
 describe("assistantPlugin structure", () => {
@@ -82,6 +96,12 @@ describe("createTools", () => {
     expect(toolNames).toContain("task_list");
     expect(toolNames).toContain("task_add");
     expect(toolNames).toContain("task_done");
+    expect(toolNames).toContain("program_create");
+    expect(toolNames).toContain("program_list");
+    expect(toolNames).toContain("program_delete");
+    expect(toolNames).not.toContain("schedule_create");
+    expect(toolNames).not.toContain("schedule_list");
+    expect(toolNames).not.toContain("schedule_delete");
   });
 
   it("returns 19 tools total", () => {
@@ -98,6 +118,91 @@ describe("createTools", () => {
       expect(tool, `Tool ${name} should have description`).toHaveProperty("description");
       expect(tool, `Tool ${name} should have execute`).toHaveProperty("execute");
     }
+  });
+
+  it("system prompt uses Program language for recurring work", () => {
+    const prompt = assistantPlugin.agent!.systemPrompt ?? "";
+    expect(prompt).toContain("program_create");
+    expect(prompt).toContain("keep watching this");
+    expect(prompt).not.toContain("schedule_create");
+  });
+
+  it("program_create uses the Program adapter", async () => {
+    mockCreateProgram.mockReturnValue({
+      id: "prog_123",
+      title: "Atlas launch readiness",
+      executionMode: "analysis",
+      intervalHours: 24,
+      nextRunAt: "2026-03-12T16:00:00.000Z",
+    });
+
+    const ctx = createMockCtx({
+      config: { timezone: "America/Los_Angeles" } as any,
+    });
+    const tools = assistantPlugin.agent!.createTools!(ctx) as Record<string, any>;
+
+    const result = await tools.program_create.execute({
+      title: "Atlas launch readiness",
+      question: "Keep watching Atlas launch readiness and brief me when blockers change.",
+      family: "work",
+      execution_mode: "analysis",
+      interval_hours: 24,
+      preferences: ["prioritize blockers"],
+      constraints: ["docs signoff required"],
+    });
+
+    expect(mockCreateProgram).toHaveBeenCalledWith(
+      ctx.storage,
+      expect.objectContaining({
+        title: "Atlas launch readiness",
+        question: "Keep watching Atlas launch readiness and brief me when blockers change.",
+        family: "work",
+        executionMode: "analysis",
+        intervalHours: 24,
+        preferences: ["prioritize blockers"],
+        constraints: ["docs signoff required"],
+      }),
+    );
+    expect(result).toContain("Program created");
+  });
+
+  it("program_list returns Programs from the adapter", async () => {
+    mockListPrograms.mockReturnValue([
+      {
+        id: "prog_123",
+        title: "Atlas launch readiness",
+        family: "work",
+        executionMode: "research",
+        question: "Keep watching Atlas launch readiness",
+        intervalHours: 24,
+        nextRunAt: "2026-03-12T16:00:00.000Z",
+        lastRunAt: null,
+      },
+    ]);
+
+    const ctx = createMockCtx();
+    const tools = assistantPlugin.agent!.createTools!(ctx) as Record<string, any>;
+    const result = await tools.program_list.execute({});
+
+    expect(mockListPrograms).toHaveBeenCalledWith(ctx.storage, "active");
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: "prog_123",
+        title: "Atlas launch readiness",
+        family: "work",
+      }),
+    ]);
+  });
+
+  it("program_delete removes Programs through the adapter", async () => {
+    mockDeleteProgram.mockReturnValue(true);
+
+    const ctx = createMockCtx();
+    const tools = assistantPlugin.agent!.createTools!(ctx) as Record<string, any>;
+    const result = await tools.program_delete.execute({ id: "prog_123" });
+
+    expect(mockDeleteProgram).toHaveBeenCalledWith(ctx.storage, "prog_123");
+    expect(result).toBe("Program deleted.");
   });
 });
 

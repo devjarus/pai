@@ -23,6 +23,12 @@ const createTaskSchema = z.object({
   priority: z.enum(["low", "medium", "high"]).optional(),
   dueDate: z.string().optional(),
   goalId: z.string().optional(),
+  sourceType: z.enum(["briefing", "program"]).optional(),
+  sourceId: z.string().min(1).optional(),
+  sourceLabel: z.string().min(1).max(255).optional(),
+}).refine((value) => !value.sourceType || !!value.sourceId, {
+  message: "sourceId is required when sourceType is provided",
+  path: ["sourceId"],
 });
 
 const editTaskSchema = z.object({
@@ -39,16 +45,22 @@ const createGoalSchema = z.object({
 });
 
 export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
-  app.get<{ Querystring: { status?: string; goalId?: string } }>("/api/tasks", async (request) => {
+  app.get<{ Querystring: { status?: string; goalId?: string; sourceType?: string; sourceId?: string } }>("/api/tasks", async (request) => {
     const status = (request.query.status ?? "open") as TaskStatusFilter;
     let tasks = listTasks(ctx.storage, status);
     if (request.query.goalId) {
       tasks = tasks.filter((t) => t.goal_id === request.query.goalId);
     }
+    if (request.query.sourceType) {
+      tasks = tasks.filter((t) => t.source_type === request.query.sourceType);
+    }
+    if (request.query.sourceId) {
+      tasks = tasks.filter((t) => t.source_id === request.query.sourceId);
+    }
     return tasks;
   });
 
-  app.post<{ Body: { title: string; description?: string; priority?: string; dueDate?: string; goalId?: string } }>(
+  app.post<{ Body: { title: string; description?: string; priority?: string; dueDate?: string; goalId?: string; sourceType?: "briefing" | "program"; sourceId?: string; sourceLabel?: string } }>(
     "/api/tasks",
     async (request, reply) => {
       try {

@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { getChatHistory, clearChatHistory, createThread } from "../api";
-import type { Thread } from "../types";
+import type { ChatHistoryMessage, Thread } from "../types";
+import { useCreateProgram, usePrograms } from "@/hooks";
 import { useThreads, threadKeys } from "@/hooks/use-threads";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -12,6 +14,22 @@ import { ThreadSidebar } from "@/components/chat/ThreadSidebar";
 import { MemorySidebar, getMemoryCount } from "@/components/chat/MemorySidebar";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Thread as AssistantThread } from "@/components/assistant-ui/thread";
+import { buildThreadProgramDraft } from "@/lib/program-drafts";
+
+function messageToHistoryEntry(
+  message: { role: string; parts?: Array<{ type?: string; text?: string }> },
+): ChatHistoryMessage | null {
+  if (message.role !== "user" && message.role !== "assistant") return null;
+  const content = (message.parts ?? [])
+    .flatMap((part) => (part.type === "text" && typeof part.text === "string" ? [part.text] : []))
+    .join("\n")
+    .trim();
+  if (!content) return null;
+  return {
+    role: message.role,
+    content,
+  };
+}
 
 export default function Chat() {
   const [selectedAgent, setSelectedAgent] = useState<string | undefined>();
@@ -115,6 +133,8 @@ function ChatInner({
   const handleRef = useChatRuntimeHandle();
   const switchAbortRef = useRef<AbortController | null>(null);
   const initializedRef = useRef(false);
+  const createProgram = useCreateProgram();
+  const { data: programs = [] } = usePrograms();
 
   const isStreaming = handleRef.current?.status === "streaming" || handleRef.current?.status === "submitted";
 
@@ -277,6 +297,45 @@ function ChatInner({
 
   const messages = handleRef.current?.messages ?? [];
   const memoryCount = getMemoryCount(messages);
+  const linkedProgram = activeThreadId
+    ? programs.find((program) => program.threadId === activeThreadId)
+    : undefined;
+  const canKeepWatching = Boolean(
+    activeThreadId &&
+    !isStreaming &&
+    !linkedProgram &&
+    messages.some((message) => message.role === "user"),
+  );
+
+  const handleKeepWatching = useCallback(async () => {
+    if (!activeThreadId || createProgram.isPending || linkedProgram) return;
+    try {
+      const persistedHistory = await getChatHistory(activeThreadId);
+      const runtimeHistory = messages
+        .map((message) =>
+          messageToHistoryEntry(message as { role: string; parts?: Array<{ type?: string; text?: string }> }),
+        )
+        .filter((message): message is ChatHistoryMessage => Boolean(message));
+      const history = persistedHistory.some((message) => message.role === "user" && message.content.trim().length > 0)
+        ? persistedHistory
+        : runtimeHistory;
+      const hasUserMessage = history.some((message) => message.role === "user" && message.content.trim().length > 0);
+      if (!hasUserMessage) {
+        toast.error("Start with a question before turning this into a Program.");
+        return;
+      }
+
+      const draft = buildThreadProgramDraft({
+        threadId: activeThreadId,
+        threadTitle: activeThread?.title,
+        history,
+      });
+      await createProgram.mutateAsync(draft);
+      toast.success("Program created. pai will keep watching this thread.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create program");
+    }
+  }, [activeThread?.title, activeThreadId, createProgram, linkedProgram, messages]);
 
   return (
     <div className="relative flex h-full">
@@ -320,6 +379,11 @@ function ChatInner({
           showMemories={showMemories}
           onToggleMemories={() => setShowMemories(!showMemories)}
           memoryCount={memoryCount}
+          canKeepWatching={canKeepWatching}
+          keepWatchingPending={createProgram.isPending}
+          keepWatchingLabel={linkedProgram ? "Watching" : "Keep watching"}
+          keepWatchingTooltip={linkedProgram ? "This thread already has a Program" : "Turn this thread into a Program"}
+          onKeepWatching={handleKeepWatching}
           onClear={handleClear}
           onSelectThread={switchThread}
         />

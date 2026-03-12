@@ -66,6 +66,7 @@ describe("Briefing CRUD", () => {
     sections: Record<string, unknown>,
     status = "ready",
     generatedAt?: string,
+    rawContext?: Record<string, unknown> | null,
   ) {
     storage.run(
       "INSERT INTO briefings (id, generated_at, sections, raw_context, status) VALUES (?, ?, ?, ?, ?)",
@@ -73,7 +74,7 @@ describe("Briefing CRUD", () => {
         id,
         generatedAt ?? new Date().toISOString().replace("T", " ").slice(0, 19),
         JSON.stringify(sections),
-        null,
+        rawContext ? JSON.stringify(rawContext) : null,
         status,
       ],
     );
@@ -117,6 +118,32 @@ describe("Briefing CRUD", () => {
       expect(result).not.toBeNull();
       expect(result!.id).toBe("abc-123");
       expect(result!.sections).toEqual({ greeting: "hello" });
+    });
+
+    it("hydrates raw_context on detail fetch", () => {
+      insertBriefing(
+        "ctx-123",
+        { greeting: "hello" },
+        "ready",
+        undefined,
+        {
+          beliefs: [{
+            id: "belief_1",
+            statement: "Prefer concise blocker-focused updates",
+            type: "preference",
+            confidence: 0.9,
+            updatedAt: "2026-03-11T08:00:00Z",
+            accessCount: 4,
+            isNew: false,
+            subject: "owner",
+          }],
+        },
+      );
+
+      const result = getBriefingById(storage, "ctx-123");
+      expect(result).not.toBeNull();
+      expect(result!.rawContext?.beliefs?.[0]?.id).toBe("belief_1");
+      expect(result!.rawContext?.beliefs?.[0]?.subject).toBe("owner");
     });
 
     it("returns briefings regardless of status", () => {

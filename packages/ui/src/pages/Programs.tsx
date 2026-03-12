@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   CalendarClockIcon,
   ClockIcon,
+  ListTodoIcon,
   PauseIcon,
   PencilIcon,
   PlayIcon,
@@ -14,13 +15,16 @@ import {
 } from "lucide-react";
 
 import type { Program } from "../api";
+import type { Task } from "../types";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import {
+  useCreateTask,
   useCreateProgram,
   useDeleteProgram,
   usePauseProgram,
   usePrograms,
   useResumeProgram,
+  useTasks,
   useUpdateProgram,
 } from "@/hooks";
 import { Badge } from "@/components/ui/badge";
@@ -101,6 +105,8 @@ function familyTone(family: ProgramFamily): string {
 export default function Programs() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: programs = [], isLoading } = usePrograms();
+  const { data: tasks = [] } = useTasks({ status: "all" });
+  const createTask = useCreateTask();
   const createProgram = useCreateProgram();
   const updateProgram = useUpdateProgram();
   const deleteProgram = useDeleteProgram();
@@ -110,6 +116,8 @@ export default function Programs() {
   const [showDialog, setShowDialog] = useState(searchParams.get("action") === "add");
   const [editing, setEditing] = useState<Program | null>(null);
   const [deleting, setDeleting] = useState<Program | null>(null);
+  const [actionProgram, setActionProgram] = useState<Program | null>(null);
+  const [actionForm, setActionForm] = useState({ title: "", description: "" });
   const [form, setForm] = useState({
     title: "",
     question: "",
@@ -135,6 +143,16 @@ export default function Programs() {
     () => programs.filter((program) => program.status === "paused").length,
     [programs],
   );
+  const actionsByProgramId = useMemo(() => {
+    const grouped = new Map<string, Task[]>();
+    for (const task of tasks) {
+      if (task.source_type !== "program" || !task.source_id) continue;
+      const current = grouped.get(task.source_id) ?? [];
+      current.push(task);
+      grouped.set(task.source_id, current);
+    }
+    return grouped;
+  }, [tasks]);
 
   function resetForm() {
     setForm({
@@ -170,6 +188,14 @@ export default function Programs() {
       openQuestions: linesValue(program.openQuestions),
     });
     setShowDialog(true);
+  }
+
+  function openCreateAction(program: Program) {
+    setActionProgram(program);
+    setActionForm({
+      title: `Review ${program.title}`,
+      description: program.question,
+    });
   }
 
   async function handleSave() {
@@ -226,7 +252,26 @@ export default function Programs() {
     }
   }
 
-  const saving =
+  async function handleCreateAction() {
+    if (!actionProgram || !actionForm.title.trim()) return;
+    try {
+      await createTask.mutateAsync({
+        title: actionForm.title.trim(),
+        description: actionForm.description.trim() || undefined,
+        priority: "medium",
+        sourceType: "program",
+        sourceId: actionProgram.id,
+        sourceLabel: actionProgram.title,
+      });
+      toast.success("Action created");
+      setActionProgram(null);
+      setActionForm({ title: "", description: "" });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create action");
+    }
+  }
+
+  const programSaving =
     createProgram.isPending ||
     updateProgram.isPending ||
     deleteProgram.isPending ||
@@ -287,6 +332,8 @@ export default function Programs() {
               <ProgramRow
                 key={program.id}
                 program={program}
+                actions={actionsByProgramId.get(program.id) ?? []}
+                onCreateAction={openCreateAction}
                 onEdit={openEdit}
                 onDelete={setDeleting}
                 onTogglePause={handleTogglePause}
@@ -426,9 +473,9 @@ export default function Programs() {
             </Button>
             <Button
               onClick={handleSave}
-              disabled={saving || !form.title.trim() || !form.question.trim()}
+              disabled={programSaving || !form.title.trim() || !form.question.trim()}
             >
-              {saving ? "Saving..." : editing ? "Save Changes" : "Create Program"}
+              {programSaving ? "Saving..." : editing ? "Save Changes" : "Create Program"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -455,23 +502,71 @@ export default function Programs() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!actionProgram} onOpenChange={() => setActionProgram(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create Action</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium">Action Title</label>
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                value={actionForm.title}
+                onChange={(event) => setActionForm((current) => ({ ...current, title: event.target.value }))}
+                placeholder="Review blocker owners"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Action Detail</label>
+              <textarea
+                rows={4}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                value={actionForm.description}
+                onChange={(event) => setActionForm((current) => ({ ...current, description: event.target.value }))}
+                placeholder="What should happen next for this program?"
+              />
+            </div>
+            <div className="rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              Linked to program: {actionProgram?.title}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setActionProgram(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateAction} disabled={createTask.isPending || !actionForm.title.trim()}>
+              {createTask.isPending ? "Creating..." : "Create Action"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function ProgramRow({
   program,
+  actions,
+  onCreateAction,
   onEdit,
   onDelete,
   onTogglePause,
 }: {
   program: Program;
+  actions: Task[];
+  onCreateAction: (program: Program) => void;
   onEdit: (program: Program) => void;
   onDelete: (program: Program) => void;
   onTogglePause: (program: Program) => void;
 }) {
   const isPaused = program.status === "paused";
   const visibleSignals = [...program.preferences.slice(0, 2), ...program.constraints.slice(0, 2)].slice(0, 3);
+  const visibleActions = [...actions]
+    .sort((a, b) => (a.status === b.status ? 0 : a.status === "open" ? -1 : 1))
+    .slice(0, 3);
+  const openActionCount = actions.filter((action) => action.status === "open").length;
 
   return (
     <div
@@ -508,6 +603,41 @@ function ProgramRow({
               ))}
             </div>
           )}
+          <div className="mt-4 rounded-lg border border-border/30 bg-background/50 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <ListTodoIcon className="size-4 text-muted-foreground" />
+                  Actions
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {actions.length === 0
+                    ? "No linked actions yet."
+                    : `${openActionCount} open${actions.length !== openActionCount ? `, ${actions.length - openActionCount} done` : ""}`}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => onCreateAction(program)}>
+                Create Action
+              </Button>
+            </div>
+            {visibleActions.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {visibleActions.map((action) => (
+                  <div key={action.id} className="rounded-md border border-border/20 bg-card/40 px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm text-foreground">{action.title}</span>
+                      <Badge variant="outline" className="text-[10px] uppercase">
+                        {action.status}
+                      </Badge>
+                    </div>
+                    {action.description && (
+                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{action.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
             {!isPaused && (
               <span>
