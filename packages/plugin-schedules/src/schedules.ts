@@ -3,12 +3,28 @@ import { randomUUID } from "node:crypto";
 import type { Migration, PluginContext, ReportExecution } from "@personal-ai/core";
 
 export type ProgramFamily = "general" | "work" | "travel" | "buying";
+export type ProgramPhase = "monitor" | "explore" | "decide" | "act" | "prepare";
+export type ProgramDeliveryMode = "interval" | "change-gated";
 
 export interface ProgramContext {
   family: ProgramFamily;
   preferences: string[];
   constraints: string[];
   openQuestions: string[];
+}
+
+export interface ProgramAuthoredState {
+  objective: string | null;
+  phase: ProgramPhase;
+  deliveryMode: ProgramDeliveryMode;
+  sourceRefs: string[];
+}
+
+export interface ProgramRuntimeState {
+  latestBriefId: string | null;
+  lastDeliveredAt: string | null;
+  lastEvaluatedAt: string | null;
+  lastSignalHash: string | null;
 }
 
 export interface ScheduledJob {
@@ -24,6 +40,8 @@ export interface ScheduledJob {
   status: string;
   createdAt: string;
   programContext: ProgramContext;
+  authoredState: ProgramAuthoredState;
+  runtimeState: ProgramRuntimeState;
 }
 
 export interface Program {
@@ -42,6 +60,22 @@ export interface Program {
   preferences: string[];
   constraints: string[];
   openQuestions: string[];
+  objective: string | null;
+  phase: ProgramPhase;
+  deliveryMode: ProgramDeliveryMode;
+  sourceRefs: string[];
+  latestBriefId: string | null;
+  lastDeliveredAt: string | null;
+  lastEvaluatedAt: string | null;
+  lastSignalHash: string | null;
+}
+
+export type ProgramDuplicateReason = "thread" | "equivalent";
+
+export interface ProgramCreateResult {
+  program: Program;
+  created: boolean;
+  duplicateReason: ProgramDuplicateReason | null;
 }
 
 interface ScheduledJobRow {
@@ -57,6 +91,14 @@ interface ScheduledJobRow {
   status: string;
   created_at: string;
   program_context_json: string | null;
+  objective: string | null;
+  phase: string | null;
+  delivery_mode: string | null;
+  source_refs_json: string | null;
+  latest_brief_id: string | null;
+  last_delivered_at: string | null;
+  last_evaluated_at: string | null;
+  last_signal_hash: string | null;
 }
 
 type Storage = PluginContext["storage"];
@@ -70,6 +112,7 @@ interface ScheduleCreateInput {
   chatId?: number | null;
   threadId?: string | null;
   programContext?: Partial<ProgramContext>;
+  authoredState?: Partial<ProgramAuthoredState>;
 }
 
 interface ProgramCreateInput {
@@ -84,6 +127,10 @@ interface ProgramCreateInput {
   preferences?: string[];
   constraints?: string[];
   openQuestions?: string[];
+  objective?: string | null;
+  phase?: ProgramPhase;
+  deliveryMode?: ProgramDeliveryMode;
+  sourceRefs?: string[];
 }
 
 interface ProgramUpdateInput {
@@ -96,6 +143,17 @@ interface ProgramUpdateInput {
   preferences?: string[];
   constraints?: string[];
   openQuestions?: string[];
+  objective?: string | null;
+  phase?: ProgramPhase;
+  deliveryMode?: ProgramDeliveryMode;
+  sourceRefs?: string[];
+}
+
+interface ProgramRuntimeUpdateInput {
+  latestBriefId?: string | null;
+  lastDeliveredAt?: string | null;
+  lastEvaluatedAt?: string | null;
+  lastSignalHash?: string | null;
 }
 
 const DEFAULT_PROGRAM_CONTEXT: ProgramContext = {
@@ -105,9 +163,30 @@ const DEFAULT_PROGRAM_CONTEXT: ProgramContext = {
   openQuestions: [],
 };
 
+const DEFAULT_PROGRAM_RUNTIME_STATE: ProgramRuntimeState = {
+  latestBriefId: null,
+  lastDeliveredAt: null,
+  lastEvaluatedAt: null,
+  lastSignalHash: null,
+};
+
 function toStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeProgramPhase(value: unknown): ProgramPhase {
+  if (value === "explore" || value === "decide" || value === "act" || value === "prepare") {
+    return value;
+  }
+  return "monitor";
+}
+
+function normalizeProgramDeliveryMode(value: unknown): ProgramDeliveryMode {
+  return value === "change-gated" ? "change-gated" : "interval";
 }
 
 function normalizeProgramContext(input?: Partial<ProgramContext> | null): ProgramContext {
@@ -119,11 +198,20 @@ function normalizeProgramContext(input?: Partial<ProgramContext> | null): Progra
   };
 }
 
+function normalizeProgramAuthoredState(input?: Partial<ProgramAuthoredState> | null): ProgramAuthoredState {
+  const objective = typeof input?.objective === "string" ? input.objective.trim() : "";
+  return {
+    objective: objective.length > 0 ? objective : null,
+    phase: normalizeProgramPhase(input?.phase),
+    deliveryMode: normalizeProgramDeliveryMode(input?.deliveryMode),
+    sourceRefs: toStringList(input?.sourceRefs),
+  };
+}
+
 function parseProgramContext(raw: string | null): ProgramContext {
   if (!raw) return DEFAULT_PROGRAM_CONTEXT;
   try {
-    const parsed = JSON.parse(raw) as Partial<ProgramContext>;
-    return normalizeProgramContext(parsed);
+    return normalizeProgramContext(JSON.parse(raw) as Partial<ProgramContext>);
   } catch {
     return DEFAULT_PROGRAM_CONTEXT;
   }
@@ -143,6 +231,25 @@ function rowToJob(row: ScheduledJobRow): ScheduledJob {
     status: row.status,
     createdAt: row.created_at,
     programContext: parseProgramContext(row.program_context_json),
+    authoredState: normalizeProgramAuthoredState({
+      objective: row.objective,
+      phase: (row.phase ?? undefined) as ProgramPhase | undefined,
+      deliveryMode: (row.delivery_mode ?? undefined) as ProgramDeliveryMode | undefined,
+      sourceRefs: (() => {
+        if (!row.source_refs_json) return [];
+        try {
+          return JSON.parse(row.source_refs_json) as string[];
+        } catch {
+          return [];
+        }
+      })(),
+    }),
+    runtimeState: {
+      latestBriefId: row.latest_brief_id,
+      lastDeliveredAt: row.last_delivered_at,
+      lastEvaluatedAt: row.last_evaluated_at,
+      lastSignalHash: row.last_signal_hash,
+    },
   };
 }
 
@@ -163,7 +270,48 @@ function jobToProgram(job: ScheduledJob): Program {
     preferences: job.programContext.preferences,
     constraints: job.programContext.constraints,
     openQuestions: job.programContext.openQuestions,
+    objective: job.authoredState.objective,
+    phase: job.authoredState.phase,
+    deliveryMode: job.authoredState.deliveryMode,
+    sourceRefs: job.authoredState.sourceRefs,
+    latestBriefId: job.runtimeState.latestBriefId,
+    lastDeliveredAt: job.runtimeState.lastDeliveredAt,
+    lastEvaluatedAt: job.runtimeState.lastEvaluatedAt,
+    lastSignalHash: job.runtimeState.lastSignalHash,
   };
+}
+
+function normalizeProgramKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+}
+
+function findDuplicateProgram(storage: Storage, opts: ProgramCreateInput): Program | null {
+  const candidates = listPrograms(storage).filter((program) => program.status !== "deleted");
+  const normalizedQuestion = normalizeProgramKey(opts.question);
+  const normalizedTitle = normalizeProgramKey(opts.title);
+
+  for (const candidate of candidates) {
+    if (opts.threadId && candidate.threadId && candidate.threadId === opts.threadId) {
+      return candidate;
+    }
+
+    const candidateQuestion = normalizeProgramKey(candidate.question);
+    const candidateTitle = normalizeProgramKey(candidate.title);
+    const sameExecution = (opts.executionMode ?? "research") === candidate.executionMode;
+
+    if (sameExecution && candidateQuestion === normalizedQuestion && candidateTitle === normalizedTitle) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function duplicateReasonForProgram(candidate: Program, opts: ProgramCreateInput): ProgramDuplicateReason {
+  if (opts.threadId && candidate.threadId && candidate.threadId === opts.threadId) {
+    return "thread";
+  }
+  return "equivalent";
 }
 
 export const scheduleMigrations: Migration[] = [
@@ -193,6 +341,21 @@ export const scheduleMigrations: Migration[] = [
       ALTER TABLE scheduled_jobs ADD COLUMN program_context_json TEXT NOT NULL DEFAULT '{}';
     `,
   },
+  {
+    version: 3,
+    up: `
+      ALTER TABLE scheduled_jobs ADD COLUMN objective TEXT;
+      ALTER TABLE scheduled_jobs ADD COLUMN phase TEXT NOT NULL DEFAULT 'monitor';
+      ALTER TABLE scheduled_jobs ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'interval';
+      ALTER TABLE scheduled_jobs ADD COLUMN source_refs_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE scheduled_jobs ADD COLUMN latest_brief_id TEXT;
+      ALTER TABLE scheduled_jobs ADD COLUMN last_delivered_at TEXT;
+      ALTER TABLE scheduled_jobs ADD COLUMN last_evaluated_at TEXT;
+      ALTER TABLE scheduled_jobs ADD COLUMN last_signal_hash TEXT;
+      CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_thread ON scheduled_jobs(thread_id);
+      CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_latest_brief ON scheduled_jobs(latest_brief_id);
+    `,
+  },
 ];
 
 export function createSchedule(storage: Storage, opts: ScheduleCreateInput): ScheduledJob {
@@ -203,11 +366,13 @@ export function createSchedule(storage: Storage, opts: ScheduleCreateInput): Sch
     ? new Date(opts.startAt).toISOString()
     : new Date(Date.now() + intervalHours * 60 * 60 * 1000).toISOString();
   const programContext = normalizeProgramContext(opts.programContext);
+  const authoredState = normalizeProgramAuthoredState(opts.authoredState);
 
   storage.run(
     `INSERT INTO scheduled_jobs (
-      id, label, type, goal, interval_hours, chat_id, thread_id, next_run_at, program_context_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, label, type, goal, interval_hours, chat_id, thread_id, next_run_at, program_context_json,
+      objective, phase, delivery_mode, source_refs_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       opts.label,
@@ -218,6 +383,10 @@ export function createSchedule(storage: Storage, opts: ScheduleCreateInput): Sch
       opts.threadId ?? null,
       nextRunAt,
       JSON.stringify(programContext),
+      authoredState.objective,
+      authoredState.phase,
+      authoredState.deliveryMode,
+      JSON.stringify(authoredState.sourceRefs),
     ],
   );
 
@@ -234,6 +403,8 @@ export function createSchedule(storage: Storage, opts: ScheduleCreateInput): Sch
     status: "active",
     createdAt: new Date().toISOString(),
     programContext,
+    authoredState,
+    runtimeState: DEFAULT_PROGRAM_RUNTIME_STATE,
   };
 }
 
@@ -299,22 +470,65 @@ export function markScheduleRun(storage: Storage, id: string): void {
   );
 }
 
+export function recordProgramEvaluation(storage: Storage, id: string, updates: ProgramRuntimeUpdateInput): Program | null {
+  const existing = getProgramById(storage, id);
+  if (!existing) return null;
+
+  storage.run(
+    `UPDATE scheduled_jobs
+     SET latest_brief_id = ?, last_delivered_at = ?, last_evaluated_at = ?, last_signal_hash = ?
+     WHERE id = ?`,
+    [
+      updates.latestBriefId !== undefined ? updates.latestBriefId : existing.latestBriefId,
+      updates.lastDeliveredAt !== undefined ? updates.lastDeliveredAt : existing.lastDeliveredAt,
+      updates.lastEvaluatedAt !== undefined ? updates.lastEvaluatedAt : existing.lastEvaluatedAt,
+      updates.lastSignalHash !== undefined ? updates.lastSignalHash : existing.lastSignalHash,
+      id,
+    ],
+  );
+
+  return getProgramById(storage, id);
+}
+
 export function createProgram(storage: Storage, opts: ProgramCreateInput): Program {
-  return jobToProgram(createSchedule(storage, {
-    label: opts.title,
-    goal: opts.question,
-    type: opts.executionMode,
-    intervalHours: opts.intervalHours,
-    startAt: opts.startAt,
-    chatId: opts.chatId,
-    threadId: opts.threadId,
-    programContext: {
-      family: opts.family,
-      preferences: opts.preferences,
-      constraints: opts.constraints,
-      openQuestions: opts.openQuestions,
-    },
-  }));
+  return ensureProgram(storage, opts).program;
+}
+
+export function ensureProgram(storage: Storage, opts: ProgramCreateInput): ProgramCreateResult {
+  const duplicate = findDuplicateProgram(storage, opts);
+  if (duplicate) {
+    return {
+      program: duplicate,
+      created: false,
+      duplicateReason: duplicateReasonForProgram(duplicate, opts),
+    };
+  }
+
+  return {
+    program: jobToProgram(createSchedule(storage, {
+      label: opts.title,
+      goal: opts.question,
+      type: opts.executionMode,
+      intervalHours: opts.intervalHours,
+      startAt: opts.startAt,
+      chatId: opts.chatId,
+      threadId: opts.threadId,
+      programContext: {
+        family: opts.family,
+        preferences: opts.preferences,
+        constraints: opts.constraints,
+        openQuestions: opts.openQuestions,
+      },
+      authoredState: {
+        objective: opts.objective ?? null,
+        phase: opts.phase,
+        deliveryMode: opts.deliveryMode,
+        sourceRefs: opts.sourceRefs,
+      },
+    })),
+    created: true,
+    duplicateReason: null,
+  };
 }
 
 export function listPrograms(storage: Storage, status?: string): Program[] {
@@ -342,10 +556,17 @@ export function updateProgram(storage: Storage, id: string, updates: ProgramUpda
     constraints: updates.constraints ?? existing.constraints,
     openQuestions: updates.openQuestions ?? existing.openQuestions,
   });
+  const nextAuthored = normalizeProgramAuthoredState({
+    objective: updates.objective !== undefined ? updates.objective : existing.objective,
+    phase: updates.phase ?? existing.phase,
+    deliveryMode: updates.deliveryMode ?? existing.deliveryMode,
+    sourceRefs: updates.sourceRefs ?? existing.sourceRefs,
+  });
 
   storage.run(
     `UPDATE scheduled_jobs
-     SET label = ?, goal = ?, type = ?, interval_hours = ?, next_run_at = ?, program_context_json = ?
+     SET label = ?, goal = ?, type = ?, interval_hours = ?, next_run_at = ?, program_context_json = ?,
+         objective = ?, phase = ?, delivery_mode = ?, source_refs_json = ?
      WHERE id = ?`,
     [
       updates.title ?? existing.title,
@@ -354,6 +575,10 @@ export function updateProgram(storage: Storage, id: string, updates: ProgramUpda
       intervalHours,
       nextRunAt,
       JSON.stringify(nextContext),
+      nextAuthored.objective,
+      nextAuthored.phase,
+      nextAuthored.deliveryMode,
+      JSON.stringify(nextAuthored.sourceRefs),
       id,
     ],
   );

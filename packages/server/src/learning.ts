@@ -541,7 +541,15 @@ export async function runBackgroundLearning(
       continue;
     }
     try {
-      const result = await remember(ctx.storage, ctx.llm, fact.fact, ctx.logger);
+      const result = await remember(ctx.storage, ctx.llm, fact.fact, ctx.logger, {
+        origin: "inferred",
+        provenance: [{
+          sourceKind: "learning-run",
+          sourceId: String(runId),
+          sourceLabel: "Background learning",
+          relation: "derived-from",
+        }],
+      });
       if (result.isReinforcement) {
         reinforced++;
       } else {

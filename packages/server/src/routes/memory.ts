@@ -3,7 +3,10 @@ import { z } from "zod";
 import type { ServerContext } from "../index.js";
 import { validate } from "../validate.js";
 import {
+  recordProductEvent,
   listBeliefs,
+  getBeliefHistory,
+  listBeliefProvenance,
   searchBeliefs,
   semanticSearch,
   forgetBelief,
@@ -25,6 +28,10 @@ const updateBeliefSchema = z.object({
 const correctBeliefSchema = z.object({
   statement: z.string().min(1, "statement is required").max(10_000, "Statement too long"),
   note: z.string().max(5_000, "Note too long").optional(),
+  briefId: z.string().max(255).optional(),
+  programId: z.string().max(255).optional(),
+  threadId: z.string().max(255).optional(),
+  channel: z.string().max(32).optional(),
 });
 
 export function registerMemoryRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
@@ -44,6 +51,20 @@ export function registerMemoryRoutes(app: FastifyInstance, { ctx }: ServerContex
     return belief;
   });
 
+  app.get<{ Params: { id: string } }>("/api/beliefs/:id/history", async (request, reply) => {
+    const beliefs = listBeliefs(ctx.storage, "all");
+    const belief = beliefs.find((entry: Belief) => entry.id === request.params.id || entry.id.startsWith(request.params.id));
+    if (!belief) return reply.status(404).send({ error: "Belief not found" });
+    return { history: getBeliefHistory(ctx.storage, belief.id) };
+  });
+
+  app.get<{ Params: { id: string } }>("/api/beliefs/:id/provenance", async (request, reply) => {
+    const beliefs = listBeliefs(ctx.storage, "all");
+    const belief = beliefs.find((entry: Belief) => entry.id === request.params.id || entry.id.startsWith(request.params.id));
+    if (!belief) return reply.status(404).send({ error: "Belief not found" });
+    return { provenance: listBeliefProvenance(ctx.storage, belief.id) };
+  });
+
   app.patch<{ Params: { id: string } }>("/api/beliefs/:id", async (request, reply) => {
     const { statement } = validate(updateBeliefSchema, request.body);
     try {
@@ -57,9 +78,18 @@ export function registerMemoryRoutes(app: FastifyInstance, { ctx }: ServerContex
   });
 
   app.post<{ Params: { id: string } }>("/api/beliefs/:id/correct", async (request, reply) => {
-    const { statement, note } = validate(correctBeliefSchema, request.body);
+    const { statement, note, briefId, programId, threadId, channel } = validate(correctBeliefSchema, request.body);
     try {
-      return await correctBelief(ctx.storage, ctx.llm, request.params.id, { statement, note });
+      const result = await correctBelief(ctx.storage, ctx.llm, request.params.id, { statement, note });
+      recordProductEvent(ctx.storage, {
+        eventType: "belief_corrected",
+        channel: channel ?? "web",
+        programId: programId ?? null,
+        briefId: briefId ?? null,
+        beliefId: result.replacementBelief.id,
+        threadId: threadId ?? null,
+      });
+      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to correct belief";
       const normalized = message.toLowerCase();

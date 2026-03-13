@@ -56,6 +56,8 @@ export type {
   JobDiagnostics,
   RecentError,
 } from "./telemetry.js";
+export { productEventMigrations, recordProductEvent, listProductEvents, getProductMetricsOverview } from "./product-events.js";
+export type { ProductEvent, ProductEventType, ProductMetricsOverview } from "./product-events.js";
 
 // Threads
 export {
@@ -82,9 +84,9 @@ export { knowledgeMigrations, chunkContent, hasSource, listSources, getSourceChu
 export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult, KnowledgeCleanupResult } from "./knowledge.js";
 
 // Memory
-export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, correctBelief, updateBeliefContent, memoryStats, memoryCommands, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, generateMemoryFile, backfillSubjects, consolidateConversation, findContradictions, getCorePreferences } from "./memory/index.js";
+export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, correctBelief, updateBeliefContent, memoryStats, memoryCommands, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, generateMemoryFile, backfillSubjects, consolidateConversation, findContradictions, getCorePreferences, getBeliefHistory, listBeliefProvenance } from "./memory/index.js";
 export { remember } from "./memory/index.js";
-export type { Belief, Episode, BeliefChange, CorrectBeliefResult, MemoryStats, MemoryExport, MemoryExportV1, MemoryExportV2, SimilarBelief, ReflectionResult, UnifiedRetrievalResult, ConsolidationResult } from "./memory/index.js";
+export type { Belief, Episode, BeliefChange, BeliefOrigin, BeliefCorrectionState, BeliefProvenance, CorrectBeliefResult, MemoryStats, MemoryExport, MemoryExportV1, MemoryExportV2, SimilarBelief, ReflectionResult, UnifiedRetrievalResult, ConsolidationResult, RememberOptions, RememberProvenanceInput } from "./memory/index.js";
 
 // Timezone
 export { formatDateTime, currentDateBlock } from "./timezone.js";
@@ -98,6 +100,8 @@ export type { Owner } from "./auth.js";
 // Research schemas
 export { detectResearchDomain } from "./research-schemas.js";
 export type { FlightQuery, FlightOption, FlightReport, StockMetrics, ChartArtifact, StockReport, ResearchResult, ResearchResultType } from "./research-schemas.js";
+export { buildReportBriefSection, buildBriefSignalHash } from "./brief-schema.js";
+export type { StandardBriefSection } from "./brief-schema.js";
 export {
   extractPresentationBlocks,
   parseVisualManifest,

@@ -2,15 +2,27 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createStorage, createThread, knowledgeMigrations, memoryMigrations, threadMigrations } from "../../packages/core/src/index.js";
+import {
+  createStorage,
+  createThread,
+  knowledgeMigrations,
+  memoryMigrations,
+  productEventMigrations,
+  threadMigrations,
+  correctBelief,
+  getBeliefHistory,
+  listBeliefProvenance,
+} from "../../packages/core/src/index.js";
+import { addBeliefProvenance, createBelief } from "../../packages/core/src/memory/memory.js";
 import type { AgentContext, PluginContext } from "../../packages/core/src/index.js";
 import { addTask, completeTask, taskMigrations } from "../../packages/plugin-tasks/src/tasks.js";
-import { listPrograms, scheduleMigrations, updateProgram } from "../../packages/plugin-schedules/src/index.js";
+import { listPrograms, scheduleMigrations } from "../../packages/plugin-schedules/src/index.js";
 import { assistantPlugin } from "../../packages/plugin-assistant/src/index.js";
 
 import { generateBriefing, briefingMigrations } from "../../packages/server/src/briefing.js";
 import {
   HarnessScenario,
+  REQUIRED_SCENARIO_IDS,
   ValidationCheck,
   makeCheck,
   readYamlFile,
@@ -27,6 +39,8 @@ function createHarnessContext(storage: ReturnType<typeof createStorage>): Plugin
     },
     storage,
     llm: {
+      chat: async () => ({ text: "NONE" }),
+      embed: async () => ({ embedding: [0.1, 0.2, 0.3] }),
       health: async () => ({ ok: false }),
       getModel: () => {
         throw new Error("deterministic fallback should not request a model");
@@ -52,10 +66,7 @@ function createHarnessAgentContext(storage: ReturnType<typeof createStorage>, th
   return ctx;
 }
 
-function hasStatement(
-  assumptions: Array<{ statement: string }>,
-  expected: string,
-): boolean {
+function hasStatement(assumptions: Array<{ statement: string }>, expected: string): boolean {
   const target = expected.toLowerCase();
   return assumptions.some((item) => item.statement.toLowerCase().includes(target));
 }
@@ -65,11 +76,30 @@ function hasText(haystack: string[], expected: string): boolean {
   return haystack.some((item) => item.toLowerCase().includes(target));
 }
 
-export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> {
+function assertRequiredBriefSections(
+  scenarioId: string,
+  blockers: string[],
+  sections: Record<string, unknown>,
+  expectedSections: string[],
+  label: "first" | "second",
+): void {
+  for (const field of expectedSections) {
+    const value = sections[field];
+    if (Array.isArray(value) && value.length === 0) {
+      blockers.push(`${scenarioId}: ${label} brief field "${field}" is empty`);
+      continue;
+    }
+    if (value === undefined || value === null || value === "") {
+      blockers.push(`${scenarioId}: ${label} brief field "${field}" is missing`);
+    }
+  }
+}
+
+async function runExecutableScenario(relativePath: string): Promise<ValidationCheck> {
   const blockers: string[] = [];
   const warnings: string[] = [];
-  const scenario = readYamlFile<HarnessScenario>("harness/scenarios/work-watch.yaml");
-  const dir = mkdtempSync(path.join(tmpdir(), "pai-harness-core-loop-"));
+  const scenario = readYamlFile<HarnessScenario>(relativePath);
+  const dir = mkdtempSync(path.join(tmpdir(), `pai-harness-${scenario.id}-`));
   const storage = createStorage(dir);
 
   try {
@@ -77,6 +107,7 @@ export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> 
     storage.migrate("tasks", taskMigrations);
     storage.migrate("knowledge", knowledgeMigrations);
     storage.migrate("threads", threadMigrations);
+    storage.migrate("product_events", productEventMigrations);
     storage.migrate("schedules", scheduleMigrations);
     storage.migrate("briefing", briefingMigrations);
 
@@ -89,11 +120,10 @@ export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> 
     const tools = assistantPlugin.agent?.createTools?.(agentCtx) as Record<string, { execute?: (input: Record<string, unknown>) => Promise<unknown> }> | undefined;
     const programCreate = tools?.program_create;
     if (!programCreate?.execute) {
-      blockers.push("work-watch: assistant program_create tool is unavailable in the harness context");
       return makeCheck(
-        "runtime-scenario:work-watch",
-        "Executable work-watch scenario failed.",
-        blockers,
+        `runtime-scenario:${scenario.id}`,
+        `Executable ${scenario.id} scenario failed.`,
+        [`${scenario.id}: assistant program_create tool is unavailable in the harness context`],
         warnings,
       );
     }
@@ -107,29 +137,51 @@ export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> 
       preferences: scenario.expected_memory_captured.preferences,
       constraints: scenario.expected_memory_captured.constraints,
       open_questions: scenario.expected_memory_captured.open_questions,
+      objective: scenario.expected_program_behavior.why_recurring,
+      phase: "monitor",
+      delivery_mode: "change-gated",
+      source_refs: [`scenario:${scenario.id}`],
     });
 
     if (typeof programCreateResult !== "string" || !programCreateResult.includes("Program created")) {
-      blockers.push("work-watch: assistant program_create tool did not report successful Program creation");
+      blockers.push(`${scenario.id}: assistant program_create tool did not report successful Program creation`);
     }
 
     const initialProgram = listPrograms(storage, "active")[0];
     if (!initialProgram) {
-      blockers.push("work-watch: assistant program_create did not persist an active Program");
-      return makeCheck(
-        "runtime-scenario:work-watch",
-        "Executable work-watch scenario failed.",
-        blockers,
-        warnings,
-      );
+      blockers.push(`${scenario.id}: assistant program_create did not persist an active Program`);
+      return makeCheck(`runtime-scenario:${scenario.id}`, `Executable ${scenario.id} scenario failed.`, blockers, warnings);
     }
     if (initialProgram.threadId !== thread.id) {
-      blockers.push("work-watch: Ask-created Program did not preserve the originating thread id");
+      blockers.push(`${scenario.id}: Ask-created Program did not preserve the originating thread id`);
     }
-    const linkedActionTitle = scenario.action_follow_through?.linked_action_title ?? "Confirm blocker owners";
+    if (initialProgram.deliveryMode !== "change-gated") {
+      blockers.push(`${scenario.id}: Program deliveryMode was not saved as change-gated`);
+    }
+
+    const staleAssumption = scenario.expected_next_brief_behavior.suppressed_old_assumptions[0]!;
+    const replacementAssumption = scenario.correction_step.expected_memory_update[0]!;
+    const seededBelief = createBelief(storage, {
+      statement: staleAssumption,
+      confidence: 0.82,
+      type: "preference",
+      importance: 8,
+      origin: "user-said",
+      correctionState: "active",
+      freshnessAt: new Date().toISOString(),
+    });
+    addBeliefProvenance(storage, {
+      beliefId: seededBelief.id,
+      sourceKind: "episode",
+      sourceId: `seed-${scenario.id}`,
+      sourceLabel: "Harness seed",
+      relation: "observed",
+    });
+
+    const linkedActionTitle = scenario.action_follow_through?.linked_action_title ?? `${scenario.expected_program_behavior.expected_actions[0]} follow-through`;
     const linkedAction = addTask(storage, {
       title: linkedActionTitle,
-      description: "Make sure each launch blocker has an owner and next step before the next brief.",
+      description: `Follow through on ${scenario.expected_program_behavior.program_title} before the next brief.`,
       priority: "high",
       sourceType: "program",
       sourceId: initialProgram.id,
@@ -138,91 +190,89 @@ export async function runExecutableCoreLoopScenario(): Promise<ValidationCheck> 
 
     const firstBrief = await generateBriefing(ctx);
     if (!firstBrief) {
-      blockers.push("work-watch: first briefing was not generated");
+      blockers.push(`${scenario.id}: first briefing was not generated`);
     } else {
+      assertRequiredBriefSections(scenario.id, blockers, firstBrief.sections as Record<string, unknown>, scenario.expected_brief_sections, "first");
       if (!firstBrief.sections.recommendation?.summary.includes(initialProgram.title)) {
-        blockers.push("work-watch: first briefing recommendation does not mention the Program title");
+        warnings.push(`${scenario.id}: first briefing recommendation does not mention the Program title`);
       }
-      if ((firstBrief.sections.what_changed?.length ?? 0) === 0) {
-        blockers.push("work-watch: first briefing is missing what_changed content");
-      }
-      if ((firstBrief.sections.evidence?.length ?? 0) === 0) {
-        blockers.push("work-watch: first briefing is missing evidence content");
-      }
-      if ((firstBrief.sections.memory_assumptions?.length ?? 0) === 0) {
-        blockers.push("work-watch: first briefing is missing memory assumptions");
-      }
-      if ((firstBrief.sections.next_actions?.length ?? 0) === 0) {
-        blockers.push("work-watch: first briefing is missing next actions");
+      if (!hasStatement(firstBrief.sections.memory_assumptions, staleAssumption)) {
+        blockers.push(`${scenario.id}: first briefing does not surface the seeded belief that will later be corrected`);
       }
       if (!firstBrief.sections.recommendation?.summary.toLowerCase().includes("linked action")) {
-        blockers.push("work-watch: first briefing did not prioritize the open linked action");
+        blockers.push(`${scenario.id}: first briefing did not prioritize the open linked action`);
       }
       if (!hasText(firstBrief.sections.next_actions.map((action) => action.title), linkedAction.title)) {
-        blockers.push("work-watch: first briefing next actions do not surface the existing linked action");
+        blockers.push(`${scenario.id}: first briefing next actions do not surface the existing linked action`);
       }
     }
 
-    const correctedProgram = updateProgram(storage, initialProgram.id, {
-      preferences: [
-        ...scenario.correction_step.expected_memory_update,
-        ...scenario.expected_memory_captured.preferences,
-      ],
-      constraints: scenario.expected_memory_captured.constraints,
+    const correction = await correctBelief(storage, ctx.llm, seededBelief.id, {
+      statement: replacementAssumption,
+      note: scenario.correction_step.user_message,
     });
-
-    if (!correctedProgram) {
-      blockers.push("work-watch: correction step failed to update the Program");
+    const correctionHistory = getBeliefHistory(storage, correction.invalidatedBelief.id);
+    const correctionProvenance = listBeliefProvenance(storage, correction.replacementBelief.id);
+    if (!correctionHistory.some((entry) => entry.change_type === "invalidated")) {
+      blockers.push(`${scenario.id}: corrected belief history does not show invalidation`);
     }
+    if (correctionProvenance.length === 0) {
+      blockers.push(`${scenario.id}: replacement belief is missing provenance`);
+    }
+
     completeTask(storage, linkedAction.id);
 
     const secondBrief = await generateBriefing(ctx);
     if (!secondBrief) {
-      blockers.push("work-watch: corrected briefing was not generated");
+      blockers.push(`${scenario.id}: corrected briefing was not generated`);
     } else {
-      for (const expectedUpdate of scenario.correction_step.expected_memory_update) {
-        if (!hasStatement(secondBrief.sections.memory_assumptions, expectedUpdate)) {
-          blockers.push(`work-watch: corrected briefing is missing updated assumption "${expectedUpdate}"`);
-        }
+      assertRequiredBriefSections(scenario.id, blockers, secondBrief.sections as Record<string, unknown>, scenario.expected_brief_sections, "second");
+      if (!hasStatement(secondBrief.sections.memory_assumptions, replacementAssumption)) {
+        blockers.push(`${scenario.id}: corrected briefing is missing updated assumption "${replacementAssumption}"`);
       }
       for (const suppressed of scenario.expected_next_brief_behavior.suppressed_old_assumptions) {
         if (hasStatement(secondBrief.sections.memory_assumptions, suppressed)) {
-          blockers.push(`work-watch: corrected briefing still surfaces suppressed assumption "${suppressed}"`);
+          blockers.push(`${scenario.id}: corrected briefing still surfaces suppressed assumption "${suppressed}"`);
         }
       }
       if (firstBrief && secondBrief.sections.recommendation.summary === firstBrief.sections.recommendation.summary) {
-        blockers.push("work-watch: recommendation did not change after linked action completion and correction");
-      }
-      if (!secondBrief.sections.recommendation?.summary.includes(initialProgram.title)) {
-        warnings.push("work-watch: corrected briefing recommendation no longer references the Program title");
+        blockers.push(`${scenario.id}: recommendation did not change after correction and linked action completion`);
       }
       if (hasText(secondBrief.sections.next_actions.map((action) => action.title), linkedAction.title)) {
-        blockers.push("work-watch: corrected briefing still repeats the completed linked action");
+        blockers.push(`${scenario.id}: corrected briefing still repeats the completed linked action`);
       }
       const secondBriefSignals = [
         ...secondBrief.sections.what_changed,
         ...secondBrief.sections.evidence.map((item) => item.detail),
       ];
       if (!hasText(secondBriefSignals, "completed recently")) {
-        blockers.push("work-watch: corrected briefing does not surface the linked action completion as a change signal");
+        blockers.push(`${scenario.id}: corrected briefing does not surface the linked action completion as a change signal`);
       }
       if (!secondBrief.sections.correction_hook?.prompt) {
-        blockers.push("work-watch: corrected briefing is missing a correction hook");
+        blockers.push(`${scenario.id}: corrected briefing is missing a correction hook`);
       }
     }
   } catch (error) {
-    blockers.push(`work-watch runtime execution failed: ${error instanceof Error ? error.message : String(error)}`);
+    blockers.push(`${scenario.id} runtime execution failed: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
     storage.close();
     rmSync(dir, { recursive: true, force: true });
   }
 
   return makeCheck(
-    "runtime-scenario:work-watch",
+    `runtime-scenario:${scenario.id}`,
     blockers.length > 0
-      ? "Executable work-watch scenario failed."
-      : "Executed work-watch against real Ask-created Program, linked Action, and Brief runtime paths using deterministic fallback generation.",
+      ? `Executable ${scenario.id} scenario failed.`
+      : `Executed ${scenario.id} against a real Ask-created Program, linked Action, belief correction history/provenance, and deterministic Brief runtime.`,
     blockers,
     warnings,
   );
+}
+
+export async function runExecutableCoreLoopScenarios(): Promise<ValidationCheck[]> {
+  const checks: ValidationCheck[] = [];
+  for (const scenarioId of REQUIRED_SCENARIO_IDS) {
+    checks.push(await runExecutableScenario(`harness/scenarios/${scenarioId}.yaml`));
+  }
+  return checks;
 }

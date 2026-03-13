@@ -61,12 +61,15 @@ During work:
 - Keep an evidence pack updated during long sessions using [harness/evidence-pack.template.md](harness/evidence-pack.template.md).
 - For reactive work, record the failure signal, restore condition, root cause, proof of restore, and prevention step in the evidence pack.
 - Record meaningful architectural or product tradeoffs in `docs/decisions/*` when the task changes repo expectations.
+- If a change materially alters product behavior, architecture boundaries, memory/correction rules, validation expectations, or operator workflow, update the relevant docs in the same task.
+- Relevant docs may include `README.md`, `docs/ARCHITECTURE*.md`, `docs/MEMORY-LIFECYCLE.md`, `docs/SETUP.md`, `docs/DEFINITION-OF-DONE.md`, `docs/decisions/*`, and `CHANGELOG.md`.
 
 Before claiming completion:
 
 - Run the relevant tests and harness checks.
 - Use at least one relevant checklist from `harness/checklists/*`.
 - Produce or update an evidence pack.
+- Confirm whether docs changed. If a significant behavior or workflow change did not require a doc update, say why in the evidence pack and final handoff.
 - For reactive work, rerun the failing gate when possible and capture whether the fix added a durable guard.
 - State uncertainty honestly.
 - Escalate if ambiguity, missing validation, or scope drift remains.

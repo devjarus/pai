@@ -8,6 +8,7 @@ vi.mock("@personal-ai/core", () => ({
   backgroundJobMigrations: [{ version: 1, up: "" }],
   artifactMigrations: [{ version: 1, up: "" }],
   telemetryMigrations: [{ version: 1, up: "" }],
+  productEventMigrations: [{ version: 1, up: "" }],
 }));
 vi.mock("@personal-ai/plugin-tasks", () => ({ taskMigrations: [{ version: 1, up: "" }] }));
 vi.mock("@personal-ai/plugin-telegram", () => ({ telegramMigrations: [{ version: 1, up: "" }] }));
@@ -41,6 +42,7 @@ describe("allMigrations", () => {
     expect(names).toContain("background_jobs");
     expect(names).toContain("artifacts");
     expect(names).toContain("telemetry");
+    expect(names).toContain("product_events");
     expect(names).toContain("telegram");
     expect(names).toContain("research");
     expect(names).toContain("swarm");
@@ -49,8 +51,8 @@ describe("allMigrations", () => {
     expect(names).toContain("learning");
   });
 
-  it("has 14 entries total", () => {
-    expect(allMigrations).toHaveLength(14);
+  it("has 15 entries total", () => {
+    expect(allMigrations).toHaveLength(15);
   });
 });
 

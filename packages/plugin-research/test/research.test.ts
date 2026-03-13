@@ -176,6 +176,22 @@ describe("Research jobs", () => {
         version: 2,
         up: `ALTER TABLE briefings ADD COLUMN type TEXT NOT NULL DEFAULT 'daily';`,
       },
+      {
+        version: 3,
+        up: `ALTER TABLE briefings ADD COLUMN program_id TEXT;`,
+      },
+      {
+        version: 4,
+        up: `ALTER TABLE briefings ADD COLUMN thread_id TEXT;`,
+      },
+      {
+        version: 5,
+        up: `
+          ALTER TABLE briefings ADD COLUMN source_job_id TEXT;
+          ALTER TABLE briefings ADD COLUMN source_job_kind TEXT;
+          ALTER TABLE briefings ADD COLUMN signal_hash TEXT;
+        `,
+      },
     ];
 
     beforeEach(() => {

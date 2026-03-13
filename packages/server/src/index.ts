@@ -37,6 +37,7 @@ import { registerJobRoutes } from "./routes/jobs.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
 import { registerLearningRoutes } from "./routes/learning.js";
 import { registerObservabilityRoutes } from "./routes/observability.js";
+import { registerProductMetricRoutes } from "./routes/product-metrics.js";
 import { runAllMigrations } from "./migrations.js";
 import { WorkerLoop } from "./workers.js";
 import { recoverStaleLearningRuns } from "./learning.js";
@@ -423,6 +424,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   registerArtifactRoutes(app, serverCtx);
   registerLearningRoutes(app, serverCtx);
   registerObservabilityRoutes(app, serverCtx);
+  registerProductMetricRoutes(app, serverCtx);
 
   // --- Schedule REST endpoints ---
   app.get("/api/schedules", async () => {

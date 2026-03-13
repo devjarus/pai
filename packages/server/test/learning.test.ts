@@ -270,11 +270,21 @@ describe("runBackgroundLearning", () => {
     expect(mockGenerateText).toHaveBeenCalledTimes(1);
     // remember should have been called for each extracted fact
     expect(mockRemember).toHaveBeenCalledTimes(2);
-    expect(mockRemember).toHaveBeenCalledWith(
+    expect(mockRemember).toHaveBeenNthCalledWith(
+      1,
       storage,
       expect.anything(),
       "User prefers TypeScript over JavaScript",
       expect.anything(),
+      expect.objectContaining({
+        origin: "inferred",
+        provenance: [
+          expect.objectContaining({
+            sourceKind: "learning-run",
+            relation: "derived-from",
+          }),
+        ],
+      }),
     );
 
     // Watermarks should be updated (recent)
