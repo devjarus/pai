@@ -7,6 +7,7 @@ import { registerAgentRoutes, threadMigrations } from "../src/routes/agents.js";
 import { registerConfigRoutes } from "../src/routes/config.js";
 import { registerTaskRoutes } from "../src/routes/tasks.js";
 import { registerProgramRoutes } from "../src/routes/programs.js";
+import { registerProductMetricRoutes } from "../src/routes/product-metrics.js";
 import { registerAuthRoutes } from "../src/routes/auth.js";
 import { registerInboxRoutes } from "../src/routes/inbox.js";
 import { registerJobRoutes } from "../src/routes/jobs.js";
@@ -69,6 +70,8 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     listArtifacts: (...args: unknown[]) => mockListArtifacts(...args),
     deriveReportVisuals: (...args: unknown[]) => mockDeriveReportVisuals(...args),
     createLLMClient: (...args: unknown[]) => mockCreateLLMClient(...args),
+    recordProductEvent: (...args: unknown[]) => mockRecordProductEvent(...args),
+    getProductMetricsOverview: (...args: unknown[]) => mockGetProductMetricsOverview(...args),
     getObservabilityOverview: (...args: unknown[]) => mockGetObservabilityOverview(...args),
     listProcessAggregates: (...args: unknown[]) => mockListProcessAggregates(...args),
     getThreadDiagnostics: (...args: unknown[]) => mockGetThreadDiagnostics(...args),
@@ -102,6 +105,8 @@ const mockGetThreadDiagnostics = vi.fn();
 const mockGetJobDiagnostics = vi.fn();
 const mockGetTraceSpans = vi.fn();
 const mockListRecentErrors = vi.fn();
+const mockRecordProductEvent = vi.fn();
+const mockGetProductMetricsOverview = vi.fn();
 
 // ---------------------------------------------------------------------------
 // Background jobs mock functions
@@ -1868,11 +1873,12 @@ describe("task routes", () => {
 
 describe("program routes", () => {
   let app: FastifyInstance;
+  let serverCtx: ServerContext;
 
   beforeEach(async () => {
     app = Fastify();
     addTestErrorHandler(app);
-    const serverCtx = createMockServerCtx();
+    serverCtx = createMockServerCtx();
     registerProgramRoutes(app, serverCtx);
     await app.ready();
 
@@ -1921,6 +1927,251 @@ describe("program routes", () => {
       }),
     ]);
     expect(mockListPrograms).toHaveBeenCalledWith(expect.anything());
+  });
+
+  it("GET /api/programs/:id returns an enriched program with latest brief summary", async () => {
+    const program = {
+      id: "prog-1",
+      title: "Atlas watch",
+      question: "Keep watching Atlas launch readiness",
+      family: "work",
+      executionMode: "analysis",
+      intervalHours: 12,
+      chatId: null,
+      threadId: "thread-123",
+      lastRunAt: null,
+      nextRunAt: "2026-03-11T12:00:00.000Z",
+      status: "active",
+      createdAt: "2026-03-10T12:00:00.000Z",
+      latestBriefId: "brief-1",
+      preferences: ["Lead with blockers"],
+      constraints: ["Only material changes"],
+      openQuestions: ["Who owns rollback verification?"],
+    };
+    mockGetProgramById.mockReturnValue(program);
+    mockListTasks.mockReturnValue([
+      {
+        id: "task-open",
+        title: "Ask infra owner",
+        status: "open",
+        created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        completed_at: null,
+        due_date: null,
+        source_type: "program",
+        source_id: "prog-1",
+      },
+      {
+        id: "task-done",
+        title: "Check release notes",
+        status: "done",
+        created_at: "2026-03-10T12:00:00.000Z",
+        completed_at: "2026-03-11T14:00:00.000Z",
+        due_date: null,
+        source_type: "program",
+        source_id: "prog-1",
+      },
+    ]);
+    vi.mocked(serverCtx.ctx.storage.query).mockImplementation((sql: string) => {
+      if (sql.includes("FROM briefings WHERE id = ?")) {
+        return [{
+          id: "brief-1",
+          generated_at: "2026-03-11T12:00:00.000Z",
+          type: "research",
+          sections: JSON.stringify({
+            recommendation: { summary: "Hold scope until blocker clears" },
+          }),
+          source_job_id: "job-research-1",
+          source_job_kind: "research",
+        }];
+      }
+      return [];
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/programs/prog-1" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(expect.objectContaining({
+      id: "prog-1",
+      actionSummary: { openCount: 1, completedCount: 1, staleOpenCount: 1 },
+      latestBriefSummary: {
+        id: "brief-1",
+        generatedAt: "2026-03-11T12:00:00.000Z",
+        type: "research",
+        recommendationSummary: "Hold scope until blocker clears",
+        sourceJobId: "job-research-1",
+        sourceJobKind: "research",
+      },
+    }));
+  });
+
+  it("GET /api/programs/:id returns 404 when a program is missing", async () => {
+    mockGetProgramById.mockReturnValue(null);
+
+    const res = await app.inject({ method: "GET", url: "/api/programs/missing" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: "Program not found" });
+  });
+
+  it("GET /api/programs/:id/history returns linked briefs, actions, and jobs", async () => {
+    const program = {
+      id: "prog-1",
+      title: "Atlas watch",
+      question: "Keep watching Atlas launch readiness",
+      family: "work",
+      executionMode: "research",
+      intervalHours: 24,
+      chatId: null,
+      threadId: "thread-123",
+      lastRunAt: null,
+      nextRunAt: "2026-03-11T12:00:00.000Z",
+      status: "active",
+      createdAt: "2026-03-10T12:00:00.000Z",
+      latestBriefId: "brief-2",
+      preferences: [],
+      constraints: [],
+      openQuestions: [],
+    };
+    mockGetProgramById.mockReturnValue(program);
+    mockListTasks.mockReturnValue([
+      {
+        id: "task-1",
+        title: "Contact infra owner",
+        status: "open",
+        priority: 1,
+        due_date: "2026-03-14T09:00:00.000Z",
+        created_at: "2026-03-11T09:00:00.000Z",
+        completed_at: null,
+        source_type: "program",
+        source_id: "prog-1",
+      },
+      {
+        id: "task-other",
+        title: "Ignore",
+        status: "open",
+        priority: 2,
+        due_date: null,
+        created_at: "2026-03-11T09:00:00.000Z",
+        completed_at: null,
+        source_type: "briefing",
+        source_id: "brief-999",
+      },
+    ]);
+    vi.mocked(serverCtx.ctx.storage.query).mockImplementation((sql: string) => {
+      if (sql.includes("FROM briefings") && sql.includes("WHERE program_id = ?")) {
+        return [{
+          id: "brief-2",
+          generated_at: "2026-03-11T12:00:00.000Z",
+          type: "research",
+          status: "ready",
+          signal_hash: "hash-1",
+          source_job_id: "job-research-1",
+          source_job_kind: "research",
+          sections: JSON.stringify({
+            recommendation: { summary: "Reach out to infra owner today" },
+          }),
+        }];
+      }
+      if (sql.includes("FROM briefings WHERE id = ?")) {
+        return [{
+          id: "brief-2",
+          generated_at: "2026-03-11T12:00:00.000Z",
+          type: "research",
+          sections: JSON.stringify({ report: "# Heading\nReach out to infra owner today" }),
+          source_job_id: "job-research-1",
+          source_job_kind: "research",
+        }];
+      }
+      if (sql.includes("FROM research_jobs")) {
+        return [{
+          id: "job-research-1",
+          status: "done",
+          goal: "Atlas watch",
+          created_at: "2026-03-11T10:00:00.000Z",
+          queued_at: "2026-03-11T10:01:00.000Z",
+          completed_at: "2026-03-11T10:05:00.000Z",
+          briefing_id: "brief-2",
+          result_type: "general",
+        }];
+      }
+      if (sql.includes("FROM swarm_jobs")) {
+        return [{
+          id: "job-swarm-1",
+          status: "done",
+          goal: "Atlas analysis",
+          created_at: "2026-03-11T11:00:00.000Z",
+          queued_at: "2026-03-11T11:01:00.000Z",
+          completed_at: "2026-03-11T11:04:00.000Z",
+          briefing_id: "brief-2",
+          result_type: "risk",
+        }];
+      }
+      return [];
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/programs/prog-1/history" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      program: expect.objectContaining({
+        id: "prog-1",
+        actionSummary: { openCount: 1, completedCount: 0, staleOpenCount: 0 },
+        latestBriefSummary: expect.objectContaining({
+          id: "brief-2",
+          recommendationSummary: "Reach out to infra owner today",
+        }),
+      }),
+      history: {
+        briefings: [{
+          id: "brief-2",
+          generatedAt: "2026-03-11T12:00:00.000Z",
+          type: "research",
+          status: "ready",
+          signalHash: "hash-1",
+          sourceJobId: "job-research-1",
+          sourceJobKind: "research",
+          recommendationSummary: "Reach out to infra owner today",
+        }],
+        actions: [{
+          id: "task-1",
+          title: "Contact infra owner",
+          status: "open",
+          priority: 1,
+          dueDate: "2026-03-14T09:00:00.000Z",
+          createdAt: "2026-03-11T09:00:00.000Z",
+          completedAt: null,
+        }],
+        researchJobs: [{
+          id: "job-research-1",
+          status: "done",
+          goal: "Atlas watch",
+          createdAt: "2026-03-11T10:00:00.000Z",
+          queuedAt: "2026-03-11T10:01:00.000Z",
+          completedAt: "2026-03-11T10:05:00.000Z",
+          briefingId: "brief-2",
+          resultType: "general",
+        }],
+        analysisJobs: [{
+          id: "job-swarm-1",
+          status: "done",
+          goal: "Atlas analysis",
+          createdAt: "2026-03-11T11:00:00.000Z",
+          queuedAt: "2026-03-11T11:01:00.000Z",
+          completedAt: "2026-03-11T11:04:00.000Z",
+          briefingId: "brief-2",
+          resultType: "risk",
+        }],
+      },
+    });
+  });
+
+  it("GET /api/programs/:id/history returns 404 when a program is missing", async () => {
+    mockGetProgramById.mockReturnValue(null);
+
+    const res = await app.inject({ method: "GET", url: "/api/programs/missing/history" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: "Program not found" });
   });
 
   it("POST /api/programs creates a program", async () => {
@@ -2118,6 +2369,118 @@ describe("program routes", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
     expect(mockDeleteProgram).toHaveBeenCalledWith(expect.anything(), "prog-1");
+  });
+});
+
+// ==========================================================================
+// Product Metrics Routes
+// ==========================================================================
+
+describe("product metrics routes", () => {
+  let app: FastifyInstance;
+  let serverCtx: ServerContext;
+
+  beforeEach(async () => {
+    app = Fastify();
+    addTestErrorHandler(app);
+    serverCtx = createMockServerCtx();
+    registerProductMetricRoutes(app, serverCtx);
+    await app.ready();
+
+    mockRecordProductEvent.mockReset();
+    mockGetProductMetricsOverview.mockReset();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it("GET /api/product-metrics/overview uses a validated range", async () => {
+    mockGetProductMetricsOverview.mockReturnValue({
+      rangeDays: 14,
+      generatedBriefs: 4,
+      openedBriefs: 3,
+      briefOpenRate: 0.75,
+      trustedDecisionLoops: 2,
+      trustedDecisionLoopRate: 0.5,
+      briefActionCreatedCount: 2,
+      briefActionCompletedCount: 1,
+      actionConversionRate: 0.5,
+      followUpQuestionsCount: 1,
+      followUpRate: 0.25,
+      beliefCorrectionsCount: 1,
+      recommendationAcceptedCount: 1,
+      telegramInteractionCount: 2,
+      medianCorrectionLatencyMinutes: 45,
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/product-metrics/overview?rangeDays=14" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().rangeDays).toBe(14);
+    expect(mockGetProductMetricsOverview).toHaveBeenCalledWith(serverCtx.ctx.storage, 14);
+  });
+
+  it("GET /api/product-metrics/overview falls back to 30 days for invalid ranges", async () => {
+    mockGetProductMetricsOverview.mockReturnValue({ rangeDays: 30 });
+
+    const res = await app.inject({ method: "GET", url: "/api/product-metrics/overview?rangeDays=0" });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockGetProductMetricsOverview).toHaveBeenCalledWith(serverCtx.ctx.storage, 30);
+  });
+
+  it("POST /api/product-events validates and records a product event", async () => {
+    mockRecordProductEvent.mockReturnValue({
+      id: "event-1",
+      event_type: "brief_opened",
+      occurred_at: "2026-03-11T12:00:00.000Z",
+      channel: "web",
+      program_id: "prog-1",
+      brief_id: "brief-1",
+      belief_id: null,
+      action_id: null,
+      thread_id: "thread-1",
+      metadata_json: JSON.stringify({ source: "test" }),
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/product-events",
+      payload: {
+        eventType: "brief_opened",
+        channel: "web",
+        programId: "prog-1",
+        briefId: "brief-1",
+        threadId: "thread-1",
+        metadata: { source: "test" },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().id).toBe("event-1");
+    expect(mockRecordProductEvent).toHaveBeenCalledWith(serverCtx.ctx.storage, {
+      eventType: "brief_opened",
+      channel: "web",
+      programId: "prog-1",
+      briefId: "brief-1",
+      threadId: "thread-1",
+      metadata: { source: "test" },
+    });
+  });
+
+  it("POST /api/product-events rejects invalid payloads", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/product-events",
+      payload: {
+        eventType: "not-real",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBeDefined();
+    expect(mockRecordProductEvent).not.toHaveBeenCalled();
   });
 });
 
