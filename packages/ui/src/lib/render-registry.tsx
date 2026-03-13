@@ -176,14 +176,14 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
       });
 
       return (
-        <div className="overflow-x-auto rounded-lg border border-zinc-700/50">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border border-border/50 bg-card/50">
+          <table className="w-full text-sm text-foreground">
             <thead>
-              <tr className="bg-zinc-800/80 border-b border-zinc-700/50">
+              <tr className="border-b border-border/50 bg-muted/80">
                 {columns.map((col) => (
                   <th
                     key={col.key}
-                    className={`px-3 py-2 text-xs font-medium text-zinc-400 uppercase ${
+                    className={`px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground ${
                       col.align === "right"
                         ? "text-right"
                         : col.align === "center"
@@ -200,16 +200,16 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
               {rows.map((row, i) => (
                 <tr
                   key={i}
-                  className={`border-b border-zinc-700/30 ${
+                  className={`border-b border-border/30 ${
                     props.highlightFirst && i === 0
-                      ? "bg-green-500/5 border-l-2 border-l-green-500"
-                      : "hover:bg-zinc-800/30"
+                      ? "border-l-2 border-l-emerald-500 bg-emerald-500/10"
+                      : "hover:bg-muted/40"
                   }`}
                 >
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      className={`px-3 py-2 text-zinc-300 ${
+                      className={`px-3 py-2 text-foreground/90 ${
                         col.align === "right"
                           ? "text-right"
                           : col.align === "center"
@@ -230,11 +230,11 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
 
     Badge: ({ props }) => {
       const variants: Record<string, string> = {
-        success: "bg-green-500/15 text-green-400 border-green-500/30",
-        warning: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
-        danger: "bg-red-500/15 text-red-400 border-red-500/30",
-        info: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-        neutral: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+        success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+        warning: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+        danger: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+        info: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+        neutral: "border-border/50 bg-muted/60 text-muted-foreground",
       };
       const v = variants[props.variant ?? "neutral"] ?? variants.neutral;
       return (
@@ -259,11 +259,11 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
       return (
         <div className="w-full">
           {props.label && (
-            <div className="text-xs text-zinc-400 mb-1">
+            <div className="mb-1 text-xs text-muted-foreground">
               {props.label} — {props.value}/{max}
             </div>
           )}
-          <div className="h-2 bg-zinc-700/50 rounded-full overflow-hidden">
+          <div className="h-2 overflow-hidden rounded-full bg-muted/70">
             <div
               className={`h-full rounded-full ${bar}`}
               style={{ width: `${pct}%` }}
@@ -450,15 +450,15 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
         "3": "text-base font-medium",
       };
       const cls = sizes[props.level ?? "2"] ?? sizes["2"];
-      return <div className={`${cls} text-zinc-100 mb-2`}>{props.text}</div>;
+      return <div className={`${cls} mb-2 text-foreground`}>{props.text}</div>;
     },
 
     Text: ({ props }) => {
       const variants: Record<string, string> = {
-        body: "text-sm text-zinc-300",
-        caption: "text-xs text-zinc-500",
-        bold: "text-sm font-semibold text-zinc-200",
-        muted: "text-sm text-zinc-500",
+        body: "text-sm leading-relaxed text-foreground/90",
+        caption: "text-xs text-muted-foreground",
+        bold: "text-sm font-semibold text-foreground",
+        muted: "text-sm text-muted-foreground",
       };
       const cls = variants[props.variant ?? "body"] ?? variants.body;
       return <p className={cls}>{props.content}</p>;
@@ -468,29 +468,29 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
 
     BulletList: ({ props }) => {
       const icons: Record<string, React.ReactNode> = {
-        bullet: <span className="text-zinc-500">&bull;</span>,
+        bullet: <span className="text-muted-foreground">&bull;</span>,
         check: (
-          <CheckCircle className="w-3.5 h-3.5 text-green-400 mt-0.5 shrink-0" />
+          <CheckCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
         ),
         warning: (
-          <AlertTriangle className="w-3.5 h-3.5 text-yellow-400 mt-0.5 shrink-0" />
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
         ),
         "arrow-up": (
-          <ArrowUp className="w-3.5 h-3.5 text-green-400 mt-0.5 shrink-0" />
+          <ArrowUp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
         ),
         "arrow-down": (
-          <ArrowDown className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
+          <ArrowDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-400" />
         ),
       };
       const icon = icons[props.icon ?? "bullet"] ?? icons.bullet;
       const textColor =
         props.variant === "success"
-          ? "text-green-400/80"
+          ? "text-emerald-700 dark:text-emerald-300"
           : props.variant === "danger"
-            ? "text-red-400/80"
+            ? "text-rose-700 dark:text-rose-300"
             : props.variant === "warning"
-              ? "text-yellow-400/80"
-              : "text-zinc-300";
+              ? "text-amber-700 dark:text-amber-300"
+              : "text-foreground/90";
       return (
         <ul className="space-y-1.5">
           {props.items.map((item, i) => (
@@ -512,8 +512,8 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
           props.variant === "primary"
             ? "bg-blue-600 text-white hover:bg-blue-500"
             : props.variant === "outline"
-              ? "border border-zinc-600 text-zinc-300 hover:bg-zinc-800"
-              : "bg-zinc-700/50 text-zinc-300 hover:bg-zinc-700"
+              ? "border border-border/50 bg-background text-foreground hover:bg-accent"
+              : "bg-muted text-foreground/90 hover:bg-muted/80"
         }`}
       >
         {props.icon === "external" && <ExternalLink className="w-3 h-3" />}
@@ -532,7 +532,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
             href={s.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-zinc-800/50 border border-zinc-700/50 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors"
+            className="inline-flex items-center gap-1 rounded border border-border/50 bg-muted/40 px-2 py-1 text-xs text-foreground/80 transition-colors hover:border-border hover:text-foreground"
           >
             <ExternalLink className="w-3 h-3" />
             {s.title}
@@ -542,15 +542,15 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
     ),
 
     ChartImage: ({ props }) => (
-      <div className="rounded-lg overflow-hidden border border-zinc-700/50">
+      <div className="overflow-hidden rounded-lg border border-border/50 bg-card/40">
         <img src={props.src} alt={props.alt} className="w-full" />
         {(props.caption || props.src) && (
-          <div className="flex items-center justify-between gap-3 text-xs text-zinc-500 px-3 py-2 bg-zinc-800/50">
+          <div className="flex items-center justify-between gap-3 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <span className="min-w-0 flex-1">{props.caption}</span>
             <a
               href={props.src}
               download
-              className="shrink-0 text-zinc-400 transition-colors hover:text-zinc-200"
+              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
             >
               <Download className="h-3.5 w-3.5" />
             </a>
@@ -563,24 +563,24 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
       <div
         className={`border rounded-lg p-3 ${
           props.score && props.score >= 80
-            ? "border-green-500/30 bg-green-500/5"
-            : "border-zinc-700/50 bg-zinc-800/30"
+            ? "border-emerald-500/30 bg-emerald-500/8"
+            : "border-border/50 bg-card/60"
         }`}
       >
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Plane className="w-4 h-4 text-blue-400" />
-            <span className="font-medium text-zinc-200">{props.airline}</span>
+            <Plane className="h-4 w-4 text-primary" />
+            <span className="font-medium text-foreground">{props.airline}</span>
             {props.flightNo && (
-              <span className="text-xs text-zinc-500">{props.flightNo}</span>
+              <span className="text-xs text-muted-foreground">{props.flightNo}</span>
             )}
           </div>
-          <span className="text-lg font-bold text-zinc-100">
+          <span className="text-lg font-bold text-foreground">
             {props.price}
             {props.currency ? ` ${props.currency}` : ""}
           </span>
         </div>
-        <div className="flex items-center gap-4 text-sm text-zinc-400">
+        <div className="flex items-center gap-4 text-sm text-foreground/80">
           <span>
             {props.departure} &rarr; {props.arrival}
           </span>
@@ -592,7 +592,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
           </span>
         </div>
         {(props.baggage || props.refundable !== null) && (
-          <div className="flex gap-3 mt-2 text-xs text-zinc-500">
+          <div className="mt-2 flex gap-3 text-xs text-muted-foreground">
             {props.baggage && <span>{props.baggage}</span>}
             {props.refundable !== null && (
               <span>{props.refundable ? "Refundable" : "Non-refundable"}</span>
@@ -600,7 +600,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
           </div>
         )}
         {props.score !== null && (
-          <div className="mt-2 text-xs text-zinc-500">
+          <div className="mt-2 text-xs text-muted-foreground">
             Score: {props.score}/100
             {props.scoreReason ? ` \u2014 ${props.scoreReason}` : ""}
           </div>
@@ -610,7 +610,7 @@ export const { registry, handlers, executeAction } = defineRegistry(resultCatalo
             href={props.bookingUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-2 inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+            className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80"
           >
             Book <ExternalLink className="w-3 h-3" />
           </a>

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ServerContext } from "../index.js";
 import { getLatestBriefing, getBriefingById, listBriefings, listAllBriefings, clearAllBriefings, getResearchBriefings, getDailyBriefingState } from "../briefing.js";
-import { deriveReportVisuals, type ReportVisual, type ResearchResultType } from "@personal-ai/core";
+import { deriveReportVisuals, recordProductEvent, type ReportVisual, type ResearchResultType } from "@personal-ai/core";
 
 export function registerInboxRoutes(app: FastifyInstance, { ctx, backgroundDispatcher }: ServerContext): void {
   app.get("/api/inbox", async () => {
@@ -40,6 +40,14 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx, backgroundDispa
   app.get<{ Params: { id: string } }>("/api/inbox/:id", async (request, reply) => {
     const briefing = getBriefingById(ctx.storage, request.params.id);
     if (!briefing) return reply.status(404).send({ error: "Briefing not found" });
+    recordProductEvent(ctx.storage, {
+      eventType: "brief_opened",
+      briefId: briefing.id,
+      programId: briefing.programId ?? null,
+      threadId: briefing.threadId ?? null,
+      channel: "web",
+      metadata: { type: briefing.type },
+    });
 
     if (briefing.type === "research" && briefing.sections && typeof briefing.sections === "object") {
       const sections = briefing.sections as unknown as Record<string, unknown>;
@@ -65,6 +73,31 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx, backgroundDispa
     }
 
     return { briefing };
+  });
+
+  app.post<{ Params: { id: string } }>("/api/inbox/:id/feedback", async (request, reply) => {
+    const briefing = getBriefingById(ctx.storage, request.params.id);
+    if (!briefing) return reply.status(404).send({ error: "Briefing not found" });
+
+    const body = request.body as { useful?: boolean; channel?: string } | undefined;
+    if (body?.useful) {
+      return recordProductEvent(ctx.storage, {
+        eventType: "recommendation_accepted",
+        briefId: briefing.id,
+        programId: briefing.programId ?? null,
+        threadId: briefing.threadId ?? null,
+        channel: body.channel ?? "web",
+      });
+    }
+
+    return recordProductEvent(ctx.storage, {
+      eventType: "telegram_brief_interaction",
+      briefId: briefing.id,
+      programId: briefing.programId ?? null,
+      threadId: briefing.threadId ?? null,
+      channel: body?.channel ?? "web",
+      metadata: { useful: false },
+    });
   });
 
   // Rerun a research report — creates a new research job with the same goal

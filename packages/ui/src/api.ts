@@ -226,11 +226,27 @@ export function updateBelief(id: string, statement: string): Promise<Belief> {
   });
 }
 
-export function correctBelief(id: string, input: { statement: string; note?: string }): Promise<{
+export function correctBelief(id: string, input: { statement: string; note?: string; briefId?: string; programId?: string; threadId?: string; channel?: string }): Promise<{
   invalidatedBelief: Belief;
   replacementBelief: Belief;
 }> {
   return request(`/beliefs/${id}/correct`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function recordProductEventApi(input: {
+  eventType: "program_created" | "brief_opened" | "brief_followup_asked" | "brief_action_created" | "brief_action_completed" | "belief_corrected" | "recommendation_accepted" | "telegram_brief_interaction";
+  channel?: string;
+  programId?: string | null;
+  briefId?: string | null;
+  beliefId?: string | null;
+  actionId?: string | null;
+  threadId?: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<{ ok: boolean }> {
+  return request("/product-events", {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -684,6 +700,33 @@ export interface Program {
   preferences: string[];
   constraints: string[];
   openQuestions: string[];
+  objective?: string | null;
+  phase?: "monitor" | "explore" | "decide" | "act" | "prepare";
+  deliveryMode?: "interval" | "change-gated";
+  sourceRefs?: string[];
+  latestBriefId?: string | null;
+  lastDeliveredAt?: string | null;
+  lastEvaluatedAt?: string | null;
+  lastSignalHash?: string | null;
+  actionSummary?: {
+    openCount: number;
+    completedCount: number;
+    staleOpenCount: number;
+  };
+  latestBriefSummary?: {
+    id: string;
+    generatedAt: string;
+    type: string;
+    recommendationSummary: string | null;
+    sourceJobId: string | null;
+    sourceJobKind: string | null;
+  } | null;
+}
+
+export interface ProgramMutationResult {
+  program: Program;
+  created: boolean;
+  duplicateReason: "thread" | "equivalent" | null;
 }
 
 export function getPrograms(): Promise<Program[]> {
@@ -702,7 +745,7 @@ export function createProgramApi(data: {
   preferences?: string[];
   constraints?: string[];
   openQuestions?: string[];
-}): Promise<Program> {
+}): Promise<ProgramMutationResult> {
   return request("/programs", {
     method: "POST",
     body: JSON.stringify(data),

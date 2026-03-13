@@ -159,7 +159,7 @@ const ThreadWelcome: FC = () => {
 
 const SUGGESTIONS = [
   { title: "Do a deep research report on...", description: "Multi-agent swarm research" },
-  { title: "What's on my plate?", description: "Review tasks and priorities" },
+  { title: "What saved moves are open?", description: "Review saved moves and priorities" },
   { title: "Check my memory health", description: "Curator finds duplicates and contradictions" },
   { title: "Run some Python code for me", description: "Sandboxed code execution" },
 ];

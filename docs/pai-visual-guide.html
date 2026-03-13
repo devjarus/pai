@@ -1,0 +1,1540 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pai Visual Guide</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23a13d2d'/%3E%3Cpath d='M18 21h13c9 0 15 5 15 13s-6 13-15 13H18V21zm11 20c6 0 10-2 10-7s-4-7-10-7h-4v14h4z' fill='%23fff7ef'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #f6f0e6;
+        --bg-strong: #efe4d2;
+        --panel: rgba(255, 252, 247, 0.82);
+        --panel-strong: rgba(255, 250, 243, 0.96);
+        --ink: #1e1a17;
+        --muted: #665e57;
+        --line: rgba(30, 26, 23, 0.14);
+        --accent: #a13d2d;
+        --accent-soft: rgba(161, 61, 45, 0.12);
+        --accent-2: #145a61;
+        --accent-2-soft: rgba(20, 90, 97, 0.12);
+        --accent-3: #7d5f13;
+        --accent-3-soft: rgba(125, 95, 19, 0.12);
+        --success: #1b6f43;
+        --shadow: 0 24px 60px rgba(66, 52, 38, 0.12);
+        --radius: 22px;
+        --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--serif);
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(161, 61, 45, 0.1), transparent 28rem),
+          radial-gradient(circle at top right, rgba(20, 90, 97, 0.09), transparent 26rem),
+          linear-gradient(180deg, #fbf7f1 0%, var(--bg) 42%, #f2e7d8 100%);
+        min-height: 100vh;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 20rem minmax(0, 1fr);
+        gap: 1.5rem;
+        max-width: 108rem;
+        margin: 0 auto;
+        padding: 1.25rem;
+      }
+
+      .toc {
+        position: sticky;
+        top: 1.25rem;
+        align-self: start;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(255, 251, 246, 0.98), rgba(249, 241, 229, 0.94));
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .toc-header {
+        padding: 1.25rem 1.25rem 1rem;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(135deg, rgba(161, 61, 45, 0.1), rgba(20, 90, 97, 0.08));
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.7rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid rgba(30, 26, 23, 0.11);
+        background: rgba(255, 255, 255, 0.65);
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+      }
+
+      .toc h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        line-height: 1.1;
+      }
+
+      .toc p {
+        margin: 0.65rem 0 0;
+        color: var(--muted);
+        font-size: 0.94rem;
+        line-height: 1.45;
+      }
+
+      .toc nav {
+        padding: 1rem 0.75rem 1rem 0.9rem;
+      }
+
+      .toc nav a {
+        display: block;
+        padding: 0.55rem 0.75rem;
+        margin: 0.15rem 0;
+        border-radius: 14px;
+        text-decoration: none;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .toc nav a:hover,
+      .toc nav a:focus-visible {
+        color: var(--ink);
+        background: rgba(161, 61, 45, 0.08);
+        outline: none;
+      }
+
+      .page {
+        min-width: 0;
+      }
+
+      section,
+      header.hero {
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, var(--panel-strong), var(--panel));
+        border-radius: 1.7rem;
+        box-shadow: var(--shadow);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        overflow: hidden;
+      }
+
+      .hero {
+        position: relative;
+        min-height: 20rem;
+      }
+
+      .hero::before,
+      .hero::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        pointer-events: none;
+      }
+
+      .hero::before {
+        width: 22rem;
+        height: 22rem;
+        right: -8rem;
+        top: -10rem;
+        background: radial-gradient(circle, rgba(161, 61, 45, 0.14), transparent 68%);
+      }
+
+      .hero::after {
+        width: 18rem;
+        height: 18rem;
+        left: -6rem;
+        bottom: -8rem;
+        background: radial-gradient(circle, rgba(20, 90, 97, 0.12), transparent 70%);
+      }
+
+      h2 {
+        margin: 0 0 0.55rem;
+        font-size: 1.9rem;
+        line-height: 1.08;
+      }
+
+      h3 {
+        margin: 0 0 0.45rem;
+        font-size: 1.28rem;
+      }
+
+      h4 {
+        margin: 0 0 0.4rem;
+        font-size: 1rem;
+        font-family: var(--mono);
+        letter-spacing: 0.03em;
+      }
+
+      p,
+      li {
+        color: var(--muted);
+        line-height: 1.55;
+        font-size: 1rem;
+      }
+
+      .lede {
+        font-size: 1.16rem;
+        max-width: 54rem;
+        color: #3f3833;
+      }
+
+      .meta-row,
+      .legend,
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+      }
+
+      .chip,
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.38rem 0.72rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        background: rgba(255, 255, 255, 0.7);
+        color: var(--ink);
+      }
+
+      .dot {
+        width: 0.58rem;
+        height: 0.58rem;
+        border-radius: 999px;
+        flex: 0 0 auto;
+      }
+
+      .dot.user { background: var(--accent); }
+      .dot.api { background: var(--accent-2); }
+      .dot.storage { background: var(--accent-3); }
+      .dot.async { background: var(--success); }
+      .dot.model { background: #5e3b85; }
+
+      .hero-grid,
+      .card-grid,
+      .compare-grid,
+      .split,
+      .triple,
+      .matrix {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .hero-grid {
+        grid-template-columns: 1.15fr 0.85fr;
+        margin-top: 1.3rem;
+      }
+
+      .card-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .compare-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .split {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .triple {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .matrix {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+
+      .panel,
+      .card,
+      .compare-card,
+      .lane,
+      .table-wrap,
+      details {
+        border: 1px solid var(--line);
+        border-radius: 1.25rem;
+        background: rgba(255, 255, 255, 0.63);
+      }
+
+      .panel,
+      .card,
+      .compare-card,
+      .lane,
+      .table-wrap {
+        padding: 1rem;
+      }
+
+      .panel strong,
+      .card strong,
+      .compare-card strong {
+        color: var(--ink);
+      }
+
+      .compare-card.program {
+        background: linear-gradient(180deg, rgba(161, 61, 45, 0.1), rgba(255, 255, 255, 0.75));
+      }
+
+      .compare-card.action {
+        background: linear-gradient(180deg, rgba(20, 90, 97, 0.1), rgba(255, 255, 255, 0.75));
+      }
+
+      .marker {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.34rem 0.65rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.76);
+        font-family: var(--mono);
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .compare-card ul.clean {
+        margin-top: 0.8rem;
+      }
+
+      .callout {
+        margin-top: 1rem;
+        padding: 1rem 1.1rem;
+        border-radius: 1.2rem;
+        border: 1px solid rgba(20, 90, 97, 0.18);
+        background: linear-gradient(180deg, rgba(20, 90, 97, 0.08), rgba(255, 255, 255, 0.74));
+      }
+
+      .callout p:last-child {
+        margin-bottom: 0;
+      }
+
+      .accent {
+        color: var(--accent);
+      }
+
+      .muted-code,
+      code {
+        font-family: var(--mono);
+        font-size: 0.88rem;
+      }
+
+      .muted-code {
+        color: #51473f;
+      }
+
+      .stat {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        padding: 0.95rem;
+        border-radius: 1.2rem;
+        background: linear-gradient(180deg, rgba(20, 90, 97, 0.08), rgba(20, 90, 97, 0.02));
+        border: 1px solid rgba(20, 90, 97, 0.12);
+      }
+
+      .stat .value {
+        font-size: 1.8rem;
+        line-height: 1;
+        color: var(--ink);
+      }
+
+      .loop {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.8rem;
+        margin-top: 1.1rem;
+      }
+
+      .loop-step {
+        position: relative;
+        padding: 1rem;
+        border-radius: 1.2rem;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .loop-step::after {
+        content: "->";
+        position: absolute;
+        right: -0.72rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-family: var(--mono);
+        color: var(--muted);
+      }
+
+      .loop-step:last-child::after {
+        display: none;
+      }
+
+      .step-index {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.65rem;
+        height: 1.65rem;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-family: var(--mono);
+        font-size: 0.85rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .flow {
+        display: grid;
+        gap: 0.85rem;
+        margin-top: 1rem;
+      }
+
+      .flow-row {
+        display: grid;
+        grid-template-columns: minmax(10rem, 14rem) 2.2rem 1fr;
+        gap: 0.9rem;
+        align-items: stretch;
+      }
+
+      .flow-source,
+      .flow-target {
+        padding: 0.9rem 1rem;
+        border-radius: 1rem;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+        min-height: 100%;
+      }
+
+      .flow-source {
+        background: linear-gradient(180deg, rgba(161, 61, 45, 0.1), rgba(255, 255, 255, 0.72));
+      }
+
+      .arrow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 1rem;
+      }
+
+      .sequence {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+
+      .sequence-head,
+      .sequence-row {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.7rem;
+      }
+
+      .sequence-head div {
+        padding: 0.6rem 0.75rem;
+        border-radius: 999px;
+        background: rgba(20, 90, 97, 0.08);
+        border: 1px solid rgba(20, 90, 97, 0.14);
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 0.76rem;
+      }
+
+      .sequence-row div {
+        min-height: 5.4rem;
+        padding: 0.8rem;
+        border-radius: 1rem;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .sequence-row div.active {
+        background: linear-gradient(180deg, rgba(161, 61, 45, 0.1), rgba(255, 255, 255, 0.78));
+        border-color: rgba(161, 61, 45, 0.2);
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 52rem;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 0.85rem 0.9rem;
+        vertical-align: top;
+        border-bottom: 1px solid var(--line);
+      }
+
+      th {
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+
+      td strong {
+        color: var(--ink);
+      }
+
+      ul.clean {
+        margin: 0;
+        padding-left: 1.1rem;
+      }
+
+      .source-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.8rem;
+      }
+
+      .source-list span {
+        padding: 0.35rem 0.55rem;
+        border-radius: 0.8rem;
+        background: rgba(20, 90, 97, 0.08);
+        border: 1px solid rgba(20, 90, 97, 0.12);
+        font-family: var(--mono);
+        font-size: 0.76rem;
+      }
+
+      details {
+        padding: 0.9rem 1rem;
+      }
+
+      details + details {
+        margin-top: 0.75rem;
+      }
+
+      summary {
+        cursor: pointer;
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: 0.84rem;
+      }
+
+      details p,
+      details li {
+        font-size: 0.94rem;
+      }
+
+      .footer-note {
+        color: var(--muted);
+        font-size: 0.92rem;
+        text-align: center;
+        padding: 0.4rem 0 2rem;
+      }
+
+      @media (max-width: 1080px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .toc {
+          position: static;
+        }
+      }
+
+      @media (max-width: 900px) {
+        .hero-grid,
+        .card-grid,
+        .split,
+        .triple,
+        .matrix,
+        .loop,
+        .sequence-head,
+        .sequence-row {
+          grid-template-columns: 1fr;
+        }
+
+        .flow-row {
+          grid-template-columns: 1fr;
+        }
+
+        .arrow {
+          min-height: 1.2rem;
+          transform: rotate(90deg);
+        }
+
+        table {
+          min-width: 44rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="toc">
+        <div class="toc-header">
+          <div class="eyebrow">pai repository map</div>
+          <h1>Visual Guide</h1>
+          <p>
+            A repo-grounded view of the product model, system architecture, storage
+            layers, user flows, and background dataflows as implemented on
+            2026-03-12.
+          </p>
+        </div>
+        <nav>
+          <a href="#orientation">1. Orientation</a>
+          <a href="#system-map">2. System Map</a>
+          <a href="#nouns-storage">3. Nouns And Storage</a>
+          <a href="#user-flows">4. User Flows</a>
+          <a href="#dataflows">5. Internal Dataflows</a>
+          <a href="#sequence-atlas">6. Sequence Atlas</a>
+          <a href="#validation">7. Validation And Ops</a>
+          <a href="#boundaries">8. Product Boundaries</a>
+        </nav>
+      </aside>
+
+      <main class="page">
+        <header class="hero" id="orientation">
+          <div class="eyebrow">deep project guide</div>
+          <h2>How the whole project fits together</h2>
+          <p class="lede">
+            <strong>pai</strong> is not trying to be a broad personal AI shell.
+            Its center of gravity is the recurring decision loop:
+            <strong>Ask -> Program -> Brief -> Action or Correction -> Next Brief improves.</strong>
+            This guide explains the complete implementation around that loop, including
+            chat, memory, knowledge, background execution, research, swarm analysis,
+            Telegram delivery, and validation.
+          </p>
+
+          <div class="legend" aria-label="Guide legend">
+            <span><span class="dot user"></span>User interaction</span>
+            <span><span class="dot api"></span>Surface or API</span>
+            <span><span class="dot storage"></span>Storage write or read</span>
+            <span><span class="dot async"></span>Background runtime</span>
+            <span><span class="dot model"></span>Model or tool execution</span>
+          </div>
+
+          <div class="hero-grid">
+            <div class="panel">
+              <h3>Read the repo in layers</h3>
+              <p>
+                The codebase becomes much easier to reason about if you read it in this order:
+                product nouns, entry surfaces, orchestration, storage, then async workers.
+                The project hides many internal nouns behind a smaller product story.
+              </p>
+              <div class="source-list">
+                <span>docs/PRODUCT-CHARTER.md</span>
+                <span>docs/PRIMITIVES.md</span>
+                <span>docs/ARCHITECTURE.md</span>
+                <span>docs/MEMORY-LIFECYCLE.md</span>
+              </div>
+            </div>
+            <div class="split">
+              <div class="stat">
+                <span class="value">5</span>
+                <span>Primary product nouns: Program, Brief, Action, Belief, Evidence</span>
+              </div>
+              <div class="stat">
+                <span class="value">3</span>
+                <span>Primary user surfaces: web, Telegram, CLI/MCP</span>
+              </div>
+              <div class="stat">
+                <span class="value">1</span>
+                <span>Shared state core: SQLite with plugin-backed tables</span>
+              </div>
+              <div class="stat">
+                <span class="value">2</span>
+                <span>Major async report engines: research and swarm analysis</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="loop">
+            <div class="loop-step">
+              <div class="step-index">1</div>
+              <strong>Ask</strong>
+              <p>User starts in web or Telegram with a question, decision, or ongoing concern.</p>
+            </div>
+            <div class="loop-step">
+              <div class="step-index">2</div>
+              <strong>Program</strong>
+              <p>The system turns a recurring watch into a stable object with cadence and context.</p>
+            </div>
+            <div class="loop-step">
+              <div class="step-index">3</div>
+              <strong>Brief</strong>
+              <p>A recommendation-first artifact is produced for inbox or Telegram delivery.</p>
+            </div>
+            <div class="loop-step">
+              <div class="step-index">4</div>
+              <strong>Action / Correction</strong>
+              <p>The user either follows through or fixes the assumptions that shaped the brief.</p>
+            </div>
+            <div class="loop-step">
+              <div class="step-index">5</div>
+              <strong>Next Brief</strong>
+              <p>Open actions, completed actions, and corrected beliefs feed the next run.</p>
+            </div>
+          </div>
+        </header>
+
+        <section id="system-map">
+          <div class="eyebrow">system context</div>
+          <h2>Surfaces, containers, and runtime boundaries</h2>
+          <p>
+            The runtime is intentionally layered. Users touch the web app, Telegram bot,
+            and CLI/MCP server. Those surfaces all converge on a Fastify server plus shared
+            core libraries and plugins. SQLite is the primary state container. LLM providers,
+            web search, browser automation, and sandbox execution are optional enrichments.
+          </p>
+
+          <div class="card-grid">
+            <div class="card">
+              <h3>Surface Layer</h3>
+              <p><strong>Web UI</strong>, <strong>Telegram bot</strong>, and <strong>CLI/MCP</strong> are the user-facing or operator-facing entry points.</p>
+              <div class="source-list">
+                <span>packages/ui</span>
+                <span>packages/plugin-telegram</span>
+                <span>packages/cli</span>
+              </div>
+            </div>
+            <div class="card">
+              <h3>Server Layer</h3>
+              <p>The Fastify server exposes REST routes, SSE chat streaming, worker wiring, static serving, and route-level orchestration.</p>
+              <div class="source-list">
+                <span>packages/server</span>
+                <span>routes/*</span>
+                <span>briefing.ts</span>
+                <span>workers.ts</span>
+              </div>
+            </div>
+            <div class="card">
+              <h3>Core Domain Layer</h3>
+              <p>Memory, knowledge, storage, telemetry, artifacts, browser, sandbox, and shared report schema live here.</p>
+              <div class="source-list">
+                <span>packages/core</span>
+                <span>memory</span>
+                <span>knowledge</span>
+                <span>brief-schema</span>
+              </div>
+            </div>
+            <div class="card">
+              <h3>Plugin Layer</h3>
+              <p>Tasks, schedules, assistant tools, research, swarm, curator, and Telegram each own a bounded piece of behavior.</p>
+              <div class="source-list">
+                <span>plugin-tasks</span>
+                <span>plugin-schedules</span>
+                <span>plugin-research</span>
+                <span>plugin-swarm</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow">
+            <div class="flow-row">
+              <div class="flow-source">
+                <h4>Users and agents</h4>
+                <p>Owner via web, owner via Telegram, family/friends in Telegram, and operator/agent tooling via CLI or MCP.</p>
+              </div>
+              <div class="arrow">==></div>
+              <div class="flow-target">
+                <h4>Surface entrypoints</h4>
+                <p>React SPA, grammY Telegram bot, and Commander/MCP all converge on shared routes or shared plugin APIs.</p>
+              </div>
+            </div>
+            <div class="flow-row">
+              <div class="flow-source">
+                <h4>Fastify application server</h4>
+                <p>REST routes for Programs, Inbox, Memory, Knowledge, Tasks, config, jobs, and agent chat.</p>
+              </div>
+              <div class="arrow">==></div>
+              <div class="flow-target">
+                <h4>Shared domain services</h4>
+                <p>Memory and knowledge retrieval, briefing generation, product events, background dispatcher, worker loop, and plugin calls.</p>
+              </div>
+            </div>
+            <div class="flow-row">
+              <div class="flow-source">
+                <h4>Async and external edges</h4>
+                <p>WorkerLoop, BackgroundDispatcher, LLM provider, optional search service, optional browser service, optional sandbox.</p>
+              </div>
+              <div class="arrow">==></div>
+              <div class="flow-target">
+                <h4>Persistent state</h4>
+                <p>SQLite stores all durable project state: beliefs, knowledge sources, Programs, briefings, tasks, jobs, telemetry, and analytics.</p>
+              </div>
+            </div>
+          </div>
+
+          <details>
+            <summary>Container view in package terms</summary>
+            <ul class="clean">
+              <li><strong>packages/core</strong>: storage, config, memory, knowledge, artifacts, browser, report schema, telemetry</li>
+              <li><strong>packages/server</strong>: Fastify routes, daily briefing generation, workers, background dispatcher</li>
+              <li><strong>packages/plugin-assistant</strong>: tool-enabled chat agent and helper tools</li>
+              <li><strong>packages/plugin-schedules</strong>: recurring Program adapter over scheduled jobs</li>
+              <li><strong>packages/plugin-tasks</strong>: Action storage and legacy task API</li>
+              <li><strong>packages/plugin-research</strong>: lighter background research engine</li>
+              <li><strong>packages/plugin-swarm</strong>: deeper multi-agent analysis engine</li>
+              <li><strong>packages/plugin-telegram</strong>: companion delivery, commands, and chat bridge</li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="nouns-storage">
+          <div class="eyebrow">product model</div>
+          <h2>Primary nouns, internal tables, and route surfaces</h2>
+          <p>
+            The project intentionally separates <strong>product language</strong> from some of the
+            underlying table names. This is one of the most important things to understand:
+            several product objects are adapters over older or more implementation-oriented storage.
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Product noun</th>
+                  <th>What it means</th>
+                  <th>Main table(s)</th>
+                  <th>Main route(s)</th>
+                  <th>Key package(s)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Program</strong></td>
+                  <td>Recurring decision or watch with cadence, context, and runtime state.</td>
+                  <td><code>scheduled_jobs</code></td>
+                  <td><code>/api/programs</code></td>
+                  <td><code>plugin-schedules</code>, <code>server/routes/programs</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Brief</strong></td>
+                  <td>Decision-ready output delivered to Inbox or Telegram.</td>
+                  <td><code>briefings</code></td>
+                  <td><code>/api/inbox</code></td>
+                  <td><code>server/briefing</code>, <code>core/brief-schema</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Action</strong></td>
+                  <td>Follow-through item linked to a brief or program.</td>
+                  <td><code>tasks</code></td>
+                  <td><code>/api/tasks</code></td>
+                  <td><code>plugin-tasks</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Belief</strong></td>
+                  <td>Durable memory with trust metadata, history, and correction state.</td>
+                  <td><code>beliefs</code>, <code>belief_changes</code>, <code>belief_provenance</code></td>
+                  <td><code>/api/beliefs</code></td>
+                  <td><code>core/memory</code>, <code>server/routes/memory</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Knowledge</strong></td>
+                  <td>Long-form learned documents, pages, reports, and file content.</td>
+                  <td><code>knowledge_sources</code>, <code>knowledge_chunks</code></td>
+                  <td><code>/api/knowledge/*</code></td>
+                  <td><code>core/knowledge</code>, <code>server/routes/knowledge</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Background jobs</strong></td>
+                  <td>Execution records for queued work and worker scheduling.</td>
+                  <td><code>research_jobs</code>, <code>swarm_jobs</code>, job registry tables</td>
+                  <td><code>/api/jobs</code></td>
+                  <td><code>plugin-research</code>, <code>plugin-swarm</code>, <code>server/background-dispatcher</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="compare-grid" style="margin-top: 1rem;">
+            <div class="compare-card program">
+              <div class="marker">Program = the watch</div>
+              <h3 style="margin-top: 0.9rem;">Long-lived, recurring, decision-oriented</h3>
+              <p>
+                A Program is the ongoing thing the system keeps evaluating over time.
+                It survives many runs and many briefs.
+              </p>
+              <ul class="clean">
+                <li><strong>Question it answers:</strong> "What are we continuing to watch or manage?"</li>
+                <li><strong>Lifespan:</strong> days, weeks, or months</li>
+                <li><strong>Output:</strong> repeated briefs as the situation changes</li>
+                <li><strong>Example:</strong> "Keep watching Atlas launch readiness"</li>
+              </ul>
+            </div>
+            <div class="compare-card action">
+              <div class="marker">Action = the move</div>
+              <h3 style="margin-top: 0.9rem;">Short-lived, bounded, executable follow-through</h3>
+              <p>
+                An Action is a concrete next step. It should be smaller than the Program,
+                and it should be possible to complete, reopen, or cancel it.
+              </p>
+              <ul class="clean">
+                <li><strong>Question it answers:</strong> "What exactly should happen next?"</li>
+                <li><strong>Lifespan:</strong> one bounded follow-through step</li>
+                <li><strong>Output:</strong> status changes, not new briefs</li>
+                <li><strong>Example:</strong> "Ask infra lead whether blocker X clears by Friday"</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="callout">
+            <h3>Program and Action should not sound the same</h3>
+            <p>
+              If an Action merely repeats the Program, it is probably too vague. A weak Action would be
+              <strong>"keep watching Atlas launch readiness"</strong> because that is still the Program.
+              A stronger Action would be <strong>"message the infra lead for blocker status before Friday's review"</strong>
+              because it is a specific piece of follow-through generated from the latest brief.
+            </p>
+            <p>
+              The simplest rule: <strong>a Program creates recurring evaluation; an Action creates accountable movement.</strong>
+            </p>
+          </div>
+
+          <div class="triple" style="margin-top: 1rem;">
+            <div class="card">
+              <h3>Program</h3>
+              <p>
+                A Program is an adapter over <code>scheduled_jobs</code>. It carries both
+                <strong>authored state</strong> like objective, phase, delivery mode, source refs,
+                preferences, constraints, and open questions, and <strong>runtime state</strong>
+                like latest brief, last delivered time, and last signal hash. It is the recurring
+                watch, not the immediate next step.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Action</h3>
+              <p>
+                An Action is stored as a row in <code>tasks</code>. User-facing surfaces now treat it as
+                optional tracked follow-through or a recommended move, while the storage and route names
+                remain <code>tasks</code> and <code>/api/tasks</code> for compatibility. A good Action is
+                narrower than the Program and only exists when there is a real manual step worth revisiting.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Brief Contract</h3>
+              <p>
+                All meaningful briefs are converging on the same schema:
+                recommendation, what changed, evidence, memory assumptions,
+                next actions, and correction hook. Research and swarm outputs are
+                normalized into this shape before delivery.
+              </p>
+            </div>
+          </div>
+
+          <details>
+            <summary>Implementation anchors for the noun model</summary>
+            <ul class="clean">
+              <li><strong>Program adapter and runtime state</strong>: <code>packages/plugin-schedules/src/schedules.ts</code></li>
+              <li><strong>Program enrichment and history joins</strong>: <code>packages/server/src/routes/programs.ts</code></li>
+              <li><strong>Action/task schema and source linkage</strong>: <code>packages/plugin-tasks/src/tasks.ts</code></li>
+              <li><strong>Belief schema, provenance, corrections</strong>: <code>packages/core/src/memory/memory.ts</code></li>
+              <li><strong>Knowledge source store and chunk search</strong>: <code>packages/core/src/knowledge.ts</code></li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="user-flows">
+          <div class="eyebrow">outside-in view</div>
+          <h2>Primary user flows</h2>
+          <p>
+            These are the flows the product is built around. They are shown first from the user
+            point of view, then later from the internal runtime point of view.
+          </p>
+
+          <div class="split">
+            <div class="lane">
+              <h3>Flow A: Ask for help right now</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>User</strong><p>Types a question in web chat or Telegram.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Assistant</strong><p>Runs the chat pipeline, tools, and memory retrieval to answer in the current thread.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Assistant</strong><p>May recall beliefs, query knowledge, search the web, or manipulate tasks.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>User</strong><p>Gets a response immediately, even if no Program is created.</p></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lane">
+              <h3>Flow B: Keep watching this</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>User</strong><p>Says "keep watching this" or asks for ongoing follow-through.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Program create path</strong><p>Assistant or UI creates a Program tied to thread/chat and desired cadence.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Program</strong><p>Waits for due cadence and background execution.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Brief</strong><p>New research or analysis is transformed into a recommendation-first brief.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="split" style="margin-top: 1rem;">
+            <div class="lane">
+              <h3>Flow C: Brief -> Action</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Brief</strong><p>Shows recommended next actions in the Inbox or Telegram.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>User</strong><p>Accepts a next step and turns it into a tracked Action.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Action</strong><p>Lives in the task store with source linkage back to the brief or program, but remains a smaller, executable step.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Future brief</strong><p>Open, stale, or completed actions shape later recommendations.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Program</strong><p>Still remains the long-running watch in the background.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Action does not replace it</strong><p>The Action operationalizes one move inside the Program rather than rephrasing the Program itself.</p></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lane">
+              <h3>Flow D: Brief -> Correction</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>User</strong><p>Notices a wrong assumption or outdated memory in the brief.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Correction route</strong><p>Replaces the old belief, preserves history, and invalidates the old assumption.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Belief graph</strong><p>Supersession and provenance are updated immediately.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Future brief</strong><p>The next recommendation uses the replacement belief instead of the invalidated one.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="split" style="margin-top: 1rem;">
+            <div class="lane">
+              <h3>Flow E: Learn a page or document</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>User</strong><p>Uploads a file, shares a URL, or adds a source to learn.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Knowledge store</strong><p>Content is chunked, embedded, and stored as reusable source material.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Knowledge</strong><p>Supports future answers, research runs, and background learning.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Beliefs, sometimes</strong><p>Only high-signal personal facts may later be extracted into beliefs by background learning.</p></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lane">
+              <h3>Flow F: Telegram companion</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Telegram</strong><p>Receives pushed briefs linked to thread, program, or owner chat.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>User</strong><p>Can reply, create an action, complete an action, or correct a belief directly from Telegram.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Shared backend</strong><p>No Telegram-only shadow model exists for Programs, Briefs, Actions, or Beliefs.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Same loop</strong><p>Telegram is a companion surface, not a separate product model.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <details>
+            <summary>What the user actually sees today</summary>
+            <ul class="clean">
+              <li>Programs have their own page and history view.</li>
+              <li>Briefs are delivered in the Inbox and optionally pushed to Telegram.</li>
+              <li>Recommended moves are visible in Brief detail and Programs can open source-scoped follow-through, while the dedicated route still remains <code>/tasks</code> internally.</li>
+              <li>Memory has explicit correction surfaces for beliefs.</li>
+              <li>Knowledge has its own source list, upload, learn, search, crawl, reindex, and delete routes.</li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="dataflows">
+          <div class="eyebrow">inside-out view</div>
+          <h2>Internal dataflows and runtime mechanics</h2>
+          <p>
+            The following sections show what the runtime is actually doing under the user-facing flows.
+            Each subsection names the dominant reads, writes, and async edges.
+          </p>
+
+          <div class="triple">
+            <div class="card">
+              <h3>Chat dataflow</h3>
+              <p>
+                Thread history is loaded, tools run, responses stream or send, and fire-and-forget
+                post-processing extracts durable memory. Chat is how many flows start, but it is not
+                the primary long-term product object.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Program dataflow</h3>
+              <p>
+                Programs are created from chat or UI, stored as scheduled jobs, and later picked up
+                by the worker loop for research or swarm execution. Program runtime state records whether
+                anything materially changed.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Brief dataflow</h3>
+              <p>
+                Daily, research, and swarm runs all converge on a standard brief contract. The same
+                shape makes it possible to unify delivery, action extraction, correction, and validation.
+              </p>
+            </div>
+          </div>
+
+          <div class="split" style="margin-top: 1rem;">
+            <div class="lane">
+              <h3>1. Web or Telegram chat request</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Surface request</strong><p>User message enters web chat route or Telegram chat handler.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Thread continuity</strong><p>The system gets or creates a thread, loads recent messages, and applies a thread lock.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Tool-enabled model call</strong><p>Assistant can call memory, knowledge, tasks, web search, Program creation, or report tools.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Message persistence</strong><p>User, tool summaries, and assistant responses are appended back to the thread history.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>After-response hooks</strong><p>Post-processing may extract confirmed memory and episodic summaries.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Future context</strong><p>Later chats and briefs can retrieve those beliefs and episodes.</p></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lane">
+              <h3>2. Program runtime and scheduling</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Program creation</strong><p>Stored in <code>scheduled_jobs</code> with question, cadence, authored state, and thread/chat linkage.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>WorkerLoop</strong><p>Polls due schedules and avoids starting duplicate queued/running work for the same Program.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>BackgroundDispatcher</strong><p>Queues research, swarm, and daily briefing work with source priority and traffic awareness.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Execution engine</strong><p>Program execution mode decides whether the run uses lighter research or deeper swarm analysis.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Program runtime state</strong><p><code>latestBriefId</code>, <code>lastDeliveredAt</code>, <code>lastEvaluatedAt</code>, and <code>lastSignalHash</code> update after evaluation.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Change-gated delivery</strong><p>If nothing materially changed, a Program may be evaluated without creating a user-visible new brief.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="split" style="margin-top: 1rem;">
+            <div class="lane">
+              <h3>3. Daily brief generation</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Context assembly</strong><p>Reads open tasks, recently completed tasks, active goals, active Programs, recent beliefs, episodes, and knowledge source metadata.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Raw context object</strong><p>This becomes both the prompt context and the deterministic fallback context.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>LLM or fallback</strong><p>The system tries to generate the standard brief shape. If the model is unhealthy or output is malformed, a deterministic brief is produced instead.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Brief row write</strong><p>The result is stored into <code>briefings</code> with type <code>daily</code>.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Action-aware merge</strong><p>Existing linked actions can reshape recommendation and next actions so the brief does not repeat already-completed work.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Inbox delivery</strong><p>The latest ready daily brief becomes visible in the Inbox and may later be pushed to Telegram.</p></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lane">
+              <h3>4. Research and swarm report normalization</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Job completion</strong><p>Research or swarm produces a report, structured result, render spec, and optional visuals.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Standard brief conversion</strong><p><code>buildReportBriefSection()</code> turns report outputs into recommendation-first brief sections.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Action summary</strong><p>Open and stale linked actions are fed into the brief builder.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Signal hash</strong><p>A normalized brief hash drives change-gated suppression when a Program is configured that way.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Appendix and knowledge</strong><p>The long report stays available through brief appendix fields and is also learned back into the knowledge base.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Future reuse</strong><p>Later research, swarm, and knowledge queries can build on prior report output.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="split" style="margin-top: 1rem;">
+            <div class="lane">
+              <h3>5. Action lifecycle</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Action creation</strong><p>User creates an Action from brief detail, Program view, or Telegram command.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Task row</strong><p>Stored in <code>tasks</code> with <code>source_type</code> and <code>source_id</code> for linkage.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Status changes</strong><p>Completion or reopen updates status and timestamps.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Product signals</strong><p>Brief action created and completed events are recorded for measurement.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Future brief context</strong><p>Open, stale, and recently completed actions are re-read into daily and Program-based brief generation.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Behavior change</strong><p>Later briefs can say "close the stale action first" or avoid repeating already finished follow-through.</p></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lane">
+              <h3>6. Belief lifecycle and correction</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Belief creation</strong><p>Comes from user memory writes, chat extraction, or background learning.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Trust metadata</strong><p>Beliefs carry origin, freshness, correction state, sensitivity, provenance, and supersession links.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Correction</strong><p>The old active belief is invalidated, a new replacement belief is created, and both history and provenance are preserved.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Immediate suppression</strong><p>Future recommendation logic reads active beliefs, so the invalidated assumption stops influencing later briefs.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Recall</strong><p>Beliefs are semantically ranked with importance, recency, stability, and subject-aware scoring.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Context retrieval</strong><p>Beliefs and episodes form the high-signal personal context layer.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="split" style="margin-top: 1rem;">
+            <div class="lane">
+              <h3>7. Knowledge ingestion and retrieval</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Ingestion</strong><p>URL learning, uploaded docs, crawled sub-pages, chat attachments, and completed reports become knowledge sources.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Chunk store</strong><p>Content is split into coherent chunks, contextualized with title/domain, and embedded when possible.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Querying</strong><p>Search combines FTS, source-title/tag matching, semantic ranking, diversity limits, and freshness decay.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Downstream use</strong><p>Assistant tools, research, swarm, and unified retrieval all consume the knowledge base.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Lifecycle controls</strong><p>Sources can be retagged, reindexed, crawled, deleted, or expired via TTL cleanup.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Controlled corpus</strong><p>Knowledge stays reusable without becoming an unbounded stale source dump.</p></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lane">
+              <h3>8. Background learning</h3>
+              <div class="flow">
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Signal gathering</strong><p>New threads, completed research, completed tasks, and new knowledge sources are collected since watermarks.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Learning prompt</strong><p>An LLM extracts only high-signal personal facts and recurring patterns.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Filtering</strong><p>Low-importance facts are skipped. Generic world facts are explicitly discouraged.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Belief writes</strong><p>Accepted facts are stored via <code>remember()</code> with origin <code>inferred</code> and learning-run provenance.</p></div>
+                </div>
+                <div class="flow-row">
+                  <div class="flow-source"><strong>Watermarks</strong><p>Per-domain watermarks prevent reprocessing the same signals repeatedly.</p></div>
+                  <div class="arrow">-></div>
+                  <div class="flow-target"><strong>Slow accumulation</strong><p>Knowledge can eventually influence beliefs, but only through a selective distillation path.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane" style="margin-top: 1rem;">
+            <h3>9. Telegram push and companion commands</h3>
+            <div class="flow">
+              <div class="flow-row">
+                <div class="flow-source"><strong>Ready brief</strong><p>A ready briefing with no Telegram sent marker is picked up by the push loop.</p></div>
+                <div class="arrow">-></div>
+                <div class="flow-target"><strong>Chat target resolution</strong><p>Push logic resolves thread-linked chats, Program-linked chats, or the owner chat for daily briefs.</p></div>
+              </div>
+              <div class="flow-row">
+                <div class="flow-source"><strong>Delivery format</strong><p>Standard briefs become concise HTML summaries. Report briefs can also send visuals and rendered documents.</p></div>
+                <div class="arrow">-></div>
+                <div class="flow-target"><strong>Companion commands</strong><p>Telegram users can list briefs, list Programs, reply, create actions, complete actions, and correct beliefs using the shared backend model.</p></div>
+              </div>
+            </div>
+          </div>
+
+          <details>
+            <summary>High-value internal files to inspect after reading this section</summary>
+            <ul class="clean">
+              <li><code>packages/server/src/briefing.ts</code></li>
+              <li><code>packages/server/src/workers.ts</code></li>
+              <li><code>packages/server/src/background-dispatcher.ts</code></li>
+              <li><code>packages/core/src/brief-schema.ts</code></li>
+              <li><code>packages/core/src/memory/memory.ts</code></li>
+              <li><code>packages/core/src/knowledge.ts</code></li>
+              <li><code>packages/server/src/learning.ts</code></li>
+              <li><code>packages/plugin-telegram/src/push.ts</code></li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="sequence-atlas">
+          <div class="eyebrow">end-to-end sequences</div>
+          <h2>Sequence atlas</h2>
+          <p>
+            The following compact sequences show how the same state is touched from different directions.
+            Read them left to right.
+          </p>
+
+          <div class="lane">
+            <h3>Sequence 1: Ask -> Program -> Brief -> Action</h3>
+            <div class="sequence">
+              <div class="sequence-head">
+                <div>User</div>
+                <div>Surface</div>
+                <div>Server</div>
+                <div>Background</div>
+                <div>Storage</div>
+              </div>
+              <div class="sequence-row">
+                <div class="active"><strong>Ask:</strong><p>User starts with a recurring decision.</p></div>
+                <div class="active"><strong>Chat UI or Telegram:</strong><p>Assistant offers or triggers Program creation.</p></div>
+                <div><strong>Program route or tool:</strong><p>Creates Program adapter and records product event.</p></div>
+                <div><strong>Idle until due:</strong><p>No background work yet.</p></div>
+                <div class="active"><strong>Write:</strong><p><code>scheduled_jobs</code> row created.</p></div>
+              </div>
+              <div class="sequence-row">
+                <div><strong>Wait:</strong><p>User may do nothing.</p></div>
+                <div><strong>No active interaction required.</strong></div>
+                <div><strong>WorkerLoop:</strong><p>Finds due Program and enqueues research or swarm.</p></div>
+                <div class="active"><strong>Run:</strong><p>Job completes and brief section is built.</p></div>
+                <div class="active"><strong>Write:</strong><p>Job row updates, brief row inserted, Program runtime updated.</p></div>
+              </div>
+              <div class="sequence-row">
+                <div class="active"><strong>Review brief:</strong><p>User reads recommendation and next actions.</p></div>
+                <div class="active"><strong>Inbox or Telegram:</strong><p>Shows brief detail and actions.</p></div>
+                <div><strong>Task route:</strong><p>Creates linked Action when user accepts follow-through.</p></div>
+                <div><strong>Future runs:</strong><p>Will later read action state.</p></div>
+                <div class="active"><strong>Write:</strong><p><code>tasks</code> row linked to brief or Program.</p></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane" style="margin-top: 1rem;">
+            <h3>Sequence 2: Learn -> Knowledge -> Belief distillation</h3>
+            <div class="sequence">
+              <div class="sequence-head">
+                <div>User</div>
+                <div>Surface</div>
+                <div>Server</div>
+                <div>Background</div>
+                <div>Storage</div>
+              </div>
+              <div class="sequence-row">
+                <div class="active"><strong>Share source:</strong><p>User uploads a doc or submits a URL.</p></div>
+                <div class="active"><strong>Knowledge UI or chat upload:</strong><p>Passes content to learning route.</p></div>
+                <div><strong>Knowledge ingest:</strong><p>Parses content, chunks it, embeds it, and stores source metadata.</p></div>
+                <div><strong>None yet.</strong></div>
+                <div class="active"><strong>Write:</strong><p><code>knowledge_sources</code> and <code>knowledge_chunks</code>.</p></div>
+              </div>
+              <div class="sequence-row">
+                <div><strong>No immediate visible belief change.</strong></div>
+                <div><strong>Later retrieval:</strong><p>Assistant, research, or swarm can search the knowledge base.</p></div>
+                <div><strong>Background learning:</strong><p>Sees new knowledge source as a learning signal.</p></div>
+                <div class="active"><strong>LLM extraction:</strong><p>Only high-signal personal facts may be promoted.</p></div>
+                <div class="active"><strong>Maybe write:</strong><p>New or reinforced beliefs with inferred origin and provenance.</p></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane" style="margin-top: 1rem;">
+            <h3>Sequence 3: Wrong brief assumption -> correction -> next brief improves</h3>
+            <div class="sequence">
+              <div class="sequence-head">
+                <div>User</div>
+                <div>Surface</div>
+                <div>Server</div>
+                <div>Background</div>
+                <div>Storage</div>
+              </div>
+              <div class="sequence-row">
+                <div class="active"><strong>Detects error:</strong><p>User says a belief or assumption is wrong.</p></div>
+                <div class="active"><strong>Inbox, Memory, Ask, or Telegram:</strong><p>Submits a correction.</p></div>
+                <div><strong>Correction route:</strong><p>Calls shared belief correction path.</p></div>
+                <div><strong>No extra job required.</strong></div>
+                <div class="active"><strong>Write:</strong><p>Old belief invalidated, replacement belief created, supersession linked, provenance written.</p></div>
+              </div>
+              <div class="sequence-row">
+                <div><strong>Waits for next run.</strong></div>
+                <div><strong>Later brief opened.</strong></div>
+                <div><strong>Brief builder:</strong><p>Reads active beliefs only.</p></div>
+                <div class="active"><strong>Next Program or daily run:</strong><p>Uses replacement belief and suppresses the invalidated one.</p></div>
+                <div><strong>Read:</strong><p><code>beliefs</code>, <code>belief_changes</code>, <code>belief_provenance</code>.</p></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="validation">
+          <div class="eyebrow">quality gates</div>
+          <h2>Validation, harness, and operational loops</h2>
+          <p>
+            The repo is opinionated about shipping behavior with proof. Product loop changes are
+            supposed to be backed by tests, harness runs, checklists, and evidence packs.
+          </p>
+
+          <div class="triple">
+            <div class="card">
+              <h3>Build and type safety</h3>
+              <p>
+                Standard validation stack includes <code>pnpm test</code>, <code>pnpm lint</code>,
+                <code>pnpm typecheck</code>, and <code>pnpm build</code>.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Behavior harness</h3>
+              <p>
+                Core-loop changes are expected to use <code>pnpm harness:core-loop</code>.
+                Repo-wide regression integrity uses <code>pnpm harness:regressions</code>.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Evidence model</h3>
+              <p>
+                Non-trivial tasks are expected to carry a task contract, evidence pack,
+                and at least one matching checklist in <code>harness/checklists</code>.
+              </p>
+            </div>
+          </div>
+
+          <div class="split" style="margin-top: 1rem;">
+            <div class="lane">
+              <h3>Operational loops running in the server</h3>
+              <ul class="clean">
+                <li>Periodic daily briefing queueing</li>
+                <li>Due Program schedule polling</li>
+                <li>Background learning from recent signals</li>
+                <li>Knowledge TTL cleanup</li>
+                <li>Artifact cleanup</li>
+                <li>Telemetry cleanup</li>
+              </ul>
+            </div>
+            <div class="lane">
+              <h3>Measurement loops</h3>
+              <ul class="clean">
+                <li>Product events distinguish user loop events from raw telemetry spans.</li>
+                <li>Examples: Program created, brief follow-up asked, brief action created/completed, belief corrected.</li>
+                <li>The goal is to measure whether the recurring decision loop is actually being used and improved.</li>
+              </ul>
+            </div>
+          </div>
+
+          <details>
+            <summary>What to inspect if you want the runtime scheduler and queue model</summary>
+            <ul class="clean">
+              <li><code>packages/server/src/workers.ts</code> for periodic loop registration</li>
+              <li><code>packages/server/src/background-dispatcher.ts</code> for queue ordering and backpressure</li>
+              <li><code>packages/server/src/learning.ts</code> for background learning and watermarks</li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="boundaries">
+          <div class="eyebrow">product discipline</div>
+          <h2>What the project is optimizing for, and what it is not</h2>
+          <p>
+            This codebase has a lot of capability, but the design discipline is to keep the recurring
+            decision loop at the center and avoid letting internal execution nouns dominate the story.
+          </p>
+
+          <div class="split">
+            <div class="lane">
+              <h3>Primary center</h3>
+              <ul class="clean">
+                <li>Programs and Briefs are the dominant product objects.</li>
+                <li>Tracked follow-through is optional, not a full task-manager strategy.</li>
+                <li>Beliefs and knowledge are trust infrastructure for the next brief.</li>
+                <li>Telegram is a companion surface, not a separate control plane.</li>
+              </ul>
+            </div>
+            <div class="lane">
+              <h3>Things intentionally kept secondary</h3>
+              <ul class="clean">
+                <li>Threads are interaction containers, not the main product identity.</li>
+                <li>Jobs, schedules, and swarm are implementation objects, not the product story.</li>
+                <li>Search, browser automation, and sandbox are optional enrichments, not correctness dependencies.</li>
+                <li>Knowledge is not the same thing as memory; long-form source material stays separate from distilled beliefs.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="panel" style="margin-top: 1rem;">
+            <h3>The shortest accurate summary</h3>
+            <p>
+              <strong>pai</strong> keeps track of ongoing decisions in the background, delivers
+              recommendation-first briefs, remembers durable user context, and lets the user
+              correct the system so later briefs improve. Everything else in the repo either supports
+              that loop directly or is being constrained so it does not overshadow it.
+            </p>
+          </div>
+        </section>
+
+        <p class="footer-note">
+          Built as a standalone repository guide. Open locally, scroll section by section, and use the
+          left navigation as your map from product language to concrete implementation.
+        </p>
+      </main>
+    </div>
+  </body>
+</html>

@@ -8,6 +8,8 @@ import {
   getContextBudget,
   getProviderOptions,
   instrumentedGenerateText,
+  type StandardBriefSection,
+  type Belief,
 } from "@personal-ai/core";
 import { listPrograms } from "@personal-ai/plugin-schedules";
 import { listGoals, listTasks } from "@personal-ai/plugin-tasks";
@@ -17,36 +19,7 @@ const BRIEFING_LLM_TIMEOUT = {
   stepMs: 60_000,
 } as const;
 
-export interface BriefingSection {
-  title?: string;
-  recommendation: {
-    summary: string;
-    confidence: "low" | "medium" | "high";
-    rationale: string;
-  };
-  what_changed: string[];
-  evidence: Array<{
-    title: string;
-    detail: string;
-    sourceLabel: string;
-    sourceUrl?: string;
-    freshness?: string;
-  }>;
-  memory_assumptions: Array<{
-    statement: string;
-    confidence: "low" | "medium" | "high";
-    provenance: string;
-  }>;
-  next_actions: Array<{
-    title: string;
-    timing: string;
-    detail: string;
-    owner?: string;
-  }>;
-  correction_hook: {
-    prompt: string;
-  };
-}
+export type BriefingSection = StandardBriefSection;
 
 export interface BriefingBeliefInput {
   id: string;
@@ -125,6 +98,11 @@ export interface BriefingRow {
   attempt_count: number | null;
   last_attempt_at: string | null;
   source_kind: string | null;
+  program_id: string | null;
+  thread_id: string | null;
+  source_job_id: string | null;
+  source_job_kind: string | null;
+  signal_hash: string | null;
 }
 
 export interface Briefing {
@@ -138,6 +116,11 @@ export interface Briefing {
   attemptCount?: number;
   lastAttemptAt?: string | null;
   sourceKind?: BackgroundJobSourceKind;
+  programId?: string | null;
+  threadId?: string | null;
+  sourceJobId?: string | null;
+  sourceJobKind?: string | null;
+  signalHash?: string | null;
   rawContext?: BriefingContextInput | null;
 }
 
@@ -173,6 +156,18 @@ export const briefingMigrations: Migration[] = [
       ALTER TABLE briefings ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'maintenance';
     `,
   },
+  {
+    version: 5,
+    up: `
+      ALTER TABLE briefings ADD COLUMN program_id TEXT;
+      ALTER TABLE briefings ADD COLUMN thread_id TEXT;
+      ALTER TABLE briefings ADD COLUMN source_job_id TEXT;
+      ALTER TABLE briefings ADD COLUMN source_job_kind TEXT;
+      ALTER TABLE briefings ADD COLUMN signal_hash TEXT;
+      CREATE INDEX IF NOT EXISTS idx_briefings_program ON briefings(program_id);
+      CREATE INDEX IF NOT EXISTS idx_briefings_source_job ON briefings(source_job_id, source_job_kind);
+    `,
+  },
 ];
 
 function parseRawContext(rawContext: string | null): BriefingContextInput | null {
@@ -184,6 +179,65 @@ function parseRawContext(rawContext: string | null): BriefingContextInput | null
   }
 }
 
+function sanitizeBriefingRawContext(
+  storage: PluginContext["storage"],
+  rawContext: BriefingContextInput | null,
+): BriefingContextInput | null {
+  if (!rawContext || !Array.isArray(rawContext.beliefs) || rawContext.beliefs.length === 0) {
+    return rawContext;
+  }
+
+  const currentBeliefs = listBeliefs(storage, "all")
+    .filter((belief) => rawContext.beliefs.some((candidate) => candidate.id === belief.id));
+  if (currentBeliefs.length === 0) {
+    return rawContext;
+  }
+
+  const allowedBeliefIds = new Set(
+    selectBriefingBeliefs(currentBeliefs, {
+      programs: Array.isArray(rawContext.programs) ? rawContext.programs : [],
+      tasks: Array.isArray(rawContext.tasks) ? rawContext.tasks : [],
+      goals: Array.isArray(rawContext.goals) ? rawContext.goals : [],
+      knowledgeSources: Array.isArray(rawContext.knowledgeSources) ? rawContext.knowledgeSources : [],
+    }, rawContext.beliefs.length).map((belief) => belief.id),
+  );
+
+  return {
+    ...rawContext,
+    beliefs: rawContext.beliefs.filter((belief) => allowedBeliefIds.has(belief.id)),
+  };
+}
+
+function isStandardBriefSectionShape(value: unknown): value is BriefingSection {
+  return !!value
+    && typeof value === "object"
+    && Array.isArray((value as { memory_assumptions?: unknown }).memory_assumptions);
+}
+
+function sanitizeBriefingSections(
+  sections: BriefingSection,
+  rawContext: BriefingContextInput | null,
+): BriefingSection {
+  if (!isStandardBriefSectionShape(sections)) return sections;
+  if (!rawContext || !Array.isArray(rawContext.beliefs) || rawContext.beliefs.length === 0) {
+    return {
+      ...sections,
+      memory_assumptions: [],
+    };
+  }
+
+  const allowedStatements = new Set(
+    rawContext.beliefs.map((belief) => normalizeBriefingText(belief.statement)),
+  );
+
+  return {
+    ...sections,
+    memory_assumptions: sections.memory_assumptions.filter((item) =>
+      allowedStatements.has(normalizeBriefingText(item.statement)),
+    ),
+  };
+}
+
 export function getLatestBriefing(storage: PluginContext["storage"]): Briefing | null {
   const rows = storage.query<BriefingRow>(
     "SELECT * FROM briefings WHERE status = 'ready' AND type = 'daily' ORDER BY generated_at DESC LIMIT 1",
@@ -191,10 +245,12 @@ export function getLatestBriefing(storage: PluginContext["storage"]): Briefing |
   );
   const row = rows[0];
   if (!row) return null;
+  const rawContext = sanitizeBriefingRawContext(storage, parseRawContext(row.raw_context));
+  const sections = sanitizeBriefingSections(JSON.parse(row.sections), rawContext);
   return {
     id: row.id,
     generatedAt: row.generated_at,
-    sections: JSON.parse(row.sections),
+    sections,
     status: row.status,
     type: row.type,
     queuedAt: row.queued_at,
@@ -202,6 +258,11 @@ export function getLatestBriefing(storage: PluginContext["storage"]): Briefing |
     attemptCount: row.attempt_count ?? 0,
     lastAttemptAt: row.last_attempt_at,
     sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "maintenance",
+    programId: row.program_id,
+    threadId: row.thread_id,
+    sourceJobId: row.source_job_id,
+    sourceJobKind: row.source_job_kind,
+    signalHash: row.signal_hash,
   };
 }
 
@@ -212,10 +273,12 @@ export function getBriefingById(storage: PluginContext["storage"], id: string): 
   );
   const row = rows[0];
   if (!row) return null;
+  const rawContext = sanitizeBriefingRawContext(storage, parseRawContext(row.raw_context));
+  const sections = sanitizeBriefingSections(JSON.parse(row.sections), rawContext);
   return {
     id: row.id,
     generatedAt: row.generated_at,
-    sections: JSON.parse(row.sections),
+    sections,
     status: row.status,
     type: row.type,
     queuedAt: row.queued_at,
@@ -223,7 +286,12 @@ export function getBriefingById(storage: PluginContext["storage"], id: string): 
     attemptCount: row.attempt_count ?? 0,
     lastAttemptAt: row.last_attempt_at,
     sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "maintenance",
-    rawContext: parseRawContext(row.raw_context),
+    programId: row.program_id,
+    threadId: row.thread_id,
+    sourceJobId: row.source_job_id,
+    sourceJobKind: row.source_job_kind,
+    signalHash: row.signal_hash,
+    rawContext,
   };
 }
 
@@ -250,6 +318,11 @@ export function listAllBriefings(storage: PluginContext["storage"]): Briefing[] 
     attemptCount: row.attempt_count ?? 0,
     lastAttemptAt: row.last_attempt_at,
     sourceKind: (row.source_kind as BackgroundJobSourceKind | null) ?? "maintenance",
+    programId: row.program_id,
+    threadId: row.thread_id,
+    sourceJobId: row.source_job_id,
+    sourceJobKind: row.source_job_kind,
+    signalHash: row.signal_hash,
   }));
 }
 
@@ -427,6 +500,174 @@ function dedupeEvidence(items: BriefingSection["evidence"]): BriefingSection["ev
     deduped.push(item);
   }
   return deduped;
+}
+
+const BRIEFING_ALLOWED_BELIEF_TYPES = new Set(["preference", "factual", "procedural"]);
+const BRIEFING_KEYWORD_STOP_WORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "that",
+  "this",
+  "into",
+  "when",
+  "what",
+  "where",
+  "while",
+  "have",
+  "has",
+  "will",
+  "only",
+  "more",
+  "than",
+  "your",
+  "about",
+  "after",
+  "before",
+  "brief",
+  "briefing",
+  "watch",
+  "watching",
+  "tell",
+  "keep",
+  "owner",
+  "user",
+]);
+
+function normalizeBriefingText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function extractBriefingKeywords(value: string): string[] {
+  return normalizeBriefingText(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !BRIEFING_KEYWORD_STOP_WORDS.has(token));
+}
+
+function isOwnerScopedSubject(subject?: string): boolean {
+  if (!subject) return true;
+  const normalized = normalizeBriefingText(subject);
+  return normalized.length === 0 || normalized === "owner" || normalized === "general";
+}
+
+function buildBriefingFocus(
+  programs: BriefingProgramInput[],
+  tasks: BriefingTaskInput[],
+  goals: Array<{ title: string }>,
+  knowledgeSources: Array<{ title: string; url: string }>,
+): { text: string; keywords: Set<string> } {
+  const parts = [
+    ...programs.flatMap((program) => [
+      program.title,
+      program.question,
+      ...program.preferences,
+      ...program.constraints,
+      ...program.openQuestions,
+    ]),
+    ...tasks.map((task) => task.title),
+    ...goals.map((goal) => goal.title),
+    ...knowledgeSources.map((source) => source.title),
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+  return {
+    text: parts.map((part) => normalizeBriefingText(part)).join(" "),
+    keywords: new Set(parts.flatMap((part) => extractBriefingKeywords(part))),
+  };
+}
+
+function countBriefingFocusMatches(statement: string, focusKeywords: Set<string>): number {
+  let matches = 0;
+  for (const token of extractBriefingKeywords(statement)) {
+    if (focusKeywords.has(token)) matches += 1;
+  }
+  return matches;
+}
+
+function scoreBriefingBelief(
+  belief: Belief,
+  focus: { text: string; keywords: Set<string> },
+): number | null {
+  if (belief.status !== "active") return null;
+  if (belief.sensitive) return null;
+  if (belief.correction_state === "invalidated" || belief.correction_state === "corrected") return null;
+  if (!BRIEFING_ALLOWED_BELIEF_TYPES.has(belief.type)) return null;
+  if (belief.confidence < 0.55) return null;
+
+  const ownerScoped = isOwnerScopedSubject(belief.subject);
+  const focusMatches = countBriefingFocusMatches(belief.statement, focus.keywords);
+  const normalizedSubject = normalizeBriefingText(belief.subject ?? "");
+  const subjectMentioned = !ownerScoped
+    && normalizedSubject.length > 0
+    && focus.text.includes(normalizedSubject);
+
+  if (belief.type === "preference" || belief.type === "procedural") {
+    if (ownerScoped) {
+      if (belief.confidence < 0.6) return null;
+    } else if (!subjectMentioned || focusMatches === 0 || belief.confidence < 0.75) {
+      return null;
+    }
+  } else if (belief.type === "factual") {
+    if (ownerScoped) {
+      if (focusMatches === 0) return null;
+    } else if (!subjectMentioned || focusMatches === 0 || belief.confidence < 0.75) {
+      return null;
+    }
+  }
+
+  const freshnessSource = belief.freshness_at ?? belief.updated_at;
+  const updatedAt = Date.parse(freshnessSource);
+  const ageDays = Number.isNaN(updatedAt)
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, (Date.now() - updatedAt) / (1000 * 60 * 60 * 24));
+  const freshnessBonus = ageDays <= 3 ? 12 : ageDays <= 14 ? 6 : 0;
+  const originBonus = belief.origin === "user-said"
+    ? 10
+    : belief.origin === "document" || belief.origin === "web"
+      ? 6
+      : belief.origin === "synthesized"
+        ? -4
+        : 0;
+  const focusBonus = ownerScoped && (belief.type === "preference" || belief.type === "procedural")
+    ? 8
+    : focusMatches * 14;
+
+  return (
+    focusBonus
+    + freshnessBonus
+    + originBonus
+    + belief.importance * 2
+    + Math.min(6, belief.access_count)
+    + Math.round(belief.confidence * 20)
+  );
+}
+
+export function selectBriefingBeliefs(
+  beliefs: Belief[],
+  input: {
+    programs: BriefingProgramInput[];
+    tasks: BriefingTaskInput[];
+    goals: Array<{ title: string }>;
+    knowledgeSources: Array<{ title: string; url: string }>;
+  },
+  limit = 8,
+): Belief[] {
+  const focus = buildBriefingFocus(input.programs, input.tasks, input.goals, input.knowledgeSources);
+
+  return beliefs
+    .map((belief) => ({
+      belief,
+      score: scoreBriefingBelief(belief, focus),
+    }))
+    .filter((entry): entry is { belief: Belief; score: number } => entry.score !== null)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      return right.belief.confidence - left.belief.confidence;
+    })
+    .slice(0, limit)
+    .map((entry) => entry.belief);
 }
 
 function isStaleAction(task: BriefingTaskInput, now: Date): boolean {
@@ -940,22 +1181,6 @@ export async function generateBriefing(
     return age < 7 * 24 * 60 * 60 * 1000;
   }).slice(0, 5);
 
-  const allBeliefs = listBeliefs(ctx.storage, "active");
-  const recentBeliefs = allBeliefs
-    .filter((belief) => {
-      const age = Date.now() - new Date(belief.updated_at).getTime();
-      return age < 3 * 24 * 60 * 60 * 1000;
-    })
-    .slice(0, 15);
-  const nonRecent = allBeliefs.filter((belief) => !recentBeliefs.some((recent) => recent.id === belief.id));
-  for (let index = nonRecent.length - 1; index > 0; index--) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [nonRecent[index], nonRecent[swapIndex]] = [nonRecent[swapIndex]!, nonRecent[index]!];
-  }
-  const topBeliefs = recentBeliefs.length >= 10
-    ? recentBeliefs
-    : [...recentBeliefs, ...nonRecent.slice(0, 10 - recentBeliefs.length)];
-
   let recentEpisodes: Array<{ content: string; timestamp: string }> = [];
   try {
     recentEpisodes = ctx.storage.query<{ content: string; timestamp: string }>(
@@ -1010,6 +1235,25 @@ export async function generateBriefing(
     sourceLabel: task.source_label,
   }));
   const actionSignals = buildActionSignals(openTaskContext, completedTaskContext, now);
+  const allBeliefs = listBeliefs(ctx.storage, "active");
+  const topBeliefs = selectBriefingBeliefs(allBeliefs, {
+    programs: programs.map((program) => ({
+      id: program.id,
+      title: program.title,
+      question: program.question,
+      family: program.family,
+      executionMode: program.executionMode,
+      intervalHours: program.intervalHours,
+      lastRunAt: program.lastRunAt,
+      nextRunAt: program.nextRunAt,
+      preferences: program.preferences,
+      constraints: program.constraints,
+      openQuestions: program.openQuestions,
+    })),
+    tasks: openTaskContext,
+    goals: goals.map((goal) => ({ title: goal.title })),
+    knowledgeSources: sources.map((source) => ({ title: source.title ?? source.url, url: source.url })),
+  });
 
   const rawContext: BriefingContextInput = {
     ownerName,

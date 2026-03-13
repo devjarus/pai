@@ -125,7 +125,8 @@ const mockListGoals = vi.fn();
 const mockCompleteGoal = vi.fn();
 const mockDeleteGoal = vi.fn();
 const mockListPrograms = vi.fn();
-const mockCreateProgram = vi.fn();
+const mockGetProgramById = vi.fn();
+const mockEnsureProgram = vi.fn();
 const mockUpdateProgram = vi.fn();
 const mockDeleteProgram = vi.fn();
 const mockPauseProgram = vi.fn();
@@ -146,7 +147,8 @@ vi.mock("@personal-ai/plugin-tasks", () => ({
 
 vi.mock("@personal-ai/plugin-schedules", () => ({
   listPrograms: (...args: unknown[]) => mockListPrograms(...args),
-  createProgram: (...args: unknown[]) => mockCreateProgram(...args),
+  getProgramById: (...args: unknown[]) => mockGetProgramById(...args),
+  ensureProgram: (...args: unknown[]) => mockEnsureProgram(...args),
   updateProgram: (...args: unknown[]) => mockUpdateProgram(...args),
   deleteProgram: (...args: unknown[]) => mockDeleteProgram(...args),
   pauseProgram: (...args: unknown[]) => mockPauseProgram(...args),
@@ -1079,22 +1081,26 @@ describe("agent routes", () => {
     });
     const thread = JSON.parse(createRes.payload) as { id: string };
 
-    mockCreateProgram.mockImplementation((_storage: unknown, input: Record<string, unknown>) => ({
-      id: "prog_123",
-      title: input.title ?? "Atlas launch readiness",
-      question: input.question ?? "Keep watching Atlas launch readiness and brief me when blockers change.",
-      family: input.family ?? "work",
-      executionMode: input.executionMode ?? "research",
-      intervalHours: input.intervalHours ?? 24,
-      chatId: input.chatId ?? null,
-      threadId: input.threadId ?? null,
-      nextRunAt: "2026-03-12T16:00:00.000Z",
-      lastRunAt: null,
-      status: "active",
-      createdAt: "2026-03-12T08:00:00.000Z",
-      preferences: input.preferences ?? [],
-      constraints: input.constraints ?? [],
-      openQuestions: input.openQuestions ?? [],
+    mockEnsureProgram.mockImplementation((_storage: unknown, input: Record<string, unknown>) => ({
+      created: true,
+      duplicateReason: null,
+      program: {
+        id: "prog_123",
+        title: input.title ?? "Atlas launch readiness",
+        question: input.question ?? "Keep watching Atlas launch readiness and brief me when blockers change.",
+        family: input.family ?? "work",
+        executionMode: input.executionMode ?? "research",
+        intervalHours: input.intervalHours ?? 24,
+        chatId: input.chatId ?? null,
+        threadId: input.threadId ?? null,
+        nextRunAt: "2026-03-12T16:00:00.000Z",
+        lastRunAt: null,
+        status: "active",
+        createdAt: "2026-03-12T08:00:00.000Z",
+        preferences: input.preferences ?? [],
+        constraints: input.constraints ?? [],
+        openQuestions: input.openQuestions ?? [],
+      },
     }));
 
     mockStreamText.mockImplementation((opts: Record<string, unknown>) => {
@@ -1142,7 +1148,7 @@ describe("agent routes", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(mockCreateProgram).toHaveBeenCalledWith(
+    expect(mockEnsureProgram).toHaveBeenCalledWith(
       serverCtx.ctx.storage,
       expect.objectContaining({
         title: "Atlas launch readiness",
@@ -1676,6 +1682,7 @@ describe("task routes", () => {
 
     mockAddTask.mockReset();
     mockListTasks.mockReset();
+    mockListTasks.mockReturnValue([]);
     mockCompleteTask.mockReset();
     mockEditTask.mockReset();
     mockReopenTask.mockReset();
@@ -1870,11 +1877,13 @@ describe("program routes", () => {
     await app.ready();
 
     mockListPrograms.mockReset();
-    mockCreateProgram.mockReset();
+    mockGetProgramById.mockReset();
+    mockEnsureProgram.mockReset();
     mockUpdateProgram.mockReset();
     mockDeleteProgram.mockReset();
     mockPauseProgram.mockReset();
     mockResumeProgram.mockReset();
+    mockListTasks.mockReturnValue([]);
   });
 
   afterEach(async () => {
@@ -1904,7 +1913,13 @@ describe("program routes", () => {
     const res = await app.inject({ method: "GET", url: "/api/programs" });
 
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.payload)).toEqual([program]);
+    expect(JSON.parse(res.payload)).toEqual([
+      expect.objectContaining({
+        ...program,
+        actionSummary: { openCount: 0, completedCount: 0, staleOpenCount: 0 },
+        latestBriefSummary: null,
+      }),
+    ]);
     expect(mockListPrograms).toHaveBeenCalledWith(expect.anything());
   });
 
@@ -1926,7 +1941,11 @@ describe("program routes", () => {
       constraints: ["Only material changes"],
       openQuestions: ["Who owns rollback verification?"],
     };
-    mockCreateProgram.mockReturnValue(created);
+    mockEnsureProgram.mockReturnValue({
+      program: created,
+      created: true,
+      duplicateReason: null,
+    });
 
     const payload = {
       title: "Atlas watch",
@@ -1947,8 +1966,62 @@ describe("program routes", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.payload)).toEqual(created);
-    expect(mockCreateProgram).toHaveBeenCalledWith(expect.anything(), payload);
+    expect(JSON.parse(res.payload)).toEqual({
+      program: expect.objectContaining({
+        ...created,
+        actionSummary: { openCount: 0, completedCount: 0, staleOpenCount: 0 },
+        latestBriefSummary: null,
+      }),
+      created: true,
+      duplicateReason: null,
+    });
+    expect(mockEnsureProgram).toHaveBeenCalledWith(expect.anything(), payload);
+  });
+
+  it("POST /api/programs reuses an existing program when the watch already exists", async () => {
+    const existing = {
+      id: "prog-2",
+      title: "Atlas watch",
+      question: "Keep watching Atlas launch readiness",
+      family: "work",
+      executionMode: "analysis",
+      intervalHours: 12,
+      chatId: null,
+      threadId: "thread-123",
+      lastRunAt: null,
+      nextRunAt: "2026-03-11T12:00:00.000Z",
+      status: "active",
+      createdAt: "2026-03-10T12:00:00.000Z",
+      preferences: ["Lead with blockers"],
+      constraints: ["Only material changes"],
+      openQuestions: ["Who owns rollback verification?"],
+    };
+    mockEnsureProgram.mockReturnValue({
+      program: existing,
+      created: false,
+      duplicateReason: "thread",
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/programs",
+      payload: {
+        title: "Atlas watch",
+        question: "Keep watching Atlas launch readiness",
+        threadId: "thread-123",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual({
+      program: expect.objectContaining({
+        ...existing,
+        actionSummary: { openCount: 0, completedCount: 0, staleOpenCount: 0 },
+        latestBriefSummary: null,
+      }),
+      created: false,
+      duplicateReason: "thread",
+    });
   });
 
   it("POST /api/programs returns 400 for invalid payload", async () => {
@@ -1989,7 +2062,11 @@ describe("program routes", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.payload)).toEqual(updated);
+    expect(JSON.parse(res.payload)).toEqual(expect.objectContaining({
+      ...updated,
+      actionSummary: { openCount: 0, completedCount: 0, staleOpenCount: 0 },
+      latestBriefSummary: null,
+    }));
     expect(mockUpdateProgram).toHaveBeenCalledWith(expect.anything(), "prog-1", { constraints: ["Avoid noisy updates"] });
   });
 

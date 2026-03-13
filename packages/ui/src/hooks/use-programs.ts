@@ -20,6 +20,7 @@ export function usePrograms() {
     queryKey: programKeys.list(),
     queryFn: () => getPrograms(),
     refetchInterval: 30_000,
+    refetchOnMount: "always",
   });
 }
 

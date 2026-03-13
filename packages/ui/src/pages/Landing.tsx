@@ -40,7 +40,7 @@ const features = [
   {
     icon: SmartphoneIcon,
     title: "Companion surfaces, not clutter",
-    desc: "The web app is the control center. Telegram, CLI, and MCP extend delivery and follow-through without becoming separate product stories.",
+    desc: "The web app is the control center. Telegram, CLI, and MCP extend delivery and saved moves without becoming separate product stories.",
   },
 ];
 
@@ -129,7 +129,7 @@ export default function Landing() {
         </h2>
         <p className="mx-auto mb-10 max-w-2xl text-center text-base text-muted-foreground">
           Ask, keep watching, get briefed, correct what changed, and let the next brief improve.
-          The breadth still exists under the hood, but the product stays centered on Programs, Briefs, Memory, and follow-through.
+          The breadth still exists under the hood, but the product stays centered on Programs, Briefs, Memory, and user-approved saved moves.
         </p>
 
         <div className="flex flex-wrap justify-center gap-4">

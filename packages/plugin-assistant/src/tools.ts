@@ -1,14 +1,14 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
-import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType, createBrowserTools } from "@personal-ai/core";
+import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, correctBelief, recordProductEvent, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType, createBrowserTools } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
-import { createProgram, listPrograms, deleteProgram } from "@personal-ai/plugin-schedules";
+import { ensureProgram, listPrograms, deleteProgram } from "@personal-ai/plugin-schedules";
 import { webSearch, formatSearchResults, type SearchCategory, type TimeRange } from "./web-search.js";
 import { fetchPageAsMarkdown, discoverSubPages } from "./page-fetch.js";
 
@@ -135,6 +135,40 @@ export function createAgentTools(ctx: AgentContext) {
           return { ok: true, message: `Belief forgotten.${reason ? ` Reason: ${reason}` : ""}` };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Failed to forget belief" };
+        }
+      },
+    }),
+
+    memory_correct: tool({
+      description: "Correct a stored belief by replacing it with a better statement. Use this when the user says a remembered assumption is wrong, outdated, or should be replaced for future briefs.",
+      inputSchema: z.object({
+        beliefId: z.string().describe("Belief ID or prefix (first 8 characters)"),
+        statement: z.string().describe("Replacement belief statement"),
+        note: z.string().optional().describe("Optional note about why this correction is needed"),
+      }),
+      execute: async ({ beliefId, statement, note }) => {
+        try {
+          const result = await correctBelief(ctx.storage, ctx.llm, beliefId, { statement, note });
+          const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
+          const chatId = (ctx as unknown as Record<string, unknown>).chatId as number | undefined;
+          recordProductEvent(ctx.storage, {
+            eventType: "belief_corrected",
+            beliefId: result.replacementBelief.id,
+            threadId: threadId ?? null,
+            channel: chatId != null ? "telegram" : "web",
+            metadata: {
+              invalidatedBeliefId: result.invalidatedBelief.id,
+              correctionEpisodeId: result.correctionEpisode.id,
+            },
+          });
+          return {
+            ok: true,
+            invalidatedBeliefId: result.invalidatedBelief.id,
+            replacementBeliefId: result.replacementBelief.id,
+            message: "Belief corrected. Future briefs will use the replacement belief.",
+          };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to correct belief" };
         }
       },
     }),
@@ -425,12 +459,16 @@ export function createAgentTools(ctx: AgentContext) {
         preferences: z.array(z.string()).optional().describe("Optional user preferences that should shape future briefs"),
         constraints: z.array(z.string()).optional().describe("Optional constraints or requirements the Program should remember"),
         open_questions: z.array(z.string()).optional().describe("Optional unresolved questions to keep in view"),
+        objective: z.string().optional().describe("Optional objective the Program is optimizing for"),
+        phase: z.enum(["monitor", "explore", "decide", "act", "prepare"]).optional().describe("Optional Program phase. Use monitor by default."),
+        delivery_mode: z.enum(["interval", "change-gated"]).optional().describe("Use change-gated when the user wants briefs only when something materially changes."),
+        source_refs: z.array(z.string()).optional().describe("Optional URLs, docs, or references this Program should keep in view"),
       }),
-      execute: async ({ title, question, family, execution_mode, interval_hours, start_at, preferences, constraints, open_questions }) => {
+      execute: async ({ title, question, family, execution_mode, interval_hours, start_at, preferences, constraints, open_questions, objective, phase, delivery_mode, source_refs }) => {
         try {
           const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
           const chatId = (ctx as unknown as Record<string, unknown>).chatId as number | undefined;
-          const program = createProgram(ctx.storage, {
+          const result = ensureProgram(ctx.storage, {
             title,
             question,
             family,
@@ -442,8 +480,28 @@ export function createAgentTools(ctx: AgentContext) {
             preferences,
             constraints,
             openQuestions: open_questions,
+            objective,
+            phase,
+            deliveryMode: delivery_mode,
+            sourceRefs: source_refs,
           });
-          return `Program created. "${title}" will brief every ${program.intervalHours} hours in ${program.executionMode} mode. First run at ${formatDateTime(ctx.config.timezone, new Date(program.nextRunAt)).full}. Future updates will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
+          if (result.created) {
+            recordProductEvent(ctx.storage, {
+              eventType: "program_created",
+              programId: result.program.id,
+              threadId: result.program.threadId,
+              channel: chatId != null ? "telegram" : "web",
+              metadata: {
+                family: result.program.family,
+                executionMode: result.program.executionMode,
+                deliveryMode: result.program.deliveryMode,
+              },
+            });
+            return `Program created. "${title}" will brief every ${result.program.intervalHours} hours in ${result.program.executionMode} mode. First run at ${formatDateTime(ctx.config.timezone, new Date(result.program.nextRunAt)).full}. Future updates will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
+          }
+
+          const duplicateTarget = result.duplicateReason === "thread" ? "this thread is already being watched" : "an equivalent Program is already active";
+          return `Already watching this. "${result.program.title}" is active and will continue briefing every ${result.program.intervalHours} hours in ${result.program.executionMode} mode because ${duplicateTarget}.`;
         } catch (err) {
           return `Failed to create Program: ${err instanceof Error ? err.message : "unknown error"}`;
         }

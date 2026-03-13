@@ -39,13 +39,13 @@ function parseTasks(output: TaskItem[] | string): TaskItem[] {
 export function ToolTaskList({ state, output }: ToolTaskListProps) {
   if (state === "input-available") {
     return (
-      <Card className="my-2 gap-0 rounded-lg border-border/50 py-0 shadow-none">
-        <CardContent className="flex items-center gap-2 px-3 py-2.5">
-          <ListTodoIcon className="size-3.5 shrink-0 animate-pulse text-primary" />
-          <span className="text-xs text-muted-foreground">Loading tasks...</span>
-        </CardContent>
-      </Card>
-    );
+        <Card className="my-2 gap-0 rounded-lg border-border/50 py-0 shadow-none">
+          <CardContent className="flex items-center gap-2 px-3 py-2.5">
+            <ListTodoIcon className="size-3.5 shrink-0 animate-pulse text-primary" />
+            <span className="text-xs text-muted-foreground">Loading saved moves...</span>
+          </CardContent>
+        </Card>
+      );
   }
 
   if (state === "output-error") {
@@ -53,7 +53,7 @@ export function ToolTaskList({ state, output }: ToolTaskListProps) {
       <Card className="my-2 gap-0 rounded-lg border-destructive/50 py-0 shadow-none">
         <CardContent className="flex items-center gap-2 px-3 py-2.5">
           <AlertCircleIcon className="size-3.5 shrink-0 text-destructive" />
-          <span className="text-xs text-destructive">Failed to load tasks.</span>
+          <span className="text-xs text-destructive">Failed to load saved moves.</span>
         </CardContent>
       </Card>
     );
@@ -67,7 +67,7 @@ export function ToolTaskList({ state, output }: ToolTaskListProps) {
         <Card className="my-2 gap-0 rounded-lg border-border/50 py-0 shadow-none">
           <CardContent className="flex items-center gap-2 px-3 py-2.5">
             <ListTodoIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">No tasks found.</span>
+            <span className="text-xs text-muted-foreground">No saved moves found.</span>
           </CardContent>
         </Card>
       );
@@ -79,7 +79,7 @@ export function ToolTaskList({ state, output }: ToolTaskListProps) {
           <div className="flex items-center gap-2">
             <ListTodoIcon className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="text-xs font-medium text-foreground">
-              {tasks.length} task{tasks.length !== 1 ? "s" : ""}
+              {tasks.length} saved move{tasks.length !== 1 ? "s" : ""}
             </span>
           </div>
           <div className="mt-2 flex flex-col gap-1">

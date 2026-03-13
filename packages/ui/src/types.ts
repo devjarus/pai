@@ -23,6 +23,10 @@ export interface Belief {
   superseded_by?: string | null;
   supersedes?: string | null;
   subject?: string;
+  origin?: "user-said" | "document" | "web" | "inferred" | "synthesized";
+  freshness_at?: string | null;
+  correction_state?: "active" | "confirmed" | "corrected" | "invalidated";
+  sensitive?: boolean;
 }
 
 export interface MemoryStats {
@@ -384,6 +388,8 @@ export interface Briefing {
   sections: BriefingSection | Record<string, unknown>;
   status: string;
   type?: "daily" | "research";
+  programId?: string | null;
+  threadId?: string | null;
   rawContext?: BriefingRawContext | null;
 }
 

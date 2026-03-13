@@ -67,6 +67,25 @@ const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
 
+function normalizeTaskTitle(title: string): string {
+  return title.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function findOpenLinkedTaskDuplicate(
+  storage: Storage,
+  input: { title: string; sourceType?: TaskSourceType; sourceId?: string },
+): Task | null {
+  if (!input.sourceType || !input.sourceId) return null;
+
+  const normalizedTitle = normalizeTaskTitle(input.title);
+  const candidates = storage.query<Task>(
+    "SELECT * FROM tasks WHERE status = 'open' AND source_type = ? AND source_id = ? ORDER BY created_at DESC",
+    [input.sourceType, input.sourceId],
+  );
+
+  return candidates.find((candidate) => normalizeTaskTitle(candidate.title) === normalizedTitle) ?? null;
+}
+
 export function addTask(
   storage: Storage,
   input: {
@@ -87,6 +106,12 @@ export function addTask(
   if (input.sourceType && !input.sourceId?.trim()) {
     throw new Error("Task sourceId is required when sourceType is provided.");
   }
+  const duplicate = findOpenLinkedTaskDuplicate(storage, {
+    title,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+  });
+  if (duplicate) return duplicate;
   const id = nanoid();
   storage.run(
     "INSERT INTO tasks (id, title, description, priority, goal_id, due_date, source_type, source_id, source_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

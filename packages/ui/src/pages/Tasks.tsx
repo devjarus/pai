@@ -10,7 +10,6 @@ import {
   useDeleteTask,
   useClearAllTasks,
   useGoals,
-  useCreateGoal,
   useCompleteGoal,
   useDeleteGoal,
 } from "@/hooks";
@@ -38,6 +37,8 @@ import type { Task, Goal } from "../types";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
+type FollowThroughSource = "briefing" | "program";
+
 function formatDate(dateStr: string): string {
   const d = parseApiDate(dateStr);
   return isNaN(d.getTime()) ? dateStr : formatWithTimezone(d, { year: "numeric", month: "numeric", day: "numeric" } );
@@ -59,14 +60,21 @@ const priorityStyles: Record<string, string> = {
 
 function taskSourceLabel(task: Task): string | null {
   if (!task.source_type) return null;
-  const prefix = task.source_type === "program" ? "Program" : "Brief";
+  const prefix = task.source_type === "program" ? "From Program" : "From Brief";
   return task.source_label ? `${prefix}: ${task.source_label}` : prefix;
 }
 
 export default function Tasks() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<"tasks" | "goals">("tasks");
+  const [activeTab, setActiveTab] = useState<"actions" | "goals">("actions");
   const [statusFilter, setStatusFilter] = useState<string>("open");
+  const sourceTypeParam = searchParams.get("sourceType");
+  const sourceTypeFilter: FollowThroughSource | undefined =
+    sourceTypeParam === "program" || sourceTypeParam === "briefing" ? sourceTypeParam : undefined;
+  const sourceIdFilter = searchParams.get("sourceId") ?? undefined;
+  const sourceLabelFilter = searchParams.get("sourceLabel") ?? undefined;
+  const scopedSource: { sourceType: FollowThroughSource; sourceId: string } | undefined =
+    sourceTypeFilter && sourceIdFilter ? { sourceType: sourceTypeFilter, sourceId: sourceIdFilter } : undefined;
 
   const [showAddTask, setShowAddTask] = useState(searchParams.get("action") === "add");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -78,9 +86,6 @@ export default function Tasks() {
     goalId: "",
   });
 
-  const [showAddGoal, setShowAddGoal] = useState(false);
-  const [goalForm, setGoalForm] = useState({ title: "", description: "" });
-
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
   const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null);
   const [showClearAll, setShowClearAll] = useState(false);
@@ -88,12 +93,21 @@ export default function Tasks() {
   const [quickAddTitle, setQuickAddTitle] = useState("");
 
   useEffect(() => {
-    document.title = "Tasks - pai";
-    if (searchParams.get("action")) setSearchParams({}, { replace: true });
+    document.title = "Saved Moves - pai";
+    if (searchParams.get("action")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("action");
+      setSearchParams(next, { replace: true });
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- TanStack Query hooks ---
-  const { data: tasks = [], isLoading: tasksLoading } = useTasks({ status: statusFilter });
+  const taskQuery: { status?: string; sourceType?: FollowThroughSource; sourceId?: string } = { status: statusFilter };
+  if (scopedSource) {
+    taskQuery.sourceType = scopedSource.sourceType;
+    taskQuery.sourceId = scopedSource.sourceId;
+  }
+  const { data: tasks = [], isLoading: tasksLoading } = useTasks(taskQuery);
   const { data: allTasks = [], isLoading: allTasksLoading } = useTasks({ status: "all" });
   const { data: goals = [], isLoading: goalsLoading } = useGoals("all");
 
@@ -106,9 +120,30 @@ export default function Tasks() {
   const deleteTaskMut = useDeleteTask();
   const clearAllTasksMut = useClearAllTasks();
 
-  const createGoalMut = useCreateGoal();
   const completeGoalMut = useCompleteGoal();
   const deleteGoalMut = useDeleteGoal();
+
+  useEffect(() => {
+    if (activeTab === "goals" && goals.length === 0) {
+      setActiveTab("actions");
+    }
+  }, [activeTab, goals.length]);
+
+  const scopedSourceLabel =
+    sourceLabelFilter ??
+    tasks.find((task) => task.source_label)?.source_label ??
+    (sourceTypeFilter === "program" ? "Program" : sourceTypeFilter === "briefing" ? "Brief" : undefined);
+
+  const scopedSourceKind =
+    sourceTypeFilter === "program" ? "Program" : sourceTypeFilter === "briefing" ? "Brief" : null;
+
+  const clearSourceFilter = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("sourceType");
+    next.delete("sourceId");
+    next.delete("sourceLabel");
+    setSearchParams(next, { replace: true });
+  };
 
   // --- Task handlers ---
 
@@ -116,14 +151,14 @@ export default function Tasks() {
     try {
       if (task.status === "open") {
         await completeTaskMut.mutateAsync(task.id);
-        toast.success("Task completed");
+        toast.success("Move marked done");
       } else {
         await reopenTaskMut.mutateAsync(task.id);
-        toast.success("Task reopened");
+        toast.success("Move reopened");
       }
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to update task",
+        err instanceof Error ? err.message : "Failed to update move",
       );
     }
   };
@@ -131,11 +166,11 @@ export default function Tasks() {
   const handleDeleteTask = async (task: Task) => {
     try {
       await deleteTaskMut.mutateAsync(task.id);
-      toast.success("Task deleted");
+      toast.success("Saved move deleted");
       setDeletingTask(null);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to delete task",
+        err instanceof Error ? err.message : "Failed to delete saved move",
       );
     }
   };
@@ -179,7 +214,7 @@ export default function Tasks() {
             goalId: taskForm.goalId || undefined,
           },
         });
-        toast.success("Task updated");
+        toast.success("Saved move updated");
       } else {
         await createTaskMut.mutateAsync({
           title,
@@ -187,13 +222,18 @@ export default function Tasks() {
           priority: taskForm.priority,
           dueDate: taskForm.dueDate || undefined,
           goalId: taskForm.goalId || undefined,
+          ...(scopedSource ? {
+            sourceType: scopedSource.sourceType,
+            sourceId: scopedSource.sourceId,
+            sourceLabel: scopedSourceLabel,
+          } : {}),
         });
-        toast.success("Task created");
+        toast.success("Move saved");
       }
       setShowAddTask(false);
       setEditingTask(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save task");
+      toast.error(err instanceof Error ? err.message : "Failed to save move");
     }
   };
 
@@ -203,45 +243,29 @@ export default function Tasks() {
     const title = quickAddTitle.trim();
     if (!title) return;
     try {
-      await createTaskMut.mutateAsync({ title, priority: "medium" });
-      setQuickAddTitle("");
-      toast.success("Task created");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create task");
-    }
-  };
-
-  // --- Goal handlers ---
-
-  const openAddGoal = () => {
-    setGoalForm({ title: "", description: "" });
-    setShowAddGoal(true);
-  };
-
-  const handleSaveGoal = async () => {
-    const title = goalForm.title.trim();
-    if (!title) return;
-    try {
-      await createGoalMut.mutateAsync({
+      await createTaskMut.mutateAsync({
         title,
-        description: goalForm.description.trim() || undefined,
+        priority: "medium",
+        ...(scopedSource ? {
+          sourceType: scopedSource.sourceType,
+          sourceId: scopedSource.sourceId,
+          sourceLabel: scopedSourceLabel,
+        } : {}),
       });
-      toast.success("Goal created");
-      setShowAddGoal(false);
+      setQuickAddTitle("");
+      toast.success("Move saved");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create goal");
+      toast.error(err instanceof Error ? err.message : "Failed to save move");
     }
   };
-
-  const isSavingGoal = createGoalMut.isPending;
 
   const handleCompleteGoal = async (goal: Goal) => {
     try {
       await completeGoalMut.mutateAsync(goal.id);
-      toast.success("Goal completed");
+      toast.success("Legacy goal completed");
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to complete goal",
+        err instanceof Error ? err.message : "Failed to complete legacy goal",
       );
     }
   };
@@ -249,11 +273,11 @@ export default function Tasks() {
   const handleDeleteGoal = async (goal: Goal) => {
     try {
       await deleteGoalMut.mutateAsync(goal.id);
-      toast.success("Goal deleted");
+      toast.success("Legacy goal deleted");
       setDeletingGoal(null);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to delete goal",
+        err instanceof Error ? err.message : "Failed to delete legacy goal",
       );
     }
   };
@@ -261,10 +285,10 @@ export default function Tasks() {
   const handleClearAllTasks = async () => {
     try {
       const result = await clearAllTasksMut.mutateAsync();
-      toast.success(`Cleared ${result.cleared} task${result.cleared !== 1 ? "s" : ""}`);
+      toast.success(`Cleared ${result.cleared} saved move${result.cleared !== 1 ? "s" : ""}`);
       setShowClearAll(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to clear tasks");
+      toast.error(err instanceof Error ? err.message : "Failed to clear saved moves");
     }
   };
 
@@ -291,33 +315,35 @@ export default function Tasks() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <FirstVisitBanner pageKey="tasks" tip="Your to-do list with goals and priorities. Ask me in chat to add tasks, or create them here directly." />
+      <FirstVisitBanner pageKey="tasks" tip="Saved moves are optional and user-owned. Save one only when there is a real manual move you want pai to revisit in future briefs." />
       {/* Top-level tabs */}
       <header className="space-y-2 border-b border-border/40 bg-background px-3 py-3 md:space-y-4 md:px-6 md:py-4">
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as "tasks" | "goals")}
+          onValueChange={(v) => setActiveTab(v as "actions" | "goals")}
         >
-          <TabsList className="h-8">
-            <TabsTrigger value="tasks" className="text-xs">
-              Tasks
-            </TabsTrigger>
-            <TabsTrigger value="goals" className="text-xs">
-              Goals
-            </TabsTrigger>
+            <TabsList className="h-8">
+              <TabsTrigger value="actions" className="text-xs">
+              Saved Moves
+              </TabsTrigger>
+            {goals.length > 0 && (
+              <TabsTrigger value="goals" className="text-xs">
+                Legacy Goals
+              </TabsTrigger>
+            )}
           </TabsList>
         </Tabs>
 
         {/* Tab-specific header */}
-        {activeTab === "tasks" ? (
+        {activeTab === "actions" ? (
           <>
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-3">
                 <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
-                  Tasks
+                  Saved Moves
                 </h1>
                 <Badge variant="secondary" className="font-mono text-[10px]">
-                  {tasks.length} task{tasks.length !== 1 ? "s" : ""}
+                  {tasks.length} saved
                 </Badge>
               </div>
               <div className="flex items-center gap-1">
@@ -346,20 +372,32 @@ export default function Tasks() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+            {scopedSource && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/40 bg-card/40 px-3 py-2">
+                <div className="text-xs text-muted-foreground">
+                  Showing saved moves for {scopedSourceKind}: <span className="font-medium text-foreground">{scopedSourceLabel}</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={clearSourceFilter}>
+                  Show all
+                </Button>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
-              <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
-                Goals
-              </h1>
+              <div>
+                <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
+                  Legacy Goals
+                </h1>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Goals are deprecated. Existing goals remain here for reference and cleanup, but new saved moves should only come from Briefs or explicit user intent when there is a real manual move to keep alive.
+                </p>
+              </div>
               <Badge variant="secondary" className="font-mono text-[10px]">
                 {activeGoals.length} active
               </Badge>
             </div>
-            <Button variant="ghost" size="icon-xs" onClick={openAddGoal}>
-              <PlusIcon className="size-4 text-muted-foreground" />
-            </Button>
           </div>
         )}
       </header>
@@ -382,15 +420,17 @@ export default function Tasks() {
                 </div>
               ))}
             </div>
-          ) : activeTab === "tasks" ? (
+          ) : activeTab === "actions" ? (
             tasks.length === 0 && !quickAddTitle ? (
               <div className="flex flex-col items-center justify-center py-16 text-sm text-muted-foreground">
                 <CircleIcon className="mb-4 size-12 opacity-20" />
-                <p>No tasks found.</p>
+                <p>No saved moves found.</p>
                 <p className="mt-1 text-xs">
-                  {statusFilter === "open"
-                    ? 'Click the + button to add your first task, or switch to "All" to see completed tasks.'
-                    : "No tasks match the current filter."}
+                  {scopedSource
+                    ? `No saved moves exist for this ${scopedSourceKind?.toLowerCase() ?? "source"} yet.`
+                    : statusFilter === "open"
+                      ? 'Click the + button to save your first move, or switch to "All" to see completed saved moves.'
+                      : "No saved moves match the current filter."}
                 </p>
               </div>
             ) : (
@@ -402,7 +442,7 @@ export default function Tasks() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleQuickAdd();
                   }}
-                  placeholder="Quick add task..."
+                  placeholder={scopedSource ? "Save a manual move for this context..." : "Quick-save a move..."}
                   className="w-full rounded-lg border-transparent bg-transparent px-4 py-2 text-xs text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-border/40 focus:bg-card/30 focus:ring-0"
                 />
                 {tasks.map((task) => (
@@ -422,9 +462,9 @@ export default function Tasks() {
           ) : goals.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-sm text-muted-foreground">
               <TargetIcon className="mb-4 size-12 opacity-20" />
-              <p>No goals yet.</p>
+              <p>No legacy goals.</p>
               <p className="mt-1 text-xs">
-                Create a goal to group and track related tasks.
+                Existing goals would appear here for cleanup, but new product work should live as Programs, Briefs, and saved moves.
               </p>
             </div>
           ) : (
@@ -471,8 +511,8 @@ export default function Tasks() {
                       </div>
                     </div>
 
-                    <p className="mb-2 text-xs text-muted-foreground">
-                      {progress.done}/{progress.total} tasks done
+                      <p className="mb-2 text-xs text-muted-foreground">
+                      {progress.done}/{progress.total} linked saved move{progress.total === 1 ? "" : "s"} done
                     </p>
                     <div className="h-1.5 w-full rounded-full bg-muted">
                       <div
@@ -523,7 +563,7 @@ export default function Tasks() {
                         </div>
 
                         <p className="mb-2 text-xs text-muted-foreground">
-                          {progress.done}/{progress.total} tasks done
+                          {progress.done}/{progress.total} linked saved move{progress.total === 1 ? "" : "s"} done
                         </p>
                         <div className="h-1.5 w-full rounded-full bg-muted">
                           <div
@@ -552,11 +592,11 @@ export default function Tasks() {
         }}
       >
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-sm">
-              {editingTask ? "Edit Task" : "Add Task"}
-            </DialogTitle>
-          </DialogHeader>
+            <DialogHeader>
+              <DialogTitle className="text-sm">
+              {editingTask ? "Edit Saved Move" : "Save Move"}
+              </DialogTitle>
+            </DialogHeader>
           <div className="space-y-4">
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -571,7 +611,7 @@ export default function Tasks() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSaveTask();
                 }}
-                placeholder="What needs to be done?"
+                placeholder="What concrete move should stay alive?"
                 className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
                 autoFocus
               />
@@ -586,11 +626,17 @@ export default function Tasks() {
                 onChange={(e) =>
                   setTaskForm((f) => ({ ...f, description: e.target.value }))
                 }
-                placeholder="Optional details..."
+                placeholder="Why this move matters, deadline context, or what future briefs should remember..."
                 rows={3}
                 className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
               />
             </div>
+
+            {scopedSource && (
+              <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+                Linked to {scopedSourceKind}: <span className="font-medium text-foreground">{scopedSourceLabel}</span>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -624,25 +670,27 @@ export default function Tasks() {
               </div>
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Goal
-              </label>
-              <select
-                value={taskForm.goalId}
-                onChange={(e) =>
-                  setTaskForm((f) => ({ ...f, goalId: e.target.value }))
-                }
-                className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-              >
-                <option value="">No goal</option>
-                {activeGoals.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.title}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {(activeGoals.length > 0 || !!editingTask?.goal_id) && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Legacy goal link
+                </label>
+                <select
+                  value={taskForm.goalId}
+                  onChange={(e) =>
+                    setTaskForm((f) => ({ ...f, goalId: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+                >
+                  <option value="">No legacy goal</option>
+                  {activeGoals.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -665,67 +713,7 @@ export default function Tasks() {
                 ? "Saving..."
                 : editingTask
                   ? "Save Changes"
-                  : "Add Task"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Goal Dialog */}
-      <Dialog open={showAddGoal} onOpenChange={setShowAddGoal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-sm">Add Goal</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Title
-              </label>
-              <input
-                type="text"
-                value={goalForm.title}
-                onChange={(e) =>
-                  setGoalForm((f) => ({ ...f, title: e.target.value }))
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveGoal();
-                }}
-                placeholder="What do you want to achieve?"
-                className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-                autoFocus
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Description
-              </label>
-              <textarea
-                value={goalForm.description}
-                onChange={(e) =>
-                  setGoalForm((f) => ({ ...f, description: e.target.value }))
-                }
-                placeholder="Optional details..."
-                rows={3}
-                className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAddGoal(false)}
-              disabled={isSavingGoal}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSaveGoal}
-              disabled={isSavingGoal || !goalForm.title.trim()}
-            >
-              {isSavingGoal ? "Saving..." : "Add Goal"}
+                  : "Save Move"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -738,7 +726,7 @@ export default function Tasks() {
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-sm">Delete Task</DialogTitle>
+            <DialogTitle className="text-sm">Delete Saved Move</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -775,7 +763,7 @@ export default function Tasks() {
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-sm">Delete Goal</DialogTitle>
+            <DialogTitle className="text-sm">Delete Legacy Goal</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -783,7 +771,7 @@ export default function Tasks() {
               <strong className="text-foreground/80">
                 &quot;{deletingGoal?.title}&quot;
               </strong>
-              ? Tasks linked to this goal will not be deleted.
+              ? Linked saved moves will not be deleted.
             </p>
             <div className="flex justify-end gap-2">
               <Button
@@ -809,11 +797,11 @@ export default function Tasks() {
       <Dialog open={showClearAll} onOpenChange={setShowClearAll}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-sm">Clear All Tasks</DialogTitle>
+            <DialogTitle className="text-sm">Clear All Saved Moves</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Delete all tasks? This cannot be undone.
+              Delete all saved moves? This cannot be undone.
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setShowClearAll(false)}>
@@ -902,7 +890,7 @@ function TaskRow({
               className="text-[10px] text-muted-foreground"
             >
               <TargetIcon className="mr-1 size-3" />
-              {goalName}
+              Legacy Goal: {goalName}
             </Badge>
           )}
           {taskSourceLabel(task) && (

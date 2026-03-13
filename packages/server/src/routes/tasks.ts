@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ServerContext } from "../index.js";
 import { validate } from "../validate.js";
+import { recordProductEvent } from "@personal-ai/core";
 import {
   addTask,
   listTasks,
@@ -66,6 +67,15 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
       try {
         const body = validate(createTaskSchema, request.body);
         const task = addTask(ctx.storage, body);
+        if (body.sourceType === "briefing") {
+          recordProductEvent(ctx.storage, {
+            eventType: "brief_action_created",
+            briefId: body.sourceId ?? null,
+            actionId: task.id,
+            channel: "web",
+            metadata: { sourceLabel: body.sourceLabel ?? null },
+          });
+        }
         return reply.status(201).send(task);
       } catch (err) {
         return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
@@ -93,7 +103,16 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
 
   app.post<{ Params: { id: string } }>("/api/tasks/:id/done", async (request, reply) => {
     try {
+      const task = listTasks(ctx.storage, "all").find((entry) => entry.id === request.params.id);
       completeTask(ctx.storage, request.params.id);
+      if (task?.source_type === "briefing") {
+        recordProductEvent(ctx.storage, {
+          eventType: "brief_action_completed",
+          briefId: task.source_id,
+          actionId: task.id,
+          channel: "web",
+        });
+      }
       return { ok: true };
     } catch (err) {
       return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });

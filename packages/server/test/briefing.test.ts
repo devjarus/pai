@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createStorage } from "@personal-ai/core";
+import { createStorage, listBeliefs } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
 import { createProgram, scheduleMigrations } from "@personal-ai/plugin-schedules";
 import {
@@ -13,8 +13,10 @@ import {
   clearAllBriefings,
   generateBriefing,
   getResearchBriefings,
+  selectBriefingBeliefs,
 } from "../src/briefing.js";
 import type { BriefingSection } from "../src/briefing.js";
+import type { Belief } from "@personal-ai/core";
 
 // ---------------------------------------------------------------------------
 // Mocks for generateBriefing tests
@@ -23,22 +25,21 @@ vi.mock("ai", () => ({
   generateText: vi.fn(),
 }));
 
-const { mockListTasks, mockListGoals } = vi.hoisted(() => ({
+const { mockListTasks, mockListGoals, mockListBeliefs, mockMemoryStats, mockListSources } = vi.hoisted(() => ({
   mockListTasks: vi.fn(),
   mockListGoals: vi.fn(),
+  mockListBeliefs: vi.fn(),
+  mockMemoryStats: vi.fn(),
+  mockListSources: vi.fn(),
 }));
 
 vi.mock("@personal-ai/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@personal-ai/core")>();
   return {
     ...actual,
-    listBeliefs: vi.fn().mockReturnValue([]),
-    memoryStats: vi.fn().mockReturnValue({
-      beliefs: { active: 0, forgotten: 0, invalidated: 0 },
-      avgConfidence: 0,
-      episodes: 0,
-    }),
-    listSources: vi.fn().mockReturnValue([]),
+    listBeliefs: mockListBeliefs,
+    memoryStats: mockMemoryStats,
+    listSources: mockListSources,
   };
 });
 
@@ -46,6 +47,18 @@ vi.mock("@personal-ai/plugin-tasks", () => ({
   listTasks: mockListTasks,
   listGoals: mockListGoals,
 }));
+
+beforeEach(() => {
+  mockListBeliefs.mockReturnValue([]);
+  mockMemoryStats.mockReturnValue({
+    beliefs: { active: 0, forgotten: 0, invalidated: 0 },
+    avgConfidence: 0,
+    episodes: 0,
+  });
+  mockListSources.mockReturnValue([]);
+  mockListTasks.mockReturnValue([]);
+  mockListGoals.mockReturnValue([]);
+});
 
 // ---------------------------------------------------------------------------
 // CRUD tests — real SQLite, no mocks needed
@@ -149,6 +162,115 @@ describe("Briefing CRUD", () => {
       expect(result).not.toBeNull();
       expect(result!.rawContext?.beliefs?.[0]?.id).toBe("belief_1");
       expect(result!.rawContext?.beliefs?.[0]?.subject).toBe("owner");
+    });
+
+    it("re-filters stored raw_context beliefs against current trust-safe briefing rules", () => {
+      vi.mocked(listBeliefs).mockReturnValue([
+        {
+          id: "belief_visa",
+          statement: "Owner is tracking H4 visa slot availability in India",
+          type: "factual",
+          confidence: 0.9,
+          status: "active",
+          created_at: "2026-03-12T00:00:00.000Z",
+          updated_at: "2026-03-12T00:00:00.000Z",
+          superseded_by: null,
+          supersedes: null,
+          importance: 7,
+          last_accessed: null,
+          access_count: 0,
+          stability: 1,
+          subject: "owner",
+          origin: "user-said",
+          freshness_at: "2026-03-12T00:00:00.000Z",
+          correction_state: "active",
+          sensitive: false,
+        },
+        {
+          id: "belief_monica",
+          statement: "Monica thinks Suraj is self-obsessed",
+          type: "preference",
+          confidence: 0.9,
+          status: "active",
+          created_at: "2026-03-12T00:00:00.000Z",
+          updated_at: "2026-03-12T00:00:00.000Z",
+          superseded_by: null,
+          supersedes: null,
+          importance: 6,
+          last_accessed: null,
+          access_count: 0,
+          stability: 1,
+          subject: "monica",
+          origin: "inferred",
+          freshness_at: "2026-03-12T00:00:00.000Z",
+          correction_state: "active",
+          sensitive: false,
+        },
+      ] satisfies Belief[]);
+
+      insertBriefing(
+        "ctx-filtered",
+        {
+          title: "H4 watch",
+          recommendation: { summary: "Keep watching", confidence: "medium", rationale: "Still active" },
+          what_changed: [],
+          evidence: [],
+          memory_assumptions: [
+            { statement: "Owner is tracking H4 visa slot availability in India", confidence: "high", provenance: "Memory belief (factual)" },
+            { statement: "Monica thinks Suraj is self-obsessed", confidence: "high", provenance: "Memory belief (preference)" },
+          ],
+          next_actions: [],
+          correction_hook: { prompt: "Correct anything that changed." },
+        },
+        "ready",
+        undefined,
+        {
+          programs: [{
+            id: "program-1",
+            title: "H4 Visa Slot Availability - India",
+            question: "Track H4 visa slot availability in India and tell me when something materially changes.",
+            family: "general",
+            executionMode: "research",
+            intervalHours: 24,
+            lastRunAt: null,
+            nextRunAt: "2026-03-13T00:00:00.000Z",
+            preferences: [],
+            constraints: [],
+            openQuestions: [],
+          }],
+          tasks: [],
+          goals: [],
+          knowledgeSources: [],
+          beliefs: [
+            {
+              id: "belief_visa",
+              statement: "Owner is tracking H4 visa slot availability in India",
+              type: "factual",
+              confidence: 0.9,
+              updatedAt: "2026-03-12T00:00:00.000Z",
+              accessCount: 0,
+              isNew: false,
+              subject: "owner",
+            },
+            {
+              id: "belief_monica",
+              statement: "Monica thinks Suraj is self-obsessed",
+              type: "preference",
+              confidence: 0.9,
+              updatedAt: "2026-03-12T00:00:00.000Z",
+              accessCount: 0,
+              isNew: false,
+              subject: "monica",
+            },
+          ],
+        },
+      );
+
+      const result = getBriefingById(storage, "ctx-filtered");
+      expect(result?.rawContext?.beliefs?.map((belief) => belief.id)).toEqual(["belief_visa"]);
+      expect(result?.sections.memory_assumptions.map((belief) => belief.statement)).toEqual([
+        "Owner is tracking H4 visa slot availability in India",
+      ]);
     });
 
     it("returns briefings regardless of status", () => {
@@ -498,5 +620,127 @@ describe("generateBriefing", () => {
         },
       }),
     );
+  });
+});
+
+describe("selectBriefingBeliefs", () => {
+  function makeBelief(overrides: Partial<Belief> & Pick<Belief, "id" | "statement" | "type">): Belief {
+    return {
+      id: overrides.id,
+      statement: overrides.statement,
+      type: overrides.type,
+      confidence: overrides.confidence ?? 0.8,
+      status: overrides.status ?? "active",
+      created_at: overrides.created_at ?? "2026-03-12T00:00:00.000Z",
+      updated_at: overrides.updated_at ?? "2026-03-12T00:00:00.000Z",
+      superseded_by: overrides.superseded_by ?? null,
+      supersedes: overrides.supersedes ?? null,
+      importance: overrides.importance ?? 5,
+      last_accessed: overrides.last_accessed ?? null,
+      access_count: overrides.access_count ?? 0,
+      stability: overrides.stability ?? 1,
+      subject: overrides.subject ?? "owner",
+      origin: overrides.origin ?? "inferred",
+      freshness_at: overrides.freshness_at ?? null,
+      correction_state: overrides.correction_state ?? "active",
+      sensitive: overrides.sensitive ?? false,
+    };
+  }
+
+  it("keeps relevant owner context while excluding unrelated personal beliefs", () => {
+    const beliefs: Belief[] = [
+      makeBelief({
+        id: "pref-change",
+        statement: "Prefers receiving updates only when something materially changes",
+        type: "preference",
+        confidence: 0.92,
+        origin: "user-said",
+      }),
+      makeBelief({
+        id: "visa-track",
+        statement: "Owner is tracking H4 visa slot availability in India",
+        type: "factual",
+        confidence: 0.88,
+      }),
+      makeBelief({
+        id: "skills",
+        statement: "User knows Java, TypeScript, Python and speaks Telugu, Hindi, English.",
+        type: "factual",
+        confidence: 0.82,
+      }),
+      makeBelief({
+        id: "monica-social",
+        statement: "Monica thinks Suraj is self-obsessed",
+        type: "preference",
+        confidence: 0.84,
+        subject: "monica",
+      }),
+      makeBelief({
+        id: "monica-visa",
+        statement: "Monica matters for H4 visa tracking decisions",
+        type: "factual",
+        confidence: 0.84,
+        subject: "monica",
+      }),
+    ];
+
+    const selected = selectBriefingBeliefs(beliefs, {
+      programs: [{
+        id: "program-1",
+        title: "H4 Visa Slot Availability - India",
+        question: "Track H4 visa slot availability in India and only notify when something materially changes.",
+        family: "general",
+        executionMode: "research",
+        intervalHours: 24,
+        lastRunAt: null,
+        nextRunAt: "2026-03-13T00:00:00.000Z",
+        preferences: [],
+        constraints: [],
+        openQuestions: [],
+      }],
+      tasks: [],
+      goals: [],
+      knowledgeSources: [],
+    });
+
+    expect(selected.map((belief) => belief.id)).toContain("pref-change");
+    expect(selected.map((belief) => belief.id)).toContain("visa-track");
+    expect(selected.map((belief) => belief.id)).not.toContain("skills");
+    expect(selected.map((belief) => belief.id)).not.toContain("monica-social");
+    expect(selected.map((belief) => belief.id)).not.toContain("monica-visa");
+  });
+
+  it("preserves non-owner beliefs when the watch explicitly names that subject", () => {
+    const beliefs: Belief[] = [
+      makeBelief({
+        id: "monica-h4",
+        statement: "Monica is waiting for H4 visa appointment availability in India",
+        type: "factual",
+        confidence: 0.91,
+        subject: "monica",
+        origin: "user-said",
+      }),
+    ];
+
+    const selected = selectBriefingBeliefs(beliefs, {
+      programs: [{
+        id: "program-2",
+        title: "Monica H4 visa watch",
+        question: "Track Monica's H4 visa appointment availability in India and tell me when her options change.",
+        family: "general",
+        executionMode: "research",
+        intervalHours: 24,
+        lastRunAt: null,
+        nextRunAt: "2026-03-13T00:00:00.000Z",
+        preferences: [],
+        constraints: [],
+        openQuestions: [],
+      }],
+      tasks: [],
+      goals: [],
+      knowledgeSources: [],
+    });
+
+    expect(selected.map((belief) => belief.id)).toContain("monica-h4");
   });
 });

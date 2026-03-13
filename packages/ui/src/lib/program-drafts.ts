@@ -85,7 +85,7 @@ export function buildInboxProgramDraft(input: InboxProgramDraftInput): ProgramDr
     };
   }
 
-  const title = compactText(input.title) || compactText(input.recommendationSummary) || "Daily brief follow-through";
+  const title = compactText(input.title) || compactText(input.recommendationSummary) || "Daily brief move";
   const summary = compactText(input.recommendationSummary) || title;
   const rationale = compactText(input.rationale);
   const questionBase = keepWatchingQuestion(
