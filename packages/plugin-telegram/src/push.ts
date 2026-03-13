@@ -1,38 +1,102 @@
 import type { Bot } from "grammy";
-import type { Storage, Logger } from "@personal-ai/core";
+import type { Storage, Logger, StandardBriefSection } from "@personal-ai/core";
 import { buildReportPresentation, deriveReportVisuals, extractPresentationBlocks } from "@personal-ai/core";
-import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse } from "./formatter.js";
+import {
+  markdownToTelegramHTML,
+  splitMessage,
+  escapeHTML,
+  formatBriefingHTML,
+  buildTelegramDigestMarkdown,
+} from "./formatter.js";
 import { sendVisualsToTelegram } from "./delivery.js";
 import { sendReportDocumentToTelegram } from "./report-document.js";
 
-function findChatIdForBriefing(storage: Storage, briefingId: string): number | null {
-  let jobId: string | null = null;
-  let table: string | null = null;
+interface BriefingPushRow {
+  id: string;
+  type: string;
+  sections: string;
+  thread_id: string | null;
+  program_id: string | null;
+}
 
-  if (briefingId.startsWith("research-")) {
-    jobId = briefingId.slice("research-".length);
-    table = "research_jobs";
-  } else if (briefingId.startsWith("swarm-")) {
-    jobId = briefingId.slice("swarm-".length);
-    table = "swarm_jobs";
-  }
-  if (!jobId || !table) return null;
+interface PushLoopOptions {
+  ownerUsername?: string;
+}
 
+function parseBriefSections(raw: string): Record<string, unknown> | null {
   try {
-    const jobRow = storage.query<{ thread_id: string | null }>(
-      `SELECT thread_id FROM ${table} WHERE id = ?`,
-      [jobId],
-    );
-    const threadId = jobRow[0]?.thread_id;
-    if (!threadId) return null;
-    const chatRow = storage.query<{ chat_id: number }>(
-      "SELECT chat_id FROM telegram_threads WHERE thread_id = ?",
-      [threadId],
-    );
-    return chatRow[0]?.chat_id ?? null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return parsed && typeof parsed === "object" ? parsed : null;
   } catch {
     return null;
   }
+}
+
+function getProgramThreadInfo(storage: Storage, programId: string): { chatId: number | null; threadId: string | null } | null {
+  try {
+    const rows = storage.query<{ chat_id: number | null; thread_id: string | null }>(
+      "SELECT chat_id, thread_id FROM scheduled_jobs WHERE id = ?",
+      [programId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return { chatId: row.chat_id, threadId: row.thread_id };
+  } catch {
+    return null;
+  }
+}
+
+function getChatIdsForThread(storage: Storage, threadId: string): number[] {
+  try {
+    return storage.query<{ chat_id: number }>(
+      "SELECT chat_id FROM telegram_threads WHERE thread_id = ?",
+      [threadId],
+    ).map((row) => row.chat_id);
+  } catch {
+    return [];
+  }
+}
+
+function getOwnerChatIds(storage: Storage, ownerUsername?: string): number[] {
+  if (!ownerUsername) return [];
+  try {
+    return storage.query<{ chat_id: number }>(
+      "SELECT chat_id FROM telegram_threads WHERE username = ?",
+      [ownerUsername],
+    ).map((row) => row.chat_id);
+  } catch {
+    return [];
+  }
+}
+
+function findChatIdsForBriefing(storage: Storage, row: BriefingPushRow, ownerUsername?: string): number[] {
+  const chatIds = new Set<number>();
+
+  if (row.thread_id) {
+    for (const chatId of getChatIdsForThread(storage, row.thread_id)) {
+      chatIds.add(chatId);
+    }
+  }
+
+  if (chatIds.size === 0 && row.program_id) {
+    const programThread = getProgramThreadInfo(storage, row.program_id);
+    if (programThread?.chatId != null) {
+      chatIds.add(programThread.chatId);
+    }
+    if (programThread?.threadId) {
+      for (const chatId of getChatIdsForThread(storage, programThread.threadId)) {
+        chatIds.add(chatId);
+      }
+    }
+  }
+
+  if (chatIds.size === 0 && row.type === "daily") {
+    for (const chatId of getOwnerChatIds(storage, ownerUsername)) {
+      chatIds.add(chatId);
+    }
+  }
+
+  return [...chatIds];
 }
 
 async function sendToTelegramChat(bot: Bot, chatId: number, html: string, logger: Logger): Promise<void> {
@@ -49,111 +113,191 @@ async function sendToTelegramChat(bot: Bot, chatId: number, html: string, logger
   }
 }
 
-/** Create a short preview (first ~500 chars), avoiding cuts mid-table or mid-code-block. */
-function makePreview(report: string, maxLen = 500): string {
-  if (report.length <= maxLen) return report;
-
-  // Prefer cutting at a paragraph boundary (double newline)
-  const paraIdx = report.lastIndexOf("\n\n", maxLen);
-  if (paraIdx > maxLen * 0.3) {
-    const candidate = report.slice(0, paraIdx).trimEnd();
-    // Don't cut if we're inside a table (line starts with |) or code block
-    const lastLine = candidate.split("\n").pop() ?? "";
-    if (!lastLine.startsWith("|") && !lastLine.startsWith("```")) {
-      return candidate;
-    }
+function normalizeBriefTitle(row: BriefingPushRow, sections: Record<string, unknown>): string {
+  if (typeof sections.title === "string" && sections.title.trim().length > 0) {
+    return sections.title.trim();
   }
-
-  // Fall back to a single newline, but skip table/code lines
-  for (let i = maxLen; i > maxLen * 0.3; i--) {
-    if (report[i] === "\n") {
-      const nextLine = report.slice(i + 1, i + 5);
-      if (!nextLine.startsWith("|") && !nextLine.startsWith("```")) {
-        return report.slice(0, i).trimEnd();
-      }
-    }
+  if (typeof sections.goal === "string" && sections.goal.trim().length > 0) {
+    return sections.goal.trim();
   }
-
-  // Last resort: hard cut
-  return report.slice(0, maxLen).trimEnd();
+  if (row.type === "daily") return "Daily Brief";
+  return "Brief";
 }
 
-async function checkAndPushResearch(storage: Storage, bot: Bot, logger: Logger): Promise<void> {
+function getReportMarkdown(sections: Record<string, unknown>): string | null {
+  if (typeof sections.report === "string" && sections.report.trim().length > 0) {
+    return sections.report;
+  }
+  const appendix = sections.appendix;
+  if (appendix && typeof appendix === "object") {
+    const appendixReport = (appendix as Record<string, unknown>).report;
+    if (typeof appendixReport === "string" && appendixReport.trim().length > 0) {
+      return appendixReport;
+    }
+  }
+  return null;
+}
+
+function isStandardBriefSection(sections: Record<string, unknown>): sections is Record<string, unknown> & StandardBriefSection {
+  const recommendation = sections.recommendation;
+  return !!recommendation && typeof recommendation === "object" && typeof (recommendation as Record<string, unknown>).summary === "string";
+}
+
+function resolveBriefLabel(row: BriefingPushRow, execution?: string | null): string {
+  if (row.type === "daily") return "Daily Brief";
+  if (row.type === "swarm" || execution === "analysis") return "Analysis Complete";
+  if (row.type === "research" || execution === "research") return "Research Complete";
+  return row.program_id ? "Program Update" : "Brief Update";
+}
+
+function resolveBriefEmoji(row: BriefingPushRow, execution?: string | null): string {
+  if (row.type === "daily") return "📌";
+  if (row.type === "swarm" || execution === "analysis") return "🐝";
+  if (row.type === "research" || execution === "research") return "🔬";
+  return "📋";
+}
+
+function buildFallbackReportHtml(
+  row: BriefingPushRow,
+  title: string,
+  reportMarkdown: string,
+  execution?: string | null,
+): string {
+  const label = resolveBriefLabel(row, execution);
+  const gist = markdownToTelegramHTML(buildTelegramDigestMarkdown(reportMarkdown));
+  return `${resolveBriefEmoji(row, execution)} <b>${escapeHTML(label)}: ${escapeHTML(title)}</b>\n\n${gist}\n\n<i>Full report attached as PDF.</i>`;
+}
+
+function buildStandardBriefHtml(
+  row: BriefingPushRow,
+  title: string,
+  sections: StandardBriefSection,
+  footer?: string,
+): string {
+  return formatBriefingHTML({
+    title,
+    label: resolveBriefLabel(row, sections.execution),
+    footer,
+    sections,
+  });
+}
+
+async function pushReportBrief(
+  storage: Storage,
+  bot: Bot,
+  logger: Logger,
+  row: BriefingPushRow,
+  sections: Record<string, unknown>,
+  chatIds: number[],
+): Promise<void> {
+  const reportMarkdown = getReportMarkdown(sections);
+  if (!reportMarkdown) return;
+
+  const extracted = extractPresentationBlocks(reportMarkdown);
+  const presentation = buildReportPresentation({
+    report: extracted.report,
+    structuredResult: typeof sections.structuredResult === "string" ? sections.structuredResult : extracted.structuredResult,
+    renderSpec: typeof sections.renderSpec === "string" ? sections.renderSpec : extracted.renderSpec,
+    visuals: Array.isArray(sections.visuals)
+      ? sections.visuals as Parameters<typeof buildReportPresentation>[0]["visuals"]
+      : deriveReportVisuals(storage, row.id.replace(/^(research|swarm)-/, "")),
+    resultType: typeof sections.resultType === "string" ? sections.resultType : "general",
+    execution: sections.execution === "analysis" || row.type === "swarm" ? "analysis" : "research",
+  });
+
+  if (!presentation.report) return;
+
+  const title = normalizeBriefTitle(row, sections);
+  const gistHtml = isStandardBriefSection(sections)
+    ? buildStandardBriefHtml(row, title, sections, "Full report attached as PDF.")
+    : buildFallbackReportHtml(row, title, presentation.report, presentation.execution);
+
+  for (const chatId of chatIds) {
+    await sendToTelegramChat(bot, chatId, gistHtml, logger);
+    await sendVisualsToTelegram(storage, bot, chatId, presentation.visuals, logger, { protectContent: true });
+    await sendReportDocumentToTelegram(storage, bot, chatId, {
+      title,
+      markdown: presentation.report,
+      fileName: `${title}.pdf`,
+      renderSpec: presentation.renderSpec,
+      visuals: presentation.visuals.map((visual) => ({
+        artifactId: visual.artifactId,
+        title: visual.title,
+        caption: visual.caption,
+        order: visual.order,
+      })),
+    }, logger);
+  }
+}
+
+async function pushStandardBrief(
+  bot: Bot,
+  logger: Logger,
+  row: BriefingPushRow,
+  sections: StandardBriefSection,
+  chatIds: number[],
+): Promise<void> {
+  const html = buildStandardBriefHtml(
+    row,
+    normalizeBriefTitle(row, sections as unknown as Record<string, unknown>),
+    sections,
+  );
+  for (const chatId of chatIds) {
+    await sendToTelegramChat(bot, chatId, html, logger);
+  }
+}
+
+async function checkAndPushResearch(
+  storage: Storage,
+  bot: Bot,
+  logger: Logger,
+  options?: PushLoopOptions,
+): Promise<void> {
   try {
-    const rows = storage.query<{ id: string; sections: string }>(
-      "SELECT id, sections FROM briefings WHERE type = 'research' AND status = 'ready' AND telegram_sent_at IS NULL ORDER BY generated_at DESC LIMIT 5",
+    const rows = storage.query<BriefingPushRow>(
+      "SELECT id, type, sections, thread_id, program_id FROM briefings WHERE status = 'ready' AND telegram_sent_at IS NULL ORDER BY generated_at DESC LIMIT 5",
     );
     for (const row of rows) {
       try {
-        const parsed = JSON.parse(row.sections) as Record<string, unknown>;
-        const jobId = row.id.startsWith("research-") ? row.id.slice("research-".length)
-          : row.id.startsWith("swarm-") ? row.id.slice("swarm-".length)
-          : null;
-        const extracted = extractPresentationBlocks(typeof parsed.report === "string" ? parsed.report : "");
-        const presentation = buildReportPresentation({
-          report: extracted.report,
-          structuredResult: typeof parsed.structuredResult === "string" ? parsed.structuredResult : extracted.structuredResult,
-          renderSpec: typeof parsed.renderSpec === "string" ? parsed.renderSpec : extracted.renderSpec,
-          visuals: Array.isArray(parsed.visuals)
-            ? parsed.visuals as Parameters<typeof buildReportPresentation>[0]["visuals"]
-            : (jobId ? deriveReportVisuals(storage, jobId) : []),
-          resultType: typeof parsed.resultType === "string" ? parsed.resultType : "general",
-          execution: parsed.execution === "analysis" || row.id.startsWith("swarm-") ? "analysis" : "research",
-        });
-        if (!presentation.report) continue;
+        const sections = parseBriefSections(row.sections);
+        if (!sections) continue;
 
-        const title = typeof parsed.goal === "string" ? parsed.goal : "Report";
-        const isAnalysis = presentation.execution === "analysis";
-        const emoji = isAnalysis ? "\uD83D\uDC1D" : "\uD83D\uDD2C";
-        const label = isAnalysis ? "Analysis Complete" : "Research Complete";
-        const formattedReport = formatTelegramResponse(presentation.report);
-        // Send to the originating Telegram chat, not all chats
-        const chatId = findChatIdForBriefing(storage, row.id);
-        if (chatId) {
-          const preview = makePreview(formattedReport);
-          const previewHtml = `${emoji} <b>${label}: ${escapeHTML(title)}</b>\n\n${markdownToTelegramHTML(preview)}`;
-          await sendToTelegramChat(bot, chatId, previewHtml, logger);
-          await sendVisualsToTelegram(storage, bot, chatId, presentation.visuals, logger, { protectContent: true });
-          await sendReportDocumentToTelegram(storage, bot, chatId, {
-            title,
-            markdown: presentation.report,
-            fileName: `${title}.html`,
-            renderSpec: presentation.renderSpec,
-            visuals: presentation.visuals.map((visual) => ({
-              artifactId: visual.artifactId,
-              title: visual.title,
-              caption: visual.caption,
-              order: visual.order,
-            })),
-          }, logger);
-
-          storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
-          logger.info("Research report pushed to Telegram", { briefingId: row.id, chatId });
-        } else {
-          // Mark as sent even without a chat, to avoid re-checking
-          storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
-          logger.info("Research report ready (no originating Telegram chat)", { briefingId: row.id });
+        const chatIds = findChatIdsForBriefing(storage, row, options?.ownerUsername);
+        if (chatIds.length > 0) {
+          if (getReportMarkdown(sections)) {
+            await pushReportBrief(storage, bot, logger, row, sections, chatIds);
+          } else if (isStandardBriefSection(sections)) {
+            await pushStandardBrief(bot, logger, row, sections, chatIds);
+          }
         }
-      } catch { /* skip malformed entries */ }
+
+        storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
+        logger.info(chatIds.length > 0 ? "Brief pushed to Telegram" : "Brief ready (no Telegram chat target)", {
+          briefingId: row.id,
+          type: row.type,
+          chatCount: chatIds.length,
+        });
+      } catch {
+        // Skip malformed entries and continue
+      }
     }
-  } catch { /* ignore query errors during startup */ }
+  } catch {
+    // Ignore query errors during startup
+  }
 }
 
 const DEFAULT_PUSH_INTERVAL_MS = 60 * 1000;
 
-/**
- * Start a polling loop that checks for completed research reports
- * and pushes them to the originating Telegram chat.
- */
 export function startResearchPushLoop(
   storage: Storage,
   bot: Bot,
   logger: Logger,
   intervalMs?: number,
+  options?: PushLoopOptions,
 ): { stop(): void } {
   const ms = intervalMs ?? DEFAULT_PUSH_INTERVAL_MS;
   const timer = setInterval(() => {
-    checkAndPushResearch(storage, bot, logger).catch(() => {});
+    checkAndPushResearch(storage, bot, logger, options).catch(() => {});
   }, ms);
   return {
     stop() { clearInterval(timer); },

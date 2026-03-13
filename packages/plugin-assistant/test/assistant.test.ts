@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AgentContext } from "@personal-ai/core";
 import { assistantPlugin } from "../src/index.js";
 
-const { mockCreateProgram, mockListPrograms, mockDeleteProgram } = vi.hoisted(() => ({
-  mockCreateProgram: vi.fn(),
+const { mockEnsureProgram, mockListPrograms, mockDeleteProgram } = vi.hoisted(() => ({
+  mockEnsureProgram: vi.fn(),
   mockListPrograms: vi.fn().mockReturnValue([]),
   mockDeleteProgram: vi.fn(),
 }));
@@ -12,6 +12,7 @@ vi.mock("@personal-ai/core", () => ({
   getMemoryContext: vi.fn(),
   remember: vi.fn(),
   listBeliefs: vi.fn().mockReturnValue([]),
+  recordProductEvent: vi.fn(),
   formatDateTime: vi.fn().mockReturnValue({ full: "Mar 12, 2026 09:00" }),
   resolveSandboxUrl: vi.fn().mockReturnValue(null),
   resolveBrowserUrl: vi.fn().mockReturnValue(null),
@@ -19,7 +20,7 @@ vi.mock("@personal-ai/core", () => ({
 }));
 
 vi.mock("@personal-ai/plugin-schedules", () => ({
-  createProgram: mockCreateProgram,
+  ensureProgram: mockEnsureProgram,
   listPrograms: mockListPrograms,
   deleteProgram: mockDeleteProgram,
 }));
@@ -45,6 +46,20 @@ function createMockCtx(overrides?: Partial<AgentContext>): AgentContext {
 beforeEach(() => {
   vi.clearAllMocks();
   mockListPrograms.mockReturnValue([]);
+  mockEnsureProgram.mockReturnValue({
+    created: true,
+    duplicateReason: null,
+    program: {
+      id: "prog_default",
+      title: "Default program",
+      executionMode: "research",
+      intervalHours: 24,
+      nextRunAt: "2026-03-12T16:00:00.000Z",
+      threadId: null,
+      family: "general",
+      deliveryMode: "interval",
+    },
+  });
 });
 
 describe("assistantPlugin structure", () => {
@@ -92,6 +107,7 @@ describe("createTools", () => {
     expect(toolNames).toContain("memory_remember");
     expect(toolNames).toContain("memory_beliefs");
     expect(toolNames).toContain("memory_forget");
+    expect(toolNames).toContain("memory_correct");
     expect(toolNames).toContain("web_search");
     expect(toolNames).toContain("task_list");
     expect(toolNames).toContain("task_add");
@@ -104,10 +120,10 @@ describe("createTools", () => {
     expect(toolNames).not.toContain("schedule_delete");
   });
 
-  it("returns 19 tools total", () => {
+  it("returns 20 tools total", () => {
     const ctx = createMockCtx();
     const tools = assistantPlugin.agent!.createTools!(ctx);
-    expect(Object.keys(tools)).toHaveLength(19);
+    expect(Object.keys(tools)).toHaveLength(20);
   });
 
   it("each tool has description and execute function", () => {
@@ -128,12 +144,19 @@ describe("createTools", () => {
   });
 
   it("program_create uses the Program adapter", async () => {
-    mockCreateProgram.mockReturnValue({
-      id: "prog_123",
-      title: "Atlas launch readiness",
-      executionMode: "analysis",
-      intervalHours: 24,
-      nextRunAt: "2026-03-12T16:00:00.000Z",
+    mockEnsureProgram.mockReturnValue({
+      created: true,
+      duplicateReason: null,
+      program: {
+        id: "prog_123",
+        title: "Atlas launch readiness",
+        executionMode: "analysis",
+        intervalHours: 24,
+        nextRunAt: "2026-03-12T16:00:00.000Z",
+        threadId: null,
+        family: "work",
+        deliveryMode: "interval",
+      },
     });
 
     const ctx = createMockCtx({
@@ -151,7 +174,7 @@ describe("createTools", () => {
       constraints: ["docs signoff required"],
     });
 
-    expect(mockCreateProgram).toHaveBeenCalledWith(
+    expect(mockEnsureProgram).toHaveBeenCalledWith(
       ctx.storage,
       expect.objectContaining({
         title: "Atlas launch readiness",
@@ -167,12 +190,19 @@ describe("createTools", () => {
   });
 
   it("program_create forwards thread and chat context from Ask", async () => {
-    mockCreateProgram.mockReturnValue({
-      id: "prog_234",
-      title: "Atlas launch readiness",
-      executionMode: "research",
-      intervalHours: 24,
-      nextRunAt: "2026-03-12T16:00:00.000Z",
+    mockEnsureProgram.mockReturnValue({
+      created: true,
+      duplicateReason: null,
+      program: {
+        id: "prog_234",
+        title: "Atlas launch readiness",
+        executionMode: "research",
+        intervalHours: 24,
+        nextRunAt: "2026-03-12T16:00:00.000Z",
+        threadId: "thread-123",
+        family: "general",
+        deliveryMode: "interval",
+      },
     });
 
     const ctx = createMockCtx({
@@ -187,13 +217,42 @@ describe("createTools", () => {
       question: "Keep watching Atlas launch readiness and brief me when blockers change.",
     });
 
-    expect(mockCreateProgram).toHaveBeenCalledWith(
+    expect(mockEnsureProgram).toHaveBeenCalledWith(
       ctx.storage,
       expect.objectContaining({
         threadId: "thread-123",
         chatId: 42,
       }),
     );
+  });
+
+  it("program_create reports reused watches instead of claiming a new Program", async () => {
+    mockEnsureProgram.mockReturnValue({
+      created: false,
+      duplicateReason: "thread",
+      program: {
+        id: "prog_345",
+        title: "Atlas launch readiness",
+        executionMode: "research",
+        intervalHours: 24,
+        nextRunAt: "2026-03-12T16:00:00.000Z",
+        threadId: "thread-123",
+        family: "general",
+        deliveryMode: "interval",
+      },
+    });
+
+    const ctx = createMockCtx({
+      config: { timezone: "America/Los_Angeles" } as any,
+    });
+    const tools = assistantPlugin.agent!.createTools!(ctx) as Record<string, any>;
+
+    const result = await tools.program_create.execute({
+      title: "Atlas launch readiness",
+      question: "Keep watching Atlas launch readiness and brief me when blockers change.",
+    });
+
+    expect(result).toContain("Already watching this");
   });
 
   it("program_list returns Programs from the adapter", async () => {

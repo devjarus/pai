@@ -18,6 +18,7 @@ The current product is not trying to win by being the broadest personal AI surfa
 - a full personal AI OS
 - a generic research workbench
 - a general-purpose task manager
+- a standalone follow-through board
 - an autonomous end-to-end action-taking agent
 - a product where every surface gets equal emphasis
 
@@ -28,7 +29,7 @@ The current product loop is:
 1. Ask
 2. `Keep watching this` or implicit Program creation
 3. Brief
-4. Correction or Action
+4. Correction or saved move
 5. Next brief improves
 
 The loop is the product. Breadth is allowed only if it makes this loop more trustworthy, more continuous, or more useful.
@@ -55,7 +56,7 @@ Primary product nouns:
 
 - Program
 - Brief
-- Action
+- Action (user-facing: Saved move when a recommendation is explicitly kept alive)
 - Belief
 - Evidence
 
@@ -82,6 +83,7 @@ The current anti-goals are deliberate:
 For the current operating window, focus on:
 
 - making Programs and Briefs the dominant product loop
+- treating persisted follow-through as optional saved move state, not default backlog
 - improving memory provenance, correction handling, and trust visibility
 - keeping recommendation-first brief quality high
 - clarifying mobile and Telegram as companion surfaces, not full control planes
@@ -96,6 +98,6 @@ A proposed feature or integration must answer at least one of these questions wi
 - Does it improve Program continuity?
 - Does it improve brief quality or actionability?
 - Does it improve memory provenance, correction handling, or trust?
-- Does it improve recurring follow-through?
+- Does it improve recommendation-to-saved-move follow-through?
 
 If the answer is no, the default decision is to defer it.

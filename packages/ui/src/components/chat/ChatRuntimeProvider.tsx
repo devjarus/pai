@@ -12,6 +12,10 @@ import type { AttachmentAdapter } from "@assistant-ui/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { threadKeys } from "@/hooks/use-threads";
+import { programKeys } from "@/hooks/use-programs";
+import { taskKeys } from "@/hooks/use-tasks";
+import { inboxKeys } from "@/hooks/use-inbox";
+import { beliefKeys } from "@/hooks/use-beliefs";
 
 /**
  * Attachment adapter for binary documents (PDF, Excel).
@@ -198,20 +202,28 @@ export function ChatRuntimeProvider({
     stop: chatHelpers.stop,
   };
 
-  // Refresh threads when streaming finishes — two waves:
+  // Refresh threads and loop surfaces when streaming finishes — two waves:
   // 1. 500ms: pick up immediate message count / autoTitle changes
   // 2. 2500ms: pick up LLM-generated title (generateThreadTitle runs in onFinish
   //    which executes after the stream closes and can take 1-3s for the LLM call)
   const prevStatusRef = useRef(chatHelpers.status);
   useEffect(() => {
+    const refreshLoopSurfaces = () => {
+      queryClient.invalidateQueries({ queryKey: threadKeys.all });
+      queryClient.invalidateQueries({ queryKey: programKeys.all });
+      queryClient.invalidateQueries({ queryKey: taskKeys.all });
+      queryClient.invalidateQueries({ queryKey: inboxKeys.all });
+      queryClient.invalidateQueries({ queryKey: beliefKeys.all });
+    };
+
     const prev = prevStatusRef.current;
     prevStatusRef.current = chatHelpers.status;
     if (chatHelpers.status === "ready" && (prev === "streaming" || prev === "submitted") && activeThreadIdRef.current) {
       const t1 = setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: threadKeys.all });
+        refreshLoopSurfaces();
       }, 500);
       const t2 = setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: threadKeys.all });
+        refreshLoopSurfaces();
       }, 2500);
       return () => { clearTimeout(t1); clearTimeout(t2); };
     }

@@ -174,7 +174,7 @@ export default function Setup() {
               </p>
               <form onSubmit={handleIntroSubmit} className="space-y-4">
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">What decisions or commitments matter most right now?</label>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">What ongoing decisions or watches matter most right now?</label>
                   <textarea value={work} onChange={(e) => setWork(e.target.value)} placeholder="e.g. launch readiness, vendor evaluations, travel planning" rows={2} autoFocus
                     className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25" />
                 </div>

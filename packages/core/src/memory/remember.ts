@@ -1,8 +1,26 @@
 import type { LLMClient, Storage, Logger } from "../types.js";
-import type { Belief } from "./memory.js";
-import { createEpisode, createBelief, findSimilarBeliefs, storeEmbedding, storeEpisodeEmbedding, reinforceBelief, linkBeliefToEpisode, logBeliefChange, countSupportingEpisodes, linkSupersession, linkBeliefs } from "./memory.js";
+import type { Belief, BeliefOrigin } from "./memory.js";
+import { addBeliefProvenance, createEpisode, createBelief, findSimilarBeliefs, storeEmbedding, storeEpisodeEmbedding, reinforceBelief, linkBeliefToEpisode, logBeliefChange, countSupportingEpisodes, linkSupersession, linkBeliefs } from "./memory.js";
 
 const VALID_FACT_TYPES = new Set(["factual", "preference", "procedural", "architectural"]);
+
+export interface RememberProvenanceInput {
+  sourceKind: string;
+  sourceId?: string | null;
+  sourceLabel?: string | null;
+  relation?: string;
+}
+
+export interface RememberOptions {
+  origin?: BeliefOrigin;
+  provenance?: RememberProvenanceInput[];
+  freshnessAt?: string | null;
+  sensitive?: boolean;
+}
+
+function inferSensitivity(statement: string): boolean {
+  return /\b(password|secret|token|ssn|social security|bank|credit card|passport|visa|health|medical|diagnosis|salary|income|birthday|birth date)\b/i.test(statement);
+}
 
 export async function extractBeliefs(
   llm: LLMClient,
@@ -155,6 +173,7 @@ async function processNewBelief(
   logger?: Logger,
   importance?: number,
   subject?: string,
+  options?: RememberOptions,
 ): Promise<{ beliefId: string; isReinforcement: boolean }> {
   let embedding: number[] | null = null;
   try {
@@ -172,8 +191,21 @@ async function processNewBelief(
   // Without embedding: skip dedup/contradiction check, just create
   if (!embedding) {
     const belief = storage.db.transaction(() => {
-      const b = createBelief(storage, { statement, confidence: 0.6, type, importance, subject });
+      const b = createBelief(storage, {
+        statement,
+        confidence: 0.6,
+        type,
+        importance,
+        subject,
+        origin: options?.origin ?? "user-said",
+        freshnessAt: options?.freshnessAt ?? new Date().toISOString(),
+        sensitive: options?.sensitive ?? inferSensitivity(statement),
+      });
       linkBeliefToEpisode(storage, b.id, episodeId);
+      addBeliefProvenance(storage, { beliefId: b.id, sourceKind: "episode", sourceId: episodeId, sourceLabel: "Memory episode", relation: "observed" });
+      for (const provenance of options?.provenance ?? []) {
+        addBeliefProvenance(storage, { beliefId: b.id, ...provenance });
+      }
       logBeliefChange(storage, {
         beliefId: b.id,
         changeType: "created",
@@ -194,6 +226,10 @@ async function processNewBelief(
     const match = similar[0]!;
     reinforceBelief(storage, match.beliefId);
     linkBeliefToEpisode(storage, match.beliefId, episodeId);
+    addBeliefProvenance(storage, { beliefId: match.beliefId, sourceKind: "episode", sourceId: episodeId, sourceLabel: "Memory episode", relation: "reinforced-by" });
+    for (const provenance of options?.provenance ?? []) {
+      addBeliefProvenance(storage, { beliefId: match.beliefId, ...provenance });
+    }
     logBeliefChange(storage, {
       beliefId: match.beliefId,
       changeType: "reinforced",
@@ -213,6 +249,10 @@ async function processNewBelief(
       // Paraphrase, intensity change, or specificity increase — reinforce existing belief
       reinforceBelief(storage, topMatch.beliefId);
       linkBeliefToEpisode(storage, topMatch.beliefId, episodeId);
+      addBeliefProvenance(storage, { beliefId: topMatch.beliefId, sourceKind: "episode", sourceId: episodeId, sourceLabel: "Memory episode", relation: "reinforced-by" });
+      for (const provenance of options?.provenance ?? []) {
+        addBeliefProvenance(storage, { beliefId: topMatch.beliefId, ...provenance });
+      }
       logBeliefChange(storage, {
         beliefId: topMatch.beliefId,
         changeType: "reinforced",
@@ -231,7 +271,7 @@ async function processNewBelief(
         // Strong evidence — weaken proportionally (TMS-inspired evidence weighing)
         const drop = Math.min(0.2, 1 / (supportCount + 1));
         storage.run(
-          "UPDATE beliefs SET confidence = MAX(0.1, confidence - ?), updated_at = datetime('now') WHERE id = ?",
+          "UPDATE beliefs SET confidence = MAX(0.1, confidence - ?), updated_at = datetime('now'), freshness_at = datetime('now') WHERE id = ?",
           [drop, contradictedId],
         );
         logBeliefChange(storage, {
@@ -243,9 +283,22 @@ async function processNewBelief(
         // New belief confidence reflects relative evidence strength
         const newConfidence = Math.min(0.6, 1 / (supportCount + 1) + 0.4);
         const belief = storage.db.transaction(() => {
-          const b = createBelief(storage, { statement, confidence: newConfidence, type, importance, subject });
+          const b = createBelief(storage, {
+            statement,
+            confidence: newConfidence,
+            type,
+            importance,
+            subject,
+            origin: options?.origin ?? "user-said",
+            freshnessAt: options?.freshnessAt ?? new Date().toISOString(),
+            sensitive: options?.sensitive ?? inferSensitivity(statement),
+          });
           storeEmbedding(storage, b.id, embedding!);
           linkBeliefToEpisode(storage, b.id, episodeId);
+          addBeliefProvenance(storage, { beliefId: b.id, sourceKind: "episode", sourceId: episodeId, sourceLabel: "Memory episode", relation: "observed" });
+          for (const provenance of options?.provenance ?? []) {
+            addBeliefProvenance(storage, { beliefId: b.id, ...provenance });
+          }
           logBeliefChange(storage, {
             beliefId: b.id,
             changeType: "created",
@@ -263,16 +316,32 @@ async function processNewBelief(
 
       // Weak evidence — invalidate
       const belief = storage.db.transaction(() => {
-        storage.run("UPDATE beliefs SET status = 'invalidated', updated_at = datetime('now') WHERE id = ?", [contradictedId]);
+        storage.run(
+          "UPDATE beliefs SET status = 'invalidated', correction_state = 'invalidated', updated_at = datetime('now'), freshness_at = datetime('now') WHERE id = ?",
+          [contradictedId],
+        );
         logBeliefChange(storage, {
           beliefId: contradictedId,
           changeType: "contradicted",
           detail: `Contradicted by: "${statement}"`,
           episodeId,
         });
-        const b = createBelief(storage, { statement, confidence: 0.6, type, importance, subject });
+        const b = createBelief(storage, {
+          statement,
+          confidence: 0.6,
+          type,
+          importance,
+          subject,
+          origin: options?.origin ?? "user-said",
+          freshnessAt: options?.freshnessAt ?? new Date().toISOString(),
+          sensitive: options?.sensitive ?? inferSensitivity(statement),
+        });
         storeEmbedding(storage, b.id, embedding!);
         linkBeliefToEpisode(storage, b.id, episodeId);
+        addBeliefProvenance(storage, { beliefId: b.id, sourceKind: "episode", sourceId: episodeId, sourceLabel: "Memory episode", relation: "observed" });
+        for (const provenance of options?.provenance ?? []) {
+          addBeliefProvenance(storage, { beliefId: b.id, ...provenance });
+        }
         logBeliefChange(storage, {
           beliefId: b.id,
           changeType: "created",
@@ -292,9 +361,22 @@ async function processNewBelief(
   // No match or low similarity — create new
   const neighbors = similar.filter((s) => s.similarity >= 0.4 && s.similarity < 0.85);
   const belief = storage.db.transaction(() => {
-    const b = createBelief(storage, { statement, confidence: 0.6, type, importance, subject });
+    const b = createBelief(storage, {
+      statement,
+      confidence: 0.6,
+      type,
+      importance,
+      subject,
+      origin: options?.origin ?? "user-said",
+      freshnessAt: options?.freshnessAt ?? new Date().toISOString(),
+      sensitive: options?.sensitive ?? inferSensitivity(statement),
+    });
     storeEmbedding(storage, b.id, embedding!);
     linkBeliefToEpisode(storage, b.id, episodeId);
+    addBeliefProvenance(storage, { beliefId: b.id, sourceKind: "episode", sourceId: episodeId, sourceLabel: "Memory episode", relation: "observed" });
+    for (const provenance of options?.provenance ?? []) {
+      addBeliefProvenance(storage, { beliefId: b.id, ...provenance });
+    }
     logBeliefChange(storage, {
       beliefId: b.id,
       changeType: "created",
@@ -316,6 +398,7 @@ export async function remember(
   llm: LLMClient,
   text: string,
   logger?: Logger,
+  options?: RememberOptions,
 ): Promise<{ episodeId: string; beliefIds: string[]; isReinforcement: boolean }> {
   const episode = createEpisode(storage, { action: text });
 
@@ -335,7 +418,12 @@ export async function remember(
   const beliefIds: string[] = [];
   let isReinforcement = false;
 
-  const factResult = await processNewBelief(storage, llm, extracted.fact, extracted.factType, episode.id, logger, extracted.importance, extracted.subject);
+  const factResult = await processNewBelief(storage, llm, extracted.fact, extracted.factType, episode.id, logger, extracted.importance, extracted.subject, {
+    origin: options?.origin ?? "user-said",
+    provenance: options?.provenance,
+    freshnessAt: options?.freshnessAt,
+    sensitive: options?.sensitive,
+  });
   beliefIds.push(factResult.beliefId);
   if (factResult.isReinforcement) isReinforcement = true;
 
@@ -349,6 +437,12 @@ export async function remember(
       logger,
       Math.max(1, Math.min(10, extracted.importance - 1)),
       extracted.subject,
+      {
+        origin: "synthesized",
+        provenance: options?.provenance,
+        freshnessAt: options?.freshnessAt,
+        sensitive: options?.sensitive,
+      },
     );
     beliefIds.push(insightResult.beliefId);
     if (insightResult.isReinforcement) isReinforcement = true;

@@ -116,6 +116,44 @@ describe("Tasks", () => {
     });
   });
 
+  it("should reuse an existing open linked task when the title matches after normalization", () => {
+    const first = addTask(storage, {
+      title: "Buy outbound ticket tonight",
+      sourceType: "program",
+      sourceId: "program-123",
+      sourceLabel: "May travel watch",
+    });
+
+    const duplicate = addTask(storage, {
+      title: "  buy   outbound ticket tonight ",
+      sourceType: "program",
+      sourceId: "program-123",
+      sourceLabel: "May travel watch",
+    });
+
+    expect(duplicate.id).toBe(first.id);
+    expect(listTasks(storage, "all")).toHaveLength(1);
+  });
+
+  it("should allow similarly named tasks when they come from different sources", () => {
+    const first = addTask(storage, {
+      title: "Sell 20% of NVDA",
+      sourceType: "program",
+      sourceId: "program-1",
+      sourceLabel: "Portfolio watch",
+    });
+
+    const second = addTask(storage, {
+      title: "Sell 20% of NVDA",
+      sourceType: "briefing",
+      sourceId: "brief-1",
+      sourceLabel: "Portfolio brief",
+    });
+
+    expect(second.id).not.toBe(first.id);
+    expect(listTasks(storage, "all")).toHaveLength(2);
+  });
+
   it("should edit a task title", () => {
     const task = addTask(storage, { title: "Old title", priority: "low" });
     editTask(storage, task.id, { title: "New title" });

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Roadmap runtime v1** — Added Program authored/runtime state (`objective`, `phase`, `deliveryMode`, `sourceRefs`, `latestBriefId`, `lastDeliveredAt`, `lastEvaluatedAt`, `lastSignalHash`), Program detail/history APIs, belief trust metadata (`origin`, `freshness_at`, `correction_state`, `sensitive`), explicit `belief_provenance` links, `product_events` analytics storage, `/api/product-metrics/overview`, and executable `travel-watch` / `buying-watch` core-loop harness coverage alongside `work-watch`.
 - **Programs v1 surface** — Added a first-class Programs API and UI built as a thin wrapper over scheduled jobs, including create/edit/pause/resume/delete flows and roadmap-aligned navigation to `Programs` and `Ask`.
 - **Agent-agnostic implementation harness** — Added a repo-native agent harness with a thin coordinating `AGENTS.md`, product and boundary docs, short decision logs, task/evidence templates, validation checklists, core-loop scenarios, practical JSON schemas, and runnable `harness:core-loop` / `harness:regressions` scripts for portable agent discipline.
 - **Cerebras provider support** — Added first-class Cerebras support across the core LLM client, config validation, CLI setup, settings/onboarding flows, health checks, and context budgeting. Cerebras uses the official `@ai-sdk/cerebras` provider with local embedding fallback.
@@ -20,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Watch dedupe clarity** — Repeated `Keep watching` attempts now reuse the existing Program for the same thread or equivalent recurring watch, the Programs API distinguishes created vs reused results, and Ask/Inbox surfaces stop implying a second watch was created when pai is already watching it.
+- **Saved move language refresh** — User-facing follow-through copy now uses `Recommended move`, `Save move`, and `Saved Moves` instead of `Commitment`, so the secondary `/tasks` surface reads as lighter recommendation carry-forward instead of a heavy promise or todo board.
+- **Commitment model cutover** — Programs no longer offer generic Program-side tracked-step creation, Brief recommendations remain inline by default, saved moves are explicit and user-owned, and the secondary `/tasks` surface now presents those persisted moves as `Saved Moves` across web, chat tool cards, landing/setup copy, and Telegram command/help text.
+- **Telegram companion delivery** — Telegram now prefers concise recommendation-first brief digests over long inline report dumps, complex chat replies auto-attach PDFs instead of fragile HTML documents, research/swarm pushes attach PDF reports with visuals, and the standalone bot migrates schedule tables so `/programs` and brief push targeting work consistently.
+- **Loop-first Home shell** — Home now leads with active Programs, open Actions, and the latest Brief before the historical brief archive, so Ask-created watches and follow-through are visible even when there is no fresh brief yet.
+- **Follow-through boundary reset** — The `/tasks` surface now behaves as a secondary saved-move ledger instead of a generic todo board. Program-linked follow-through no longer defaults to a rephrased `review` step, Briefs present `Recommended Moves` inline, duplicate open linked steps are suppressed for the same Program or Brief, and Telegram/setup copy now follows the same product boundary.
+- **Trust-safe briefing memory selection** — Daily brief generation now filters memory assumptions and raw belief context to active, non-sensitive, context-relevant beliefs only. Irrelevant personal/social beliefs are suppressed unless the current watch explicitly names that subject.
+- **Ask-driven loop refresh** — When a chat run finishes, the web client now refreshes Programs, Actions, Inbox, and Beliefs together instead of only Threads, so tool-created Programs become visible across the shell without waiting for manual navigation or a polling lag.
+- **Unified brief contract across recurring outputs** — Research and swarm runs now persist the same recommendation-first brief shape used by daily briefs, Program-linked runs can suppress unchanged user-visible briefs via signal hashing, and Telegram consumes daily/program/research/swarm briefs as one companion delivery surface with quick reply, correction, and action flows.
 - **Product positioning cutover** — Landing page, onboarding/setup copy, README metadata, and mobile navigation now present `pai` as a recurring decision agent centered on Home, Programs, Ask, Memory, and Settings instead of a broad equal-weight platform surface.
 - **Ask is program-first** — Assistant recurring-work tools and prompt copy now create, list, and delete Programs in chat instead of exposing schedules as the primary user-facing recurring abstraction. Existing schedule tool cards remain supported for older thread history.
 - **Explicit Keep watching path** — Ask threads and Inbox detail views now expose a visible `Keep watching this` action that creates Programs directly, and Ask-originated Programs preserve their source thread id through the public web API for continuity.
@@ -181,6 +191,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Structured report text contrast** — Shared `json-render` result components now use theme-aware foreground and surface tokens instead of dark-only zinc colors, restoring readable body copy, bullet lists, tables, and source chips in light-surface brief and report detail views.
 - **Research domain misclassification** — `detectResearchDomain()` regex matched "and to the" as airport codes. Fixed by making `type` required on both `research_start` and `swarm_start` tools.
 - **Raw JSON in UI** — Flight/stock results showed raw JSON when parsing failed. All rendering now goes through `ResultRenderer` with fallback chain.
 - **Sandbox URL auto-detection** — `resolveSandboxUrl()` now auto-detects Railway and Docker environments, matching the pattern used by `resolveSearchUrl()`.

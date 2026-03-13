@@ -84,7 +84,7 @@ export default function Onboarding() {
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                What decisions or commitments matter most right now?
+                What ongoing decisions or watches matter most right now?
               </label>
               <textarea
                 value={work}

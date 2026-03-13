@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot } from "grammy";
 import type { Logger, Storage } from "@personal-ai/core";
+
 import { buildTelegramReportDocument, sendReportDocumentToTelegram } from "../src/report-document.js";
 
 const mockGetArtifact = vi.fn();
@@ -12,6 +13,11 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     getArtifact: (...args: unknown[]) => mockGetArtifact(...args),
   };
 });
+
+const TINY_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2Ww0YAAAAASUVORK5CYII=",
+  "base64",
+);
 
 function createLogger(): Logger {
   return {
@@ -35,17 +41,18 @@ describe("report document delivery", () => {
     vi.clearAllMocks();
   });
 
-  it("builds a self-contained HTML report document with inlined visuals", () => {
+  it("builds a PDF report document with a stable file name", async () => {
     const logger = createLogger();
+    const storage = {} as Storage;
     mockGetArtifact.mockReturnValueOnce({
       id: "art-1",
       name: "trend.png",
       mimeType: "image/png",
-      data: Buffer.from("png-data"),
+      data: TINY_PNG,
     });
 
-    const document = buildTelegramReportDocument(
-      {} as Storage,
+    const document = await buildTelegramReportDocument(
+      storage,
       {
         title: "AI Revenue Trends <Q1>",
         markdown: "# Summary\n\nRevenue is **up**.",
@@ -55,16 +62,12 @@ describe("report document delivery", () => {
       logger,
     );
 
-    const html = document.data.toString("utf-8");
-    expect(document.fileName).toBe("analysis.html");
-    expect(html).toContain("<title>AI Revenue Trends &lt;Q1&gt;</title>");
-    expect(html).toContain("Delivered privately by Personal AI via Telegram.");
-    expect(html).toContain("<strong>up</strong>");
-    expect(html).toContain("data:image/png;base64,");
-    expect(html).toContain("<strong>Trend</strong> - Quarterly growth");
+    expect(document.fileName).toBe("analysis.pdf");
+    expect(document.data.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+    expect(mockGetArtifact).toHaveBeenCalledWith(storage, "art-1");
   });
 
-  it("sends report documents as protected Telegram files", async () => {
+  it("sends report documents to Telegram as protected PDF attachments", async () => {
     const logger = createLogger();
     const bot = createBot();
 
@@ -84,6 +87,7 @@ describe("report document delivery", () => {
       expect.anything(),
       {
         caption: "Quarterly Report",
+        parse_mode: "HTML",
         protect_content: true,
       },
     );

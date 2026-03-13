@@ -17,7 +17,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
@@ -30,15 +32,18 @@
     "@personal-ai/plugin-assistant": "workspace:*",
     "@personal-ai/plugin-curator": "workspace:*",
     "@personal-ai/plugin-research": "workspace:*",
+    "@personal-ai/plugin-schedules": "workspace:*",
     "@personal-ai/plugin-swarm": "workspace:*",
     "@personal-ai/plugin-tasks": "workspace:*",
-    "grammy": "^1.31.0",
+    "@types/pdfkit": "^0.17.5",
     "ai": "^6.0.0",
+    "grammy": "^1.31.0",
+    "pdfkit": "^0.17.2",
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^3.0.0"
   }
 }

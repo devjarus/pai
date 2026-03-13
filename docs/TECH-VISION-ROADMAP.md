@@ -72,7 +72,7 @@ Neither of those should lead marketing, onboarding, or product navigation right 
 
 The core operating loop is:
 
-1. The user names an ongoing decision or commitment, or asks a question that reveals an ongoing decision.
+1. The user names an ongoing decision or watch, or asks a question that reveals an ongoing decision.
 2. `pai` captures durable preferences, constraints, and context.
 3. `pai` gathers fresh evidence in the background on a stated cadence or when something material changes.
 4. `pai` delivers a brief at the right pace for that decision, with recommendation, evidence, assumptions, and next actions.

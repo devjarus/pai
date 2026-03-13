@@ -1,0 +1,162 @@
+import { describe, expect, it } from "vitest";
+
+import { buildBriefSignalHash, buildReportBriefSection } from "../src/brief-schema.js";
+
+describe("brief-schema", () => {
+  it("prefers a structured recommendation and carries program context into the brief", () => {
+    const section = buildReportBriefSection({
+      goal: "Track Atlas launch readiness",
+      execution: "analysis",
+      resultType: "risk",
+      report: "# Heading\nFallback line\n| ignored | row |",
+      structuredResult: JSON.stringify({
+        recommendation: "Hold launch until rollback verification clears.",
+      }),
+      renderSpec: "{\"kind\":\"report\"}",
+      visuals: [{ id: "visual-1", type: "stat", title: "Risk" }],
+      program: {
+        title: "Atlas watch",
+        question: "Keep watching Atlas launch readiness",
+        objective: "Only alert on launch blockers that require operator action.",
+        preferences: ["Lead with blockers", "Keep updates concise"],
+        constraints: ["Avoid noisy changes", "Focus on launch readiness only"],
+      },
+      actionSummary: {
+        openCount: 2,
+        completedCount: 1,
+        staleOpenCount: 0,
+      },
+    });
+
+    expect(section.title).toBe("Atlas watch");
+    expect(section.recommendation).toEqual({
+      summary: "Hold launch until rollback verification clears.",
+      confidence: "high",
+      rationale: "This brief summarizes the latest analysis run for Track Atlas launch readiness against the objective \"Only alert on launch blockers that require operator action.\".",
+    });
+    expect(section.what_changed).toContain("A new analysis run completed for Track Atlas launch readiness.");
+    expect(section.what_changed).toContain("2 linked actions remain open for this Program.");
+    expect(section.evidence).toEqual([
+      {
+        title: "Latest analysis run",
+        detail: "Structured result recommends: Hold launch until rollback verification clears.",
+        sourceLabel: "Program analysis",
+        freshness: "Latest completed run",
+      },
+      {
+        title: "Result type",
+        detail: "risk",
+        sourceLabel: "Execution metadata",
+        freshness: "Current run metadata",
+      },
+    ]);
+    expect(section.memory_assumptions).toEqual([
+      {
+        statement: "Only alert on launch blockers that require operator action.",
+        confidence: "high",
+        provenance: "Program objective",
+      },
+      {
+        statement: "Lead with blockers",
+        confidence: "high",
+        provenance: "Program preference",
+      },
+      {
+        statement: "Keep updates concise",
+        confidence: "high",
+        provenance: "Program preference",
+      },
+      {
+        statement: "Avoid noisy changes",
+        confidence: "high",
+        provenance: "Program constraint",
+      },
+      {
+        statement: "Focus on launch readiness only",
+        confidence: "high",
+        provenance: "Program constraint",
+      },
+    ]);
+    expect(section.next_actions).toEqual([{
+      title: "Review the latest brief appendix",
+      timing: "Now",
+      detail: "Open the appendix for the full analysis output, visuals, and structured result.",
+    }]);
+    expect(section.correction_hook.prompt).toContain("correct it");
+    expect(section.appendix).toEqual({
+      goal: "Track Atlas launch readiness",
+      report: "# Heading\nFallback line\n| ignored | row |",
+      execution: "analysis",
+      resultType: "risk",
+      structuredResult: JSON.stringify({
+        recommendation: "Hold launch until rollback verification clears.",
+      }),
+      renderSpec: "{\"kind\":\"report\"}",
+      visuals: [{ id: "visual-1", type: "stat", title: "Risk" }],
+    });
+  });
+
+  it("falls back to report content and stale linked action guidance when no structured recommendation exists", () => {
+    const section = buildReportBriefSection({
+      goal: "Monitor ticket prices",
+      execution: "research",
+      report: "# Heading\n\nTrack this outbound fare before inventory tightens.\n| ignored | row |",
+      structuredResult: "{not-json",
+      actionSummary: {
+        openCount: 1,
+        completedCount: 0,
+        staleOpenCount: 2,
+      },
+    });
+
+    expect(section.recommendation).toEqual({
+      summary: "Resolve the stale linked action before changing the recommendation for Monitor ticket prices.",
+      confidence: "high",
+      rationale: "2 linked actions are stale, so follow-through should be closed before broadening the watch.",
+    });
+    expect(section.evidence).toEqual([
+      {
+        title: "Latest research run",
+        detail: "Track this outbound fare before inventory tightens.",
+        sourceLabel: "Program research",
+        freshness: "Latest completed run",
+      },
+      {
+        title: "Stale linked action",
+        detail: "2 linked actions are stale or overdue.",
+        sourceLabel: "Program actions",
+        freshness: "Requires attention",
+      },
+    ]);
+    expect(section.next_actions).toEqual([{
+      title: "Close or reprioritize stale action",
+      timing: "Now",
+      detail: "Resolve the overdue linked action before changing the watch scope or recommendation.",
+    }]);
+  });
+
+  it("builds stable signal hashes from normalized brief fields", () => {
+    const base = buildReportBriefSection({
+      goal: "Track Atlas launch readiness",
+      execution: "analysis",
+      report: "Check the rollback blocker.",
+    });
+
+    const sameHash = buildBriefSignalHash(base, { source: "analysis" });
+    const sameHashAgain = buildBriefSignalHash(
+      {
+        recommendation: { ...base.recommendation },
+        what_changed: [...base.what_changed],
+        evidence: [...base.evidence],
+        memory_assumptions: [...base.memory_assumptions],
+        next_actions: [...base.next_actions],
+      },
+      { source: "analysis" },
+    );
+    const changedHash = buildBriefSignalHash(base, { source: "research" });
+
+    expect(sameHash).toHaveLength(64);
+    expect(sameHashAgain).toBe(sameHash);
+    expect(changedHash).not.toBe(sameHash);
+  });
+});

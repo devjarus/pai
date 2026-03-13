@@ -215,12 +215,38 @@ stateDiagram-v2
 | `importance` | 1-10 (from LLM) | Set at creation | LLM-assigned importance. 1-3 trivial, 4-6 useful, 7-9 core, 10 critical. Normalized to 0-1 for scoring. |
 | `type` | From LLM extraction | Set at creation | One of: `factual`, `preference`, `procedural`, `architectural`, `meta` (synthesized), `insight` (legacy default). |
 | `subject` | `"owner"` | Set at creation, `backfillSubjects()` | Who the belief is about. Lowercase name or `"owner"`. |
+| `origin` | `inferred` | Set at creation/correction/write path | Trust source for the belief: `user-said`, `document`, `web`, `inferred`, or `synthesized`. |
+| `freshness_at` | null | Creation, reinforcement, correction, edit | Explicit freshness timestamp separate from `updated_at`, used for trust display and provenance-aware consumers. |
+| `correction_state` | `active` | Correction and invalidation flows | Tracks trust lifecycle beyond status: `active`, `confirmed`, `corrected`, `invalidated`. |
+| `sensitive` | false | Creation heuristics or explicit write path | Flags beliefs that may contain sensitive inferred material so product surfaces can treat them as lower-trust until confirmed. |
 | `access_count` | 0 | `semanticSearch()` batch access recording | Number of times the belief was returned in search results. |
 | `last_accessed` | null | `semanticSearch()` batch access recording | Timestamp of last retrieval. Used for recency scoring. |
 | `superseded_by` | null | `linkSupersession()` | Points to the newer belief that replaced this one. |
 | `supersedes` | null | `linkSupersession()` | Points to the older belief this one replaced. |
 
-## 7. Decay Formula
+## 7. Briefing Surfacing Rules
+
+Not every stored belief is eligible to appear in a Brief.
+
+Brief generation now applies an additional trust and relevance filter before a belief can become a `memory_assumption` or appear in raw brief context:
+
+- only `active` beliefs are eligible
+- `sensitive` beliefs are excluded from Brief generation
+- beliefs with `correction_state` of `corrected` or `invalidated` are excluded
+- only `preference`, `factual`, and `procedural` beliefs are eligible for briefing context
+- owner-scoped preferences and procedural beliefs can surface when they are generally useful to how the owner wants updates delivered
+- factual beliefs must match the current decision focus
+- third-party beliefs only surface when the current Program / Action / Goal / knowledge focus explicitly mentions that subject
+
+The current decision focus is built from active Programs, open tracked follow-through, legacy goals when present, and learned knowledge titles. This keeps the memory system broad while making the Brief surface narrow and trust-safe.
+
+## 8. Provenance
+
+- `belief_episodes` remains the many-to-many link between beliefs and episodes.
+- `belief_provenance` adds source-kind links for user chat episodes, learned documents, web-backed research, generated briefs, and other artifacts.
+- Corrections create a replacement belief, invalidate the old one, link supersession, and add provenance for the correction episode so later briefs can suppress the old assumption immediately.
+
+## 9. Decay Formula
 
 Effective confidence decays exponentially over time:
 
@@ -235,7 +261,7 @@ Examples:
 
 Each time a belief is retrieved via `semanticSearch()`, its stability increases by 0.1 (capped at 5.0), following SM-2 spaced repetition principles. Frequently accessed beliefs naturally resist decay.
 
-## 8. Conversation Consolidation
+## 10. Conversation Consolidation
 
 Every conversation chunk (when >= 4 turns) can be consolidated into a summary episode via `consolidateConversation()`. This runs as part of the chat pipeline (triggered every 5th chat turn by the server).
 
@@ -247,7 +273,7 @@ The consolidation flow:
 
 Consolidated episodes do **not** create beliefs. They serve as searchable episodic memory that can surface in `getMemoryContext()` and `retrieveContext()`.
 
-## 9. Data Model
+## 11. Data Model
 
 ```
 episodes              1---*  belief_episodes  *---1  beliefs

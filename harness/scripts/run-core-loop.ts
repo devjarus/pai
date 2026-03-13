@@ -17,7 +17,7 @@ import {
   validateTaskContractTemplate,
   writeReport,
 } from "./_shared";
-import { runExecutableCoreLoopScenario } from "./core-loop-runtime";
+import { runExecutableCoreLoopScenarios } from "./core-loop-runtime";
 
 async function run(): Promise<ValidationReport> {
   const checks: ValidationCheck[] = [];
@@ -78,7 +78,7 @@ async function run(): Promise<ValidationReport> {
     );
   }
 
-  checks.push(await runExecutableCoreLoopScenario());
+  checks.push(...await runExecutableCoreLoopScenarios());
 
   const blockers = flattenIssues(checks, "blockers");
   const warnings = flattenIssues(checks, "warnings");
@@ -88,15 +88,15 @@ async function run(): Promise<ValidationReport> {
     generated_at: new Date().toISOString(),
     status: reportStatus(checks),
     summary:
-      "Core-loop harness run. This validates harness artifacts and executes the work-watch scenario against real Ask-created Program, linked Action, and Brief runtime paths using deterministic fallback generation.",
+      "Core-loop harness run. This validates harness artifacts and executes work-watch, travel-watch, and buying-watch against real Ask-created Programs, linked Actions, belief correction history/provenance, and deterministic Brief runtime paths.",
     checks,
     blockers,
     warnings,
     artifacts: ["harness/reports/latest-core-loop.json"],
     todo: [
-      "Add at least one more executable scenario beyond work-watch so travel and buying paths are also covered.",
       "Cover the streamed chat transport or Keep watching UI path, not just the assistant tool/runtime layer.",
-      "Connect executable harness checks to rendered UI and correction entrypoints, not just storage and generation paths.",
+      "Add route-level or browser-level proof for Program detail/history and belief provenance endpoints.",
+      "Connect executable harness checks to rendered UI and Telegram correction/action entrypoints, not just storage and generation paths.",
     ],
   };
 

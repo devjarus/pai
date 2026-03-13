@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -15,6 +15,7 @@ import { MemorySidebar, getMemoryCount } from "@/components/chat/MemorySidebar";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Thread as AssistantThread } from "@/components/assistant-ui/thread";
 import { buildThreadProgramDraft } from "@/lib/program-drafts";
+import { findMatchingProgram } from "@/lib/program-dedupe";
 
 function messageToHistoryEntry(
   message: { role: string; parts?: Array<{ type?: string; text?: string }> },
@@ -297,15 +298,26 @@ function ChatInner({
 
   const messages = handleRef.current?.messages ?? [];
   const memoryCount = getMemoryCount(messages);
-  const linkedProgram = activeThreadId
-    ? programs.find((program) => program.threadId === activeThreadId)
-    : undefined;
-  const canKeepWatching = Boolean(
-    activeThreadId &&
-    !isStreaming &&
-    !linkedProgram &&
-    messages.some((message) => message.role === "user"),
+  const threadProgramDraft = useMemo(() => {
+    if (!activeThreadId) return null;
+    const history = messages
+      .map((message) =>
+        messageToHistoryEntry(message as { role: string; parts?: Array<{ type?: string; text?: string }> }),
+      )
+      .filter((message): message is ChatHistoryMessage => Boolean(message));
+    const hasUserMessage = history.some((message) => message.role === "user" && message.content.trim().length > 0);
+    if (!hasUserMessage) return null;
+    return buildThreadProgramDraft({
+      threadId: activeThreadId,
+      threadTitle: activeThread?.title,
+      history,
+    });
+  }, [activeThread?.title, activeThreadId, messages]);
+  const linkedProgram = useMemo(
+    () => (threadProgramDraft ? findMatchingProgram(programs, threadProgramDraft) : undefined),
+    [programs, threadProgramDraft],
   );
+  const canKeepWatching = Boolean(activeThreadId && !isStreaming && !linkedProgram && threadProgramDraft);
 
   const handleKeepWatching = useCallback(async () => {
     if (!activeThreadId || createProgram.isPending || linkedProgram) return;
@@ -330,8 +342,16 @@ function ChatInner({
         threadTitle: activeThread?.title,
         history,
       });
-      await createProgram.mutateAsync(draft);
-      toast.success("Program created. pai will keep watching this thread.");
+      const result = await createProgram.mutateAsync(draft);
+      if (result.created) {
+        toast.success("Program created. pai will keep watching this thread.");
+        return;
+      }
+      toast.message(
+        result.duplicateReason === "thread"
+          ? "This thread is already being watched."
+          : `Already watching this as "${result.program.title}".`,
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create program");
     }
@@ -381,8 +401,14 @@ function ChatInner({
           memoryCount={memoryCount}
           canKeepWatching={canKeepWatching}
           keepWatchingPending={createProgram.isPending}
-          keepWatchingLabel={linkedProgram ? "Watching" : "Keep watching"}
-          keepWatchingTooltip={linkedProgram ? "This thread already has a Program" : "Turn this thread into a Program"}
+          keepWatchingLabel={linkedProgram ? "Already watching" : "Keep watching"}
+          keepWatchingTooltip={
+            linkedProgram
+              ? linkedProgram.threadId === activeThreadId
+                ? "This thread already has a Program"
+                : `This thread is already covered by "${linkedProgram.title}"`
+              : "Turn this thread into a Program"
+          }
           onKeepWatching={handleKeepWatching}
           onClear={handleClear}
           onSelectThread={switchThread}

@@ -4,6 +4,8 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import type { Storage, LLMClient, Logger } from "@personal-ai/core";
 import {
+  buildBriefSignalHash,
+  buildReportBriefSection,
   knowledgeSearch,
   appendMessages,
   learnFromContent,
@@ -20,6 +22,7 @@ import {
 import { upsertJob, updateJobStatus } from "@personal-ai/core";
 import { storeArtifact, guessMimeType } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
+import { getProgramById, recordProgramEvaluation } from "@personal-ai/plugin-schedules";
 import {
   getSwarmJob,
   updateSwarmJob,
@@ -65,6 +68,27 @@ export interface SwarmContext {
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   formatSearchResults: (results: Array<{ title: string; url: string; snippet: string }>) => string;
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;
+}
+
+function getProgramActionSummary(storage: Storage, programId: string | null): { openCount: number; completedCount: number; staleOpenCount: number } | null {
+  if (!programId) return null;
+  const rows = storage.query<{ status: string; created_at: string; due_date: string | null }>(
+    "SELECT status, created_at, due_date FROM tasks WHERE source_type = 'program' AND source_id = ?",
+    [programId],
+  );
+  const open = rows.filter((row) => row.status === "open");
+  const completed = rows.filter((row) => row.status === "done");
+  const staleOpen = open.filter((row) => {
+    const dueTs = row.due_date ? Date.parse(row.due_date) : Number.NaN;
+    const createdTs = Date.parse(row.created_at);
+    const referenceTs = Number.isFinite(dueTs) ? dueTs : createdTs;
+    return Number.isFinite(referenceTs) && Date.now() - referenceTs > 3 * 24 * 60 * 60 * 1000;
+  });
+  return {
+    openCount: open.length,
+    completedCount: completed.length,
+    staleOpenCount: staleOpen.length,
+  };
 }
 
 function getSubAgentPrompt(role: string, resultType: string, timezone?: string): string {
@@ -275,23 +299,58 @@ export async function runSwarmInBackground(
       sourceScheduleId: job.sourceScheduleId,
     });
 
-    // Create Inbox briefing
-    const briefingId = `swarm-${jobId}`;
+    const program = job.sourceScheduleId ? getProgramById(ctx.storage, job.sourceScheduleId) : null;
+    const actionSummary = getProgramActionSummary(ctx.storage, job.sourceScheduleId);
+    const briefSection = buildReportBriefSection({
+      goal: job.goal,
+      execution: "analysis",
+      resultType: presentation.resultType,
+      report: presentation.report,
+      structuredResult: presentation.structuredResult,
+      renderSpec: presentation.renderSpec,
+      visuals: presentation.visuals,
+      program: program
+        ? {
+          title: program.title,
+          question: program.question,
+          objective: program.objective,
+          preferences: program.preferences,
+          constraints: program.constraints,
+        }
+        : null,
+      actionSummary,
+    });
+    const signalHash = buildBriefSignalHash(briefSection, {
+      programId: job.sourceScheduleId,
+      actionSummary,
+      resultType: presentation.resultType,
+      execution: "analysis",
+    });
+    const briefingId = !program
+      || program.deliveryMode !== "change-gated"
+      || !program.lastSignalHash
+      || program.lastSignalHash !== signalHash
+      || !program.latestBriefId
+      ? `swarm-${jobId}`
+      : null;
     try {
-      const sections = JSON.stringify({
-        report: presentation.report,
-        goal: job.goal,
-        resultType: presentation.resultType,
-        execution: presentation.execution,
-        visuals: presentation.visuals,
-        structuredResult: presentation.structuredResult ?? undefined,
-        renderSpec: presentation.renderSpec ?? undefined,
-      });
-      ctx.storage.run(
-        "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type) VALUES (?, datetime('now'), ?, null, 'ready', 'research')",
-        [briefingId, sections],
-      );
-      updateSwarmJob(ctx.storage, jobId, { briefing_id: briefingId });
+      if (briefingId) {
+        ctx.storage.run(
+          `INSERT INTO briefings (
+            id, generated_at, sections, raw_context, status, type, program_id, thread_id, source_job_id, source_job_kind, signal_hash
+          ) VALUES (?, datetime('now'), ?, null, 'ready', 'research', ?, ?, ?, 'swarm', ?)`,
+          [briefingId, JSON.stringify(briefSection), job.sourceScheduleId ?? null, job.threadId, jobId, signalHash],
+        );
+        updateSwarmJob(ctx.storage, jobId, { briefing_id: briefingId });
+      }
+      if (job.sourceScheduleId) {
+        recordProgramEvaluation(ctx.storage, job.sourceScheduleId, {
+          latestBriefId: briefingId ?? undefined,
+          lastDeliveredAt: briefingId ? new Date().toISOString() : undefined,
+          lastEvaluatedAt: new Date().toISOString(),
+          lastSignalHash: signalHash,
+        });
+      }
     } catch (err) {
       ctx.logger.warn(`Failed to create swarm briefing: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -306,7 +365,7 @@ export async function runSwarmInBackground(
     }
 
     // Append summary to originating chat thread
-    if (job.threadId) {
+    if (job.threadId && briefingId) {
       try {
         const summary = presentation.report.length > 500
           ? presentation.report.slice(0, 500) + "\n\n*Full report available in your Inbox.*"

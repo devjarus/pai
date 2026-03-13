@@ -5,13 +5,13 @@ This document defines the portable primitives that agents, scripts, and humans s
 ## Program
 
 Purpose:
-- The product object for an ongoing decision or commitment.
+- The product object for an ongoing decision or watch.
 
 Who uses it:
 - product code, UI, background jobs, agents, and validation scenarios
 
 What it should contain:
-- the recurring question or commitment
+- the recurring question or watch
 - user preferences and constraints relevant to the decision
 - cadence or trigger rules
 - latest brief, open actions, and recent corrections
@@ -33,28 +33,36 @@ What it should contain:
 - what changed
 - evidence
 - memory assumptions
-- next actions
+- next actions as candidate moves, not automatically saved moves
 - correction hooks
 
 What it must not become:
 - a raw execution log
 - a dump of research notes without a recommendation
 
-## Action
+## Action (User-facing: Saved Move)
 
 Purpose:
-- A follow-through item that emerges from a brief or program.
+- An optional, user-owned saved move that emerges when a brief reaches a decision-ready moment or the user explicitly asks pai to keep one manual move alive.
 
 Who uses it:
-- users, UI surfaces, background follow-through, and future automation
+- users, inline brief surfaces, secondary saved-move views, Telegram, and future approval-based automation
 
 What it should contain:
 - clear next step
+- why now
 - origin brief or program
-- status and timing
+- owner
+- status and timing or expiry
 
 What it must not become:
+- a default output for every Program
+- an internal agent-quality or prompt-improvement task
 - a parallel task-management product with its own strategy
+
+How it should surface:
+- as a recommended move inside a Brief first
+- as a saved move only after explicit user intent
 
 ## Belief
 

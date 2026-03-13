@@ -19,7 +19,7 @@ const typeConfig: Record<CardType, { icon: typeof BrainIcon; label: string; acce
   research:  { icon: SearchIcon,        label: "Research",  accent: "border-l-violet-500",  badge: "text-violet-700 dark:text-violet-400 bg-violet-100 dark:bg-violet-500/10" },
   briefing:  { icon: NewspaperIcon,     label: "Briefing",  accent: "border-l-amber-500",   badge: "text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/10" },
   memory:    { icon: BrainIcon,         label: "Memory",    accent: "border-l-emerald-500", badge: "text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/10" },
-  task:      { icon: CheckSquareIcon,   label: "Task",      accent: "border-l-rose-500",    badge: "text-rose-700 dark:text-rose-400 bg-rose-100 dark:bg-rose-500/10" },
+  task:      { icon: CheckSquareIcon,   label: "Saved Move", accent: "border-l-rose-500",    badge: "text-rose-700 dark:text-rose-400 bg-rose-100 dark:bg-rose-500/10" },
   knowledge: { icon: BookOpenIcon,      label: "Knowledge", accent: "border-l-cyan-500",    badge: "text-cyan-700 dark:text-cyan-400 bg-cyan-100 dark:bg-cyan-500/10" },
 };
 

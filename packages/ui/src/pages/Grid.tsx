@@ -30,7 +30,7 @@ const typeLabels: { type: GridCardType | "all"; label: string }[] = [
   { type: "research", label: "Research" },
   { type: "briefing", label: "Briefings" },
   { type: "memory", label: "Memories" },
-  { type: "task", label: "Tasks" },
+  { type: "task", label: "Saved Moves" },
   { type: "knowledge", label: "Knowledge" },
 ];
 
@@ -135,7 +135,7 @@ export default function Grid() {
     { label: "New Chat", icon: MessageSquareIcon, action: () => navigate("/chat") },
     { label: "Add Memory", icon: BrainIcon, action: () => navigate("/memory") },
     { label: "Learn Knowledge", icon: BookOpenIcon, action: () => navigate("/knowledge?action=learn") },
-    { label: "Add Task", icon: CheckSquareIcon, action: () => navigate("/tasks?action=add") },
+    { label: "Save Move", icon: CheckSquareIcon, action: () => navigate("/tasks?action=add") },
     { label: "New Schedule", icon: CalendarIcon, action: () => navigate("/schedules?action=add") },
   ];
 

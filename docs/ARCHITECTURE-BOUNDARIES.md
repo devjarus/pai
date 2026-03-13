@@ -6,7 +6,7 @@ This document sets the working boundaries for product-facing changes and infrast
 
 Programs and Briefs are the primary product objects.
 
-- Program = ongoing decision or commitment
+- Program = ongoing decision or watch
 - Brief = decision-ready output for that program
 
 Changes should strengthen those objects rather than adding parallel top-level concepts.

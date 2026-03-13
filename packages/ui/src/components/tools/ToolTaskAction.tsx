@@ -19,8 +19,8 @@ export function ToolTaskAction({ state, toolName, input, output }: ToolTaskActio
           <ListTodoIcon className="size-3.5 shrink-0 animate-pulse text-primary" />
           <span className="text-xs text-muted-foreground">
             {isAdd
-              ? `Creating task${inputObj.title ? `: "${inputObj.title}"` : "..."}`
-              : "Completing task..."}
+              ? `Saving move${inputObj.title ? `: "${inputObj.title}"` : "..."}`
+              : "Marking move done..."}
           </span>
         </CardContent>
       </Card>
@@ -33,7 +33,7 @@ export function ToolTaskAction({ state, toolName, input, output }: ToolTaskActio
         <CardContent className="flex items-center gap-2 px-3 py-2.5">
           <AlertCircleIcon className="size-3.5 shrink-0 text-destructive" />
           <span className="text-xs text-destructive">
-            {isAdd ? "Failed to create task." : "Failed to complete task."}
+            {isAdd ? "Failed to save move." : "Failed to mark move done."}
           </span>
         </CardContent>
       </Card>
@@ -42,7 +42,7 @@ export function ToolTaskAction({ state, toolName, input, output }: ToolTaskActio
 
   if (state === "output-available") {
     const title = output?.title || (inputObj.title as string) || "";
-    const message = output?.message || (isAdd ? "Task created" : "Task completed");
+    const message = output?.message || (isAdd ? "Move saved" : "Move marked done");
 
     return (
       <Card className="my-2 gap-0 rounded-lg border-green-500/10 py-0 shadow-none">

@@ -1,12 +1,13 @@
 import type { Plugin, PluginContext, Command, Migration } from "@personal-ai/core";
 import {
   loadConfig, createStorage, createLLMClient, createLogger, configureLlmTraffic,
-  memoryMigrations, telemetryMigrations, threadMigrations,
+  memoryMigrations, telemetryMigrations, threadMigrations, productEventMigrations,
 } from "@personal-ai/core";
 import { taskMigrations } from "@personal-ai/plugin-tasks";
 import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
 import { researchMigrations } from "@personal-ai/plugin-research";
+import { scheduleMigrations } from "@personal-ai/plugin-schedules";
 import { swarmMigrations } from "@personal-ai/plugin-swarm";
 import { createBot } from "./bot.js";
 import { startResearchPushLoop } from "./push.js";
@@ -14,7 +15,17 @@ import { startResearchPushLoop } from "./push.js";
 // Re-exports
 export { createBot } from "./bot.js";
 export { runAgentChat, createThread, deleteThread, clearThread } from "./chat.js";
-export { markdownToTelegramHTML, markdownToReportHTML, splitMessage, formatBriefingHTML, escapeHTML, formatTelegramResponse, isComplexContent, stripHtmlTags } from "./formatter.js";
+export {
+  markdownToTelegramHTML,
+  markdownToReportHTML,
+  splitMessage,
+  formatBriefingHTML,
+  buildTelegramDigestMarkdown,
+  escapeHTML,
+  formatTelegramResponse,
+  isComplexContent,
+  stripHtmlTags,
+} from "./formatter.js";
 export { startResearchPushLoop } from "./push.js";
 export { buildTelegramReportDocument, sendReportDocumentToTelegram } from "./report-document.js";
 
@@ -65,8 +76,10 @@ if (isDirectExecution) {
   storage.migrate("telemetry", telemetryMigrations);
   storage.migrate("tasks", taskMigrations);
   storage.migrate("threads", threadMigrations);
+  storage.migrate("product_events", productEventMigrations);
   storage.migrate("telegram", telegramMigrations);
   storage.migrate("research", researchMigrations);
+  storage.migrate("schedules", scheduleMigrations);
   storage.migrate("swarm", swarmMigrations);
 
   const ctx: PluginContext = { config, storage, llm, logger };
@@ -80,7 +93,9 @@ if (isDirectExecution) {
   });
 
   // Start research push loop (polls for completed research and sends to Telegram)
-  const pushHandle = startResearchPushLoop(storage, bot, logger);
+  const pushHandle = startResearchPushLoop(storage, bot, logger, undefined, {
+    ownerUsername: config.telegram?.ownerUsername,
+  });
 
   // Graceful shutdown
   const shutdown = () => {

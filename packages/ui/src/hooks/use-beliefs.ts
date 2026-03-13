@@ -86,8 +86,15 @@ export function useUpdateBelief() {
 export function useCorrectBelief() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { id: string; statement: string; note?: string }) =>
-      correctBelief(input.id, { statement: input.statement, note: input.note }),
+    mutationFn: (input: { id: string; statement: string; note?: string; briefId?: string; programId?: string; threadId?: string; channel?: string }) =>
+      correctBelief(input.id, {
+        statement: input.statement,
+        note: input.note,
+        briefId: input.briefId,
+        programId: input.programId,
+        threadId: input.threadId,
+        channel: input.channel,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: beliefKeys.all });
       queryClient.invalidateQueries({ queryKey: ["inbox"] });

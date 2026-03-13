@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   CalendarClockIcon,
@@ -18,7 +18,6 @@ import type { Program } from "../api";
 import type { Task } from "../types";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import {
-  useCreateTask,
   useCreateProgram,
   useDeleteProgram,
   usePauseProgram,
@@ -103,10 +102,10 @@ function familyTone(family: ProgramFamily): string {
 }
 
 export default function Programs() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: programs = [], isLoading } = usePrograms();
   const { data: tasks = [] } = useTasks({ status: "all" });
-  const createTask = useCreateTask();
   const createProgram = useCreateProgram();
   const updateProgram = useUpdateProgram();
   const deleteProgram = useDeleteProgram();
@@ -116,8 +115,6 @@ export default function Programs() {
   const [showDialog, setShowDialog] = useState(searchParams.get("action") === "add");
   const [editing, setEditing] = useState<Program | null>(null);
   const [deleting, setDeleting] = useState<Program | null>(null);
-  const [actionProgram, setActionProgram] = useState<Program | null>(null);
-  const [actionForm, setActionForm] = useState({ title: "", description: "" });
   const [form, setForm] = useState({
     title: "",
     question: "",
@@ -132,7 +129,11 @@ export default function Programs() {
 
   useEffect(() => {
     document.title = "Programs - pai";
-    if (searchParams.get("action")) setSearchParams({}, { replace: true });
+    if (searchParams.get("action")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("action");
+      setSearchParams(next, { replace: true });
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeCount = useMemo(
@@ -190,14 +191,6 @@ export default function Programs() {
     setShowDialog(true);
   }
 
-  function openCreateAction(program: Program) {
-    setActionProgram(program);
-    setActionForm({
-      title: `Review ${program.title}`,
-      description: program.question,
-    });
-  }
-
   async function handleSave() {
     if (!form.title.trim() || !form.question.trim()) return;
     const payload = {
@@ -217,8 +210,14 @@ export default function Programs() {
         await updateProgram.mutateAsync({ id: editing.id, data: payload });
         toast.success("Program updated");
       } else {
-        await createProgram.mutateAsync(payload);
-        toast.success("Program created");
+        const result = await createProgram.mutateAsync(payload);
+        toast.success(
+          result.created
+            ? "Program created"
+            : result.duplicateReason === "thread"
+              ? "That thread is already being watched"
+              : `Already watching this as "${result.program.title}"`,
+        );
       }
       setShowDialog(false);
       setEditing(null);
@@ -252,23 +251,21 @@ export default function Programs() {
     }
   }
 
-  async function handleCreateAction() {
-    if (!actionProgram || !actionForm.title.trim()) return;
-    try {
-      await createTask.mutateAsync({
-        title: actionForm.title.trim(),
-        description: actionForm.description.trim() || undefined,
-        priority: "medium",
-        sourceType: "program",
-        sourceId: actionProgram.id,
-        sourceLabel: actionProgram.title,
-      });
-      toast.success("Action created");
-      setActionProgram(null);
-      setActionForm({ title: "", description: "" });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create action");
+  function openCommitments(program: Program) {
+    const params = new URLSearchParams({
+      sourceType: "program",
+      sourceId: program.id,
+      sourceLabel: program.title,
+    });
+    navigate(`/tasks?${params.toString()}`);
+  }
+
+  function openProgramPrimary(program: Program) {
+    if (program.latestBriefSummary?.id) {
+      navigate(`/inbox/${program.latestBriefSummary.id}`);
+      return;
     }
+    navigate("/ask");
   }
 
   const programSaving =
@@ -282,7 +279,7 @@ export default function Programs() {
     <div className="flex h-full flex-col overflow-hidden">
       <FirstVisitBanner
         pageKey="programs"
-        tip="Programs are the recurring decisions or commitments you want pai to keep watching and brief you on."
+        tip="Programs are the recurring decisions or watches you want pai to keep watching and brief you on."
       />
       <div className="flex shrink-0 items-center justify-between border-b px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
@@ -317,7 +314,7 @@ export default function Programs() {
             <div>
               <p className="text-lg font-medium text-foreground">No programs yet</p>
               <p className="mt-1 max-w-md text-sm">
-                Create an ongoing decision or commitment and pai will keep watching it, remember your constraints,
+                Create an ongoing decision or watch and pai will keep watching it, remember your constraints,
                 and brief you when something changes.
               </p>
             </div>
@@ -333,7 +330,8 @@ export default function Programs() {
                 key={program.id}
                 program={program}
                 actions={actionsByProgramId.get(program.id) ?? []}
-                onCreateAction={openCreateAction}
+                onOpenPrimary={openProgramPrimary}
+                onOpenCommitments={openCommitments}
                 onEdit={openEdit}
                 onDelete={setDeleting}
                 onTogglePause={handleTogglePause}
@@ -384,7 +382,7 @@ export default function Programs() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium">Recurring Question Or Commitment</label>
+              <label className="mb-1 block text-sm font-medium">Recurring Question Or Watch</label>
               <textarea
                 rows={4}
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
@@ -487,7 +485,7 @@ export default function Programs() {
             <DialogTitle>Delete Program</DialogTitle>
           </DialogHeader>
           <p className="py-2 text-sm text-muted-foreground">
-            Delete "{deleting?.title}"? This stops future follow-through for the program.
+            Delete "{deleting?.title}"? This stops future briefs for the program and leaves any saved moves as history.
           </p>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDeleting(null)}>
@@ -503,45 +501,6 @@ export default function Programs() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!actionProgram} onOpenChange={() => setActionProgram(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Create Action</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium">Action Title</label>
-              <input
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-                value={actionForm.title}
-                onChange={(event) => setActionForm((current) => ({ ...current, title: event.target.value }))}
-                placeholder="Review blocker owners"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium">Action Detail</label>
-              <textarea
-                rows={4}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-                value={actionForm.description}
-                onChange={(event) => setActionForm((current) => ({ ...current, description: event.target.value }))}
-                placeholder="What should happen next for this program?"
-              />
-            </div>
-            <div className="rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              Linked to program: {actionProgram?.title}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setActionProgram(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreateAction} disabled={createTask.isPending || !actionForm.title.trim()}>
-              {createTask.isPending ? "Creating..." : "Create Action"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -549,14 +508,16 @@ export default function Programs() {
 function ProgramRow({
   program,
   actions,
-  onCreateAction,
+  onOpenPrimary,
+  onOpenCommitments,
   onEdit,
   onDelete,
   onTogglePause,
 }: {
   program: Program;
   actions: Task[];
-  onCreateAction: (program: Program) => void;
+  onOpenPrimary: (program: Program) => void;
+  onOpenCommitments: (program: Program) => void;
   onEdit: (program: Program) => void;
   onDelete: (program: Program) => void;
   onTogglePause: (program: Program) => void;
@@ -608,18 +569,31 @@ function ProgramRow({
               <div>
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <ListTodoIcon className="size-4 text-muted-foreground" />
-                  Actions
+                  Saved Moves
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {actions.length === 0
-                    ? "No linked actions yet."
-                    : `${openActionCount} open${actions.length !== openActionCount ? `, ${actions.length - openActionCount} done` : ""}`}
+                    ? "No saved moves yet. Save one from the latest brief only when you want pai to remember a real manual step."
+                    : `${openActionCount} open${actions.length !== openActionCount ? `, ${actions.length - openActionCount} done` : ""} saved move${actions.length === 1 ? "" : "s"}`}
                 </p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => onCreateAction(program)}>
-                Create Action
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="ghost" size="sm" onClick={() => onOpenCommitments(program)}>
+                  Open Saved Moves
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => onOpenPrimary(program)}>
+                  {program.latestBriefSummary?.id ? "Open Brief" : "Open Ask"}
+                </Button>
+              </div>
             </div>
+            {program.latestBriefSummary?.id && (
+              <div className="mt-3 rounded-md border border-border/20 bg-card/30 px-3 py-2">
+                <div className="text-[11px] font-medium text-foreground">Latest brief recommendation</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {program.latestBriefSummary.recommendationSummary ?? "Open the latest brief to decide whether any recommendation is worth saving as a move."}
+                </p>
+              </div>
+            )}
             {visibleActions.length > 0 && (
               <div className="mt-3 space-y-2">
                 {visibleActions.map((action) => (

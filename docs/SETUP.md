@@ -19,7 +19,7 @@ Complete instructions for installing, configuring, and using Personal AI.
   - [Chat](#chat)
   - [Memory](#memory)
   - [Knowledge Base](#knowledge-base)
-  - [Tasks & Goals](#tasks--goals)
+  - [Saved Moves & Legacy Goals](#saved-moves--legacy-goals)
   - [Settings](#settings)
 - [CLI Usage](#cli-usage)
 - [Troubleshooting](#troubleshooting)
@@ -413,8 +413,8 @@ PAI_TELEGRAM_TOKEN=7123456789:AAF...
 
 ### Step 3: Chat
 
-Open your bot in Telegram and send any message. The bot responds using the same assistant pipeline as the web UI — it has access to memory, web search, tasks, and knowledge.
-When a research or analysis run finishes, the bot sends a protected preview plus any chart images directly in Telegram, then attaches the full report as an HTML document. Reports are no longer published to a public third-party article service.
+Open your bot in Telegram and send any message. The bot responds using the same assistant pipeline as the web UI — it has access to memory, web search, saved moves, and knowledge.
+When a brief or Program-linked research/analysis run finishes, the bot sends a protected Telegram update. Daily/program briefs arrive as concise recommendation-first messages. Research and analysis runs still include a short gist, any chart images, and an attached PDF report document. Reports are no longer published to a public third-party article service.
 
 ### Telegram commands
 
@@ -422,11 +422,15 @@ When a research or analysis run finishes, the bot sends a protected preview plus
 |---------|-------------|
 | `/start` | Welcome message |
 | `/help` | List available commands |
+| `/briefs` | Show recent briefs linked to this chat |
+| `/programs` | Show active Programs |
 | `/clear` | Clear conversation history |
-| `/tasks` | Show open tasks |
+| `/tasks` | Show saved moves |
 | `/memories` | Show top 10 memories |
-| `/jobs` | Show recent research & swarm job status |
-| `/research <query>` | Start a deep research job |
+| `/reply <brief-id> <message>` | Ask a follow-up tied to a brief |
+| `/action <brief-id> \| <title>` | Save a move from a brief |
+| `/done <task-id>` | Mark a saved move done |
+| `/correct <belief-id> \| <replacement>` | Correct a stored belief used by future briefs |
 
 Or just send any text message to chat naturally.
 
@@ -493,15 +497,19 @@ You can also:
 - Re-learn a page (refresh content)
 - Crawl sub-pages from a source
 
-### Tasks & Goals
+### Saved Moves & Legacy Goals
 
-Manage your to-do list through chat or the CLI:
+Use a saved move when a Brief reaches a real decision-ready moment and you want pai to keep one manual move alive across future briefs.
 
-- **"Add a task: finish the report by Friday"** — the assistant creates it
-- **"What should I work on?"** — AI-powered prioritization using your tasks + memory context
-- **"Mark the report task as done"** — completes it
+- **"Save this: buy the outbound fare before tonight"** — stores a bounded manual move as a saved move
+- **"Show my open saved moves"** — lists the moves you still care about
+- **"Mark the fare step done"** — closes the loop so later briefs know the move happened
 
-Tasks have: title, description, status, priority (low/medium/high), due date, and optional goal.
+Saved moves are not meant to be a separate general-purpose task manager. They are the optional layer between a recommendation and a completed move.
+
+Saved moves have: title, description, status, priority (low/medium/high), due date, and optional linkage back to a Brief or Program.
+
+Legacy goals still exist for cleanup and backward compatibility, but new product work should flow through Programs, Briefs, and optional saved moves.
 
 ### Settings
 
@@ -541,7 +549,9 @@ pai memory export backup.json          # backup
 pai memory import backup.json          # restore
 ```
 
-### Tasks
+### Task Commands
+
+The CLI still uses `task` commands for compatibility, even though the web product presents these items as saved moves.
 
 ```bash
 pai task add "Review PR #42" --priority high --due 2026-03-15

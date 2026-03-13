@@ -123,6 +123,31 @@ export const memoryMigrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_beliefs_subject ON beliefs(subject);
     `,
   },
+  {
+    version: 11,
+    up: `
+      ALTER TABLE beliefs ADD COLUMN origin TEXT NOT NULL DEFAULT 'inferred';
+      ALTER TABLE beliefs ADD COLUMN freshness_at TEXT;
+      ALTER TABLE beliefs ADD COLUMN correction_state TEXT NOT NULL DEFAULT 'active';
+      ALTER TABLE beliefs ADD COLUMN sensitive INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    version: 12,
+    up: `
+      CREATE TABLE IF NOT EXISTS belief_provenance (
+        id TEXT PRIMARY KEY,
+        belief_id TEXT NOT NULL REFERENCES beliefs(id),
+        source_kind TEXT NOT NULL,
+        source_id TEXT,
+        source_label TEXT,
+        relation TEXT NOT NULL DEFAULT 'supports',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_belief_provenance_belief ON belief_provenance(belief_id);
+      CREATE INDEX IF NOT EXISTS idx_belief_provenance_source ON belief_provenance(source_kind, source_id);
+    `,
+  },
 ];
 
 export interface Episode {
@@ -150,6 +175,34 @@ export interface Belief {
   stability: number;
   /** Who this belief is about: "owner" (default), or a person's name */
   subject: string;
+  origin: BeliefOrigin;
+  freshness_at: string | null;
+  correction_state: BeliefCorrectionState;
+  sensitive: boolean;
+}
+
+export type BeliefOrigin = "user-said" | "document" | "web" | "inferred" | "synthesized";
+export type BeliefCorrectionState = "active" | "confirmed" | "corrected" | "invalidated";
+
+export interface BeliefProvenance {
+  id: string;
+  belief_id: string;
+  source_kind: string;
+  source_id: string | null;
+  source_label: string | null;
+  relation: string;
+  created_at: string;
+}
+
+function normalizeBeliefRecord<T extends Partial<Belief>>(belief: T): T & Pick<Belief, "origin" | "freshness_at" | "correction_state" | "sensitive"> {
+  const rawSensitive = belief.sensitive as unknown;
+  return {
+    ...belief,
+    origin: (belief.origin ?? "inferred") as BeliefOrigin,
+    freshness_at: belief.freshness_at ?? null,
+    correction_state: (belief.correction_state ?? "active") as BeliefCorrectionState,
+    sensitive: rawSensitive === true || rawSensitive === 1 || rawSensitive === "1",
+  };
 }
 
 const BASE_HALF_LIFE_DAYS = 30;
@@ -215,20 +268,39 @@ export function listEpisodes(storage: Storage, limit = 50): Episode[] {
 
 export function createBelief(
   storage: Storage,
-  input: { statement: string; confidence: number; type?: string; importance?: number; subject?: string },
+  input: {
+    statement: string;
+    confidence: number;
+    type?: string;
+    importance?: number;
+    subject?: string;
+    origin?: BeliefOrigin;
+    freshnessAt?: string | null;
+    correctionState?: BeliefCorrectionState;
+    sensitive?: boolean;
+  },
 ): Belief {
   const id = nanoid();
   const importance = input.importance ?? 5;
   const subject = input.subject ?? "owner";
-  storage.run("INSERT INTO beliefs (id, statement, confidence, type, importance, subject) VALUES (?, ?, ?, ?, ?, ?)", [
-    id,
-    input.statement,
-    input.confidence,
-    input.type ?? "insight",
-    importance,
-    subject,
-  ]);
-  return storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [id])[0]!;
+  storage.run(
+    `INSERT INTO beliefs (
+      id, statement, confidence, type, importance, subject, origin, freshness_at, correction_state, sensitive
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.statement,
+      input.confidence,
+      input.type ?? "insight",
+      importance,
+      subject,
+      input.origin ?? "inferred",
+      input.freshnessAt ?? new Date().toISOString(),
+      input.correctionState ?? "active",
+      input.sensitive ? 1 : 0,
+    ],
+  );
+  return normalizeBeliefRecord(storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [id])[0]!);
 }
 
 const FTS5_OPERATORS = /\b(AND|OR|NOT|NEAR)\b/gi;
@@ -258,7 +330,10 @@ export function searchBeliefs(storage: Storage, query: string, limit = 10): Beli
      WHERE beliefs_fts MATCH ? AND b.status = 'active'
      ORDER BY rank LIMIT ?`,
     [sanitized, limit],
-  ).map((b) => ({ ...b, confidence: effectiveConfidence(b) }));
+  ).map((belief) => {
+    const normalized = normalizeBeliefRecord(belief);
+    return { ...normalized, confidence: effectiveConfidence(normalized) };
+  });
 }
 
 export function listBeliefs(storage: Storage, status = "active"): Belief[] {
@@ -266,7 +341,10 @@ export function listBeliefs(storage: Storage, status = "active"): Belief[] {
     ? storage.query<Belief>("SELECT * FROM beliefs")
     : storage.query<Belief>("SELECT * FROM beliefs WHERE status = ?", [status]);
   return beliefs
-    .map((b) => ({ ...b, confidence: effectiveConfidence(b) }))
+    .map((belief) => {
+      const normalized = normalizeBeliefRecord(belief);
+      return { ...normalized, confidence: effectiveConfidence(normalized) };
+    })
     .sort((a, b) => b.confidence - a.confidence);
 }
 
@@ -286,12 +364,15 @@ export function getCorePreferences(storage: Storage, limit = 8): Belief[] {
      ORDER BY importance DESC, confidence DESC
      LIMIT ?`,
     [limit],
-  ).map((b) => ({ ...b, confidence: effectiveConfidence(b) }));
+  ).map((belief) => {
+    const normalized = normalizeBeliefRecord(belief);
+    return { ...normalized, confidence: effectiveConfidence(normalized) };
+  });
 }
 
 export function forgetBelief(storage: Storage, beliefId: string): void {
   const id = resolveIdPrefix(storage, "beliefs", beliefId, "AND status = 'active'");
-  storage.run("UPDATE beliefs SET status = 'forgotten', updated_at = datetime('now') WHERE id = ?", [id]);
+  storage.run("UPDATE beliefs SET status = 'forgotten', updated_at = datetime('now'), correction_state = 'invalidated' WHERE id = ?", [id]);
   logBeliefChange(storage, { beliefId: id, changeType: "forgotten", detail: "Manually forgotten by user" });
 }
 
@@ -305,7 +386,7 @@ export async function updateBeliefContent(
   if (rows.length === 0) throw new Error(`Belief not found: ${beliefId}`);
   const old = rows[0]!;
   storage.run(
-    "UPDATE beliefs SET statement = ?, updated_at = datetime('now') WHERE id = ?",
+    "UPDATE beliefs SET statement = ?, updated_at = datetime('now'), freshness_at = datetime('now') WHERE id = ?",
     [newStatement, beliefId],
   );
   try {
@@ -354,7 +435,7 @@ export async function correctBelief(
   });
 
   storage.run(
-    "UPDATE beliefs SET status = 'invalidated', updated_at = datetime('now') WHERE id = ?",
+    "UPDATE beliefs SET status = 'invalidated', correction_state = 'corrected', updated_at = datetime('now'), freshness_at = datetime('now') WHERE id = ?",
     [oldBelief.id],
   );
 
@@ -364,6 +445,10 @@ export async function correctBelief(
     type: oldBelief.type,
     importance: oldBelief.importance,
     subject: oldBelief.subject,
+    origin: "user-said",
+    freshnessAt: new Date().toISOString(),
+    correctionState: "confirmed",
+    sensitive: oldBelief.sensitive,
   });
 
   storage.run(
@@ -372,6 +457,13 @@ export async function correctBelief(
   );
 
   linkBeliefToEpisode(storage, replacementBelief.id, correctionEpisode.id);
+  addBeliefProvenance(storage, {
+    beliefId: replacementBelief.id,
+    sourceKind: "episode",
+    sourceId: correctionEpisode.id,
+    sourceLabel: "Belief correction",
+    relation: "corrected-from",
+  });
   linkSupersession(storage, oldBelief.id, replacementBelief.id);
 
   logBeliefChange(storage, {
@@ -396,8 +488,8 @@ export async function correctBelief(
     // embedding update is best-effort
   }
 
-  const invalidatedBelief = storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [oldBelief.id])[0]!;
-  const hydratedReplacement = storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [replacementBelief.id])[0]!;
+  const invalidatedBelief = normalizeBeliefRecord(storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [oldBelief.id])[0]!);
+  const hydratedReplacement = normalizeBeliefRecord(storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [replacementBelief.id])[0]!);
 
   return {
     invalidatedBelief,
@@ -452,7 +544,7 @@ export function getLinkedBeliefs(storage: Storage, beliefId: string): string[] {
 
 export function reinforceBelief(storage: Storage, beliefId: string, delta = 0.1): void {
   storage.run(
-    "UPDATE beliefs SET confidence = MIN(1.0, confidence + ?), updated_at = datetime('now') WHERE id = ?",
+    "UPDATE beliefs SET confidence = MIN(1.0, confidence + ?), updated_at = datetime('now'), freshness_at = datetime('now') WHERE id = ?",
     [delta, beliefId],
   );
 }
@@ -485,6 +577,44 @@ export function getBeliefHistory(storage: Storage, beliefId: string): BeliefChan
   if (exact.length > 0) return exact;
   return storage.query<BeliefChange>(
     "SELECT * FROM belief_changes WHERE belief_id LIKE ? ORDER BY created_at DESC, rowid DESC",
+    [`${beliefId}%`],
+  );
+}
+
+export function addBeliefProvenance(
+  storage: Storage,
+  input: {
+    beliefId: string;
+    sourceKind: string;
+    sourceId?: string | null;
+    sourceLabel?: string | null;
+    relation?: string;
+  },
+): void {
+  const id = nanoid();
+  storage.run(
+    `INSERT INTO belief_provenance (
+      id, belief_id, source_kind, source_id, source_label, relation
+    ) VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.beliefId,
+      input.sourceKind,
+      input.sourceId ?? null,
+      input.sourceLabel ?? null,
+      input.relation ?? "supports",
+    ],
+  );
+}
+
+export function listBeliefProvenance(storage: Storage, beliefId: string): BeliefProvenance[] {
+  const exact = storage.query<BeliefProvenance>(
+    "SELECT * FROM belief_provenance WHERE belief_id = ? ORDER BY created_at DESC, rowid DESC",
+    [beliefId],
+  );
+  if (exact.length > 0) return exact;
+  return storage.query<BeliefProvenance>(
+    "SELECT * FROM belief_provenance WHERE belief_id LIKE ? ORDER BY created_at DESC, rowid DESC",
     [`${beliefId}%`],
   );
 }
@@ -862,7 +992,10 @@ export function mergeDuplicates(
       }
 
       // Invalidate loser and create supersession link
-      storage.run("UPDATE beliefs SET status = 'invalidated', updated_at = datetime('now') WHERE id = ?", [loser.id]);
+      storage.run(
+        "UPDATE beliefs SET status = 'invalidated', correction_state = 'invalidated', updated_at = datetime('now'), freshness_at = datetime('now') WHERE id = ?",
+        [loser.id],
+      );
       linkSupersession(storage, loser.id, winner.id);
       logBeliefChange(storage, {
         beliefId: loser.id,

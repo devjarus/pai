@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { marked } from "marked";
-import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig, useCreateProgram, useCorrectBelief, useCreateTask, useTasks } from "@/hooks";
+import { recordProductEventApi } from "@/api";
+import type { Program } from "@/api";
+import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig, useCreateProgram, useCorrectBelief, useCreateTask, usePrograms, useTasks } from "@/hooks";
 import type { BriefingRawContextBelief, Task } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import MarkdownContent from "@/components/MarkdownContent";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
 import { parseApiDate } from "@/lib/datetime";
+import { findMatchingProgram } from "@/lib/program-dedupe";
 import { buildInboxProgramDraft } from "@/lib/program-drafts";
 import { specToStaticHtml } from "@/lib/render-to-html";
 import {
@@ -204,17 +208,47 @@ function beliefConfidenceLabel(value: number): "low" | "medium" | "high" {
   return "low";
 }
 
+function formatProgramCadence(intervalHours: number): string {
+  if (intervalHours < 24) return `${intervalHours}h cadence`;
+  const days = Math.round(intervalHours / 24);
+  if (days === 1) return "Daily cadence";
+  if (days === 7) return "Weekly cadence";
+  return `${days}d cadence`;
+}
+
+function formatRelativeFuture(iso: string | null | undefined): string {
+  if (!iso) return "No schedule";
+  const parsed = parseApiDate(iso);
+  if (Number.isNaN(parsed.getTime())) return "Scheduled";
+  const diff = parsed.getTime() - Date.now();
+  if (diff <= 0) return "Due now";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `In ${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `In ${hours}h`;
+  return `In ${Math.round(hours / 24)}d`;
+}
+
+function briefingHeadline(item: InboxItem): string {
+  if (item.type === "daily") return dailyBriefingTitle(item.sections);
+  return (item.sections as { goal?: string }).goal ?? "Research report";
+}
+
 function actionPriorityForTiming(timing?: string): "low" | "medium" | "high" {
   const normalized = timing?.toLowerCase() ?? "";
   if (normalized.includes("now") || normalized.includes("today")) return "high";
   return "medium";
 }
 
+function normalizeTrackedTitle(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function buildBriefActionDescription(briefTitle: string, action: { detail?: string; timing?: string }): string {
   return [
     action.detail?.trim(),
     action.timing ? `Timing: ${action.timing}` : null,
-    `From brief: ${briefTitle}`,
+    `Saved from brief: ${briefTitle}`,
   ]
     .filter((item): item is string => !!item && item.length > 0)
     .join("\n\n");
@@ -315,6 +349,7 @@ function InboxDetail({ id }: { id: string }) {
   const [correctedBeliefIds, setCorrectedBeliefIds] = useState<Set<string>>(() => new Set());
   const { markRead } = useContext(ReadContext);
   const { data: tasks = [] } = useTasks({ status: "all" });
+  const { data: programs = [] } = usePrograms();
   const createThreadMut = useCreateThread();
   const createProgramMut = useCreateProgram();
   const createTaskMut = useCreateTask();
@@ -344,6 +379,36 @@ function InboxDetail({ id }: { id: string }) {
   const briefLinkedActions = useMemo(
     () => tasks.filter((task) => task.source_type === "briefing" && task.source_id === id),
     [tasks, id],
+  );
+  const watchDraft = useMemo(() => {
+    if (!item) return null;
+    const detailSections = item.sections as {
+      goal?: string;
+      execution?: "research" | "analysis";
+    };
+    return item.type === "research"
+      ? buildInboxProgramDraft({
+          type: "research",
+          title: detailSections.goal ?? "Research move",
+          goal: detailSections.goal,
+          executionMode: detailSections.execution ?? "research",
+        })
+      : buildInboxProgramDraft({
+          type: "daily",
+          title: dailyBriefingTitle(item.sections),
+          recommendationSummary: isDailyBriefingV2(item.sections) ? item.sections.recommendation?.summary : undefined,
+          rationale: isDailyBriefingV2(item.sections) ? item.sections.recommendation?.rationale : undefined,
+        });
+  }, [item]);
+  const existingWatch = useMemo(
+    () => (watchDraft
+      ? findMatchingProgram(programs, {
+          ...watchDraft,
+          programId: briefingData?.briefing.programId ?? null,
+          threadId: watchDraft.threadId ?? briefingData?.briefing.threadId ?? null,
+        })
+      : undefined),
+    [briefingData?.briefing.programId, briefingData?.briefing.threadId, programs, watchDraft],
   );
 
   useEffect(() => {
@@ -388,6 +453,8 @@ function InboxDetail({ id }: { id: string }) {
       await correctBeliefMutation.mutateAsync({
         id: selectedBeliefSource.id,
         statement,
+        briefId: id,
+        channel: "web",
       });
       setCorrectedBeliefIds((prev) => {
         const next = new Set(prev);
@@ -411,6 +478,12 @@ function InboxDetail({ id }: { id: string }) {
         : dailyBriefingTitle(item.sections).slice(0, 60) || "Briefing Discussion";
       const title = rawTitle.length > 200 ? rawTitle.slice(0, 197) + "..." : rawTitle;
       const thread = await createThreadMut.mutateAsync({ title });
+      await recordProductEventApi({
+        eventType: "brief_followup_asked",
+        briefId: id,
+        threadId: thread.id,
+        channel: "web",
+      });
       const context = item.type === "research"
         ? `I'd like to discuss this research report:\n\n**Goal:** ${sections.goal}\n\n${sections.report ?? ""}`
         : `I'd like to discuss today's briefing.`;
@@ -424,46 +497,52 @@ function InboxDetail({ id }: { id: string }) {
   };
 
   const handleKeepWatching = async () => {
-    if (!item) return;
+    if (!item || !watchDraft) return;
+    if (existingWatch) {
+      toast.message(
+        existingWatch.threadId
+          ? "That thread is already being watched."
+          : `Already watching this as "${existingWatch.title}".`,
+      );
+      navigate("/programs");
+      return;
+    }
     try {
-      const draft = item.type === "research"
-        ? buildInboxProgramDraft({
-            type: "research",
-            title: sections.goal ?? "Research follow-through",
-            goal: sections.goal,
-            executionMode: sections.execution ?? "research",
-          })
-        : buildInboxProgramDraft({
-            type: "daily",
-            title: dailyBriefingTitle(item.sections),
-            recommendationSummary: isDailyBriefingV2(item.sections) ? item.sections.recommendation?.summary : undefined,
-            rationale: isDailyBriefingV2(item.sections) ? item.sections.recommendation?.rationale : undefined,
-          });
-      await createProgramMut.mutateAsync(draft);
-      toast.success("Program created. pai will keep watching this.");
+      const result = await createProgramMut.mutateAsync(watchDraft);
+      if (result.created) {
+        toast.success("Program created. pai will keep watching this.");
+        return;
+      }
+      toast.message(
+        result.duplicateReason === "thread"
+          ? "That thread is already being watched."
+          : `Already watching this as "${result.program.title}".`,
+      );
+      navigate("/programs");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create program");
     }
   };
 
   const handleCreateBriefAction = async (action: { title?: string; detail?: string; timing?: string }) => {
-    if (!item || item.type !== "daily" || !action.title) return;
-    if (briefLinkedActions.some((task) => task.title === action.title)) {
-      toast.message("Action already exists for this brief");
+    const actionTitle = action.title?.trim();
+    if (!item || item.type !== "daily" || !actionTitle) return;
+    if (briefLinkedActions.some((task) => task.status === "open" && normalizeTrackedTitle(task.title) === normalizeTrackedTitle(actionTitle))) {
+      toast.message("That move is already saved for this brief");
       return;
     }
     try {
       await createTaskMut.mutateAsync({
-        title: action.title,
+        title: actionTitle,
         description: buildBriefActionDescription(dailyBriefingTitle(item.sections), action),
         priority: actionPriorityForTiming(action.timing),
         sourceType: "briefing",
         sourceId: id,
         sourceLabel: dailyBriefingTitle(item.sections),
       });
-      toast.success("Action created");
+      toast.success("Move saved");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create action");
+      toast.error(error instanceof Error ? error.message : "Failed to track move");
     }
   };
 
@@ -564,12 +643,12 @@ function InboxDetail({ id }: { id: string }) {
             )}
             <Button
               size="sm"
-              onClick={handleKeepWatching}
-              disabled={createProgramMut.isPending}
+              onClick={existingWatch ? () => navigate("/programs") : handleKeepWatching}
+              disabled={createProgramMut.isPending && !existingWatch}
               className="gap-2"
             >
               <CalendarClockIcon className="h-4 w-4" />
-              {createProgramMut.isPending ? "Creating..." : "Keep watching this"}
+              {existingWatch ? "Open Programs" : createProgramMut.isPending ? "Creating..." : "Keep watching this"}
             </Button>
             <Button
               variant="outline"
@@ -605,6 +684,8 @@ function InboxDetail({ id }: { id: string }) {
         {item.type === "daily" ? (
           <DailyBriefingDetail
             sections={item.sections}
+            briefId={item.id}
+            briefTitle={dailyBriefingTitle(item.sections)}
             navigate={navigate}
             beliefSources={beliefSources}
             linkedActions={briefLinkedActions}
@@ -683,6 +764,8 @@ function InboxDetail({ id }: { id: string }) {
 
 function DailyBriefingDetail({
   sections: raw,
+  briefId,
+  briefTitle,
   navigate,
   beliefSources,
   linkedActions,
@@ -691,6 +774,8 @@ function DailyBriefingDetail({
   onCreateAction,
 }: {
   sections: Record<string, unknown>;
+  briefId: string;
+  briefTitle: string;
   navigate: ReturnType<typeof useNavigate>;
   beliefSources: BriefingRawContextBelief[];
   linkedActions: Task[];
@@ -702,6 +787,8 @@ function DailyBriefingDetail({
     ? (
       <DailyBriefingV2Detail
         sections={raw}
+        briefId={briefId}
+        briefTitle={briefTitle}
         navigate={navigate}
         beliefSources={beliefSources}
         linkedActions={linkedActions}
@@ -715,6 +802,8 @@ function DailyBriefingDetail({
 
 function DailyBriefingV2Detail({
   sections,
+  briefId,
+  briefTitle,
   navigate,
   beliefSources,
   linkedActions,
@@ -723,6 +812,8 @@ function DailyBriefingV2Detail({
   onCreateAction,
 }: {
   sections: DailyBriefingV2;
+  briefId: string;
+  briefTitle: string;
   navigate: ReturnType<typeof useNavigate>;
   beliefSources: BriefingRawContextBelief[];
   linkedActions: Task[];
@@ -887,36 +978,51 @@ function DailyBriefingV2Detail({
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <CheckCircle2Icon className="h-4 w-4 text-amber-400" />
-            <span className="font-mono text-sm font-semibold text-foreground">Next Actions</span>
+            <span className="font-mono text-sm font-semibold text-foreground">Recommended Moves</span>
           </div>
           <div className="space-y-3">
-            {sections.next_actions!.map((action, index) => (
-              <div key={index} className="rounded-md border border-border/20 bg-card/40 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-foreground">{action.title}</span>
-                  {action.timing && (
-                    <Badge variant="outline" className="text-[10px]">
-                      {action.timing}
-                    </Badge>
-                  )}
-                  {action.owner && (
-                    <span className="text-[11px] text-muted-foreground">Owner: {action.owner}</span>
-                  )}
+            {sections.next_actions!.map((action, index) => {
+              const actionTitle = action.title?.trim();
+              if (!actionTitle) return null;
+              const alreadyTracked = linkedActions.some(
+                (task) => task.status === "open" && normalizeTrackedTitle(task.title) === normalizeTrackedTitle(actionTitle),
+              );
+              return (
+                <div key={index} className="rounded-md border border-border/20 bg-card/40 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">{actionTitle}</span>
+                    {action.timing && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {action.timing}
+                      </Badge>
+                    )}
+                    {action.owner && (
+                      <span className="text-[11px] text-muted-foreground">Owner: {action.owner}</span>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{action.detail}</p>
+                  <div className="mt-3">
+                    {alreadyTracked ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          navigate(
+                            `/tasks?sourceType=briefing&sourceId=${encodeURIComponent(briefId)}&sourceLabel=${encodeURIComponent(briefTitle)}`,
+                          )
+                        }
+                      >
+                        Already Saved
+                      </Button>
+                    ) : (
+                      <Button size="sm" onClick={() => onCreateAction(action)}>
+                        Save Move
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">{action.detail}</p>
-                <div className="mt-3">
-                  {linkedActions.some((task) => task.title === action.title) ? (
-                    <Button variant="outline" size="sm" onClick={() => navigate("/tasks")}>
-                      Action Added
-                    </Button>
-                  ) : (
-                    <Button size="sm" onClick={() => onCreateAction(action)}>
-                      Add Action
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -925,7 +1031,7 @@ function DailyBriefingV2Detail({
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <ListTodoIcon className="h-4 w-4 text-amber-400" />
-            <span className="font-mono text-sm font-semibold text-foreground">Actions From This Brief</span>
+            <span className="font-mono text-sm font-semibold text-foreground">Saved Moves From This Brief</span>
           </div>
           <div className="space-y-3">
             {linkedActions.map((task) => (
@@ -973,7 +1079,7 @@ function DailyBriefingLegacyDetail({ sections, navigate }: { sections: DailyBrie
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <CheckCircle2Icon className="h-4 w-4 text-primary" />
-            <span className="font-mono text-sm font-semibold text-foreground">Task Focus</span>
+            <span className="font-mono text-sm font-semibold text-foreground">Saved Move Focus</span>
           </div>
           <p className="text-sm text-muted-foreground">{sections.taskFocus!.summary}</p>
           {sections.taskFocus!.items.map((item, index) => (
@@ -1042,7 +1148,7 @@ function DailyBriefingLegacyDetail({ sections, navigate }: { sections: DailyBrie
                     else if (item.action === "learn") navigate("/knowledge");
                   }}
                 >
-                  {item.action === "recall" ? "Recall" : item.action === "task" ? "Tasks" : item.action === "learn" ? "Learn" : item.action}
+                  {item.action === "recall" ? "Recall" : item.action === "task" ? "Saved Moves" : item.action === "learn" ? "Learn" : item.action}
                   <ArrowRightIcon className="ml-1 h-3 w-3" />
                 </Button>
               )}
@@ -1067,6 +1173,8 @@ function InboxFeed() {
   const { data: inboxData, isLoading: loading } = useInboxAll({
     refetchInterval: (data) => data?.generating || data?.pending ? 3000 : false,
   });
+  const { data: programs = [], isLoading: programsLoading } = usePrograms();
+  const { data: tasks = [], isLoading: tasksLoading } = useTasks({ status: "all" });
   const items: InboxItem[] = inboxData?.briefings ?? [];
   const generating = !!inboxData?.generating;
   const pending = !!inboxData?.pending;
@@ -1092,6 +1200,82 @@ function InboxFeed() {
     () => items.filter((i) => !readIds.has(i.id)).length,
     [items, readIds],
   );
+  const activePrograms = useMemo(
+    () => programs.filter((program) => program.status === "active"),
+    [programs],
+  );
+  const pausedPrograms = useMemo(
+    () => programs.filter((program) => program.status === "paused"),
+    [programs],
+  );
+  const openActions = useMemo(
+    () => tasks.filter((task) => task.status !== "done"),
+    [tasks],
+  );
+  const recentlyCompletedActions = useMemo(
+    () => tasks.filter((task) => task.completed_at && (Date.now() - parseApiDate(task.completed_at).getTime()) < (7 * 24 * 60 * 60 * 1000)),
+    [tasks],
+  );
+  const actionsByProgramId = useMemo(() => {
+    const grouped = new Map<string, Task[]>();
+    for (const task of tasks) {
+      if (task.source_type !== "program" || !task.source_id) continue;
+      const current = grouped.get(task.source_id) ?? [];
+      current.push(task);
+      grouped.set(task.source_id, current);
+    }
+    return grouped;
+  }, [tasks]);
+  const highlightedPrograms = useMemo(() => {
+    return activePrograms
+      .map((program) => {
+        const linkedActions = actionsByProgramId.get(program.id) ?? [];
+        const openLinkedActions = linkedActions.filter((task) => task.status !== "done");
+        const completedLinkedActions = linkedActions.filter((task) => task.status === "done");
+        const staleOpenCount = program.actionSummary?.staleOpenCount ?? openLinkedActions.filter((task) => {
+          if (!task.due_date) return false;
+          return parseApiDate(task.due_date).getTime() < Date.now();
+        }).length;
+        const openCount = program.actionSummary?.openCount ?? openLinkedActions.length;
+        const completedCount = program.actionSummary?.completedCount ?? completedLinkedActions.length;
+        const lastActivity = program.lastDeliveredAt
+          ?? program.lastEvaluatedAt
+          ?? program.lastRunAt
+          ?? program.latestBriefSummary?.generatedAt
+          ?? program.createdAt;
+        const lastActivityAt = parseApiDate(lastActivity).getTime();
+        return {
+          program,
+          openCount,
+          completedCount,
+          staleOpenCount,
+          lastActivityAt: Number.isNaN(lastActivityAt) ? 0 : lastActivityAt,
+        };
+      })
+      .sort((left, right) => {
+        if (right.staleOpenCount !== left.staleOpenCount) return right.staleOpenCount - left.staleOpenCount;
+        if (right.openCount !== left.openCount) return right.openCount - left.openCount;
+        if (!!right.program.latestBriefSummary !== !!left.program.latestBriefSummary) {
+          return Number(!!right.program.latestBriefSummary) - Number(!!left.program.latestBriefSummary);
+        }
+        return right.lastActivityAt - left.lastActivityAt;
+      })
+      .slice(0, 3);
+  }, [activePrograms, actionsByProgramId]);
+  const latestBrief = items[0] ?? null;
+  const shouldShowWelcome = !busy && items.length === 0 && activePrograms.length === 0 && tasks.length === 0;
+  const homeSummary = useMemo(() => {
+    if (activePrograms.length === 0 && openActions.length === 0 && unreadCount === 0) {
+      return "Start in Ask, then turn a question into a recurring watch.";
+    }
+    return [
+      activePrograms.length > 0 ? `${activePrograms.length} active watch${activePrograms.length === 1 ? "" : "es"}` : null,
+      openActions.length > 0 ? `${openActions.length} saved move${openActions.length === 1 ? "" : "s"} open` : null,
+      unreadCount > 0 ? `${unreadCount} unread brief${unreadCount === 1 ? "" : "s"}` : null,
+    ]
+      .filter((part): part is string => !!part)
+      .join(" • ");
+  }, [activePrograms.length, openActions.length, unreadCount]);
 
   const handleCardClick = useCallback(
     (itemId: string) => {
@@ -1120,9 +1304,9 @@ function InboxFeed() {
     }
   };
 
-  if (loading) return <InboxSkeleton />;
+  if (loading || programsLoading || tasksLoading) return <InboxSkeleton />;
 
-  if (items.length === 0 && !busy) {
+  if (shouldShowWelcome) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-6 p-4 md:p-6">
         <div className="inbox-fade-in flex w-full max-w-md flex-col items-center gap-5 text-center">
@@ -1143,8 +1327,8 @@ function InboxFeed() {
               { icon: MessageCircleIcon, label: "Ask", desc: "Start with a question and turn it into a recurring watch" },
               { icon: BrainIcon, label: "Memory", desc: "What I know about you, always evolving" },
               { icon: BookOpenIcon, label: "Knowledge", desc: "Teach me web pages to reference later" },
-              { icon: ListTodoIcon, label: "Tasks", desc: "Your to-do list with AI prioritization" },
-              { icon: CalendarClockIcon, label: "Programs", desc: "Recurring decisions and commitments pai keeps watching" },
+              { icon: ListTodoIcon, label: "Saved Moves", desc: "Manual moves pai should remember across future briefs" },
+              { icon: CalendarClockIcon, label: "Programs", desc: "Recurring decisions and watches pai keeps tracking" },
               { icon: InboxIcon, label: "Inbox", desc: "Daily briefings appear here as you use the app" },
             ].map(({ icon: Icon, label, desc }) => (
               <div key={label} className="flex items-start gap-3 rounded-md border border-border/30 px-3 py-2.5">
@@ -1163,18 +1347,21 @@ function InboxFeed() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
+      <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
         <div className="inbox-fade-in flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="font-mono text-lg font-semibold text-foreground">Inbox</h1>
-            <Badge variant="outline" className="text-[10px]">
-              {items.length}
-            </Badge>
-            {unreadCount > 0 && (
-              <Badge className="text-[10px] bg-blue-500 text-white hover:bg-blue-600">
-                {unreadCount} unread
+          <div className="space-y-1">
+            <div className="flex items-center gap-3">
+              <h1 className="font-mono text-lg font-semibold text-foreground">Home</h1>
+              <Badge variant="outline" className="text-[10px]">
+                {items.length} brief{items.length === 1 ? "" : "s"}
               </Badge>
-            )}
+              {unreadCount > 0 && (
+                <Badge className="text-[10px] bg-blue-500 text-white hover:bg-blue-600">
+                  {unreadCount} unread
+                </Badge>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">{homeSummary}</p>
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -1211,25 +1398,244 @@ function InboxFeed() {
           </div>
         )}
 
-        <Separator className="opacity-30" />
+        <Card className="border-primary/20 bg-gradient-to-br from-primary/10 via-card/70 to-card/60">
+          <CardContent className="space-y-5 p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <SparklesIcon className="h-4 w-4 text-primary" />
+                  <span className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Core Loop</span>
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-foreground">What pai is actively watching</h2>
+                  <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                    Programs keep watching in the background, briefs explain what changed, and saved moves keep the one manual move you explicitly want pai to remember.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => navigate("/ask")} className="gap-2">
+                  <MessageCircleIcon className="h-4 w-4" />
+                  Ask
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => navigate("/programs")} className="gap-2">
+                  <CalendarClockIcon className="h-4 w-4" />
+                  Programs
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => navigate("/tasks")} className="gap-2">
+                  <ListTodoIcon className="h-4 w-4" />
+                  Saved Moves
+                </Button>
+              </div>
+            </div>
 
-        {items.map((item, idx) => (
-          <div
-            key={item.id}
-            className={`inbox-fade-in ${readIds.has(item.id) ? "opacity-80" : ""}`}
-            style={{ animationDelay: `${idx * 80}ms` }}
-          >
-            {item.type === "daily" ? (
-              <DailyBriefingCard item={item} onCardClick={handleCardClick} isRead={readIds.has(item.id)} />
-            ) : item.type === "research" ? (
-              <ResearchReportCard item={item} onCardClick={handleCardClick} isRead={readIds.has(item.id)} />
-            ) : (
-              <GenericBriefingCard item={item} />
+            <div className="grid gap-3 md:grid-cols-3">
+              <LoopMetricCard
+                icon={<CalendarClockIcon className="h-4 w-4 text-primary" />}
+                label="Active Programs"
+                value={activePrograms.length}
+                detail={pausedPrograms.length > 0 ? `${pausedPrograms.length} paused` : "Recurring watches"}
+                actionLabel="Open Programs"
+                onClick={() => navigate("/programs")}
+              />
+              <LoopMetricCard
+                icon={<ListTodoIcon className="h-4 w-4 text-amber-400" />}
+                label="Open Saved Moves"
+                value={openActions.length}
+                detail={recentlyCompletedActions.length > 0 ? `${recentlyCompletedActions.length} completed this week` : "Saved manual moves still in flight"}
+                actionLabel="Open Saved Moves"
+                onClick={() => navigate("/tasks")}
+              />
+              <LoopMetricCard
+                icon={<InboxIcon className="h-4 w-4 text-blue-400" />}
+                label="Latest Brief"
+                value={latestBrief ? timeAgo(latestBrief.generatedAt) : "None"}
+                detail={latestBrief ? briefingHeadline(latestBrief) : "Generate a brief after your first watch or refresh"}
+                actionLabel={latestBrief ? "Open Brief" : "Refresh"}
+                onClick={() => {
+                  if (latestBrief) {
+                    handleCardClick(latestBrief.id);
+                    return;
+                  }
+                  void handleRefresh();
+                }}
+              />
+            </div>
+
+            {highlightedPrograms.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Programs in motion</h3>
+                    <p className="text-xs text-muted-foreground">The watches with the clearest recent activity or saved moves.</p>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => navigate("/programs")}>
+                    View all
+                  </Button>
+                </div>
+                <div className="grid gap-3 lg:grid-cols-3">
+                  {highlightedPrograms.map(({ program, openCount, completedCount, staleOpenCount }) => (
+                    <ProgramSpotlightCard
+                      key={program.id}
+                      program={program}
+                      openCount={openCount}
+                      completedCount={completedCount}
+                      staleOpenCount={staleOpenCount}
+                      onOpenProgram={() => navigate("/programs")}
+                      onOpenBrief={() => {
+                        if (program.latestBriefSummary?.id) {
+                          handleCardClick(program.latestBriefSummary.id);
+                          return;
+                        }
+                        navigate("/programs");
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-mono text-sm font-semibold text-foreground">Recent Briefs</h2>
+              <p className="text-xs text-muted-foreground">Archive and reopen the latest daily, research, and analysis outputs.</p>
+            </div>
+            {items.length > 0 && (
+              <Badge variant="outline" className="text-[10px]">
+                {items.length} total
+              </Badge>
             )}
           </div>
-        ))}
+          <Separator className="opacity-30" />
+        </div>
+
+        {items.length === 0 ? (
+          <Card className="border-dashed border-border/40 bg-card/30">
+            <CardContent className="flex flex-col gap-3 p-6 text-sm text-muted-foreground">
+              <p>No briefs yet.</p>
+              <p>Create a Program in Ask or Programs, or trigger a refresh once pai has something meaningful to summarize.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          items.map((item, idx) => (
+            <div
+              key={item.id}
+              className={`inbox-fade-in ${readIds.has(item.id) ? "opacity-80" : ""}`}
+              style={{ animationDelay: `${idx * 80}ms` }}
+            >
+              {item.type === "daily" ? (
+                <DailyBriefingCard item={item} onCardClick={handleCardClick} isRead={readIds.has(item.id)} />
+              ) : item.type === "research" ? (
+                <ResearchReportCard item={item} onCardClick={handleCardClick} isRead={readIds.has(item.id)} />
+              ) : (
+                <GenericBriefingCard item={item} />
+              )}
+            </div>
+          ))
+        )}
 
         <div className="h-8" />
+      </div>
+    </div>
+  );
+}
+
+function LoopMetricCard({
+  icon,
+  label,
+  value,
+  detail,
+  actionLabel,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: number | string;
+  detail: string;
+  actionLabel: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-border/30 bg-background/60 p-4">
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      </div>
+      <div className="mt-3 text-2xl font-semibold text-foreground">{value}</div>
+      <p className="mt-1 min-h-10 text-xs text-muted-foreground">{detail}</p>
+      <Button variant="ghost" size="sm" onClick={onClick} className="mt-3 h-7 px-0 text-xs">
+        {actionLabel}
+        <ArrowRightIcon className="ml-1 h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
+
+function ProgramSpotlightCard({
+  program,
+  openCount,
+  completedCount,
+  staleOpenCount,
+  onOpenProgram,
+  onOpenBrief,
+}: {
+  program: Program;
+  openCount: number;
+  completedCount: number;
+  staleOpenCount: number;
+  onOpenProgram: () => void;
+  onOpenBrief: () => void;
+}) {
+  const latestSummary = program.latestBriefSummary?.recommendationSummary?.trim();
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-background/60 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline" className="text-[10px] border-primary/20 bg-primary/10 text-primary">
+          Program
+        </Badge>
+        <Badge variant="outline" className="text-[10px]">
+          {program.deliveryMode ?? "interval"}
+        </Badge>
+        <Badge variant="outline" className="text-[10px]">
+          {formatProgramCadence(program.intervalHours)}
+        </Badge>
+      </div>
+      <div className="mt-3">
+        <div className="text-sm font-semibold text-foreground">{program.title}</div>
+        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+          {latestSummary || program.question}
+        </p>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+        <span>{formatRelativeFuture(program.nextRunAt)}</span>
+        <span>•</span>
+        <span>{openCount} saved move{openCount === 1 ? "" : "s"} open</span>
+        {completedCount > 0 && (
+          <>
+            <span>•</span>
+            <span>{completedCount} completed</span>
+          </>
+        )}
+        {staleOpenCount > 0 && (
+          <>
+            <span>•</span>
+            <span className="text-amber-300">{staleOpenCount} stale</span>
+          </>
+        )}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={onOpenProgram}>
+          Open Program
+        </Button>
+        {program.latestBriefSummary?.id && (
+          <Button size="sm" onClick={onOpenBrief}>
+            Open Latest Brief
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -1248,7 +1654,7 @@ function DailyBriefingV2Card({ item, onCardClick, isRead }: { item: InboxItem; o
   const counts: string[] = [];
   if ((sections.what_changed?.length ?? 0) > 0) counts.push(`${sections.what_changed!.length} changes`);
   if ((sections.evidence?.length ?? 0) > 0) counts.push(`${sections.evidence!.length} evidence`);
-  if ((sections.next_actions?.length ?? 0) > 0) counts.push(`${sections.next_actions!.length} actions`);
+  if ((sections.next_actions?.length ?? 0) > 0) counts.push(`${sections.next_actions!.length} moves`);
 
   return (
     <Card className="relative border-border/30 bg-card/40 transition-all duration-200">
@@ -1339,7 +1745,7 @@ function DailyBriefingV2Card({ item, onCardClick, isRead }: { item: InboxItem; o
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <CheckCircle2Icon className="h-3.5 w-3.5 text-amber-400" />
-                  <span className="font-mono text-xs font-semibold text-foreground">Next Actions</span>
+                  <span className="font-mono text-xs font-semibold text-foreground">Recommended Moves</span>
                 </div>
                 {sections.next_actions!.slice(0, 2).map((action, index) => (
                   <div key={index} className="rounded-md border border-border/20 bg-background/40 p-3">
@@ -1371,7 +1777,7 @@ function DailyBriefingLegacyCard({ item, onCardClick, isRead }: { item: InboxIte
   const counts: string[] = [];
   if ((sections.taskFocus?.items?.length ?? 0) > 0) {
     const n = sections.taskFocus!.items.length;
-    counts.push(`${n} task${n !== 1 ? "s" : ""}`);
+    counts.push(`${n} move${n !== 1 ? "s" : ""}`);
   }
   if ((sections.memoryInsights?.highlights?.length ?? 0) > 0) {
     const n = sections.memoryInsights!.highlights.length;
@@ -1426,7 +1832,7 @@ function DailyBriefingLegacyCard({ item, onCardClick, isRead }: { item: InboxIte
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <CheckCircle2Icon className="h-3.5 w-3.5 text-primary" />
-                  <span className="font-mono text-xs font-semibold text-foreground">Task Focus</span>
+                  <span className="font-mono text-xs font-semibold text-foreground">Saved Move Focus</span>
                 </div>
                 <p className="text-xs text-muted-foreground">{sections.taskFocus!.summary}</p>
                 {sections.taskFocus!.items.map((t, i) => (
@@ -1498,7 +1904,7 @@ function DailyBriefingLegacyCard({ item, onCardClick, isRead }: { item: InboxIte
                           else if (s.action === "learn") navigate("/knowledge");
                         }}
                       >
-                        {s.action === "recall" ? "Recall" : s.action === "task" ? "Tasks" : s.action === "learn" ? "Learn" : s.action}
+                        {s.action === "recall" ? "Recall" : s.action === "task" ? "Saved Moves" : s.action === "learn" ? "Learn" : s.action}
                         <ArrowRightIcon className="ml-1 h-2.5 w-2.5" />
                       </Button>
                     )}

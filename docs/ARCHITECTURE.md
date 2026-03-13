@@ -57,10 +57,26 @@ packages/
   plugin-schedules/   Recurring scheduled research jobs
   plugin-telegram/    Telegram bot — grammY, standalone entry point, chat pipeline
   server/             Fastify API — REST + SSE + static UI + auth (JWT) + WorkerLoop + artifacts serving + server hardening
-  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Inbox, Chat, Memory, Knowledge, Tasks, Jobs, Settings, Timeline) + ToolFlightResults + ToolStockReport
+  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Home, Chat, Memory, Knowledge, Saved Moves, Jobs, Settings, Timeline) + ToolFlightResults + ToolStockReport
 
 sandbox/              Docker sidecar — Python 3.12 + Node.js 20 for isolated code execution (matplotlib, pandas, plotly, yfinance). Opt-in via `docker compose --profile sandbox`.
 ```
+
+---
+
+## Product Loop Surfaces
+
+The user-facing shell is intentionally organized around the recurring decision loop, not around storage primitives or raw backlog history.
+
+- `Home` leads with active Programs, open saved moves, and the latest Brief. Historical briefs remain available below as archive.
+- `Ask` is the main creation surface for new Programs and follow-up questions.
+- `Programs` is the durable watch list over `scheduled_jobs`.
+- `Brief detail` is the primary decision artifact: recommendation, what changed, evidence, memory assumptions, recommended moves, and correction.
+- `Actions` remain stored in `tasks`, but user-facing product behavior treats them as optional saved moves linked to a Brief or explicit user intent. The standalone list is secondary to inline recommended moves inside Briefs.
+
+This is important architecturally because the system may store much more than it should immediately surface. The shell should reflect the current loop state, not dump every internal artifact with equal weight.
+
+Structured report rendering is also shared across those surfaces through `ResultRenderer` and the `json-render` registry. That renderer must stay theme-aware because the same Brief or report artifact can appear in Inbox detail, chat tool output, Jobs, and other loop-adjacent views.
 
 ---
 
@@ -352,7 +368,15 @@ Background timer (every 6 hours) OR manual refresh (POST /api/inbox/refresh)
     │     (uses generateText, NOT generateObject — for broad LLM compatibility)
     │
     ├── Parse JSON response (handles markdown fences)
-    │     → BriefingSection { greeting, taskFocus, memoryInsights, suggestions }
+    │     → StandardBriefSection {
+    │         recommendation,
+    │         what_changed,
+    │         evidence,
+    │         memory_assumptions,
+    │         next_actions,
+    │         correction_hook,
+    │         appendix?
+    │       }
     │
     └── INSERT INTO briefings (id, sections JSON, raw_context)
 ```
@@ -361,10 +385,12 @@ Background timer (every 6 hours) OR manual refresh (POST /api/inbox/refresh)
 
 | Section | Content |
 |---------|---------|
-| `greeting` | Personalized greeting with context-aware message |
-| `taskFocus` | Top 3 tasks to work on with priority and insight per item |
-| `memoryInsights` | Notable beliefs/patterns with type badges and detail |
-| `suggestions` | Actionable suggestions with action buttons (recall/task/learn) |
+| `recommendation` | Primary decision or follow-through recommendation |
+| `what_changed` | Concise change signals since the prior brief |
+| `evidence` | External or product-grounded evidence items |
+| `memory_assumptions` | Beliefs, preferences, and constraints that materially shaped the brief |
+| `next_actions` | Concrete follow-through actions or checks |
+| `correction_hook` | Prompt that invites a correction for the next brief |
 
 ### Scheduling
 
@@ -545,25 +571,27 @@ Tasks (status/priority/due date) + Goals. `ai-suggest` feeds tasks + memory to L
 - `telegram_threads` maps chat_id → thread_id (reuses same thread/message tables)
 - `runAgentChat()` — non-streaming (`generateText`), same tools as web, `stepCountIs(8)`
 - Sub-agent delegation: curator via `agent_curator` tool
-- Commands: `/start`, `/help`, `/clear`, `/tasks`, `/memories`, `/jobs`, `/research`
+- Commands lead with `/briefs`, `/programs`, `/reply`, `/action`, `/done`, and `/correct`
 - Multi-user: sender identity injected, owner detected via `config.telegram.ownerUsername`
 - Markdown → Telegram HTML conversion, 4096-char splitting
-- Research push loop delivers both research and swarm results to originating Telegram chat as protected previews, inline visuals, and attached HTML report documents
+- Push loop delivers daily, Program, research, and swarm briefs
+- Daily and Program briefs arrive as concise recommendation-first Telegram messages
+- Research and swarm briefs send recommendation-first gist messages, inline visuals, and attached PDF report documents
 
 ---
 
 ## Web UI
 
-React SPA — Inbox, Chat, Memory Explorer, Knowledge, Tasks, Settings, Timeline. Uses TanStack Query for server state (cached queries, automatic invalidation, polling) via custom hooks in `src/hooks/use-*.ts`.
+React SPA — Home, Chat, Memory Explorer, Knowledge, Saved Moves, Settings, Timeline. Uses TanStack Query for server state (cached queries, automatic invalidation, polling) via custom hooks in `src/hooks/use-*.ts`.
 
 | Page | Key features |
 |------|-------------|
-| **Inbox** (`/`) | Unified feed of daily briefings and research reports. Detail view (`/inbox/:id`) with "Start Chat" button (creates thread, auto-sends research context). Staggered fade-in animations. Refresh/clear buttons. Cards navigate to Tasks/Memory/Knowledge. |
+| **Inbox** (`/`) | Unified feed of daily briefings and research reports. Detail view (`/inbox/:id`) with "Start Chat" button (creates thread, auto-sends research context). Staggered fade-in animations. Refresh/clear buttons. Cards navigate to Saved Moves/Memory/Knowledge. |
 | **Chat** | assistant-ui primitives (`<Thread />`, `<Composer />`, `makeAssistantToolUI`) with `useExternalStoreRuntime` + `DefaultChatTransport`, thread sidebar with clear-all-threads option, tool cards, responsive mobile, token usage badge |
 | **Jobs** | Background job tracker for crawl and research jobs. Shows status, progress, and results. Clear completed jobs. |
 | **Memory** | Browse/search beliefs, type filter tabs, detail sidebar, clear all, empty state |
 | **Knowledge** | Browse sources, view chunks, search knowledge base, learn from URLs, crawl sub-pages |
-| **Tasks** | Two sub-tabs (Tasks/Goals), full CRUD, priority badges, due dates, goal linking, progress bars, clear all with confirmation |
+| **Saved Moves** (`/tasks`) | Secondary saved-move surface. Keeps linked Brief/Program context visible, supports source-scoped views, and only stores bounded manual moves the user explicitly wants pai to revisit. Goals remain in a legacy cleanup tab rather than a primary product noun. |
 | **Settings** | LLM provider dropdown with auto-populated presets (Ollama/OpenAI/Anthropic/Google), model/key, data directory browser, Telegram config, background worker toggles, and a local-only Diagnostics panel (Overview, Processes, Threads, Jobs, Errors) backed by `/api/observability/*` |
 | **Timeline** | Chronological episodes + belief changes, empty state |
 
