@@ -1,14 +1,23 @@
 import { Bot } from "grammy";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
-import { listBeliefs, getThread, formatDateTime, parseTimestamp, getArtifact } from "@personal-ai/core";
-import { listTasks } from "@personal-ai/plugin-tasks";
+import { listBeliefs, getThread, formatDateTime, parseTimestamp, getArtifact, correctBelief, recordProductEvent } from "@personal-ai/core";
+import { addTask, completeTask, listTasks } from "@personal-ai/plugin-tasks";
 import { listResearchJobs, createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import type { ResearchContext } from "@personal-ai/plugin-research";
 import { listSwarmJobs } from "@personal-ai/plugin-swarm";
+import { listPrograms } from "@personal-ai/plugin-schedules";
 import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { runAgentChat, createThread, clearThread as clearThreadMessages } from "./chat.js";
-import { markdownToTelegramHTML, splitMessage, escapeHTML, formatTelegramResponse, isComplexContent, stripHtmlTags } from "./formatter.js";
+import {
+  markdownToTelegramHTML,
+  splitMessage,
+  escapeHTML,
+  formatTelegramResponse,
+  isComplexContent,
+  stripHtmlTags,
+  buildTelegramDigestMarkdown,
+} from "./formatter.js";
 import { bufferMessage, passiveProcess } from "./passive.js";
 import { sendArtifactsToTelegram } from "./delivery.js";
 import { sendReportDocumentToTelegram } from "./report-document.js";
@@ -19,9 +28,10 @@ const TOOL_STATUS: Record<string, string> = {
   memory_recall: "\uD83E\uDDE0 Recalling memories...",
   memory_remember: "\uD83D\uDCDD Storing in memory...",
   memory_beliefs: "\uD83D\uDCDA Listing beliefs...",
-  task_list: "\uD83D\uDCCB Checking tasks...",
-  task_add: "\u2795 Adding task...",
-  task_done: "\u2705 Completing task...",
+  memory_correct: "\uD83E\uDDFD Correcting memory...",
+  task_list: "\uD83D\uDCCB Checking saved moves...",
+  task_add: "\u2795 Saving move...",
+  task_done: "\u2705 Marking move done...",
 };
 
 function toolStatus(toolName: string): string {
@@ -78,6 +88,88 @@ function clearThread(ctx: PluginContext, chatId: number): void {
   }
 }
 
+function getExistingThreadId(ctx: PluginContext, chatId: number): string | null {
+  const rows = ctx.storage.query<{ thread_id: string }>(
+    "SELECT thread_id FROM telegram_threads WHERE chat_id = ?",
+    [chatId],
+  );
+  return rows[0]?.thread_id ?? null;
+}
+
+function parseBriefSummary(sections: string): string {
+  try {
+    const parsed = JSON.parse(sections) as Record<string, unknown>;
+    const recommendation = parsed.recommendation;
+    if (recommendation && typeof recommendation === "object") {
+      const summary = (recommendation as Record<string, unknown>).summary;
+      if (typeof summary === "string" && summary.trim().length > 0) {
+        return summary.trim();
+      }
+    }
+    if (typeof parsed.goal === "string" && parsed.goal.trim().length > 0) {
+      return parsed.goal.trim();
+    }
+    if (typeof parsed.report === "string" && parsed.report.trim().length > 0) {
+      return parsed.report.split("\n").map((line) => line.trim()).find(Boolean) ?? "Brief ready";
+    }
+  } catch {
+    return "Brief ready";
+  }
+  return "Brief ready";
+}
+
+function resolveBriefing(ctx: PluginContext, rawId: string): { id: string; type: string; sections: string } | null {
+  const exact = ctx.storage.query<{ id: string; type: string; sections: string }>(
+    "SELECT id, type, sections FROM briefings WHERE id = ? AND status = 'ready'",
+    [rawId],
+  )[0];
+  if (exact) return exact;
+  const prefix = ctx.storage.query<{ id: string; type: string; sections: string }>(
+    "SELECT id, type, sections FROM briefings WHERE id LIKE ? AND status = 'ready' ORDER BY generated_at DESC LIMIT 2",
+    [`${rawId}%`],
+  );
+  return prefix.length === 1 ? (prefix[0] ?? null) : null;
+}
+
+function listRecentBriefingsForChat(ctx: PluginContext, chatId: number, username?: string) {
+  const threadId = getExistingThreadId(ctx, chatId);
+  const isOwner = Boolean(ctx.config.telegram?.ownerUsername && username === ctx.config.telegram.ownerUsername);
+
+  if (threadId && isOwner) {
+    return ctx.storage.query<{ id: string; type: string; generated_at: string; sections: string }>(
+      `SELECT id, type, generated_at, sections
+       FROM briefings
+       WHERE status = 'ready' AND (thread_id = ? OR type = 'daily')
+       ORDER BY generated_at DESC
+       LIMIT 5`,
+      [threadId],
+    );
+  }
+
+  if (threadId) {
+    return ctx.storage.query<{ id: string; type: string; generated_at: string; sections: string }>(
+      `SELECT id, type, generated_at, sections
+       FROM briefings
+       WHERE status = 'ready' AND thread_id = ?
+       ORDER BY generated_at DESC
+       LIMIT 5`,
+      [threadId],
+    );
+  }
+
+  if (isOwner) {
+    return ctx.storage.query<{ id: string; type: string; generated_at: string; sections: string }>(
+      `SELECT id, type, generated_at, sections
+       FROM briefings
+       WHERE status = 'ready' AND type = 'daily'
+       ORDER BY generated_at DESC
+       LIMIT 5`,
+    );
+  }
+
+  return [] as Array<{ id: string; type: string; generated_at: string; sections: string }>;
+}
+
 export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentPlugin, subAgents?: AgentPlugin[]): Bot {
   const bot = new Bot(token);
 
@@ -85,12 +177,15 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
   bot.api.setMyCommands([
     { command: "start", description: "Welcome message" },
     { command: "help", description: "List available commands" },
+    { command: "briefs", description: "Show recent briefs" },
+    { command: "programs", description: "Show active Programs" },
     { command: "clear", description: "Clear conversation history" },
-    { command: "tasks", description: "Show open tasks" },
+    { command: "tasks", description: "Show saved moves" },
     { command: "memories", description: "Show recent memories" },
-    { command: "schedules", description: "Show active schedules" },
-    { command: "jobs", description: "Show recent research & swarm jobs" },
-    { command: "research", description: "Start a research job" },
+    { command: "reply", description: "Reply to a brief by ID" },
+    { command: "action", description: "Save a move from a brief" },
+    { command: "done", description: "Mark a saved move done" },
+    { command: "correct", description: "Correct a belief by ID" },
   ]).catch((err) => {
     ctx.logger.warn(`Failed to register bot commands: ${err instanceof Error ? err.message : String(err)}`);
   });
@@ -99,16 +194,19 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
   bot.command("start", async (tgCtx) => {
     await tgCtx.reply(
       "<b>Welcome to Personal AI!</b>\n\n" +
-      "I'm your personal assistant with persistent memory, web search, and task management.\n\n" +
+      "I'm your personal assistant with persistent memory, web search, and saved moves when you want me to keep a move alive.\n\n" +
       "Just send me a message and I'll respond. I remember our conversations across sessions.\n\n" +
       "<b>Commands:</b>\n" +
       "/help — Show available commands\n" +
+      "/briefs — Show recent briefs for this chat\n" +
+      "/programs — Show active Programs\n" +
       "/clear — Start a fresh conversation\n" +
-      "/tasks — Show your open tasks\n" +
+      "/tasks — Show your saved moves\n" +
       "/memories — Show recent memories\n" +
-      "/schedules — Show active schedules\n" +
-      "/jobs — Show recent research &amp; swarm jobs\n" +
-      "/research &lt;query&gt; — Start a research job",
+      "/reply &lt;brief-id&gt; &lt;message&gt; — Follow up on a brief\n" +
+      "/action &lt;brief-id&gt; | &lt;title&gt; — Save a move from a brief\n" +
+      "/done &lt;move-id&gt; — Mark a saved move done\n" +
+      "/correct &lt;belief-id&gt; | &lt;replacement&gt; — Correct a belief",
       { parse_mode: "HTML" },
     );
   });
@@ -119,15 +217,176 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       "<b>Available Commands</b>\n\n" +
       "/start — Welcome message\n" +
       "/help — This help message\n" +
+      "/briefs — Show recent briefs for this chat\n" +
+      "/programs — List active Programs\n" +
       "/clear — Clear conversation history and start fresh\n" +
-      "/tasks — List your open tasks\n" +
+      "/tasks — List your saved moves\n" +
       "/memories — Show your top 10 memories\n" +
-      "/schedules — Show active recurring research/analysis schedules\n" +
-      "/jobs — Show recent research &amp; swarm jobs\n" +
-      "/research &lt;query&gt; — Start a research job\n\n" +
+      "/reply &lt;brief-id&gt; &lt;message&gt; — Continue a brief discussion\n" +
+      "/action &lt;brief-id&gt; | &lt;title&gt; — Save a move linked to a brief\n" +
+      "/done &lt;move-id&gt; — Mark a saved move done\n" +
+      "/correct &lt;belief-id&gt; | &lt;replacement&gt; — Replace a belief used by future briefs\n\n" +
       "Or just send any message to chat!",
       { parse_mode: "HTML" },
     );
+  });
+
+  bot.command("briefs", async (tgCtx) => {
+    try {
+      const briefings = listRecentBriefingsForChat(ctx, tgCtx.chat.id, tgCtx.from?.username);
+      if (briefings.length === 0) {
+        await tgCtx.reply("No recent briefs are linked to this chat yet.");
+        return;
+      }
+      const lines = briefings.map((briefing) => {
+        const summary = parseBriefSummary(briefing.sections);
+        return `• <code>${escapeHTML(briefing.id.slice(0, 12))}</code> · ${escapeHTML(briefing.type)} · ${escapeHTML(formatRelativeTime(briefing.generated_at))}\n${escapeHTML(summary.slice(0, 140))}`;
+      });
+      await tgCtx.reply(`<b>Recent Briefs</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
+    } catch (err) {
+      ctx.logger.error("Failed to list Telegram briefs", { error: err instanceof Error ? err.message : String(err) });
+      await tgCtx.reply("Failed to load recent briefs.");
+    }
+  });
+
+  bot.command("programs", async (tgCtx) => {
+    try {
+      const threadId = getExistingThreadId(ctx, tgCtx.chat.id);
+      const activePrograms = listPrograms(ctx.storage, "active");
+      const programs = threadId
+        ? activePrograms.filter((program) => program.threadId === threadId || program.chatId === tgCtx.chat.id)
+        : activePrograms;
+      if (programs.length === 0) {
+        await tgCtx.reply("No active Programs for this chat yet. Ask me to keep watching something.");
+        return;
+      }
+      const lines = programs.slice(0, 8).map((program) => {
+        const cadence = program.intervalHours >= 24 ? `${Math.round(program.intervalHours / 24)}d` : `${program.intervalHours}h`;
+        const delivery = program.deliveryMode === "change-gated" ? "change-gated" : "interval";
+        return `• <b>${escapeHTML(program.title)}</b> (${escapeHTML(program.family)} · ${escapeHTML(program.executionMode)} · ${delivery})\nNext brief: ${escapeHTML(formatDateTime(ctx.config.timezone, parseTimestamp(program.nextRunAt)).full)} · cadence ${escapeHTML(cadence)}`;
+      });
+      await tgCtx.reply(`<b>Active Programs</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
+    } catch (err) {
+      ctx.logger.error("Failed to list Telegram programs", { error: err instanceof Error ? err.message : String(err) });
+      await tgCtx.reply("Failed to load Programs.");
+    }
+  });
+
+  bot.command("reply", async (tgCtx) => {
+    const raw = tgCtx.match?.trim() ?? "";
+    const firstSpace = raw.indexOf(" ");
+    if (firstSpace <= 0) {
+      await tgCtx.reply("Usage: /reply <brief-id> <message>");
+      return;
+    }
+    const briefId = raw.slice(0, firstSpace).trim();
+    const message = raw.slice(firstSpace + 1).trim();
+    const briefing = resolveBriefing(ctx, briefId);
+    if (!briefing || !message) {
+      await tgCtx.reply("Brief not found, or the reply message is empty.");
+      return;
+    }
+    const threadId = getOrCreateThread(ctx, tgCtx.chat.id, tgCtx.from?.username);
+    recordProductEvent(ctx.storage, {
+      eventType: "brief_followup_asked",
+      briefId: briefing.id,
+      threadId,
+      channel: "telegram",
+      metadata: { command: "reply" },
+    });
+    await handleChat(
+      tgCtx.chat.id,
+      `Continue the discussion for brief ${briefing.id}. Brief summary: ${parseBriefSummary(briefing.sections)}\n\nUser follow-up: ${message}`,
+      { username: tgCtx.from?.username, displayName: tgCtx.from?.first_name },
+      bot.api.sendMessage.bind(bot.api),
+      tgCtx.chat.type,
+    );
+  });
+
+  bot.command("action", async (tgCtx) => {
+    const raw = tgCtx.match?.trim() ?? "";
+    const [briefId, actionTitle] = raw.split("|").map((part) => part.trim());
+    if (!briefId || !actionTitle) {
+      await tgCtx.reply("Usage: /action <brief-id> | <action title>");
+      return;
+    }
+    const briefing = resolveBriefing(ctx, briefId);
+    if (!briefing) {
+      await tgCtx.reply("Brief not found.");
+      return;
+    }
+    try {
+      const task = addTask(ctx.storage, {
+        title: actionTitle,
+        description: `Created from Telegram for brief ${briefing.id}.\n\nBrief summary: ${parseBriefSummary(briefing.sections)}`,
+        priority: "medium",
+        sourceType: "briefing",
+        sourceId: briefing.id,
+        sourceLabel: parseBriefSummary(briefing.sections).slice(0, 120),
+      });
+      recordProductEvent(ctx.storage, {
+        eventType: "brief_action_created",
+        briefId: briefing.id,
+        threadId: getExistingThreadId(ctx, tgCtx.chat.id),
+        channel: "telegram",
+        metadata: { taskId: task.id },
+      });
+      await tgCtx.reply(`Move saved: ${task.title}\nReference ID: ${task.id.slice(0, 8)}`);
+    } catch (err) {
+      await tgCtx.reply(`Failed to save move: ${err instanceof Error ? err.message : "unknown error"}`);
+    }
+  });
+
+  bot.command("done", async (tgCtx) => {
+    const taskId = tgCtx.match?.trim();
+    if (!taskId) {
+      await tgCtx.reply("Usage: /done <task-id>");
+      return;
+    }
+    try {
+      const task = listTasks(ctx.storage, "all").find((item) => item.id === taskId || item.id.startsWith(taskId));
+      completeTask(ctx.storage, taskId);
+      if (task?.source_type === "briefing") {
+        recordProductEvent(ctx.storage, {
+          eventType: "brief_action_completed",
+          briefId: task.source_id,
+          threadId: getExistingThreadId(ctx, tgCtx.chat.id),
+          channel: "telegram",
+          metadata: { taskId: task.id },
+        });
+      }
+      await tgCtx.reply("Move marked done.");
+    } catch (err) {
+      await tgCtx.reply(`Failed to mark move done: ${err instanceof Error ? err.message : "unknown error"}`);
+    }
+  });
+
+  bot.command("correct", async (tgCtx) => {
+    const raw = tgCtx.match?.trim() ?? "";
+    const [beliefId, replacement] = raw.split("|").map((part) => part.trim());
+    if (!beliefId || !replacement) {
+      await tgCtx.reply("Usage: /correct <belief-id> | <replacement belief>");
+      return;
+    }
+    try {
+      const result = await correctBelief(ctx.storage, ctx.llm, beliefId, {
+        statement: replacement,
+        note: `Telegram correction from chat ${tgCtx.chat.id}`,
+      });
+      recordProductEvent(ctx.storage, {
+        eventType: "belief_corrected",
+        beliefId: result.replacementBelief.id,
+        threadId: getExistingThreadId(ctx, tgCtx.chat.id),
+        channel: "telegram",
+        metadata: {
+          invalidatedBeliefId: result.invalidatedBelief.id,
+          correctionEpisodeId: result.correctionEpisode.id,
+        },
+      });
+      await tgCtx.reply("Belief corrected. Future briefs will use the replacement belief.");
+    } catch (err) {
+      await tgCtx.reply(`Failed to correct belief: ${err instanceof Error ? err.message : "unknown error"}`);
+    }
   });
 
   // /clear — Reset conversation
@@ -137,12 +396,12 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     await tgCtx.reply("Conversation cleared. Send a message to start fresh!");
   });
 
-  // /tasks — Show open tasks
+  // /tasks — Show open saved moves
   bot.command("tasks", async (tgCtx) => {
     try {
       const tasks = listTasks(ctx.storage, "open");
       if (tasks.length === 0) {
-        await tgCtx.reply("No open tasks. Ask me to add one!");
+        await tgCtx.reply("No open saved moves. Save one from a brief or message when you want me to keep it alive.");
         return;
       }
       const lines = tasks.map((t) => {
@@ -150,10 +409,10 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         const due = t.due_date ? ` (due: ${t.due_date})` : "";
         return `${priority} ${escapeHTML(t.title)}${due}`;
       });
-      await tgCtx.reply(`<b>Open Tasks</b>\n\n${lines.join("\n")}`, { parse_mode: "HTML" });
+      await tgCtx.reply(`<b>Open Saved Moves</b>\n\n${lines.join("\n")}`, { parse_mode: "HTML" });
     } catch (err) {
       ctx.logger.error("Failed to list tasks", { error: err instanceof Error ? err.message : String(err) });
-      await tgCtx.reply("Failed to load tasks.");
+      await tgCtx.reply("Failed to load saved moves.");
     }
   });
 
@@ -317,7 +576,9 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
 
       const formattedText = formatTelegramResponse(result.text);
       const complex = isComplexContent(formattedText);
-      const html = markdownToTelegramHTML(formattedText);
+      const reportArtifacts = result.artifacts?.filter((artifact) => artifact.name.endsWith(".md")) ?? [];
+      const inlineMarkdown = complex ? buildTelegramDigestMarkdown(formattedText) : formattedText;
+      const html = markdownToTelegramHTML(inlineMarkdown);
       const parts = splitMessage(html);
 
       // Helper: send a single part with HTML, falling back to clean plain text
@@ -346,24 +607,24 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         await sendPart(parts[i]!);
       }
 
-      // Auto-attach HTML document for complex responses (tables, code, long text)
-      if (complex) {
+      // Auto-attach a PDF when the response is complex and there is no dedicated report artifact already.
+      if (complex && reportArtifacts.length === 0) {
         const titleMatch = formattedText.match(/^#+\s+(.+)$/m);
         const docTitle = titleMatch?.[1]?.slice(0, 80) ?? "Response";
         try {
           await sendReportDocumentToTelegram(ctx.storage, bot, chatId, {
             title: docTitle,
             markdown: formattedText,
-            fileName: `${docTitle}.html`,
+            fileName: `${docTitle}.pdf`,
           }, ctx.logger);
         } catch (err) {
-          ctx.logger.warn("Failed to send auto-document", { error: err instanceof Error ? err.message : String(err) });
+          ctx.logger.warn("Failed to send Telegram PDF attachment", { error: err instanceof Error ? err.message : String(err) });
         }
       }
 
-      // Send artifacts — convert markdown reports to private HTML documents
+      // Send artifacts — convert markdown reports to private PDF documents.
       if (result.artifacts?.length) {
-        const reports = result.artifacts.filter(a => a.name.endsWith(".md"));
+        const reports = reportArtifacts;
         const others = result.artifacts.filter(a => !a.name.endsWith(".md"));
 
         for (const art of reports) {

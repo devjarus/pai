@@ -1,3 +1,5 @@
+import type { StandardBriefSection } from "@personal-ai/core";
+
 /** Convert standard Markdown to Telegram-compatible HTML and handle message splitting. */
 
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -5,7 +7,7 @@ const COMPLEX_CONTENT_THRESHOLD = 2000;
 
 /**
  * Check whether a response is "complex" — long, or contains tables/code blocks/JSON.
- * Used to decide whether to attach an HTML document alongside the chat message.
+ * Used to decide whether to attach a PDF document alongside the chat message.
  */
 export function isComplexContent(text: string): boolean {
   if (text.length > COMPLEX_CONTENT_THRESHOLD) return true;
@@ -35,53 +37,96 @@ export function stripHtmlTags(html: string): string {
     .trim();
 }
 
-export interface BriefingSections {
-  greeting: string;
-  taskFocus: {
-    summary: string;
-    items: Array<{ title: string; priority: string; insight: string }>;
-  };
-  memoryInsights: {
-    summary: string;
-    highlights: Array<{ statement: string; type: string; detail: string }>;
-  };
-  suggestions: Array<{ title: string; reason: string }>;
+export interface TelegramBriefDigest {
+  title: string;
+  sections: Pick<StandardBriefSection, "recommendation" | "what_changed" | "evidence" | "next_actions" | "correction_hook">;
+  label?: string;
+  footer?: string;
+  maxChanged?: number;
+  maxEvidence?: number;
+  maxActions?: number;
 }
 
-/** Format a briefing as Telegram HTML */
-export function formatBriefingHTML(sections: BriefingSections): string {
+/** Format a unified brief as concise Telegram HTML. */
+export function formatBriefingHTML(input: TelegramBriefDigest): string {
   const lines: string[] = [];
+  const changed = input.sections.what_changed.slice(0, input.maxChanged ?? 2);
+  const evidence = input.sections.evidence.slice(0, input.maxEvidence ?? 1);
+  const actions = input.sections.next_actions.slice(0, input.maxActions ?? 2);
+  const label = input.label?.trim();
+  const heading = label ? `${label}: ${input.title}` : input.title;
 
-  lines.push(`\uD83D\uDCCB <b>${escapeHTML(sections.greeting)}</b>`);
+  lines.push(`\uD83D\uDCCB <b>${escapeHTML(heading)}</b>`);
   lines.push("");
+  lines.push("<b>Recommendation</b>");
+  lines.push(escapeHTML(input.sections.recommendation.summary));
 
-  if (sections.taskFocus?.items?.length) {
-    lines.push(`<b>Tasks</b>  ${escapeHTML(sections.taskFocus.summary)}`);
-    for (const item of sections.taskFocus.items.slice(0, 5)) {
-      const icon = item.priority === "high" ? "\uD83D\uDD34" : item.priority === "medium" ? "\uD83D\uDFE1" : "\uD83D\uDFE2";
-      lines.push(`${icon} <b>${escapeHTML(item.title)}</b>`);
-      if (item.insight) lines.push(`    <i>${escapeHTML(item.insight)}</i>`);
-    }
+  if (input.sections.recommendation.rationale?.trim()) {
     lines.push("");
+    lines.push(escapeHTML(input.sections.recommendation.rationale.trim()));
   }
 
-  if (sections.memoryInsights?.highlights?.length) {
-    lines.push(`<b>Memory Insights</b>  ${escapeHTML(sections.memoryInsights.summary)}`);
-    for (const h of sections.memoryInsights.highlights.slice(0, 3)) {
-      lines.push(`\uD83E\uDDE0 ${escapeHTML(h.statement)}`);
-      if (h.detail) lines.push(`    <i>${escapeHTML(h.detail)}</i>`);
-    }
+  if (changed.length > 0) {
     lines.push("");
+    lines.push("<b>What changed</b>");
+    for (const item of changed) {
+      lines.push(`• ${escapeHTML(item)}`);
+    }
   }
 
-  if (sections.suggestions?.length) {
-    lines.push("<b>Suggestions</b>");
-    for (const s of sections.suggestions.slice(0, 3)) {
-      lines.push(`\uD83D\uDCA1 <b>${escapeHTML(s.title)}</b> — ${escapeHTML(s.reason)}`);
+  if (evidence.length > 0) {
+    lines.push("");
+    lines.push("<b>Evidence</b>");
+    for (const item of evidence) {
+      lines.push(`• <b>${escapeHTML(item.title)}</b> — ${escapeHTML(item.detail)}`);
     }
+  }
+
+  if (actions.length > 0) {
+    lines.push("");
+    lines.push(actions.length === 1 ? "<b>Recommended move</b>" : "<b>Recommended moves</b>");
+    for (const action of actions) {
+      lines.push(`• <b>${escapeHTML(action.title)}</b>${action.timing ? ` (${escapeHTML(action.timing)})` : ""}`);
+      lines.push(escapeHTML(action.detail));
+    }
+  }
+
+  const footer = input.footer?.trim() || input.sections.correction_hook?.prompt?.trim();
+  if (footer) {
+    lines.push("");
+    lines.push(`<i>${escapeHTML(footer)}</i>`);
   }
 
   return lines.join("\n");
+}
+
+export function buildTelegramDigestMarkdown(text: string, maxLength = 900): string {
+  const normalized = text
+    .replace(/```jsonrender[\s\S]*?```/g, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/\|.+\|\n\|[\s:|-]+\|(?:\n\|.*\|)*/gm, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const blocks = normalized
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  const selected: string[] = [];
+  let size = 0;
+  for (const block of blocks) {
+    const blockSize = block.replace(/\s+/g, " ").trim().length;
+    if (blockSize === 0) continue;
+    if (selected.length > 0 && size + blockSize > maxLength) break;
+    selected.push(block);
+    size += blockSize + 2;
+    if (selected.length >= 4) break;
+  }
+
+  const digest = (selected.join("\n\n").trim() || normalized.slice(0, maxLength).trim()).replace(/\n{3,}/g, "\n\n");
+  return digest.length < normalized.length ? `${digest}\n\n_Full response attached as PDF._` : digest;
 }
 
 /** Escape HTML entities for Telegram */

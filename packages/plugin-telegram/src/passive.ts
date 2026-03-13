@@ -3,7 +3,13 @@ import { semanticSearch, knowledgeSearch, getContextBudget, getProviderOptions, 
 import type { LanguageModel } from "ai";
 import type { Api } from "grammy";
 import type { RawApi } from "grammy";
-import { markdownToTelegramHTML, splitMessage } from "./formatter.js";
+import {
+  markdownToTelegramHTML,
+  splitMessage,
+  isComplexContent,
+  buildTelegramDigestMarkdown,
+  formatTelegramResponse,
+} from "./formatter.js";
 
 // --- In-memory group context ---
 
@@ -230,7 +236,11 @@ export async function passiveProcess(
   if (result === "proactive") {
     const response = await generateProactiveResponse(ctx, agentPlugin, chatId);
     if (response) {
-      const html = markdownToTelegramHTML(response);
+      const normalizedResponse = formatTelegramResponse(response);
+      const inlineMarkdown = isComplexContent(normalizedResponse)
+        ? buildTelegramDigestMarkdown(normalizedResponse)
+        : normalizedResponse;
+      const html = markdownToTelegramHTML(inlineMarkdown);
       const parts = splitMessage(html);
       for (let i = 0; i < parts.length; i++) {
         await api.sendMessage(chatId, parts[i]!, {

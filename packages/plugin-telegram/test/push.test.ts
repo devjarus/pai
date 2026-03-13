@@ -11,7 +11,7 @@ vi.mock("../src/report-document.js", () => ({
   sendReportDocumentToTelegram: (...args: unknown[]) => mockSendReportDocumentToTelegram(...args),
 }));
 
-function createMockStorage(rows: Array<{ id: string; sections: string }> = []): Storage {
+function createMockStorage(rows: Array<{ id: string; type?: string; sections: string; thread_id?: string | null; program_id?: string | null }> = []): Storage {
   return {
     query: vi.fn().mockReturnValue(rows),
     run: vi.fn(),
@@ -80,16 +80,18 @@ describe("startResearchPushLoop", () => {
   it("sends messages for ready research reports with matching chat", async () => {
     const researchRow = {
       id: "research-job123",
+      type: "research",
       sections: JSON.stringify({ goal: "AI trends", report: "AI is growing fast" }),
+      thread_id: "thread-1",
+      program_id: null,
     };
     const storage = createMockStorage([researchRow]);
 
     // Mock chat ID lookup: research_jobs -> thread -> telegram_threads
     (storage.query as ReturnType<typeof vi.fn>)
       .mockReturnValueOnce([researchRow]) // briefings query
-      .mockReturnValueOnce([]) // deriveReportVisuals -> listArtifacts
-      .mockReturnValueOnce([{ thread_id: "thread-1" }]) // research_jobs query
-      .mockReturnValueOnce([{ chat_id: 12345 }]); // telegram_threads query
+      .mockReturnValueOnce([{ chat_id: 12345 }]) // telegram_threads query
+      .mockReturnValueOnce([]); // deriveReportVisuals -> listArtifacts
 
     const bot = createMockBot();
     const logger = createMockLogger();
@@ -134,6 +136,7 @@ describe("startResearchPushLoop", () => {
 
     const researchRow = {
       id: "research-job-with-visual",
+      type: "research",
       sections: JSON.stringify({
         goal: "AI revenue trends",
         report: "Revenue is up strongly.",
@@ -148,11 +151,12 @@ describe("startResearchPushLoop", () => {
           },
         ],
       }),
+      thread_id: "thread-1",
+      program_id: null,
     };
     const storage = createMockStorage([researchRow]);
     (storage.query as ReturnType<typeof vi.fn>)
       .mockReturnValueOnce([researchRow]) // briefings query
-      .mockReturnValueOnce([{ thread_id: "thread-1" }]) // research_jobs query
       .mockReturnValueOnce([{ chat_id: 12345 }]) // telegram_threads query
       .mockReturnValueOnce([{ id: "art-1", job_id: "job-with-visual", name: "trend.png", mime_type: "image/png", file_path: imagePath, size: 3, created_at: "now" }]); // sendVisuals getArtifact
 
@@ -186,7 +190,10 @@ describe("startResearchPushLoop", () => {
   it("marks reports as sent even without originating chat", async () => {
     const researchRow = {
       id: "research-nojob",
+      type: "research",
       sections: JSON.stringify({ goal: "Test", report: "Some report" }),
+      thread_id: null,
+      program_id: null,
     };
     const storage = createMockStorage([researchRow]);
 
@@ -218,7 +225,10 @@ describe("startResearchPushLoop", () => {
   it("skips reports without a report field", async () => {
     const row = {
       id: "research-empty",
+      type: "research",
       sections: JSON.stringify({ goal: "No report" }),
+      thread_id: null,
+      program_id: null,
     };
     const storage = createMockStorage([row]);
 
@@ -231,7 +241,10 @@ describe("startResearchPushLoop", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(bot.api.sendMessage).not.toHaveBeenCalled();
-    expect(storage.run).not.toHaveBeenCalled();
+    expect(storage.run).toHaveBeenCalledWith(
+      "UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?",
+      ["research-empty"],
+    );
 
     handle.stop();
   });
@@ -239,16 +252,18 @@ describe("startResearchPushLoop", () => {
   it("sends messages for swarm reports with matching chat", async () => {
     const swarmRow = {
       id: "swarm-swarmjob456",
+      type: "swarm",
       sections: JSON.stringify({ goal: "Market analysis", report: "Markets are up" }),
+      thread_id: "thread-2",
+      program_id: null,
     };
     const storage = createMockStorage([swarmRow]);
 
     // Mock chat ID lookup: swarm_jobs -> thread -> telegram_threads
     (storage.query as ReturnType<typeof vi.fn>)
       .mockReturnValueOnce([swarmRow]) // briefings query
-      .mockReturnValueOnce([]) // deriveReportVisuals -> listArtifacts
-      .mockReturnValueOnce([{ thread_id: "thread-2" }]) // swarm_jobs query
-      .mockReturnValueOnce([{ chat_id: 67890 }]); // telegram_threads query
+      .mockReturnValueOnce([{ chat_id: 67890 }]) // telegram_threads query
+      .mockReturnValueOnce([]); // deriveReportVisuals -> listArtifacts
 
     const bot = createMockBot();
     const logger = createMockLogger();
@@ -285,7 +300,10 @@ describe("startResearchPushLoop", () => {
   it("marks unknown-prefix briefings as sent without sending", async () => {
     const row = {
       id: "daily-abc123",
+      type: "daily",
       sections: JSON.stringify({ goal: "Daily briefing", report: "Today's summary" }),
+      thread_id: null,
+      program_id: null,
     };
     const storage = createMockStorage([row]);
 
