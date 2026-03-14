@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { remember } from "../api";
+import { remember, createProgramApi } from "../api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SparklesIcon } from "lucide-react";
 
 export default function Onboarding() {
   const [name, setName] = useState("");
-  const [work, setWork] = useState("");
+  const [watch, setWatch] = useState("");
   const [preferences, setPreferences] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -22,23 +22,39 @@ export default function Onboarding() {
     if (name.trim()) {
       promises.push(remember(`My name is ${name.trim()}`));
     }
-    if (work.trim()) {
-      promises.push(remember(`I want pai to keep track of ${work.trim()}`));
-    }
     if (preferences.trim()) {
       promises.push(remember(preferences.trim()));
     }
 
+    // Create a Program from the watch field — this is the core product action
+    if (watch.trim()) {
+      promises.push(remember(`I want pai to keep track of ${watch.trim()}`));
+      promises.push(
+        createProgramApi({
+          title: watch.trim().slice(0, 200),
+          question: watch.trim(),
+          family: "general",
+          executionMode: "research",
+          intervalHours: 24,
+          preferences: preferences.trim() ? [preferences.trim()] : [],
+        }).catch(() => {
+          // Program creation is best-effort during onboarding —
+          // don't block the flow if it fails (e.g. LLM not ready yet)
+        }),
+      );
+    }
+
     if (promises.length === 0) {
       localStorage.setItem("pai_onboarded", "1");
-      navigate("/ask", { replace: true });
+      navigate("/", { replace: true });
       return;
     }
 
     try {
       await Promise.all(promises);
       localStorage.setItem("pai_onboarded", "1");
-      navigate("/ask", { replace: true });
+      // Navigate to Home (Inbox) so the user sees their first brief when it arrives
+      navigate("/", { replace: true });
     } catch {
       setSaving(false);
       setError(
@@ -64,7 +80,7 @@ export default function Onboarding() {
             Welcome to pai
           </CardTitle>
           <p className="text-center text-xs text-muted-foreground">
-            Tell me what you want me to keep track of so your future briefs start with the right context.
+            Tell me one thing to watch and I'll start briefing you on it daily.
           </p>
         </CardHeader>
         <CardContent>
@@ -84,12 +100,12 @@ export default function Onboarding() {
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                What ongoing decisions or watches matter most right now?
+                What's one thing you check every few days?
               </label>
               <textarea
-                value={work}
-                onChange={(e) => setWork(e.target.value)}
-                placeholder="e.g. launch readiness, vendor evaluations, travel planning"
+                value={watch}
+                onChange={(e) => setWatch(e.target.value)}
+                placeholder="e.g. crypto market trends, H1B visa slot availability, competitor pricing changes"
                 rows={2}
                 className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
               />
@@ -112,7 +128,7 @@ export default function Onboarding() {
               </p>
             )}
             <Button type="submit" className="w-full" disabled={saving}>
-              {saving ? "Saving..." : "Open Ask"}
+              {saving ? "Setting up..." : watch.trim() ? "Start watching" : "Get started"}
             </Button>
           </form>
           <button

@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Guided first Program in onboarding** — Setup and Onboarding now create a Program from the "what do you check every few days?" field, so new users get their first daily brief without needing to discover Programs separately. Post-onboarding navigates to Home (Inbox) instead of Ask.
+- **Research retry on transient failures** — Research jobs that fail due to transient LLM errors (connection refused, timeouts, rate limits) are automatically re-queued up to 2 times instead of permanently failing.
 - **Research builds on previous findings** — Scheduled Program research now injects the previous brief's recommendation summary and date into the research goal, so the LLM focuses on what's NEW instead of repeating old findings. Research report knowledge sources auto-expire after 7 days to prevent stale data accumulation.
 - **Structured memory write path** — Background learning and assistant auto-memory now preserve extracted `{statement, factType, importance, subject}` metadata and write through a dedicated `rememberStructured()` path instead of re-running memory extraction on the same fact.
 - **Watch dedupe clarity** — Repeated `Keep watching` attempts now reuse the existing Program for the same thread or equivalent recurring watch, the Programs API distinguishes created vs reused results, and Ask/Inbox surfaces stop implying a second watch was created when pai is already watching it.

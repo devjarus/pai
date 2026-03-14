@@ -247,15 +247,47 @@ export class BackgroundDispatcher {
         await generateBriefing(this.ctx, undefined, next.id);
       }
     } catch (err) {
-      this.ctx.logger.error("Background dispatch failed", {
-        kind: next.kind,
-        id: next.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      const isTransient = /fetch failed|econnrefused|enotfound|econnreset|etimedout|cannot reach|rate limit|too many requests|429|503/i.test(errorMsg);
+
+      // Check attempt count before retrying
+      const attempts = this.ctx.storage.query<{ attempt_count: number }>(
+        "SELECT attempt_count FROM background_jobs WHERE id = ?",
+        [next.id],
+      );
+      const attemptCount = attempts[0]?.attempt_count ?? 0;
+
+      if (isTransient && next.kind === "research" && attemptCount < 2) {
+        // Re-queue the job after a delay instead of permanently failing (max 2 retries)
+        this.ctx.logger.warn("Research job failed with transient error, will retry on next drain", {
+          id: next.id,
+          error: errorMsg,
+          attempt: attemptCount + 1,
+        });
+        try {
+          this.ctx.storage.run(
+            "UPDATE research_jobs SET status = 'pending' WHERE id = ? AND status = 'failed'",
+            [next.id],
+          );
+          this.ctx.storage.run(
+            "UPDATE background_jobs SET status = 'pending', progress = 'retry after transient error', error = ? WHERE id = ? AND status = 'error'",
+            [errorMsg, next.id],
+          );
+        } catch {
+          // If re-queue fails, the job stays failed — that's fine
+        }
+      } else {
+        this.ctx.logger.error("Background dispatch failed", {
+          kind: next.kind,
+          id: next.id,
+          error: errorMsg,
+        });
+      }
     } finally {
       this.activeWorkId = null;
       this.activeKind = null;
-      this.nudge(250);
+      // Longer delay after transient failure to give LLM service time to recover
+      this.nudge(500);
     }
   }
 

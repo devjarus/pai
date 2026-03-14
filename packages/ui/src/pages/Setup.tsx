@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { setupOwner, remember, updateConfig } from "../api";
+import { setupOwner, remember, updateConfig, createProgramApi } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -94,17 +94,29 @@ export default function Setup() {
     setIntroError("");
     const promises: Promise<unknown>[] = [];
     if (name.trim()) promises.push(remember(`My name is ${name.trim()}`));
-    if (work.trim()) promises.push(remember(`I want pai to keep track of ${work.trim()}`));
     if (preferences.trim()) promises.push(remember(preferences.trim()));
+    if (work.trim()) {
+      promises.push(remember(`I want pai to keep track of ${work.trim()}`));
+      promises.push(
+        createProgramApi({
+          title: work.trim().slice(0, 200),
+          question: work.trim(),
+          family: "general",
+          executionMode: "research",
+          intervalHours: 24,
+          preferences: preferences.trim() ? [preferences.trim()] : [],
+        }).catch(() => {}),
+      );
+    }
     if (promises.length === 0) {
       localStorage.setItem("pai_onboarded", "1");
-      navigate("/ask", { replace: true });
+      navigate("/", { replace: true });
       return;
     }
     try {
       await Promise.all(promises);
       localStorage.setItem("pai_onboarded", "1");
-      navigate("/ask", { replace: true });
+      navigate("/", { replace: true });
     } catch {
       setIntroSaving(false);
       setIntroError("Could not save — you can skip and set up later in Settings.");
@@ -170,12 +182,12 @@ export default function Setup() {
           {step === "intro" && (
             <>
               <p className="mb-4 text-center text-xs text-muted-foreground">
-                Tell me what you want me to keep track of so your next brief starts with the right preferences and constraints.
+                Tell me one thing to watch and I'll start briefing you on it daily.
               </p>
               <form onSubmit={handleIntroSubmit} className="space-y-4">
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">What ongoing decisions or watches matter most right now?</label>
-                  <textarea value={work} onChange={(e) => setWork(e.target.value)} placeholder="e.g. launch readiness, vendor evaluations, travel planning" rows={2} autoFocus
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">What's one thing you check every few days?</label>
+                  <textarea value={work} onChange={(e) => setWork(e.target.value)} placeholder="e.g. crypto market trends, H1B visa slot availability, competitor pricing changes" rows={2} autoFocus
                     className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25" />
                 </div>
                 <div>
@@ -185,7 +197,7 @@ export default function Setup() {
                 </div>
                 {introError && <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{introError}</p>}
                 <Button type="submit" className="w-full" disabled={introSaving}>
-                  {introSaving ? "Saving..." : "Open Ask"}
+                  {introSaving ? "Setting up..." : work.trim() ? "Start watching" : "Get started"}
                 </Button>
               </form>
               <button type="button" onClick={handleSkipIntro} disabled={introSaving}
