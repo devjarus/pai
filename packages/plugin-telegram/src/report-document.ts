@@ -292,9 +292,9 @@ ${bodyParts.join("\n")}
 
 /**
  * Find a usable Chromium executable.
- * Prefers Playwright's bundled Chromium, falls back to common system paths.
+ * Returns null if none found (caller falls back to HTML delivery).
  */
-function findChromiumPath(): string {
+function findChromiumPath(): string | null {
   // 1. Env override
   if (process.env.CHROMIUM_PATH && existsSync(process.env.CHROMIUM_PATH)) {
     return process.env.CHROMIUM_PATH;
@@ -334,32 +334,34 @@ function findChromiumPath(): string {
     if (existsSync(p)) return p;
   }
 
-  throw new Error(
-    "No Chromium found. Install Playwright browsers (`npx playwright install chromium`) " +
-    "or set CHROMIUM_PATH env variable.",
-  );
+  return null;
 }
 
-let _chromiumPath: string | null = null;
+let _chromiumPath: string | null | undefined;
 
-function getChromiumPath(): string {
-  if (!_chromiumPath) {
+function getChromiumPath(): string | null {
+  if (_chromiumPath === undefined) {
     _chromiumPath = findChromiumPath();
   }
   return _chromiumPath;
 }
 
-async function renderPdfBuffer(
-  storage: Storage,
-  options: TelegramReportDocumentOptions,
+/**
+ * Try to render HTML to PDF via Chromium. Returns null if Chromium is unavailable.
+ */
+async function tryRenderPdfBuffer(
+  html: string,
   logger: Logger,
-): Promise<Buffer> {
-  const html = buildReportHtml(storage, options, logger);
+): Promise<Buffer | null> {
+  const chromiumPath = getChromiumPath();
+  if (!chromiumPath) {
+    return null;
+  }
 
   let browser;
   try {
     browser = await puppeteer.launch({
-      executablePath: getChromiumPath(),
+      executablePath: chromiumPath,
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
     });
@@ -376,11 +378,35 @@ async function renderPdfBuffer(
     });
 
     return Buffer.from(pdfUint8);
+  } catch (err) {
+    logger.warn("PDF rendering failed, will fall back to HTML document", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
   } finally {
     if (browser) {
       await browser.close().catch(() => {});
     }
   }
+}
+
+/**
+ * Render a report as PDF (if Chromium available) or HTML (fallback).
+ */
+async function renderReportDocument(
+  storage: Storage,
+  options: TelegramReportDocumentOptions,
+  logger: Logger,
+): Promise<{ data: Buffer; extension: "pdf" | "html" }> {
+  const html = buildReportHtml(storage, options, logger);
+
+  const pdf = await tryRenderPdfBuffer(html, logger);
+  if (pdf) {
+    return { data: pdf, extension: "pdf" };
+  }
+
+  logger.info("Chromium not available — delivering report as HTML document");
+  return { data: Buffer.from(html, "utf-8"), extension: "html" };
 }
 
 export async function buildTelegramReportDocument(
@@ -389,10 +415,11 @@ export async function buildTelegramReportDocument(
   logger: Logger,
 ): Promise<{ data: Buffer; fileName: string }> {
   const title = options.title.trim() || "Report";
-  const data = await renderPdfBuffer(storage, options, logger);
+  const { data, extension } = await renderReportDocument(storage, options, logger);
+  const stem = resolvePdfFileName(title, options.fileName).replace(/\.pdf$/, "");
   return {
     data,
-    fileName: resolvePdfFileName(title, options.fileName),
+    fileName: `${stem}.${extension}`,
   };
 }
 
