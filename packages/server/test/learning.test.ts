@@ -16,12 +16,12 @@ vi.mock("ai", () => ({
   generateText: (...args: unknown[]) => mockGenerateText(...args),
 }));
 
-const mockRemember = vi.fn();
+const mockRememberStructured = vi.fn();
 vi.mock("@personal-ai/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@personal-ai/core")>();
   return {
     ...actual,
-    remember: (...args: unknown[]) => mockRemember(...args),
+    rememberStructured: (...args: unknown[]) => mockRememberStructured(...args),
   };
 });
 
@@ -240,7 +240,7 @@ describe("runBackgroundLearning", () => {
     expect(age).toBeGreaterThan(23 * 60 * 60 * 1000);
   });
 
-  it("extracts facts from signals and stores them via remember()", async () => {
+  it("extracts facts from signals and stores them via rememberStructured()", async () => {
     // Insert thread data so signals are non-empty
     storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t1', 'Test', datetime('now'), datetime('now'), 1)");
     storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m1', 't1', 'user', 'I prefer TypeScript over JavaScript', datetime('now'), 1)");
@@ -251,7 +251,7 @@ describe("runBackgroundLearning", () => {
       { fact: "User works with web technologies", factType: "factual", importance: 5, subject: "owner" },
     ]);
     mockGenerateText.mockResolvedValue({ text: llmResponse });
-    mockRemember.mockResolvedValue({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false });
+    mockRememberStructured.mockResolvedValue({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false });
 
     const mockCtx = {
       config: { llm: { provider: "ollama", model: "test-model" } },
@@ -268,13 +268,18 @@ describe("runBackgroundLearning", () => {
 
     // generateText should have been called
     expect(mockGenerateText).toHaveBeenCalledTimes(1);
-    // remember should have been called for each extracted fact
-    expect(mockRemember).toHaveBeenCalledTimes(2);
-    expect(mockRemember).toHaveBeenNthCalledWith(
+    // rememberStructured should have been called for each extracted fact
+    expect(mockRememberStructured).toHaveBeenCalledTimes(2);
+    expect(mockRememberStructured).toHaveBeenNthCalledWith(
       1,
       storage,
       expect.anything(),
-      "User prefers TypeScript over JavaScript",
+      {
+        statement: "User prefers TypeScript over JavaScript",
+        factType: "preference",
+        importance: 7,
+        subject: "owner",
+      },
       expect.anything(),
       expect.objectContaining({
         origin: "inferred",
@@ -316,8 +321,8 @@ describe("runBackgroundLearning", () => {
 
     // generateText should have been called (signals were non-empty)
     expect(mockGenerateText).toHaveBeenCalledTimes(1);
-    // remember should NOT have been called (LLM failed)
-    expect(mockRemember).not.toHaveBeenCalled();
+    // rememberStructured should NOT have been called (LLM failed)
+    expect(mockRememberStructured).not.toHaveBeenCalled();
 
     // Watermarks should NOT be updated (still 24h ago default)
     const wm = getWatermark(storage, "threads");
@@ -336,7 +341,7 @@ describe("runBackgroundLearning", () => {
     ]);
     mockGenerateText.mockResolvedValue({ text: llmResponse });
     // First fact is new, second is reinforcement
-    mockRemember
+    mockRememberStructured
       .mockResolvedValueOnce({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false })
       .mockResolvedValueOnce({ episodeId: "ep2", beliefIds: ["b2"], isReinforcement: true });
 
@@ -374,7 +379,7 @@ describe("runBackgroundLearning", () => {
       { fact: "User uses pnpm", factType: "procedural", importance: 6, subject: "owner" },
     ]);
     mockGenerateText.mockResolvedValue({ text: llmResponse });
-    mockRemember.mockResolvedValue({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false });
+    mockRememberStructured.mockResolvedValue({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false });
 
     const mockCtx = {
       config: { llm: { provider: "ollama", model: "test-model" } },

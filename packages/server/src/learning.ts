@@ -1,5 +1,5 @@
 import type { LanguageModel } from "ai";
-import { remember, getContextBudget, getProviderOptions, instrumentedGenerateText } from "@personal-ai/core";
+import { rememberStructured, getContextBudget, getProviderOptions, instrumentedGenerateText } from "@personal-ai/core";
 import type { Migration, PluginContext, Storage, TelemetryAttributes } from "@personal-ai/core";
 
 export const learningMigrations: Migration[] = [
@@ -524,7 +524,7 @@ export async function runBackgroundLearning(
     return; // Don't update watermarks on LLM failure
   }
 
-  // Phase 3: Store facts via remember() — only those above importance threshold
+  // Phase 3: Store facts directly from structured extraction — only those above importance threshold
   let created = 0;
   let reinforced = 0;
   let skipped = 0;
@@ -541,7 +541,12 @@ export async function runBackgroundLearning(
       continue;
     }
     try {
-      const result = await remember(ctx.storage, ctx.llm, fact.fact, ctx.logger, {
+      const result = await rememberStructured(ctx.storage, ctx.llm, {
+        statement: fact.fact,
+        factType: fact.factType,
+        importance: fact.importance,
+        subject: fact.subject,
+      }, ctx.logger, {
         origin: "inferred",
         provenance: [{
           sourceKind: "learning-run",

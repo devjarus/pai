@@ -11,6 +11,7 @@ const { mockEnsureProgram, mockListPrograms, mockDeleteProgram } = vi.hoisted(()
 vi.mock("@personal-ai/core", () => ({
   getMemoryContext: vi.fn(),
   remember: vi.fn(),
+  rememberStructured: vi.fn(),
   listBeliefs: vi.fn().mockReturnValue([]),
   recordProductEvent: vi.fn(),
   formatDateTime: vi.fn().mockReturnValue({ full: "Mar 12, 2026 09:00" }),
@@ -317,10 +318,10 @@ describe("afterResponse", () => {
   });
 
   it("skips storage when assistant contradicted the user", async () => {
-    const { remember: mockRemember } = await import("@personal-ai/core");
+    const { remember: mockRemember, rememberStructured: mockRememberStructured } = await import("@personal-ai/core");
     const mockChat = vi.fn()
       // First call: extraction — returns a candidate fact
-      .mockResolvedValueOnce({ text: "The user believes the moon is made of cheese" })
+      .mockResolvedValueOnce({ text: '[{"statement":"The user believes the moon is made of cheese","factType":"factual","importance":4,"subject":"owner"}]' })
       // Second call: validation — assistant contradicted
       .mockResolvedValueOnce({ text: "REJECTED" });
 
@@ -333,13 +334,14 @@ describe("afterResponse", () => {
 
     expect(mockChat).toHaveBeenCalledTimes(2);
     expect(mockRemember).not.toHaveBeenCalled();
+    expect(mockRememberStructured).not.toHaveBeenCalled();
   });
 
   it("stores facts when assistant confirms or acknowledges", async () => {
-    const { remember: mockRemember } = await import("@personal-ai/core");
+    const { remember: mockRemember, rememberStructured: mockRememberStructured } = await import("@personal-ai/core");
     const mockChat = vi.fn()
       // First call: extraction
-      .mockResolvedValueOnce({ text: "Alex prefers Vitest over Jest" })
+      .mockResolvedValueOnce({ text: '[{"statement":"Alex prefers Vitest over Jest","factType":"preference","importance":7,"subject":"alex"}]' })
       // Second call: validation — confirmed
       .mockResolvedValueOnce({ text: "CONFIRMED" });
 
@@ -351,21 +353,33 @@ describe("afterResponse", () => {
     await afterResponse(ctx, "Great choice! Vitest is excellent for TypeScript projects with its native support.");
 
     expect(mockChat).toHaveBeenCalledTimes(2);
-    expect(mockRemember).toHaveBeenCalledTimes(1);
-    expect(mockRemember).toHaveBeenCalledWith(
+    expect(mockRemember).not.toHaveBeenCalled();
+    expect(mockRememberStructured).toHaveBeenCalledTimes(1);
+    expect(mockRememberStructured).toHaveBeenCalledWith(
       ctx.storage,
       ctx.llm,
-      "Alex prefers Vitest over Jest",
+      {
+        statement: "Alex prefers Vitest over Jest",
+        factType: "preference",
+        importance: 7,
+        subject: "alex",
+      },
       ctx.logger,
     );
   });
 
   it("stores at most 3 facts per message", async () => {
-    const { remember: mockRemember } = await import("@personal-ai/core");
+    const { remember: mockRemember, rememberStructured: mockRememberStructured } = await import("@personal-ai/core");
     const mockChat = vi.fn()
       // First call: extraction — returns 5 candidate facts
       .mockResolvedValueOnce({
-        text: "Alex likes React\nAlex uses TypeScript\nAlex prefers pnpm\nAlex uses Vitest\nAlex likes Tailwind",
+        text: JSON.stringify([
+          { statement: "Alex likes React", factType: "preference", importance: 6, subject: "alex" },
+          { statement: "Alex uses TypeScript", factType: "factual", importance: 6, subject: "alex" },
+          { statement: "Alex prefers pnpm", factType: "preference", importance: 6, subject: "alex" },
+          { statement: "Alex uses Vitest", factType: "factual", importance: 5, subject: "alex" },
+          { statement: "Alex likes Tailwind", factType: "preference", importance: 5, subject: "alex" },
+        ]),
       })
       // Validation calls — all confirmed
       .mockResolvedValueOnce({ text: "CONFIRMED" })
@@ -381,12 +395,13 @@ describe("afterResponse", () => {
 
     // 1 extraction + 3 validations = 4 calls (only first 3 facts validated)
     expect(mockChat).toHaveBeenCalledTimes(4);
-    expect(mockRemember).toHaveBeenCalledTimes(3);
+    expect(mockRemember).not.toHaveBeenCalled();
+    expect(mockRememberStructured).toHaveBeenCalledTimes(3);
   });
 
   it("validation prompt includes assistant response and candidate fact", async () => {
     const mockChat = vi.fn()
-      .mockResolvedValueOnce({ text: "Alex prefers dark mode" })
+      .mockResolvedValueOnce({ text: '[{"statement":"Alex prefers dark mode","factType":"preference","importance":6,"subject":"alex"}]' })
       .mockResolvedValueOnce({ text: "CONFIRMED" });
 
     const ctx = createMockCtx({

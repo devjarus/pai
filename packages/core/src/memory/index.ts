@@ -334,11 +334,11 @@ export function memoryCommands(ctx: PluginContext): Command[] {
 
 // Public API
 export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, correctBelief, updateBeliefContent, memoryStats, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, backfillSubjects, findContradictions, getCorePreferences, getBeliefHistory, listBeliefProvenance } from "./memory.js";
-export { remember } from "./remember.js";
+export { remember, rememberStructured } from "./remember.js";
 export { generateMemoryFile } from "./memory-file.js";
 export { consolidateConversation } from "./consolidate.js";
 
 // Types
 export type { Belief, Episode, BeliefChange, BeliefOrigin, BeliefCorrectionState, BeliefProvenance, CorrectBeliefResult, MemoryStats, MemoryExport, MemoryExportV1, MemoryExportV2, SimilarBelief, ReflectionResult, UnifiedRetrievalResult } from "./memory.js";
-export type { RememberOptions, RememberProvenanceInput } from "./remember.js";
+export type { RememberOptions, RememberProvenanceInput, StructuredMemoryInput } from "./remember.js";
 export type { ConsolidationResult } from "./consolidate.js";

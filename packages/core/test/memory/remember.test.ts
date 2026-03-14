@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
 import type { LLMClient } from "@personal-ai/core";
 import { memoryMigrations, getBeliefHistory, linkBeliefToEpisode, countSupportingEpisodes, linkSupersession } from "../../src/memory/memory.js";
-import { remember, extractBeliefs, checkContradiction } from "../../src/memory/remember.js";
+import { remember, rememberStructured, extractBeliefs, checkContradiction } from "../../src/memory/remember.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -90,6 +90,45 @@ describe("remember", () => {
       "SELECT episode_id FROM episode_embeddings WHERE episode_id = ?", [result.episodeId]
     );
     expect(embRows).toHaveLength(1);
+  });
+
+  it("should store structured input without running extraction again", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn(),
+      embed: vi.fn()
+        .mockResolvedValueOnce({ embedding: [0.4, 0.4, 0.2] }) // episode embedding
+        .mockResolvedValueOnce({ embedding: [0.1, 0.2, 0.3] }), // belief embedding
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+
+    const result = await rememberStructured(storage, mockLLM, {
+      statement: "Owner prefers concise summaries",
+      factType: "preference",
+      importance: 7,
+      subject: "owner",
+      episodeAction: "User said they prefer concise summaries",
+    });
+
+    expect(mockLLM.chat).not.toHaveBeenCalled();
+    expect(result.isReinforcement).toBe(false);
+    expect(result.beliefIds).toHaveLength(1);
+
+    const episodeRow = storage.query<{ action: string }>(
+      "SELECT action FROM episodes WHERE id = ?",
+      [result.episodeId],
+    )[0];
+    expect(episodeRow?.action).toBe("User said they prefer concise summaries");
+
+    const beliefRow = storage.query<{ statement: string; type: string; importance: number; subject: string }>(
+      "SELECT statement, type, importance, subject FROM beliefs WHERE id = ?",
+      [result.beliefIds[0]],
+    )[0];
+    expect(beliefRow).toEqual({
+      statement: "Owner prefers concise summaries",
+      type: "preference",
+      importance: 7,
+      subject: "owner",
+    });
   });
 
   it("should store both fact and insight beliefs when insight is extracted", async () => {

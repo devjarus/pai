@@ -2,9 +2,11 @@
 
 This document maps the full lifecycle of beliefs in the Personal AI memory system, from ingestion through decay and removal. All diagrams and thresholds are derived from the source code in `packages/core/src/memory/`.
 
-## 1. Ingestion: `remember()` and `processNewBelief()`
+## 1. Ingestion: raw and structured memory writes
 
-The `remember()` function in `remember.ts` is the primary entry point for storing new information. It creates an episode, extracts a structured belief via LLM, and runs deduplication/contradiction logic before persisting.
+`remember()` handles raw text observations. It creates an episode, extracts a structured belief via LLM, and runs deduplication/contradiction logic before persisting.
+
+`rememberStructured()` is the sibling path for callers that already have `{ statement, factType, importance, subject }` from an earlier extraction step. It still creates an episode and stores episode embeddings, but it skips `extractBeliefs()` and writes the structured claim directly through the same downstream belief-processing pipeline.
 
 ```mermaid
 flowchart TD
@@ -50,9 +52,11 @@ flowchart TD
     style M fill:#1a3d8b,color:#fff
     style H fill:#555,color:#fff
 
-    Note1["Insight from extractBeliefs is SKIPPED\n(lines 268-269: generic noise)"]
+    Note1["If extractBeliefs returns an insight,\nremember() stores it as type='insight'\nwith origin='synthesized'"]
     style Note1 fill:none,stroke:#888,stroke-dasharray: 5 5
 ```
+
+Structured producers enter after episode creation with normalized `{ statement, factType, importance, subject, insight? }` input. They reuse `processNewBelief()` and all contradiction/provenance rules, but they do not pay for a second extraction call.
 
 ### `checkContradiction()` detail
 

@@ -18,8 +18,77 @@ export interface RememberOptions {
   sensitive?: boolean;
 }
 
+export interface StructuredMemoryInput {
+  statement: string;
+  factType: string;
+  importance: number;
+  subject: string;
+  insight?: string | null;
+  episodeAction?: string;
+}
+
+interface NormalizedStructuredMemoryInput {
+  statement: string;
+  factType: string;
+  importance: number;
+  subject: string;
+  insight: string | null;
+  episodeAction: string;
+}
+
 function inferSensitivity(statement: string): boolean {
   return /\b(password|secret|token|ssn|social security|bank|credit card|passport|visa|health|medical|diagnosis|salary|income|birthday|birth date)\b/i.test(statement);
+}
+
+function normalizeFactType(factType: unknown): string {
+  return typeof factType === "string" && VALID_FACT_TYPES.has(factType) ? factType : "factual";
+}
+
+function normalizeImportance(importance: unknown): number {
+  return typeof importance === "number" && importance >= 1 && importance <= 10
+    ? Math.round(importance)
+    : 5;
+}
+
+function normalizeSubject(subject: unknown): string {
+  return typeof subject === "string" && subject.trim()
+    ? subject.trim().toLowerCase()
+    : "owner";
+}
+
+function normalizeStructuredMemoryInput(input: StructuredMemoryInput): NormalizedStructuredMemoryInput {
+  const statement = input.statement.trim();
+  if (!statement) throw new Error("Structured memory statement is required");
+
+  const insight = typeof input.insight === "string" && input.insight.trim()
+    ? input.insight.trim()
+    : null;
+  const episodeAction = typeof input.episodeAction === "string" && input.episodeAction.trim()
+    ? input.episodeAction.trim()
+    : statement;
+
+  return {
+    statement,
+    factType: normalizeFactType(input.factType),
+    importance: normalizeImportance(input.importance),
+    subject: normalizeSubject(input.subject),
+    insight,
+    episodeAction,
+  };
+}
+
+async function storeEpisodeEmbeddingForAction(
+  storage: Storage,
+  llm: LLMClient,
+  episodeId: string,
+  action: string,
+  logger?: Logger,
+): Promise<void> {
+  await llm.embed(action, {
+    telemetry: { process: "embed.memory" },
+  })
+    .then(({ embedding }) => storeEpisodeEmbedding(storage, episodeId, embedding))
+    .catch(() => logger?.warn("Failed to embed episode", { episodeId }));
 }
 
 export async function extractBeliefs(
@@ -57,11 +126,9 @@ export async function extractBeliefs(
       if (braceMatch) jsonText = braceMatch[0];
     }
     const parsed = JSON.parse(jsonText);
-    const factType = VALID_FACT_TYPES.has(parsed.factType) ? parsed.factType : "factual";
-    const importance = typeof parsed.importance === "number" && parsed.importance >= 1 && parsed.importance <= 10
-      ? Math.round(parsed.importance) : 5;
-    const subject = typeof parsed.subject === "string" && parsed.subject.trim()
-      ? parsed.subject.trim().toLowerCase() : "owner";
+    const factType = normalizeFactType(parsed.factType);
+    const importance = normalizeImportance(parsed.importance);
+    const subject = normalizeSubject(parsed.subject);
     return { fact: parsed.fact, factType, importance, insight: parsed.insight ?? null, subject };
   } catch {
     return { fact: result.text.trim(), factType: "factual", importance: 5, insight: null, subject: "owner" };
@@ -393,6 +460,75 @@ async function processNewBelief(
   return { beliefId: belief.id, isReinforcement: false };
 }
 
+async function storeStructuredBeliefs(
+  storage: Storage,
+  llm: LLMClient,
+  input: NormalizedStructuredMemoryInput,
+  episodeId: string,
+  logger?: Logger,
+  options?: RememberOptions,
+): Promise<{ beliefIds: string[]; isReinforcement: boolean }> {
+  const beliefIds: string[] = [];
+  let isReinforcement = false;
+
+  const factResult = await processNewBelief(
+    storage,
+    llm,
+    input.statement,
+    input.factType,
+    episodeId,
+    logger,
+    input.importance,
+    input.subject,
+    {
+      origin: options?.origin ?? "user-said",
+      provenance: options?.provenance,
+      freshnessAt: options?.freshnessAt,
+      sensitive: options?.sensitive,
+    },
+  );
+  beliefIds.push(factResult.beliefId);
+  if (factResult.isReinforcement) isReinforcement = true;
+
+  if (input.insight) {
+    const insightResult = await processNewBelief(
+      storage,
+      llm,
+      input.insight,
+      "insight",
+      episodeId,
+      logger,
+      Math.max(1, Math.min(10, input.importance - 1)),
+      input.subject,
+      {
+        origin: "synthesized",
+        provenance: options?.provenance,
+        freshnessAt: options?.freshnessAt,
+        sensitive: options?.sensitive,
+      },
+    );
+    beliefIds.push(insightResult.beliefId);
+    if (insightResult.isReinforcement) isReinforcement = true;
+  }
+
+  return { beliefIds, isReinforcement };
+}
+
+export async function rememberStructured(
+  storage: Storage,
+  llm: LLMClient,
+  input: StructuredMemoryInput,
+  logger?: Logger,
+  options?: RememberOptions,
+): Promise<{ episodeId: string; beliefIds: string[]; isReinforcement: boolean }> {
+  const normalized = normalizeStructuredMemoryInput(input);
+  const episode = createEpisode(storage, { action: normalized.episodeAction });
+  const episodeEmbeddingPromise = storeEpisodeEmbeddingForAction(storage, llm, episode.id, normalized.episodeAction, logger);
+  const result = await storeStructuredBeliefs(storage, llm, normalized, episode.id, logger, options);
+  await episodeEmbeddingPromise;
+  return { episodeId: episode.id, ...result };
+}
+
 export async function remember(
   storage: Storage,
   llm: LLMClient,
@@ -405,48 +541,26 @@ export async function remember(
   // Run episode embedding and belief extraction in parallel (independent LLM calls)
   const [, extracted] = await Promise.all([
     // Store episode embedding for semantic episode search
-    llm.embed(text, {
-      telemetry: { process: "embed.memory" },
-    })
-      .then(({ embedding }) => storeEpisodeEmbedding(storage, episode.id, embedding))
-      .catch(() => logger?.warn("Failed to embed episode", { episodeId: episode.id })),
+    storeEpisodeEmbeddingForAction(storage, llm, episode.id, text, logger),
     // Extract beliefs from text
     extractBeliefs(llm, text),
   ]);
   logger?.debug("Extracted beliefs", { input: text, fact: extracted.fact, factType: extracted.factType, insight: extracted.insight });
+  const result = await storeStructuredBeliefs(
+    storage,
+    llm,
+    {
+      statement: extracted.fact,
+      factType: extracted.factType,
+      importance: extracted.importance,
+      subject: extracted.subject,
+      insight: extracted.insight,
+      episodeAction: text,
+    },
+    episode.id,
+    logger,
+    options,
+  );
 
-  const beliefIds: string[] = [];
-  let isReinforcement = false;
-
-  const factResult = await processNewBelief(storage, llm, extracted.fact, extracted.factType, episode.id, logger, extracted.importance, extracted.subject, {
-    origin: options?.origin ?? "user-said",
-    provenance: options?.provenance,
-    freshnessAt: options?.freshnessAt,
-    sensitive: options?.sensitive,
-  });
-  beliefIds.push(factResult.beliefId);
-  if (factResult.isReinforcement) isReinforcement = true;
-
-  if (extracted.insight && extracted.insight.trim()) {
-    const insightResult = await processNewBelief(
-      storage,
-      llm,
-      extracted.insight.trim(),
-      "insight",
-      episode.id,
-      logger,
-      Math.max(1, Math.min(10, extracted.importance - 1)),
-      extracted.subject,
-      {
-        origin: "synthesized",
-        provenance: options?.provenance,
-        freshnessAt: options?.freshnessAt,
-        sensitive: options?.sensitive,
-      },
-    );
-    beliefIds.push(insightResult.beliefId);
-    if (insightResult.isReinforcement) isReinforcement = true;
-  }
-
-  return { episodeId: episode.id, beliefIds, isReinforcement };
+  return { episodeId: episode.id, ...result };
 }

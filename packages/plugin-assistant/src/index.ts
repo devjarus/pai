@@ -1,7 +1,72 @@
 import type { AgentPlugin, PluginContext, Command, AgentContext } from "@personal-ai/core";
-import { remember, learnFromContent, hasSource } from "@personal-ai/core";
+import { remember, rememberStructured, learnFromContent, hasSource } from "@personal-ai/core";
 import { createAgentTools } from "./tools.js";
 import { fetchPageAsMarkdown } from "./page-fetch.js";
+
+const VALID_AUTO_MEMORY_FACT_TYPES = new Set(["factual", "preference", "procedural", "architectural"]);
+
+type AutoMemoryFact = {
+  statement: string;
+  factType: string;
+  importance: number;
+  subject: string;
+};
+
+function normalizeAutoMemoryFactType(factType: unknown): string {
+  return typeof factType === "string" && VALID_AUTO_MEMORY_FACT_TYPES.has(factType) ? factType : "factual";
+}
+
+function normalizeAutoMemoryImportance(importance: unknown): number {
+  return typeof importance === "number" && importance >= 1 && importance <= 10
+    ? Math.round(importance)
+    : 5;
+}
+
+function parseStructuredAutoMemoryFacts(text: string): AutoMemoryFact[] | null {
+  const trimmed = text.trim();
+  if (!trimmed || /^NONE\b/i.test(trimmed) || trimmed === "[]") return [];
+
+  let jsonText = trimmed;
+  const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch?.[1]) {
+    jsonText = fenceMatch[1].trim();
+  } else {
+    const bracketMatch = jsonText.match(/\[[\s\S]*\]/);
+    if (!bracketMatch) return null;
+    jsonText = bracketMatch[0];
+  }
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const row = item as Record<string, unknown>;
+        const statement = typeof row.statement === "string" ? row.statement.trim() : "";
+        const subject = typeof row.subject === "string" ? row.subject.trim().toLowerCase() : "";
+        if (statement.length <= 5 || !subject) return null;
+        return {
+          statement,
+          factType: normalizeAutoMemoryFactType(row.factType),
+          importance: normalizeAutoMemoryImportance(row.importance),
+          subject,
+        };
+      })
+      .filter((item): item is AutoMemoryFact => item !== null);
+  } catch {
+    return null;
+  }
+}
+
+function parseLegacyAutoMemoryFacts(text: string): string[] {
+  const trimmed = text.trim();
+  if (!trimmed || /^NONE\b/i.test(trimmed)) return [];
+  return trimmed
+    .split("\n")
+    .map((line) => line.replace(/^[-•*\d.)\s]+/, "").trim())
+    .filter((line) => line.length > 5);
+}
 
 const SYSTEM_PROMPT = `You are a personal AI assistant with persistent memory, Programs, web search, and task management.
 You belong to one owner, but other people (family, friends) may also talk to you.
@@ -223,10 +288,14 @@ Rules:
 - Do NOT extract generic wisdom, philosophical observations, or observations about how systems work in general
 - Do NOT extract facts about abstract concepts, technology in general, or how AI/memory/software works
 - ONLY extract facts ABOUT specific people — their preferences, experiences, relationships, decisions
-- Return ONLY the extracted facts, one per line, each starting with the person's name
-- If there is nothing worth remembering, return exactly "NONE"
+- Return ONLY JSON: an array of objects with keys "statement", "factType", "importance", and "subject"
+- "factType" must be one of: factual, preference, procedural, architectural
+- "importance" must be an integer from 1 to 10
+- "subject" must be "owner" or the specific person's name in lowercase
+- If there is nothing worth remembering, return exactly []
 
-Extracted facts:`;
+Example:
+[{"statement":"alex prefers Vitest over Jest","factType":"preference","importance":7,"subject":"alex"}]`;
 
       try {
         const result = await ctx.llm.chat([
@@ -241,27 +310,33 @@ Extracted facts:`;
         });
 
         const text = result.text.trim();
-        if (!text || text === "NONE" || text.startsWith("NONE")) return;
+        const structuredFacts = parseStructuredAutoMemoryFacts(text);
+        if (structuredFacts !== null) {
+          for (const fact of structuredFacts.slice(0, 3)) {
+            const isStructured = fact.statement.includes(" ") && fact.statement.split(/\s+/).length >= 3;
+            const isGeneric = /^(names|people|communication|life|time|knowledge|memory|information|confidence|beliefs?|systems?|data)\b/i.test(fact.statement);
+            const isAboutGeneral = /\b(in general|generally speaking|as a rule|typically)\b/i.test(fact.statement);
+            if (!isStructured || isGeneric || isAboutGeneral) continue;
 
-        // Store each extracted fact — LLM already attributes to the correct person
-        const facts = text.split("\n").filter((line) => line.trim().length > 5);
-        for (const fact of facts.slice(0, 3)) { // Max 3 facts per message
-          const cleaned = fact.replace(/^[-•*\d.)\s]+/, "").trim();
-          if (cleaned.length <= 5) continue;
+            const validated = await validateFactAgainstResponse(ctx, fact.statement, response);
+            if (!validated) continue;
 
-          // Validation gate: require subject attribution (a person/entity name) and minimum structure
-          // Skip generic insights, fortune-cookie wisdom, and unattributed fragments
-          const hasSubject = /^[A-Z][a-z]/.test(cleaned) || /\b(user|owner)\b/i.test(cleaned);
-          const isStructured = cleaned.includes(" ") && cleaned.split(" ").length >= 3;
-          const isGeneric = /^(names|people|communication|life|time|knowledge|memory|information|confidence|beliefs?|systems?|data)\b/i.test(cleaned);
-          const isAboutGeneral = /\b(in general|generally speaking|as a rule|typically)\b/i.test(cleaned);
+            await rememberStructured(ctx.storage, ctx.llm, fact, ctx.logger);
+          }
+          return;
+        }
+
+        for (const fact of parseLegacyAutoMemoryFacts(text).slice(0, 3)) {
+          const hasSubject = /^[A-Z][a-z]/.test(fact) || /\b(user|owner)\b/i.test(fact);
+          const isStructured = fact.includes(" ") && fact.split(/\s+/).length >= 3;
+          const isGeneric = /^(names|people|communication|life|time|knowledge|memory|information|confidence|beliefs?|systems?|data)\b/i.test(fact);
+          const isAboutGeneral = /\b(in general|generally speaking|as a rule|typically)\b/i.test(fact);
           if (!hasSubject || !isStructured || isGeneric || isAboutGeneral) continue;
 
-          // Validate against assistant response: only store if assistant confirmed the fact
-          const validated = await validateFactAgainstResponse(ctx, cleaned, response);
+          const validated = await validateFactAgainstResponse(ctx, fact, response);
           if (!validated) continue;
 
-          await remember(ctx.storage, ctx.llm, cleaned, ctx.logger);
+          await remember(ctx.storage, ctx.llm, fact, ctx.logger);
         }
       } catch {
         // Extraction failed — non-critical, skip silently
