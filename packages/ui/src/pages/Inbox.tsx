@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import MarkdownContent from "@/components/MarkdownContent";
+import BriefProvenancePanel from "../components/BriefProvenancePanel";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
 import { parseApiDate } from "@/lib/datetime";
 import { findMatchingProgram } from "@/lib/program-dedupe";
@@ -46,6 +47,14 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "pai-inbox-read";
+
+const ORIGIN_BADGE: Record<string, { icon: string; label: string }> = {
+  "user-said": { icon: "\uD83D\uDC64", label: "you said" },
+  document: { icon: "\uD83D\uDCC4", label: "document" },
+  web: { icon: "\uD83C\uDF10", label: "web" },
+  inferred: { icon: "\uD83D\uDD2E", label: "inferred" },
+  synthesized: { icon: "\uD83E\uDDE0", label: "synthesized" },
+};
 
 
 function saveBlob(content: string, type: string, filename: string): void {
@@ -841,6 +850,14 @@ function DailyBriefingV2Detail({
         )}
       </div>
 
+      <BriefProvenancePanel
+        briefId={briefId}
+        onScrollToBelief={(beliefId) => {
+          const el = document.querySelector(`[data-belief-id="${beliefId}"]`);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }}
+      />
+
       {(sections.what_changed?.length ?? 0) > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -930,7 +947,7 @@ function DailyBriefingV2Detail({
             {beliefSources.map((belief) => {
               const corrected = correctedBeliefIds.has(belief.id);
               return (
-                <div key={belief.id} className="rounded-md border border-border/20 bg-card/40 p-4">
+                <div key={belief.id} data-belief-id={belief.id} className="rounded-md border border-border/20 bg-card/40 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-foreground">{belief.statement}</span>
                     <Badge variant="outline" className="text-[10px]">
@@ -947,6 +964,11 @@ function DailyBriefingV2Detail({
                     {corrected && (
                       <Badge variant="outline" className="text-[10px] border-emerald-500/20 bg-emerald-500/10 text-emerald-300">
                         corrected
+                      </Badge>
+                    )}
+                    {belief.origin && ORIGIN_BADGE[belief.origin] && (
+                      <Badge variant="outline" className="text-[10px] border-sky-500/20 bg-sky-500/10 text-sky-300">
+                        {ORIGIN_BADGE[belief.origin].icon} {ORIGIN_BADGE[belief.origin].label}
                       </Badge>
                     )}
                   </div>
