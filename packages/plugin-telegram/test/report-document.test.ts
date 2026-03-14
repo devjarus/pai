@@ -67,6 +67,27 @@ describe("report document delivery", () => {
     expect(mockGetArtifact).toHaveBeenCalledWith(storage, "art-1");
   });
 
+  it("produces a valid PDF when title and body contain emojis", async () => {
+    const logger = createLogger();
+    const storage = {} as Storage;
+
+    const document = await buildTelegramReportDocument(
+      storage,
+      {
+        title: "📊 Live Prices",
+        markdown:
+          "## 📈 Market Summary\n\nBitcoin (BTC)\n\nCurrent Range: $72,500 – $73,500\n\n" +
+          "## 🔑 Key Market Drivers\n\n- Regulatory clarity improves\n- ETF inflows continue",
+      },
+      logger,
+    );
+
+    expect(document.data.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+    // PDF should be non-trivial — prior bug caused blank pages when emojis
+    // crashed PDFKit mid-render (content truncation)
+    expect(document.data.length).toBeGreaterThan(1500);
+  });
+
   it("sends report documents to Telegram as protected PDF attachments", async () => {
     const logger = createLogger();
     const bot = createBot();
