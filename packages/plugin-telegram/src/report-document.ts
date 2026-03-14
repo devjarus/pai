@@ -37,14 +37,38 @@ function resolvePdfFileName(title: string, requestedFileName?: string): string {
   return `${slugifyFileStem(stem || title)}.pdf`;
 }
 
+/**
+ * Strip emoji and other non-Latin Unicode symbols that PDFKit's built-in
+ * Helvetica font cannot encode.  Without this, emojis render as mojibake
+ * (e.g. "Ø=ÜÊ") or cause PDFKit to silently stop rendering mid-page.
+ *
+ * We remove:
+ *  - Common emoji blocks (Emoticons, Dingbats, Symbols, Transport, etc.)
+ *  - Variation selectors & zero-width joiners used in emoji sequences
+ *  - Skin-tone modifiers
+ *
+ * We keep standard Latin, punctuation, CJK, Cyrillic, etc. — only
+ * pictographic symbols that Helvetica cannot represent are stripped.
+ */
+function stripEmoji(text: string): string {
+  return text
+    .replace(
+      /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{1F1E0}-\u{1F1FF}\u{1F018}-\u{1F0FF}\u{231A}-\u{23FF}\u{2934}-\u{2935}\u{25AA}-\u{25FE}\u{2B05}-\u{2B55}\u{3030}\u{303D}\u{3297}\u{3299}\u{1F170}-\u{1F19A}\u{E0061}-\u{E007A}]+/gu,
+      "",
+    )
+    .replace(/\s{2,}/g, " ");
+}
+
 function normalizePdfText(markdown: string): string {
   const formatted = formatTelegramResponse(markdown);
   const html = markdownToReportHTML(formatted);
-  return stripHtmlTags(html)
-    .replace(/\u00a0/g, " ")
-    .replace(/\r\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return stripEmoji(
+    stripHtmlTags(html)
+      .replace(/\u00a0/g, " ")
+      .replace(/\r\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+  );
 }
 
 function ensureSpace(doc: PDFKit.PDFDocument, minHeight = 72): void {
@@ -174,8 +198,9 @@ async function renderPdfBuffer(
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
+    const safeTitle = stripEmoji(options.title.trim()) || "Report";
     doc.fillColor("#0f172a");
-    doc.font("Helvetica-Bold").fontSize(22).text(options.title.trim() || "Report", {
+    doc.font("Helvetica-Bold").fontSize(22).text(safeTitle, {
       width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
     });
     doc.moveDown(0.3);
