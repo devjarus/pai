@@ -7,6 +7,8 @@ import { createOllama } from "ai-sdk-ollama";
 import type { LLMClient, ChatMessage, ChatOptions, ChatResult, StreamEvent, Config, Logger, Storage, EmbedOptions } from "./types.js";
 import { createLogger } from "./logger.js";
 import { instrumentedEmbed, instrumentedGenerateText, instrumentedStreamText } from "./telemetry.js";
+import { trimMessagesForBudget } from "./provider-options.js";
+import { getContextBudget } from "./context-budget.js";
 
 /** Map raw provider/API errors to human-readable messages. */
 function humanizeError(provider: string, err: unknown): string {
@@ -43,6 +45,21 @@ function humanizeError(provider: string, err: unknown): string {
   // Quota / billing
   if (lower.includes("quota") || lower.includes("billing") || lower.includes("insufficient") || lower.includes("402")) {
     return `${provider} quota or billing issue. Please check your account.`;
+  }
+
+  // Context length exceeded
+  if (lower.includes("context_length_exceeded") || lower.includes("context length") ||
+      lower.includes("max_tokens") || lower.includes("maximum context") ||
+      lower.includes("too many tokens") || lower.includes("token limit") ||
+      lower.includes("prompt is too long") || lower.includes("request too large") ||
+      lower.includes("input too long")) {
+    return `Message too long for ${provider}'s context window. Try shortening your conversation or reducing attached content.`;
+  }
+
+  // Content filter / safety
+  if (lower.includes("content filter") || lower.includes("content_filter") ||
+      lower.includes("safety") || lower.includes("blocked")) {
+    return `${provider} content filter triggered. Please rephrase your message.`;
   }
 
   // Fallback: return original message with provider context
@@ -136,6 +153,7 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
   const embedProviderSetting = llmConfig.embedProvider ?? "auto";
 
   const llmModel = createProviderModel(provider, model, baseUrl, apiKey);
+  const contextBudget = getContextBudget(provider, model, llmConfig.contextWindow);
 
   // Determine which provider to use for embeddings
   const effectiveEmbedProvider = embedProviderSetting === "auto" ? provider : embedProviderSetting;
@@ -155,12 +173,16 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
 
   async function chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult> {
     log.debug("LLM chat request", { model, messageCount: messages.length });
+    const trimmed = trimMessagesForBudget(messages, provider, contextBudget.contextWindow);
+    if (trimmed.length < messages.length) {
+      log.info("Trimmed messages for context budget", { original: messages.length, kept: trimmed.length, provider });
+    }
     try {
       const { result: aiResult } = await instrumentedGenerateText(
         { storage, logger: log },
         {
           model: llmModel,
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          messages: trimmed.map((m) => ({ role: m.role, content: m.content })),
           temperature: options?.temperature ?? 0.7,
           maxOutputTokens: options?.maxTokens,
         },
@@ -170,7 +192,7 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
           ...options?.telemetry,
           provider,
           model,
-          requestSizeChars: messages.reduce((sum, message) => sum + message.content.length, 0),
+          requestSizeChars: trimmed.reduce((sum, message) => sum + message.content.length, 0),
         },
       );
 
@@ -195,6 +217,10 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
 
   async function* streamChat(messages: ChatMessage[], options?: ChatOptions): AsyncGenerator<StreamEvent> {
     log.debug("LLM streamChat request", { model, messageCount: messages.length, hasTools: !!options?.tools });
+    const trimmed = trimMessagesForBudget(messages, provider, contextBudget.contextWindow);
+    if (trimmed.length < messages.length) {
+      log.info("Trimmed messages for context budget", { original: messages.length, kept: trimmed.length, provider });
+    }
 
     let result: ReturnType<typeof streamText>;
     try {
@@ -202,7 +228,7 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
         { storage, logger: log },
         {
           model: llmModel,
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          messages: trimmed.map((m) => ({ role: m.role, content: m.content })),
           temperature: options?.temperature ?? 0.7,
           maxOutputTokens: options?.maxTokens,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -216,7 +242,7 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
           ...options?.telemetry,
           provider,
           model,
-          requestSizeChars: messages.reduce((sum, message) => sum + message.content.length, 0),
+          requestSizeChars: trimmed.reduce((sum, message) => sum + message.content.length, 0),
         },
       ));
     } catch (err) {

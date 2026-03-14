@@ -124,7 +124,7 @@ export type { BrowserNavigateOptions, BrowserNavigateResult, BrowserActionOption
 // Context budget
 export { getContextBudget, estimateTokens, _resetBudgetCache } from "./context-budget.js";
 export type { ContextBudget } from "./context-budget.js";
-export { getProviderOptions } from "./provider-options.js";
+export { getProviderOptions, hasNativeContextManagement, trimMessagesForBudget } from "./provider-options.js";
 
 // Artifacts
 export { artifactMigrations, storeArtifact, getArtifact, listArtifacts, deleteJobArtifacts, cleanupOldArtifacts, guessMimeType } from "./artifacts.js";
