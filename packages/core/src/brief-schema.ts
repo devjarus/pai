@@ -67,6 +67,16 @@ interface BuildReportBriefSectionInput {
   actionSummary?: ReportBriefActionSummaryInput | null;
 }
 
+/**
+ * Strip LLM enrichment instructions that buildEnrichedResearchGoal appends.
+ * These are internal prompts that should never appear in user-facing briefs.
+ */
+export function stripEnrichmentFromGoal(goal: string): string {
+  const marker = "\n\nIMPORTANT — PREVIOUS FINDINGS";
+  const idx = goal.indexOf(marker);
+  return idx === -1 ? goal : goal.slice(0, idx).trim();
+}
+
 function firstMeaningfulLine(report: string): string | null {
   return report
     .split("\n")
@@ -102,10 +112,13 @@ function structuredRecommendation(parsed: Record<string, unknown> | null): strin
 }
 
 export function buildReportBriefSection(input: BuildReportBriefSectionInput): StandardBriefSection {
+  // Strip any LLM enrichment instructions from the goal so they don't
+  // leak into user-visible brief fields (Telegram, PDF, etc.).
+  const cleanGoal = stripEnrichmentFromGoal(input.goal);
   const structured = parseStructuredResult(input.structuredResult);
   const recommendationSummary = structuredRecommendation(structured)
     ?? firstMeaningfulLine(input.report)
-    ?? `Review the latest ${input.execution === "analysis" ? "analysis" : "research"} for ${input.goal}.`;
+    ?? `Review the latest ${input.execution === "analysis" ? "analysis" : "research"} for ${cleanGoal}.`;
   const actionSummary = input.actionSummary;
   const staleFollowThrough = actionSummary && actionSummary.staleOpenCount > 0;
 
@@ -159,18 +172,18 @@ export function buildReportBriefSection(input: BuildReportBriefSectionInput): St
   }
 
   return {
-    title: input.program?.title ?? input.goal,
+    title: input.program?.title ?? cleanGoal,
     recommendation: {
       summary: staleFollowThrough
-        ? `Resolve the stale linked action before changing the recommendation for ${input.program?.title ?? input.goal}.`
+        ? `Resolve the stale linked action before changing the recommendation for ${input.program?.title ?? cleanGoal}.`
         : recommendationSummary,
       confidence: staleFollowThrough ? "high" : structuredRecommendation(structured) ? "high" : "medium",
       rationale: staleFollowThrough
         ? `${actionSummary!.staleOpenCount} linked action${actionSummary!.staleOpenCount === 1 ? "" : "s"} are stale, so follow-through should be closed before broadening the watch.`
-        : `This brief summarizes the latest ${input.execution === "analysis" ? "analysis" : "research"} run for ${input.goal}${input.program?.objective ? ` against the objective "${input.program.objective}".` : "."}`,
+        : `This brief summarizes the latest ${input.execution === "analysis" ? "analysis" : "research"} run for ${cleanGoal}${input.program?.objective ? ` against the objective "${input.program.objective}".` : "."}`,
     },
     what_changed: [
-      `A new ${input.execution === "analysis" ? "analysis" : "research"} run completed for ${input.goal}.`,
+      `A new ${input.execution === "analysis" ? "analysis" : "research"} run completed for ${cleanGoal}.`,
       ...(actionSummary && actionSummary.openCount > 0
         ? [`${actionSummary.openCount} linked action${actionSummary.openCount === 1 ? "" : "s"} remain open for this Program.`]
         : []),
@@ -191,7 +204,7 @@ export function buildReportBriefSection(input: BuildReportBriefSectionInput): St
     correction_hook: {
       prompt: "If this recommendation or one of its assumptions is wrong, correct it so the next brief improves.",
     },
-    goal: input.goal,
+    goal: cleanGoal,
     report: input.report,
     execution: input.execution,
     resultType: input.resultType ?? "general",
@@ -199,7 +212,7 @@ export function buildReportBriefSection(input: BuildReportBriefSectionInput): St
     renderSpec: input.renderSpec ?? undefined,
     visuals: input.visuals ?? [],
     appendix: {
-      goal: input.goal,
+      goal: cleanGoal,
       report: input.report,
       execution: input.execution,
       resultType: input.resultType ?? "general",
