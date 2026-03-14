@@ -159,7 +159,7 @@ export async function learnFromContent(
   url: string,
   title: string,
   markdown: string,
-  options?: { force?: boolean; tags?: string },
+  options?: { force?: boolean; tags?: string; maxAgeDays?: number },
 ): Promise<{ source: KnowledgeSource; chunksStored: number; skipped: boolean }> {
   const normalizedUrl = normalizeUrl(url);
 
@@ -183,8 +183,8 @@ export async function learnFromContent(
 
   // Store source
   storage.run(
-    "INSERT INTO knowledge_sources (id, url, title, fetched_at, chunk_count, tags) VALUES (?, ?, ?, ?, ?, ?)",
-    [sourceId, normalizedUrl, title, now, contextualChunks.length, options?.tags ?? null],
+    "INSERT INTO knowledge_sources (id, url, title, fetched_at, chunk_count, tags, max_age_days) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [sourceId, normalizedUrl, title, now, contextualChunks.length, options?.tags ?? null, options?.maxAgeDays ?? null],
   );
 
   // Embed and store chunks

@@ -1512,7 +1512,10 @@ export async function runResearchInBackground(
     try {
       const reportUrl = `/inbox/${briefingId}`;
       const reportTitle = `Research Report: ${job.goal.slice(0, 100)}`;
-      await learnFromContent(ctx.storage, ctx.llm, reportUrl, reportTitle, presentation.report);
+      await learnFromContent(ctx.storage, ctx.llm, reportUrl, reportTitle, presentation.report, {
+        force: true,
+        maxAgeDays: 7,
+      });
       ctx.logger.info(`Stored research report in knowledge base`, { jobId, goal: job.goal });
     } catch (err) {
       ctx.logger.warn(`Failed to store research report in knowledge: ${err instanceof Error ? err.message : String(err)}`);

@@ -24,6 +24,58 @@ const DEFAULT_ARTIFACT_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ARTIFACT_MAX_AGE_DAYS = 7;
 
+/**
+ * Build a research goal that includes context from the previous brief
+ * so the LLM focuses on what's NEW instead of repeating old findings.
+ */
+export function buildEnrichedResearchGoal(
+  storage: { query: <T>(sql: string, params?: unknown[]) => T[] },
+  schedule: { goal: string; latestBriefId?: string | null; lastDeliveredAt?: string | null },
+): string {
+  if (!schedule.latestBriefId) return schedule.goal;
+
+  let previousSummary = "";
+  try {
+    const rows = storage.query<{ sections: string }>(
+      "SELECT sections FROM briefings WHERE id = ? LIMIT 1",
+      [schedule.latestBriefId],
+    );
+    if (rows[0]) {
+      const sections = JSON.parse(rows[0].sections);
+      const rec = sections.recommendation;
+      if (rec?.summary) {
+        previousSummary = rec.summary;
+      }
+      if (Array.isArray(sections.what_changed) && sections.what_changed.length > 0) {
+        const changes = sections.what_changed
+          .map((c: { title?: string }) => c.title ?? c)
+          .filter(Boolean)
+          .slice(0, 3);
+        if (changes.length > 0) {
+          previousSummary += ` Key changes noted: ${changes.join("; ")}.`;
+        }
+      }
+    }
+  } catch {
+    // Failed to parse previous brief — fall back to plain goal
+  }
+
+  if (!previousSummary) return schedule.goal;
+
+  const sinceDate = schedule.lastDeliveredAt
+    ? new Date(schedule.lastDeliveredAt).toISOString().split("T")[0]
+    : null;
+  const sinceClause = sinceDate ? ` since ${sinceDate}` : "";
+
+  return (
+    `${schedule.goal}\n\n` +
+    `IMPORTANT — PREVIOUS FINDINGS (do NOT repeat these):\n` +
+    `${previousSummary}\n\n` +
+    `Focus ONLY on what is NEW or CHANGED${sinceClause}. ` +
+    `If nothing meaningful changed, say so in one sentence instead of restating old findings.`
+  );
+}
+
 export class WorkerLoop {
   private briefingTimer: ReturnType<typeof setInterval> | null = null;
   private scheduleCheckTimer: ReturnType<typeof setInterval> | null = null;
@@ -193,8 +245,13 @@ export class WorkerLoop {
         markScheduleRun(this.ctx.storage, schedule.id);
 
         if (schedule.type === "research") {
-          await this.ctx.backgroundJobs?.enqueueResearch?.({
+          const enrichedGoal = buildEnrichedResearchGoal(this.ctx.storage, {
             goal: schedule.goal,
+            latestBriefId: schedule.runtimeState?.latestBriefId,
+            lastDeliveredAt: schedule.runtimeState?.lastDeliveredAt,
+          });
+          await this.ctx.backgroundJobs?.enqueueResearch?.({
+            goal: enrichedGoal,
             threadId: schedule.threadId,
             sourceKind: "schedule",
             sourceScheduleId: schedule.id,

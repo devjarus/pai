@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { WorkerLoop } from "../src/workers.js";
+import { WorkerLoop, buildEnrichedResearchGoal } from "../src/workers.js";
 import type { PluginContext } from "@personal-ai/core";
 
 // ---------------------------------------------------------------------------
@@ -270,7 +270,7 @@ describe("WorkerLoop", () => {
   it("creates research jobs for due schedules", () => {
     const ctx = createMockCtx();
     mockGetDueSchedules.mockReturnValue([
-      { id: "s1", label: "Daily research", type: "research", goal: "Check news", threadId: "t1" },
+      { id: "s1", label: "Daily research", type: "research", goal: "Check news", threadId: "t1", runtimeState: {} },
     ]);
 
     const loop = new WorkerLoop(ctx, {
@@ -315,5 +315,90 @@ describe("WorkerLoop", () => {
     });
 
     loop.stop();
+  });
+});
+
+describe("buildEnrichedResearchGoal", () => {
+  it("returns plain goal when no previous brief exists", () => {
+    const mockStorage = { query: vi.fn().mockReturnValue([]) };
+    const result = buildEnrichedResearchGoal(mockStorage, {
+      goal: "What's happening in crypto?",
+      latestBriefId: null,
+    });
+    expect(result).toBe("What's happening in crypto?");
+    expect(mockStorage.query).not.toHaveBeenCalled();
+  });
+
+  it("returns plain goal when latestBriefId is undefined", () => {
+    const mockStorage = { query: vi.fn().mockReturnValue([]) };
+    const result = buildEnrichedResearchGoal(mockStorage, {
+      goal: "Check news",
+    });
+    expect(result).toBe("Check news");
+  });
+
+  it("appends previous summary and date when brief exists", () => {
+    const sections = {
+      recommendation: { summary: "BTC at $73,800, market cautious" },
+      what_changed: [{ title: "ETF inflows declining" }, { title: "Fear index at 18" }],
+    };
+    const mockStorage = {
+      query: vi.fn().mockReturnValue([{ sections: JSON.stringify(sections) }]),
+    };
+
+    const result = buildEnrichedResearchGoal(mockStorage, {
+      goal: "What's happening in crypto?",
+      latestBriefId: "brief-123",
+      lastDeliveredAt: "2026-03-12T10:00:00.000Z",
+    });
+
+    expect(result).toContain("What's happening in crypto?");
+    expect(result).toContain("PREVIOUS FINDINGS");
+    expect(result).toContain("BTC at $73,800");
+    expect(result).toContain("ETF inflows declining");
+    expect(result).toContain("since 2026-03-12");
+    expect(result).toContain("NEW or CHANGED");
+  });
+
+  it("returns plain goal when brief sections cannot be parsed", () => {
+    const mockStorage = {
+      query: vi.fn().mockReturnValue([{ sections: "not valid json" }]),
+    };
+
+    const result = buildEnrichedResearchGoal(mockStorage, {
+      goal: "Check news",
+      latestBriefId: "brief-bad",
+    });
+    expect(result).toBe("Check news");
+  });
+
+  it("returns plain goal when brief has no recommendation summary", () => {
+    const mockStorage = {
+      query: vi.fn().mockReturnValue([{ sections: JSON.stringify({ recommendation: {} }) }]),
+    };
+
+    const result = buildEnrichedResearchGoal(mockStorage, {
+      goal: "Check news",
+      latestBriefId: "brief-empty",
+    });
+    expect(result).toBe("Check news");
+  });
+
+  it("omits since clause when lastDeliveredAt is not set", () => {
+    const sections = {
+      recommendation: { summary: "Market stable" },
+    };
+    const mockStorage = {
+      query: vi.fn().mockReturnValue([{ sections: JSON.stringify(sections) }]),
+    };
+
+    const result = buildEnrichedResearchGoal(mockStorage, {
+      goal: "Check news",
+      latestBriefId: "brief-no-date",
+    });
+
+    expect(result).toContain("PREVIOUS FINDINGS");
+    expect(result).toContain("Market stable");
+    expect(result).not.toContain("since");
   });
 });

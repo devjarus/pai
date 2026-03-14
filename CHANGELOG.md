@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Research builds on previous findings** — Scheduled Program research now injects the previous brief's recommendation summary and date into the research goal, so the LLM focuses on what's NEW instead of repeating old findings. Research report knowledge sources auto-expire after 7 days to prevent stale data accumulation.
 - **Structured memory write path** — Background learning and assistant auto-memory now preserve extracted `{statement, factType, importance, subject}` metadata and write through a dedicated `rememberStructured()` path instead of re-running memory extraction on the same fact.
 - **Watch dedupe clarity** — Repeated `Keep watching` attempts now reuse the existing Program for the same thread or equivalent recurring watch, the Programs API distinguishes created vs reused results, and Ask/Inbox surfaces stop implying a second watch was created when pai is already watching it.
 - **Saved move language refresh** — User-facing follow-through copy now uses `Recommended move`, `Save move`, and `Saved Moves` instead of `Commitment`, so the secondary `/tasks` surface reads as lighter recommendation carry-forward instead of a heavy promise or todo board.

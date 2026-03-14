@@ -104,6 +104,38 @@ describe("learnFromContent", () => {
 
     expect(result.skipped).toBe(true);
   });
+
+  it("persists maxAgeDays on knowledge source when provided", async () => {
+    const result = await learnFromContent(
+      storage, llm,
+      "https://example.com/report",
+      "Research Report",
+      "Some findings here.",
+      { maxAgeDays: 7 },
+    );
+    expect(result.skipped).toBe(false);
+
+    const row = storage.query<{ max_age_days: number | null }>(
+      "SELECT max_age_days FROM knowledge_sources WHERE id = ?",
+      [result.source.id],
+    );
+    expect(row[0]?.max_age_days).toBe(7);
+  });
+
+  it("leaves maxAgeDays null when not provided", async () => {
+    const result = await learnFromContent(
+      storage, llm,
+      "https://example.com/regular",
+      "Regular Page",
+      "Content.",
+    );
+
+    const row = storage.query<{ max_age_days: number | null }>(
+      "SELECT max_age_days FROM knowledge_sources WHERE id = ?",
+      [result.source.id],
+    );
+    expect(row[0]?.max_age_days).toBeNull();
+  });
 });
 
 describe("knowledgeSearch", () => {
