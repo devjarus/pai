@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { buildBriefSignalHash, buildReportBriefSection } from "../src/brief-schema.js";
+import { buildBriefSignalHash, buildReportBriefSection, stripEnrichmentFromGoal } from "../src/brief-schema.js";
+
+describe("stripEnrichmentFromGoal", () => {
+  it("returns the original goal when no enrichment is present", () => {
+    expect(stripEnrichmentFromGoal("Track H4 visa appointments")).toBe("Track H4 visa appointments");
+  });
+
+  it("strips LLM enrichment instructions appended by buildEnrichedResearchGoal", () => {
+    const enriched =
+      "Track H4 visa appointments\n\n" +
+      "IMPORTANT — PREVIOUS FINDINGS (do NOT repeat these):\n" +
+      "No new slots available.\n\n" +
+      "Focus ONLY on what is NEW or CHANGED since 2026-03-14. " +
+      "If nothing meaningful changed, say so in one sentence instead of restating old findings.";
+    expect(stripEnrichmentFromGoal(enriched)).toBe("Track H4 visa appointments");
+  });
+});
 
 describe("brief-schema", () => {
   it("prefers a structured recommendation and carries program context into the brief", () => {
@@ -133,6 +149,28 @@ describe("brief-schema", () => {
       timing: "Now",
       detail: "Resolve the overdue linked action before changing the watch scope or recommendation.",
     }]);
+  });
+
+  it("strips enrichment instructions from goal so they do not leak into briefs", () => {
+    const enrichedGoal =
+      "Track H4 visa appointments\n\n" +
+      "IMPORTANT — PREVIOUS FINDINGS (do NOT repeat these):\n" +
+      "No new slots available.\n\n" +
+      "Focus ONLY on what is NEW or CHANGED since 2026-03-14. " +
+      "If nothing meaningful changed, say so in one sentence instead of restating old findings.";
+
+    const section = buildReportBriefSection({
+      goal: enrichedGoal,
+      execution: "research",
+      report: "No meaningful changes have been reported.",
+    });
+
+    // None of the user-facing fields should contain the enrichment text
+    expect(section.title).toBe("Track H4 visa appointments");
+    expect(section.goal).toBe("Track H4 visa appointments");
+    expect(section.appendix?.goal).toBe("Track H4 visa appointments");
+    expect(section.recommendation.rationale).not.toContain("PREVIOUS FINDINGS");
+    expect(section.what_changed[0]).not.toContain("PREVIOUS FINDINGS");
   });
 
   it("builds stable signal hashes from normalized brief fields", () => {
