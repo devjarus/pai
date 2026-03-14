@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot } from "grammy";
 import type { Logger, Storage } from "@personal-ai/core";
 
-import { buildTelegramReportDocument, sendReportDocumentToTelegram } from "../src/report-document.js";
+import { buildTelegramReportDocument, sendReportDocumentToTelegram, _buildReportHtml } from "../src/report-document.js";
 
 const mockGetArtifact = vi.fn();
 
@@ -36,7 +36,108 @@ function createBot(): Bot {
   } as unknown as Bot;
 }
 
-describe("report document delivery", () => {
+describe("report HTML generation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("generates HTML with report header and markdown body", () => {
+    const logger = createLogger();
+    const storage = {} as Storage;
+
+    const html = _buildReportHtml(storage, {
+      title: "AI Revenue Trends",
+      markdown: "# Summary\n\nRevenue is **up**.",
+    }, logger);
+
+    expect(html).toContain("AI Revenue Trends");
+    expect(html).toContain("Delivered privately by Personal AI");
+    expect(html).toContain("<strong>up</strong>");
+    expect(html).toContain("<h1");
+    expect(html).toContain("<!DOCTYPE html>");
+  });
+
+  it("renders json-render spec as rich HTML", () => {
+    const logger = createLogger();
+    const storage = {} as Storage;
+    const renderSpec = {
+      root: "root",
+      elements: {
+        root: {
+          type: "Section",
+          props: { title: "Key Metrics" },
+          children: ["card1"],
+        },
+        card1: {
+          type: "MetricCard",
+          props: { label: "Revenue", value: "$42M", trend: "up" },
+          children: [],
+        },
+      },
+    };
+
+    const html = _buildReportHtml(storage, {
+      title: "Report",
+      markdown: "Body text.",
+      renderSpec,
+    }, logger);
+
+    expect(html).toContain("Key Metrics");
+    expect(html).toContain("$42M");
+    expect(html).toContain("Revenue");
+    expect(html).toContain("spec-section");
+  });
+
+  it("embeds visuals as data URIs", () => {
+    const logger = createLogger();
+    const storage = {} as Storage;
+    mockGetArtifact.mockReturnValueOnce({
+      id: "art-1",
+      name: "trend.png",
+      mimeType: "image/png",
+      data: TINY_PNG,
+    });
+
+    const html = _buildReportHtml(storage, {
+      title: "Charts",
+      markdown: "See below.",
+      visuals: [{ artifactId: "art-1", title: "Trend Chart", caption: "Quarterly growth", order: 1 }],
+    }, logger);
+
+    expect(html).toContain("data:image/png;base64,");
+    expect(html).toContain("Quarterly growth");
+    expect(html).toContain("visual-card");
+  });
+
+  it("strips jsonrender blocks from markdown", () => {
+    const logger = createLogger();
+    const storage = {} as Storage;
+
+    const html = _buildReportHtml(storage, {
+      title: "Report",
+      markdown: "Intro\n\n```jsonrender\n{\"root\":\"x\"}\n```\n\nConclusion.",
+    }, logger);
+
+    expect(html).not.toContain("jsonrender");
+    expect(html).toContain("Intro");
+    expect(html).toContain("Conclusion");
+  });
+
+  it("handles emojis in title and markdown without crashing", () => {
+    const logger = createLogger();
+    const storage = {} as Storage;
+
+    const html = _buildReportHtml(storage, {
+      title: "📊 Live Prices",
+      markdown: "## 📈 Market\n\nBitcoin is up.\n\n## 🔑 Drivers\n\n- ETF inflows continue",
+    }, logger);
+
+    expect(html).toContain("📊 Live Prices");
+    expect(html).toContain("📈 Market");
+  });
+});
+
+describe("report document PDF delivery", { timeout: 30_000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -83,8 +184,6 @@ describe("report document delivery", () => {
     );
 
     expect(document.data.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
-    // PDF should be non-trivial — prior bug caused blank pages when emojis
-    // crashed PDFKit mid-render (content truncation)
     expect(document.data.length).toBeGreaterThan(1500);
   });
 
@@ -112,5 +211,34 @@ describe("report document delivery", () => {
         protect_content: true,
       },
     );
+  });
+
+  it("includes rich spec content in the generated PDF", async () => {
+    const logger = createLogger();
+    const storage = {} as Storage;
+
+    const renderSpec = {
+      root: "root",
+      elements: {
+        root: {
+          type: "MetricCard",
+          props: { label: "Price", value: "$100", trend: "up" },
+          children: [],
+        },
+      },
+    };
+
+    const document = await buildTelegramReportDocument(
+      storage,
+      {
+        title: "Rich Report",
+        markdown: "Analysis below.",
+        renderSpec,
+      },
+      logger,
+    );
+
+    expect(document.data.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+    expect(document.data.length).toBeGreaterThan(1500);
   });
 });
