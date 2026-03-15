@@ -1,144 +1,136 @@
 # AGENTS.md
 
-Instructions for any coding agent working on `pai` — a self-hosted personal AI that watches things for you, remembers what matters, and keeps you updated with personalized digests.
+The only file any coding agent needs to read before working on `pai`.
 
 ## Quick Start
 
 ```bash
-pnpm install          # install dependencies
-pnpm build            # build all packages
-pnpm test             # run all tests (1028+ tests, must all pass)
-pnpm lint             # lint check
-pnpm typecheck        # TypeScript strict check
-pnpm verify           # build + lint + typecheck + test (run before claiming done)
-
-pnpm dev:ui           # start UI dev server (Vite + React)
-pnpm start            # start API server at http://127.0.0.1:3141
-pnpm stop             # stop the server
-pnpm e2e              # Playwright end-to-end tests
+pnpm install && pnpm build    # setup
+pnpm verify                   # build + lint + typecheck + test (MUST pass before claiming done)
+pnpm dev:ui                   # UI dev server (Vite + React)
+pnpm start                    # API server at http://127.0.0.1:3141
+pnpm e2e                      # Playwright end-to-end tests
 ```
 
-## What This Product Is
+## What pai Is
 
-A self-hosted AI that keeps track of ongoing decisions and delivers digests to users with their preferences in mind.
+A self-hosted AI that keeps track of ongoing decisions and delivers personalized digests.
 
 **Core loop:** Ask → Watch creation → Digest → Correction or To-Do → Next digest improves.
 
-**The four domains:**
+**What pai is NOT:** a generic AI OS, a research workbench, a standalone task manager, or an autonomous action-taking agent. Breadth is frozen unless it strengthens the core loop.
 
-| Domain | What it does | Package | API |
-|--------|-------------|---------|-----|
-| **Library** | Unified knowledge — memories, documents, research findings | `packages/library` | `/api/library/*` |
-| **Watches** | Recurring monitoring with templates and depth levels | `packages/watches` | `/api/watches/*` |
-| **Digests** | Decision-ready outputs with ratings and corrections | `packages/server` (briefing) | `/api/digests/*` |
-| **Tasks** | To-dos that emerge from digests, linked to watches | `packages/plugin-tasks` | `/api/tasks/*` |
+## Four Domains
 
-Shared foundation in `packages/core`: LLM client, storage (SQLite), telemetry, auth, agent harness.
+| Domain | Package | API | What it owns |
+|--------|---------|-----|-------------|
+| **Library** | `packages/library` | `/api/library/*` | Memories, documents, research findings, unified search, ingestion pipelines |
+| **Watches** | `packages/watches` | `/api/watches/*` | Recurring monitoring, templates, depth levels, delta research |
+| **Digests** | `packages/server` (briefing) | `/api/digests/*` | Generation, ratings, corrections, suggestions, feedback loop |
+| **Tasks** | `packages/plugin-tasks` | `/api/tasks/*` | To-dos linked to watches and digests, goals |
 
-**Product nouns (user-facing → internal code):**
+**Shared foundation** in `packages/core`: LLM client, storage (SQLite), telemetry, auth, agent harness.
 
-| User sees | Code uses | Notes |
-|-----------|-----------|-------|
-| Memory | `Belief` | Durable knowledge with confidence + decay |
-| Document | `KnowledgeSource` | Ingested URLs and uploads |
-| Finding | `ResearchFinding` | Structured research output |
-| Watch | `ScheduledJob` / `Program` | Recurring monitoring |
-| Digest | `Briefing` | Generated output with recommendations |
-| To-Do | `Task` | Follow-through action |
-| Source | `Evidence` | External reference backing a claim |
-| Activity | `Job` | Background work (hidden by default) |
+Domains interact through TypeScript functions (same process), not HTTP.
+
+## Naming
+
+User-facing language differs from code. Use the left column in UI/CLI/messages, the right in code:
+
+| User sees | Code uses |
+|-----------|-----------|
+| Memory | `Belief` |
+| Document | `KnowledgeSource` |
+| Finding | `ResearchFinding` |
+| Watch | `ScheduledJob` / `Program` |
+| Digest | `Briefing` |
+| To-Do | `Task` |
+| Source | `Evidence` |
+| Activity | `Job` (hidden by default) |
 
 ## Rules
 
-1. **Run `pnpm verify` before claiming work is done.** All tests must pass, no type errors, no lint errors.
-2. **Don't break existing tests.** If you add a migration, update the count in `packages/server/test/migrations.test.ts`.
-3. **Update docs when you change behavior.** If you rename a concept, add an API, or change the core loop — update CHANGELOG.md and relevant docs in the same commit.
-4. **Stay in scope.** Don't refactor unrelated code. Don't add features that weren't asked for.
-5. **Keep changes small and reviewable.** One concern per commit. Commit often.
-6. **Use new product language in user-facing surfaces.** UI labels, CLI output, API responses, Telegram messages use Watch/Digest/Memory/To-Do. Internal code can keep Belief/Briefing/ScheduledJob.
+1. **`pnpm verify` must pass** before claiming done — no exceptions
+2. **Don't break existing tests.** If you add a migration, update the count in `packages/server/test/migrations.test.ts`
+3. **Update CHANGELOG.md** when you change user-facing behavior
+4. **Stay in scope.** Don't refactor unrelated code or add unrequested features
+5. **Use new product language** in user-facing surfaces (Watch/Digest/Memory/To-Do). Internal code keeps Belief/Briefing/ScheduledJob
+
+## Where New Work Goes
+
+**Before adding anything, ask:** Does this strengthen the Ask → Watch → Digest → Correction loop? If no, defer it.
+
+| Type of work | Where it goes |
+|-------------|--------------|
+| New data entity | `packages/library` (if knowledge/memory related) or relevant domain package |
+| New API endpoint | `packages/server/src/routes/` — create a new route file, register in `index.ts` |
+| New UI page | `packages/ui/src/pages/` — wire in `App.tsx`, add to `Layout.tsx` nav if needed |
+| New hook | `packages/ui/src/hooks/use-*.ts` — export from `hooks/index.ts` |
+| New background job | `packages/server/src/workers.ts` (scheduling) + `background-dispatcher.ts` (execution) |
+| Research improvement | `packages/plugin-research/` — wrap with agent harness |
+| New delivery surface | Follow `packages/plugin-telegram/` as the pattern |
+| Memory/belief change | `packages/core/src/memory/` — read MEMORY-LIFECYCLE.md first |
 
 ## Codebase Patterns
 
-These patterns are validated by the codebase. Follow them to avoid common mistakes.
+**Testing:** `createStorage` needs a real directory — use `mkdtempSync`, never `:memory:`
 
-**Testing:**
-- `createStorage` requires a real directory path — use `mkdtempSync` for temp dirs, never `:memory:`
-- Migration count test: `packages/server/test/migrations.test.ts` asserts total count — update it when adding migrations
+**Routes:** `validate(schema, data)` — schema FIRST. Errors: `reply.status(404).send({ error: "..." })`. Fastify throws on duplicate paths — don't add redirects while old routes exist.
 
-**Server routes:**
-- `validate(schema, data)` — schema FIRST, data second (see `packages/server/src/validate.ts`)
-- Error responses: `reply.status(404).send({ error: "..." })` — never use `app.httpErrors`
-- Fastify throws on duplicate route paths — don't add 301 redirects while old routes still exist
-- URL learning: fetch page via `fetchPageAsMarkdown` first, then `learnFromContent` — never pass raw URL
+**React:** `<Navigate to="/path/:id" />` doesn't interpolate params — use `useParams()`. Follow TanStack Query patterns in existing `use-*.ts` hooks.
 
-**React/UI:**
-- `<Navigate to="/path/:id" />` doesn't interpolate params — use a component with `useParams()`
-- Hooks follow TanStack Query patterns — see any `use-*.ts` file in `packages/ui/src/hooks/`
-- Follow existing shadcn/ui + Tailwind patterns
+**Architecture:** Domain packages re-export with user-facing aliases (see `packages/watches/src/index.ts`). Not every domain needs a package — Digests lives in server. Always check `packages/core/src/index.ts` for actual function signatures before calling.
 
-**Architecture:**
-- Domain packages re-export from underlying packages with user-facing aliases (see `packages/watches/src/index.ts`)
-- Domains interact through TypeScript functions, not HTTP — the boundary is the module interface
-- Not every domain needs its own package — Digests lives in the server because briefing logic is deeply integrated
-- Always verify function signatures by reading `packages/core/src/index.ts` before calling core functions
-- Core exports `AgentContext` — avoid naming collisions (use `AgentHarnessContext` etc.)
-
-**Research system:**
-- Agent harness pattern: plan → execute → reflect → ingest (see `packages/core/src/agent-harness/`)
-- Depth levels (quick/standard/deep) control research effort per watch
-- Delta context: previous findings appended to goal so agents don't repeat themselves
-- Findings flow to Library via `ingestResearchResult` — this is how knowledge compounds
-- Feedback loop: digest ratings influence next generation via prompt context (wrapped in try/catch)
+**Research:** Agent harness (plan → execute → reflect → ingest) in `packages/core/src/agent-harness/`. Depth levels control effort. Delta context prevents repeating old findings. Findings flow to Library via `ingestResearchResult`. Feedback loop: ratings influence generation prompts (wrapped in try/catch).
 
 ## Key Files
 
 | What | Where |
 |------|-------|
 | All core exports | `packages/core/src/index.ts` |
-| Memory/belief CRUD | `packages/core/src/memory/memory.ts` |
-| Knowledge ingestion | `packages/core/src/knowledge.ts` |
+| Memory/belief logic | `packages/core/src/memory/memory.ts` |
 | Research findings | `packages/library/src/findings.ts` |
 | Unified search | `packages/library/src/search.ts` |
-| Ingestion pipelines | `packages/library/src/ingestion.ts` |
 | Watch templates | `packages/watches/src/templates.ts` |
-| Depth levels | `packages/watches/src/depth.ts` |
 | Briefing generation | `packages/server/src/briefing.ts` |
 | Digest ratings | `packages/server/src/digest-ratings.ts` |
-| Background dispatch | `packages/server/src/background-dispatcher.ts` |
 | Worker loop | `packages/server/src/workers.ts` |
 | Server migrations | `packages/server/src/migrations.ts` |
-| Route registration | `packages/server/src/index.ts` |
 | UI router | `packages/ui/src/App.tsx` |
 | UI navigation | `packages/ui/src/components/Layout.tsx` |
-| Product charter | `docs/PRODUCT-CHARTER.md` |
-| Architecture decisions | `docs/decisions/` |
 
-## When Making Significant Changes
+## Product Guardrails
 
-For multi-step tasks, architecture changes, or core-loop modifications:
+These protect the product from drifting. Read them before proposing new features.
 
-1. **Read first:** [docs/PRODUCT-CHARTER.md](docs/PRODUCT-CHARTER.md), [docs/PRIMITIVES.md](docs/PRIMITIVES.md), [docs/DEFINITION-OF-DONE.md](docs/DEFINITION-OF-DONE.md)
-2. **Plan before coding** — understand the scope and what tests you'll need
-3. **Test as you go** — write tests first when adding new functions
-4. **Update docs in the same task** — don't defer doc updates
-5. **Run `pnpm verify`** before claiming done
+**Watches are not generic schedulers.** A Watch is an ongoing decision — not a bucket for every background process.
 
-For reactive work (fixing CI failures, test failures, build breaks):
-- Find the root cause before applying a fix
-- Add a guard (test or check) that prevents the same failure
-- Record what broke and why in the commit message
+**Digests must recommend, not dump.** A Digest contains a recommendation, what changed, sources, memory assumptions, and next actions. Never raw research notes without a recommendation.
 
-## Validation
+**To-Dos are follow-through, not a task manager.** They emerge from Digest recommendations and link back to Watches. They are not a standalone backlog.
 
-```bash
-pnpm verify              # must pass — build + lint + typecheck + test
-pnpm harness:core-loop   # run when touching Watches, Digests, memory, corrections
-pnpm harness:regressions # run for repo-wide integrity checks
-pnpm e2e                 # run when touching UI flows
-```
+**Memory must be traceable.** Every memory has provenance, origin, confidence, and correction state. Changes to memory must preserve or improve traceability.
 
-Checklists (use when relevant):
-- `harness/checklists/core-loop-change-checklist.md`
-- `harness/checklists/memory-change-checklist.md`
-- `harness/checklists/ui-change-checklist.md`
-- `harness/checklists/reactive-fix-checklist.md`
+**Core loop works without optional services.** Browser automation and sandbox are enrichments. Watch → Digest → Correction must work when they're unavailable.
+
+**Internal nouns stay internal.** Swarm, blackboard, queue, schedule — these are implementation details. Don't expose them in UI, CLI, or API responses.
+
+## Evolving the Product
+
+Agents working on this project long-term should improve it, not just execute tasks.
+
+**Check quality signals:**
+- Digest ratings in `digest_ratings` table — low average means digests aren't useful
+- Telemetry spans in `telemetry_spans` — high error rates or slow spans indicate problems
+- Product events in `product_events` — track what users actually use
+
+**After completing work, consider:**
+- Did I discover a pattern that future work should follow? → Add it to "Codebase Patterns" above
+- Did I find a gotcha that wasted time? → Add it to "Codebase Patterns" above
+- Did the product boundary test ("does this strengthen the core loop?") reveal a gap? → Note it in the commit message
+- Is there a test that should exist but doesn't? → Write it
+
+**When proposing improvements:**
+- Start from user impact, not code elegance
+- Small, shipped improvements beat ambitious rewrites
+- If unsure whether a change fits the product direction, check the guardrails above
