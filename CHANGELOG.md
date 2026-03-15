@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Watch API:** `/api/watches/*` routes with template creation, manual trigger, and depth-aware dispatch
 - **Agent harness wired:** Research agents now use plan/execute/reflect tracking with confidence scoring
 - **Watches UI:** Template creation flow, Watch detail with findings tab, manual run trigger
+- **Digests API:** `/api/digests/*` routes with correction writeback, quality rating, and suggested to-dos
+- **Digest rating:** 1-5 star rating with optional feedback on each digest
+- **Inline correction:** Correct memory assumptions directly from digest detail → flows back to Library
+- **Feedback loop:** Low digest ratings and user feedback influence next generation prompt
+- **Auto-suggest to-dos:** Digest recommendations surface as actionable to-do suggestions
+- **Digests UI:** Rating widget, correction dialog, suggested to-dos section in digest detail
 
 ### Added
 

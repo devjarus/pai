@@ -101,7 +101,7 @@ The codebase is organized into four domain pillars plus a shared foundation:
 |--------|---------|------|-----------------|
 | Library | `packages/library` | Memories, Documents, Findings, unified search, ingestion | Library |
 | Watches | `packages/watches` | Watch definitions, scheduling, templates, depth levels, delta research | Watches |
-| Digests | `packages/digests` (Phase 3) | Digest generation, research agents, recommendations, corrections | Digests |
+| Digests | server/briefing + routes/digests | Digest generation, ratings, corrections, suggestions, feedback loop | Digests |
 | Tasks | `packages/tasks` (Phase 4) | To-Dos, Goals, follow-through | Tasks |
 
 Shared foundation lives in `packages/core`: LLM client, storage, telemetry, auth, agent harness.
@@ -139,6 +139,12 @@ These patterns were validated during Phase 1 implementation. Follow them to avoi
 **Re-export with aliases:** Domain packages (library, watches) re-export from underlying packages with user-facing names. This keeps internal code stable while presenting a clean API. See `packages/watches/src/index.ts` for the pattern.
 
 **Depth + delta = compounding:** Research depth levels control effort per run. Delta context (previous findings appended to the goal) ensures agents don't repeat themselves. Together they make each Watch run more valuable than the last.
+
+**In-place domains are fine:** Not every domain needs a new package. Digests stayed in the server package because briefing logic is deeply woven into workers, dispatch, and generation. A clean API surface (`/api/digests/*`) is sufficient domain boundary.
+
+**Feedback as prompt context:** User ratings and feedback text are injected into the LLM prompt, not the generation logic. This is the lightest integration that still influences output quality. Always wrap feedback queries in try/catch to never break generation.
+
+**Suggestions from structure:** Digest `next_actions` are already structured — extracting them as to-do suggestions is pure data mapping, no LLM needed.
 
 ## Validation Expectations
 
