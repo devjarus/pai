@@ -14,6 +14,10 @@ export type { ResearchFinding, CreateFindingInput, ResearchFindingSource } from 
 // Finding embeddings
 export { storeFindingEmbedding, getFindingEmbedding, embedFinding } from "./findings-embed.js";
 
+// Ingestion pipelines
+export { ingestResearchResult, ingestCorrection } from "./ingestion.js";
+export type { CorrectionInput } from "./ingestion.js";
+
 // Unified search
 export { unifiedSearch } from "./search.js";
 export type { LibrarySearchResult, LibrarySourceType } from "./search.js";
