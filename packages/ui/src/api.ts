@@ -848,6 +848,152 @@ export function resumeScheduleApi(id: string): Promise<{ ok: boolean }> {
   });
 }
 
+// ---- Watches ----
+
+export interface WatchTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: "price" | "news" | "competitor" | "availability" | "general";
+  defaultIntervalHours: number;
+  defaultDeliveryMode: "always" | "change-gated";
+  defaultDepthLevel: "quick" | "standard" | "deep";
+}
+
+export interface WatchHistoryBriefing {
+  id: string;
+  generatedAt: string;
+  type: string;
+  status: string;
+  signalHash: string | null;
+  sourceJobId: string | null;
+  sourceJobKind: string | null;
+  recommendationSummary: string | null;
+}
+
+export interface WatchHistoryJob {
+  id: string;
+  status: string;
+  goal: string;
+  createdAt: string;
+  queuedAt: string | null;
+  completedAt: string | null;
+  briefingId: string | null;
+  resultType: string | null;
+}
+
+export interface WatchHistoryAction {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface WatchHistory {
+  watch: Program;
+  history: {
+    briefings: WatchHistoryBriefing[];
+    actions: WatchHistoryAction[];
+    researchJobs: WatchHistoryJob[];
+    analysisJobs: WatchHistoryJob[];
+  };
+}
+
+export function getWatches(): Promise<Program[]> {
+  return request("/watches");
+}
+
+export function getWatchApi(id: string): Promise<Program> {
+  return request(`/watches/${id}`);
+}
+
+export function getWatchHistoryApi(id: string): Promise<WatchHistory> {
+  return request(`/watches/${id}/history`);
+}
+
+export function getWatchTemplates(): Promise<WatchTemplate[]> {
+  return request("/watches/templates");
+}
+
+export function createWatchApi(data: {
+  title: string;
+  question: string;
+  family?: "general" | "work" | "travel" | "buying";
+  executionMode?: "research" | "analysis";
+  intervalHours?: number;
+  startAt?: string;
+  chatId?: number | null;
+  threadId?: string | null;
+  preferences?: string[];
+  constraints?: string[];
+  openQuestions?: string[];
+}): Promise<{ watch: Program; created: boolean; duplicateReason: "thread" | "equivalent" | null }> {
+  return request("/watches", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function createWatchFromTemplateApi(data: {
+  templateId: string;
+  subject: string;
+}): Promise<{
+  watch: Program;
+  created: boolean;
+  duplicateReason: "thread" | "equivalent" | null;
+  template: { id: string; depthLevel: string };
+}> {
+  return request("/watches/from-template", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateWatchApi(id: string, data: {
+  title?: string;
+  question?: string;
+  family?: "general" | "work" | "travel" | "buying";
+  executionMode?: "research" | "analysis";
+  intervalHours?: number;
+  startAt?: string;
+  preferences?: string[];
+  constraints?: string[];
+  openQuestions?: string[];
+}): Promise<Program> {
+  return request(`/watches/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteWatchApi(id: string): Promise<{ ok: boolean }> {
+  return request(`/watches/${id}`, { method: "DELETE" });
+}
+
+export function pauseWatchApi(id: string): Promise<{ ok: boolean }> {
+  return request(`/watches/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "pause" }),
+  });
+}
+
+export function resumeWatchApi(id: string): Promise<{ ok: boolean }> {
+  return request(`/watches/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "resume" }),
+  });
+}
+
+export function triggerWatchRunApi(id: string): Promise<{ ok: boolean; jobId: string; depth: string }> {
+  return request(`/watches/${id}/run`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 // ---- Library (unified) ----
 
 export function librarySearch(q: string, limit = 20): Promise<LibrarySearchResult[]> {

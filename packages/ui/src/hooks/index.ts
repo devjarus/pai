@@ -15,3 +15,4 @@ export * from "./use-timezone";
 export * from "./use-observability";
 export * from "./use-grid-feed";
 export * from "./use-library";
+export * from "./use-watches";

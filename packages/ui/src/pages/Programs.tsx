@@ -5,17 +5,22 @@ import { toast } from "sonner";
 import {
   CalendarClockIcon,
   ClockIcon,
+  EyeIcon,
+  FileTextIcon,
+  LayoutTemplateIcon,
   ListTodoIcon,
   PauseIcon,
   PencilIcon,
   PlayIcon,
   PlusIcon,
+  SearchIcon,
   SparklesIcon,
   Trash2Icon,
 } from "lucide-react";
 
 import type { Program } from "../api";
 import type { Task } from "../types";
+import type { ResearchFinding } from "../types";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import {
   useCreateProgram,
@@ -25,6 +30,16 @@ import {
   useResumeProgram,
   useTasks,
   useUpdateProgram,
+  useWatches,
+  useCreateWatch,
+  useCreateWatchFromTemplate,
+  useUpdateWatch,
+  useDeleteWatch,
+  usePauseWatch,
+  useResumeWatch,
+  useWatchTemplates,
+  useTriggerWatchRun,
+  useFindings,
 } from "@/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -104,8 +119,23 @@ function familyTone(family: ProgramFamily): string {
 export default function Programs() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data: programs = [], isLoading } = usePrograms();
+  // Use the watches API with fallback to programs API
+  const watchesQuery = useWatches();
+  const programsQuery = usePrograms();
+  const programs = watchesQuery.data ?? programsQuery.data ?? [];
+  const isLoading = watchesQuery.isLoading && programsQuery.isLoading;
   const { data: tasks = [] } = useTasks({ status: "all" });
+
+  // Watches mutations (primary)
+  const createWatch = useCreateWatch();
+  const createWatchFromTemplate = useCreateWatchFromTemplate();
+  const updateWatch = useUpdateWatch();
+  const deleteWatch = useDeleteWatch();
+  const pauseWatch = usePauseWatch();
+  const resumeWatch = useResumeWatch();
+  const triggerRun = useTriggerWatchRun();
+
+  // Keep program mutations as fallback
   const createProgram = useCreateProgram();
   const updateProgram = useUpdateProgram();
   const deleteProgram = useDeleteProgram();
@@ -113,8 +143,12 @@ export default function Programs() {
   const resumeProgram = useResumeProgram();
 
   const [showDialog, setShowDialog] = useState(searchParams.get("action") === "add");
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [selectedDetail, setSelectedDetail] = useState<Program | null>(null);
+  const [detailTab, setDetailTab] = useState<"overview" | "findings">("overview");
   const [editing, setEditing] = useState<Program | null>(null);
   const [deleting, setDeleting] = useState<Program | null>(null);
+  const [templateForm, setTemplateForm] = useState({ templateId: "", subject: "" });
   const [form, setForm] = useState({
     title: "",
     question: "",
@@ -207,16 +241,16 @@ export default function Programs() {
 
     try {
       if (editing) {
-        await updateProgram.mutateAsync({ id: editing.id, data: payload });
+        await updateWatch.mutateAsync({ id: editing.id, data: payload });
         toast.success("Watch updated");
       } else {
-        const result = await createProgram.mutateAsync(payload);
+        const result = await createWatch.mutateAsync(payload);
         toast.success(
           result.created
             ? "Watch created"
             : result.duplicateReason === "thread"
               ? "That thread is already being watched"
-              : `Already watching this as "${result.program.title}"`,
+              : `Already watching this as "${result.watch.title}"`,
         );
       }
       setShowDialog(false);
@@ -229,7 +263,7 @@ export default function Programs() {
 
   async function handleDelete(program: Program) {
     try {
-      await deleteProgram.mutateAsync(program.id);
+      await deleteWatch.mutateAsync(program.id);
       toast.success("Watch deleted");
       setDeleting(null);
     } catch (error) {
@@ -240,14 +274,42 @@ export default function Programs() {
   async function handleTogglePause(program: Program) {
     try {
       if (program.status === "active") {
-        await pauseProgram.mutateAsync(program.id);
+        await pauseWatch.mutateAsync(program.id);
         toast.success("Watch paused");
       } else {
-        await resumeProgram.mutateAsync(program.id);
+        await resumeWatch.mutateAsync(program.id);
         toast.success("Watch resumed");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update watch");
+    }
+  }
+
+  async function handleCreateFromTemplate() {
+    if (!templateForm.templateId || !templateForm.subject.trim()) return;
+    try {
+      const result = await createWatchFromTemplate.mutateAsync({
+        templateId: templateForm.templateId,
+        subject: templateForm.subject.trim(),
+      });
+      toast.success(
+        result.created
+          ? "Watch created from template"
+          : `Already watching this as "${result.watch.title}"`,
+      );
+      setShowTemplateDialog(false);
+      setTemplateForm({ templateId: "", subject: "" });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create watch from template");
+    }
+  }
+
+  async function handleTriggerRun(program: Program) {
+    try {
+      await triggerRun.mutateAsync(program.id);
+      toast.success("Watch run triggered");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to trigger watch run");
     }
   }
 
@@ -269,6 +331,13 @@ export default function Programs() {
   }
 
   const programSaving =
+    createWatch.isPending ||
+    createWatchFromTemplate.isPending ||
+    updateWatch.isPending ||
+    deleteWatch.isPending ||
+    pauseWatch.isPending ||
+    resumeWatch.isPending ||
+    triggerRun.isPending ||
     createProgram.isPending ||
     updateProgram.isPending ||
     deleteProgram.isPending ||
@@ -291,10 +360,16 @@ export default function Programs() {
             </span>
           )}
         </div>
-        <Button size="sm" onClick={openAdd}>
-          <PlusIcon className="mr-1 size-4" />
-          New Watch
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setShowTemplateDialog(true)}>
+            <LayoutTemplateIcon className="mr-1 size-4" />
+            From Template
+          </Button>
+          <Button size="sm" onClick={openAdd}>
+            <PlusIcon className="mr-1 size-4" />
+            New Watch
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
@@ -335,6 +410,8 @@ export default function Programs() {
                 onEdit={openEdit}
                 onDelete={setDeleting}
                 onTogglePause={handleTogglePause}
+                onOpenDetail={(p) => { setSelectedDetail(p); setDetailTab("overview"); }}
+                onTriggerRun={handleTriggerRun}
               />
             ))}
           </div>
@@ -501,6 +578,37 @@ export default function Programs() {
         </DialogContent>
       </Dialog>
 
+      {/* Create from Template Dialog */}
+      <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Watch from Template</DialogTitle>
+          </DialogHeader>
+          <TemplateCreateForm
+            form={templateForm}
+            onChange={setTemplateForm}
+            onSubmit={handleCreateFromTemplate}
+            isPending={createWatchFromTemplate.isPending}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Watch Detail Dialog */}
+      <Dialog open={!!selectedDetail} onOpenChange={(open) => { if (!open) setSelectedDetail(null); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedDetail?.title ?? "Watch Detail"}</DialogTitle>
+          </DialogHeader>
+          {selectedDetail && (
+            <WatchDetailView
+              watch={selectedDetail}
+              activeTab={detailTab}
+              onTabChange={setDetailTab}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
@@ -513,6 +621,8 @@ function ProgramRow({
   onEdit,
   onDelete,
   onTogglePause,
+  onOpenDetail,
+  onTriggerRun,
 }: {
   program: Program;
   actions: Task[];
@@ -521,6 +631,8 @@ function ProgramRow({
   onEdit: (program: Program) => void;
   onDelete: (program: Program) => void;
   onTogglePause: (program: Program) => void;
+  onOpenDetail: (program: Program) => void;
+  onTriggerRun: (program: Program) => void;
 }) {
   const isPaused = program.status === "paused";
   const visibleSignals = [...program.preferences.slice(0, 2), ...program.constraints.slice(0, 2)].slice(0, 3);
@@ -627,6 +739,24 @@ function ProgramRow({
             variant="ghost"
             size="icon"
             className="size-8"
+            onClick={() => onOpenDetail(program)}
+            title="View details & findings"
+          >
+            <EyeIcon className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={() => onTriggerRun(program)}
+            title="Run now"
+          >
+            <SearchIcon className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
             onClick={() => onTogglePause(program)}
             title={isPaused ? "Resume" : "Pause"}
           >
@@ -652,6 +782,213 @@ function ProgramRow({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function TemplateCreateForm({
+  form,
+  onChange,
+  onSubmit,
+  isPending,
+}: {
+  form: { templateId: string; subject: string };
+  onChange: (form: { templateId: string; subject: string }) => void;
+  onSubmit: () => void;
+  isPending: boolean;
+}) {
+  const { data: templates = [], isLoading } = useWatchTemplates();
+
+  return (
+    <div className="grid gap-4 py-2">
+      <div>
+        <label className="mb-1 block text-sm font-medium">Template</label>
+        {isLoading ? (
+          <Skeleton className="h-9 w-full" />
+        ) : (
+          <select
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            value={form.templateId}
+            onChange={(e) => onChange({ ...form, templateId: e.target.value })}
+          >
+            <option value="">Select a template...</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} -- {t.description}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      <div>
+        <label className="mb-1 block text-sm font-medium">Subject</label>
+        <input
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          placeholder="e.g. MacBook Pro M4, Tesla stock, competitor Acme Inc."
+          value={form.subject}
+          onChange={(e) => onChange({ ...form, subject: e.target.value })}
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          The subject will be inserted into the template's question.
+        </p>
+      </div>
+      <DialogFooter>
+        <Button
+          onClick={onSubmit}
+          disabled={isPending || !form.templateId || !form.subject.trim()}
+        >
+          {isPending ? "Creating..." : "Create Watch"}
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
+function WatchDetailView({
+  watch,
+  activeTab,
+  onTabChange,
+}: {
+  watch: Program;
+  activeTab: "overview" | "findings";
+  onTabChange: (tab: "overview" | "findings") => void;
+}) {
+  const { data: findings = [], isLoading: findingsLoading } = useFindings(watch.id);
+
+  return (
+    <div className="space-y-4">
+      {/* Tab bar */}
+      <div className="flex gap-1 rounded-lg border bg-muted/30 p-1">
+        <button
+          className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            activeTab === "overview" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => onTabChange("overview")}
+        >
+          <FileTextIcon className="mr-1.5 inline size-3.5" />
+          Overview
+        </button>
+        <button
+          className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            activeTab === "findings" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => onTabChange("findings")}
+        >
+          <SearchIcon className="mr-1.5 inline size-3.5" />
+          Findings
+          {findings.length > 0 && (
+            <Badge variant="secondary" className="ml-1.5 text-[10px]">
+              {findings.length}
+            </Badge>
+          )}
+        </button>
+      </div>
+
+      {activeTab === "overview" && (
+        <div className="space-y-3">
+          <div className="rounded-lg border p-3">
+            <div className="text-xs font-medium text-muted-foreground uppercase">Question</div>
+            <p className="mt-1 text-sm">{watch.question}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border p-3">
+              <div className="text-xs font-medium text-muted-foreground uppercase">Status</div>
+              <p className="mt-1 text-sm font-medium capitalize">{watch.status}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <div className="text-xs font-medium text-muted-foreground uppercase">Cadence</div>
+              <p className="mt-1 text-sm">{formatInterval(watch.intervalHours)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <div className="text-xs font-medium text-muted-foreground uppercase">Next Digest</div>
+              <p className="mt-1 text-sm">{formatDateTime(watch.nextRunAt)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <div className="text-xs font-medium text-muted-foreground uppercase">Last Digest</div>
+              <p className="mt-1 text-sm">{watch.lastRunAt ? formatDateTime(watch.lastRunAt) : "Never"}</p>
+            </div>
+          </div>
+          {watch.latestBriefSummary?.recommendationSummary && (
+            <div className="rounded-lg border p-3">
+              <div className="text-xs font-medium text-muted-foreground uppercase">Latest Digest Summary</div>
+              <p className="mt-1 text-sm">{watch.latestBriefSummary.recommendationSummary}</p>
+            </div>
+          )}
+          {watch.preferences.length > 0 && (
+            <div className="rounded-lg border p-3">
+              <div className="text-xs font-medium text-muted-foreground uppercase">Preferences</div>
+              <ul className="mt-1 space-y-1">
+                {watch.preferences.map((p) => (
+                  <li key={p} className="text-sm text-muted-foreground">{p}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {watch.constraints.length > 0 && (
+            <div className="rounded-lg border p-3">
+              <div className="text-xs font-medium text-muted-foreground uppercase">Constraints</div>
+              <ul className="mt-1 space-y-1">
+                {watch.constraints.map((c) => (
+                  <li key={c} className="text-sm text-muted-foreground">{c}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "findings" && (
+        <div className="space-y-3">
+          {findingsLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          ) : findings.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              No findings yet. Findings appear after the watch runs its first research cycle.
+            </div>
+          ) : (
+            findings.map((finding: ResearchFinding) => (
+              <div key={finding.id} className="rounded-lg border p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{finding.domain}</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {finding.depthLevel}
+                      </Badge>
+                      {finding.confidence > 0 && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          {Math.round(finding.confidence * 100)}% confidence
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">{finding.summary}</p>
+                    {finding.delta && finding.delta.changed.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {finding.delta.changed.map((change) => (
+                          <Badge key={change} variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">
+                            {change}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    {finding.sources.length > 0 && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {finding.sources.length} source{finding.sources.length !== 1 ? "s" : ""}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 text-[10px] text-muted-foreground">
+                  {finding.agentName} -- {formatDateTime(finding.createdAt)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
