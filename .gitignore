@@ -20,3 +20,5 @@ docs/plans/
 test-results/
 playwright-report/
 scripts/
+harness/runs/
+.superpowers/
