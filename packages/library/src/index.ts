@@ -7,8 +7,9 @@ export type { Belief, BeliefChange, MemoryStats, RememberOptions } from "@person
 export { listSources, getSourceChunks, learnFromContent, knowledgeSearch, forgetSource, cleanupExpiredSources } from "@personal-ai/core";
 export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult } from "@personal-ai/core";
 
-// Findings (new — will be implemented in Task 2)
-// export { ... } from "./findings.js";
+// Findings
+export { findingsMigrations, createFinding, getFinding, listFindings, listFindingsForWatch, deleteFinding } from "./findings.js";
+export type { ResearchFinding, CreateFindingInput, ResearchFindingSource } from "./findings.js";
 
 // Unified search (new — will be implemented in Task 3)
 // export { unifiedSearch } from "./search.js";

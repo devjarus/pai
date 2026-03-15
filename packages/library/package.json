@@ -12,7 +12,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
@@ -20,7 +22,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@personal-ai/core": "workspace:*"
+    "@personal-ai/core": "workspace:*",
+    "nanoid": "^5.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",

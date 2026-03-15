@@ -146,6 +146,9 @@ importers:
       '@personal-ai/core':
         specifier: workspace:*
         version: link:../core
+      nanoid:
+        specifier: ^5.0.0
+        version: 5.1.6
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.0
