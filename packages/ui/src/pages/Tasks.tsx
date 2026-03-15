@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { toast } from "sonner";
 import {
   useTasks,
@@ -894,9 +894,21 @@ function TaskRow({
             </Badge>
           )}
           {taskSourceLabel(task) && (
-            <Badge variant="secondary" className="text-[10px] text-muted-foreground">
-              {taskSourceLabel(task)}
-            </Badge>
+            <Link
+              to={
+                task.source_type === "program"
+                  ? "/watches"
+                  : `/digests/${task.source_id ?? ""}`
+              }
+              className="no-underline"
+            >
+              <Badge
+                variant="secondary"
+                className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                {taskSourceLabel(task)}
+              </Badge>
+            </Link>
           )}
         </div>
       </div>
