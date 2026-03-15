@@ -76,7 +76,7 @@ Before claiming completion:
 
 ## Long-Session Rule
 
-For work that spans multiple steps, multiple files, or touches the Ask -> Program -> Brief -> Correction loop:
+For work that spans multiple steps, multiple files, or touches the Ask → Watch → Digest → Correction loop:
 
 - create a task contract under `harness/runs/`
 - maintain an evidence pack alongside it
@@ -85,17 +85,58 @@ For work that spans multiple steps, multiple files, or touches the Ask -> Progra
 
 ## Product Rules Summary
 
-- Core loop: Ask -> Keep watching this / Program creation -> Brief -> Correction or Action -> Next brief improves.
-- Primary product nouns: `Program`, `Brief`, `Action`, `Belief`, `Evidence`.
-- `Thread` is an interaction container, not a primary product object.
+- Core loop: Ask → Watch creation → Digest → Correction or To-Do → Next digest improves.
+- Primary product nouns: `Watch`, `Digest`, `To-Do`, `Memory`, `Source`.
+- Internal-only nouns (code): `Belief`, `Briefing`, `ScheduledJob`, `Episode`. These map to user-facing names at the API/UI boundary.
+- `Chat` (Thread) is an interaction container, not a primary product object.
+- `Activity` (Job) is a user-facing noun for background work visibility, collapsed by default.
 - Browser automation and sandbox execution are optional enrichments, not core correctness dependencies.
-- Do not promote internal nouns like `swarm`, `job`, `blackboard`, or `schedule` into the main product story unless a decision log changes that rule.
+- Do not promote internal nouns like `swarm`, `blackboard`, or `schedule` into the main product story unless a decision log changes that rule.
+
+## Four Pillars Architecture
+
+The codebase is organized into four domain pillars plus a shared foundation:
+
+| Domain | Package | Owns | User-Facing Name |
+|--------|---------|------|-----------------|
+| Library | `packages/library` | Memories, Documents, Findings, unified search, ingestion | Library |
+| Watches | `packages/watches` (Phase 2) | Watch definitions, scheduling, signal detection | Watches |
+| Digests | `packages/digests` (Phase 3) | Digest generation, research agents, recommendations, corrections | Digests |
+| Tasks | `packages/tasks` (Phase 4) | To-Dos, Goals, follow-through | Tasks |
+
+Shared foundation lives in `packages/core`: LLM client, storage, telemetry, auth, agent harness.
+
+Domains interact through **exported TypeScript functions** (same process), not HTTP. The boundary is the module interface.
+
+See: [docs/superpowers/specs/2026-03-15-four-pillars-roadmap-design.md](docs/superpowers/specs/2026-03-15-four-pillars-roadmap-design.md)
+
+## Agent Execution Patterns (Learned)
+
+These patterns were validated during Phase 1 implementation. Follow them to avoid repeated mistakes.
+
+**Storage tests:** `createStorage` requires a real directory path. Use `mkdtempSync` for temp directories in tests — never `:memory:`.
+
+**Validation:** `validate(schema, data)` — schema first, data second. Every route file follows this. Read `packages/server/src/validate.ts` if unsure.
+
+**Error responses:** Use `reply.status(404).send({ error: "..." })` in Fastify routes. Do NOT use `app.httpErrors` — `@fastify/sensible` may not be registered.
+
+**Migration counts:** `packages/server/test/migrations.test.ts` asserts the total migration count. Update it when adding new migrations.
+
+**Route conflicts:** Fastify throws on duplicate route paths. When adding new routes alongside existing ones (e.g., `/api/library/memories` alongside `/api/beliefs`), do NOT add 301 redirects if the old routes still exist — comment them for when old routes are removed.
+
+**React Router params:** `<Navigate to="/path/:id" />` does NOT interpolate params. Use a redirect component with `useParams()` for parameterized redirects.
+
+**LLM client API:** `correctBelief` is async and requires `LLMClient`. Always verify function signatures by reading actual exports in `packages/core/src/index.ts`.
+
+**Page fetching:** URL learning must fetch page content first via `fetchPageAsMarkdown`, then pass to `learnFromContent`. Never call `learnFromContent` with a raw URL.
+
+**Naming collisions:** Core already exports `AgentContext`. New types should use distinct names (e.g., `AgentHarnessContext`).
 
 ## Validation Expectations
 
 - The source of truth for completion is [docs/DEFINITION-OF-DONE.md](docs/DEFINITION-OF-DONE.md).
 - Release blockers and warn-only issues are defined there and must be reflected in the evidence pack.
-- Use `pnpm harness:core-loop` when the change touches Programs, Briefs, memory trust, correction handling, or recurring follow-through.
+- Use `pnpm harness:core-loop` when the change touches Watches, Digests, memory trust, correction handling, or recurring follow-through.
 - Use `pnpm harness:regressions` for repo-wide harness integrity checks.
 - Pick the checklist that matches the work:
   - `core-loop-change-checklist.md`
