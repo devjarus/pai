@@ -17,6 +17,7 @@ vi.mock("@personal-ai/plugin-swarm", () => ({ swarmMigrations: [{ version: 1, up
 vi.mock("@personal-ai/plugin-schedules", () => ({ scheduleMigrations: [{ version: 1, up: "" }] }));
 vi.mock("../src/briefing.js", () => ({ briefingMigrations: [{ version: 1, up: "" }] }));
 vi.mock("../src/learning.js", () => ({ learningMigrations: [{ version: 1, up: "" }] }));
+vi.mock("../src/digest-ratings.js", () => ({ digestRatingsMigrations: [{ version: 1, up: "" }] }));
 
 import { allMigrations, runAllMigrations } from "../src/migrations.js";
 
@@ -50,10 +51,11 @@ describe("allMigrations", () => {
     expect(names).toContain("inbox");
     expect(names).toContain("learning");
     expect(names).toContain("findings");
+    expect(names).toContain("digest_ratings");
   });
 
-  it("has 16 entries total", () => {
-    expect(allMigrations).toHaveLength(16);
+  it("has 17 entries total", () => {
+    expect(allMigrations).toHaveLength(17);
   });
 });
 
