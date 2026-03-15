@@ -87,6 +87,15 @@ export const findingsMigrations: Migration[] = [
       INSERT INTO research_findings_fts(rowid, summary) SELECT rowid, summary FROM research_findings;
     `,
   },
+  {
+    version: 3,
+    up: `
+      CREATE TABLE IF NOT EXISTS research_finding_embeddings (
+        finding_id TEXT PRIMARY KEY REFERENCES research_findings(id) ON DELETE CASCADE,
+        embedding TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 // ---- Row mapping ----

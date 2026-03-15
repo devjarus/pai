@@ -11,5 +11,8 @@ export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult } from "@pe
 export { findingsMigrations, createFinding, getFinding, listFindings, listFindingsForWatch, deleteFinding } from "./findings.js";
 export type { ResearchFinding, CreateFindingInput, ResearchFindingSource } from "./findings.js";
 
+// Finding embeddings
+export { storeFindingEmbedding, getFindingEmbedding, embedFinding } from "./findings-embed.js";
+
 // Unified search (new — will be implemented in Task 3)
 // export { unifiedSearch } from "./search.js";
