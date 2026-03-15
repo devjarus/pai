@@ -1,146 +1,220 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { remember, createProgramApi } from "../api";
+import { remember, createWatchFromTemplateApi } from "../api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { SparklesIcon } from "lucide-react";
+import { SparklesIcon, ArrowRightIcon, BrainIcon, EyeIcon } from "lucide-react";
+import LLMSetupWizard from "@/components/LLMSetupWizard";
+
+type OnboardingStep = "welcome" | "llm" | "about" | "watch";
 
 export default function Onboarding() {
-  const [name, setName] = useState("");
-  const [watch, setWatch] = useState("");
-  const [preferences, setPreferences] = useState("");
+  const [step, setStep] = useState<OnboardingStep>("welcome");
+  const [aboutMe, setAboutMe] = useState("");
+  const [watchSubject, setWatchSubject] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setError("");
+  const finish = () => {
+    localStorage.setItem("pai_onboarded", "1");
+    navigate("/", { replace: true });
+  };
 
-    const promises: Promise<unknown>[] = [];
-    if (name.trim()) {
-      promises.push(remember(`My name is ${name.trim()}`));
-    }
-    if (preferences.trim()) {
-      promises.push(remember(preferences.trim()));
-    }
-
-    // Create a Program from the watch field — this is the core product action
-    if (watch.trim()) {
-      promises.push(remember(`I want pai to keep track of ${watch.trim()}`));
-      promises.push(
-        createProgramApi({
-          title: watch.trim().slice(0, 200),
-          question: watch.trim(),
-          family: "general",
-          executionMode: "research",
-          intervalHours: 24,
-          preferences: preferences.trim() ? [preferences.trim()] : [],
-        }).catch(() => {
-          // Program creation is best-effort during onboarding —
-          // don't block the flow if it fails (e.g. LLM not ready yet)
-        }),
-      );
-    }
-
-    if (promises.length === 0) {
-      localStorage.setItem("pai_onboarded", "1");
-      navigate("/", { replace: true });
+  const handleAboutSubmit = async () => {
+    if (!aboutMe.trim()) {
+      setStep("watch");
       return;
     }
-
+    setSaving(true);
+    setError("");
     try {
-      await Promise.all(promises);
-      localStorage.setItem("pai_onboarded", "1");
-      // Navigate to Home (Inbox) so the user sees their first brief when it arrives
-      navigate("/", { replace: true });
+      await remember(aboutMe.trim());
+      setSaving(false);
+      setStep("watch");
     } catch {
       setSaving(false);
-      setError(
-        "Could not save — your LLM provider may not be configured yet. " +
-        "You can skip for now and set it up in Settings."
-      );
+      setError("Could not save. You can add this later in your Library.");
     }
   };
 
-  const handleSkip = () => {
-    localStorage.setItem("pai_onboarded", "1");
-    navigate("/ask", { replace: true });
+  const handleWatchSubmit = async () => {
+    if (!watchSubject.trim()) {
+      finish();
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await createWatchFromTemplateApi({
+        templateId: "general-watch",
+        subject: watchSubject.trim(),
+      });
+      finish();
+    } catch {
+      // Best-effort — don't block onboarding if LLM isn't ready yet
+      finish();
+    }
   };
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md border-border/50 bg-card/50">
-        <CardHeader className="items-center pb-2">
-          <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-primary/10">
-            <SparklesIcon className="size-6 text-primary" />
-          </div>
-          <CardTitle className="text-center font-mono text-lg font-semibold">
-            Welcome to pai
-          </CardTitle>
-          <p className="text-center text-xs text-muted-foreground">
-            Tell me one thing to watch and I'll start briefing you on it daily.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                What should I call you?
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Sarah"
-                autoFocus
-                className="w-full rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-              />
+  // Step 1: Welcome
+  if (step === "welcome") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md border-border/50 bg-card/50">
+          <CardHeader className="items-center pb-2">
+            <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-primary/10">
+              <SparklesIcon className="size-6 text-primary" />
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                What's one thing you check every few days?
-              </label>
-              <textarea
-                value={watch}
-                onChange={(e) => setWatch(e.target.value)}
-                placeholder="e.g. crypto market trends, H1B visa slot availability, competitor pricing changes"
-                rows={2}
-                className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-              />
+            <CardTitle className="text-center font-mono text-lg font-semibold">
+              Welcome to pai
+            </CardTitle>
+            <p className="text-center text-sm text-muted-foreground">
+              Your second brain that watches things for you
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-center text-xs text-muted-foreground leading-relaxed">
+              pai remembers what matters to you, researches topics you care about,
+              and keeps you updated with personalized digests.
+            </p>
+            <Button onClick={() => setStep("llm")} className="w-full">
+              Get Started <ArrowRightIcon className="ml-2 size-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Step 2: LLM provider setup
+  if (step === "llm") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md border-border/50 bg-card/50">
+          <CardHeader className="items-center pb-2">
+            <StepIndicator current={2} total={4} />
+            <CardTitle className="text-center font-mono text-lg font-semibold">
+              Connect your AI
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <LLMSetupWizard
+              onComplete={() => setStep("about")}
+              onSkip={() => setStep("about")}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Step 3: Tell me about yourself
+  if (step === "about") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md border-border/50 bg-card/50">
+          <CardHeader className="items-center pb-2">
+            <StepIndicator current={3} total={4} />
+            <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-primary/10">
+              <BrainIcon className="size-6 text-primary" />
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                What preferences or constraints should I remember?
-              </label>
-              <textarea
-                value={preferences}
-                onChange={(e) => setPreferences(e.target.value)}
-                placeholder="e.g. brief me concisely, cite evidence, prioritize blockers over status theater"
-                rows={2}
-                className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-              />
-            </div>
+            <CardTitle className="text-center font-mono text-lg font-semibold">
+              Tell me about yourself
+            </CardTitle>
+            <p className="text-center text-xs text-muted-foreground">
+              This helps pai personalize your digests and research.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <textarea
+              value={aboutMe}
+              onChange={(e) => setAboutMe(e.target.value)}
+              placeholder="I'm a software engineer interested in AI, crypto, and travel deals"
+              rows={4}
+              autoFocus
+              className="w-full resize-none rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+            />
             {error && (
               <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
                 {error}
               </p>
             )}
-            <Button type="submit" className="w-full" disabled={saving}>
-              {saving ? "Setting up..." : watch.trim() ? "Start watching" : "Get started"}
+            <Button onClick={handleAboutSubmit} className="w-full" disabled={saving}>
+              {saving ? "Saving..." : "Continue"} {!saving && <ArrowRightIcon className="ml-2 size-4" />}
             </Button>
-          </form>
+            <button
+              type="button"
+              onClick={() => setStep("watch")}
+              disabled={saving}
+              className="w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Skip
+            </button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Step 4: What to watch
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md border-border/50 bg-card/50">
+        <CardHeader className="items-center pb-2">
+          <StepIndicator current={4} total={4} />
+          <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-primary/10">
+            <EyeIcon className="size-6 text-primary" />
+          </div>
+          <CardTitle className="text-center font-mono text-lg font-semibold">
+            What should I watch?
+          </CardTitle>
+          <p className="text-center text-xs text-muted-foreground">
+            pai will research this regularly and send you digests.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <input
+            type="text"
+            value={watchSubject}
+            onChange={(e) => setWatchSubject(e.target.value)}
+            placeholder="GPU prices, Bitcoin news, flight deals to Tokyo"
+            autoFocus
+            className="w-full rounded-md border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+          />
+          {error && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {error}
+            </p>
+          )}
+          <Button onClick={handleWatchSubmit} className="w-full" disabled={saving}>
+            {saving ? "Setting up..." : "Start watching"} {!saving && <ArrowRightIcon className="ml-2 size-4" />}
+          </Button>
           <button
             type="button"
-            onClick={handleSkip}
+            onClick={finish}
             disabled={saving}
-            className="mt-3 w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            Skip and open Ask
+            Skip and go to dashboard
           </button>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function StepIndicator({ current, total }: { current: number; total: number }) {
+  return (
+    <div className="mb-2 flex items-center gap-1.5">
+      {Array.from({ length: total }, (_, i) => (
+        <div
+          key={i}
+          className={`h-1 rounded-full transition-colors ${
+            i + 1 <= current ? "w-6 bg-primary" : "w-4 bg-border"
+          }`}
+        />
+      ))}
     </div>
   );
 }
