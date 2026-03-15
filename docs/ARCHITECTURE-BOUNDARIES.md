@@ -2,12 +2,12 @@
 
 This document sets the working boundaries for product-facing changes and infrastructure changes in `pai`.
 
-## 1. Programs And Briefs Are Product Objects
+## 1. Watches And Digests Are Product Objects
 
-Programs and Briefs are the primary product objects.
+Watches and Digests are the primary product objects.
 
-- Program = ongoing decision or watch
-- Brief = decision-ready output for that program
+- Watch = ongoing decision or watch
+- Digest = decision-ready output for that watch
 
 Changes should strengthen those objects rather than adding parallel top-level concepts.
 
@@ -19,7 +19,7 @@ They are useful infrastructure, but they are not the primary product object. Do 
 
 Implication:
 
-- thread changes should not silently redefine Program or Brief behavior
+- thread changes should not silently redefine Watch or Digest behavior
 - UI and backend work should not force users to think in threads first
 
 ## 3. Chat Is A Control Surface
@@ -28,12 +28,12 @@ Chat is important, but it is not the whole product.
 
 Chat should be used to:
 
-- create or refine Programs
-- ask follow-up questions about Briefs
+- create or refine Watches
+- ask follow-up questions about Digests
 - capture corrections
 - request one-off analysis that may turn into recurring work
 
-Chat should not be treated as the only place product value lives. Durable value should survive in Programs, Briefs, Actions, Beliefs, and Evidence.
+Chat should not be treated as the only place product value lives. Durable value should survive in Watches, Digests, To-Dos, Memories, and Sources.
 
 ## 4. Memory Governance Is First-Class
 
@@ -46,7 +46,7 @@ Changes touching memory must preserve or improve:
 - inferred vs observed distinction
 - correction handling
 - contradiction handling
-- visibility into why a recommendation used a belief
+- visibility into why a recommendation used a memory
 
 If a change improves backend memory sophistication but makes provenance or correction less visible, it is not an improvement.
 
@@ -57,15 +57,15 @@ Browser automation and sandbox execution are useful enrichments, not required co
 Implication:
 
 - core loop correctness must remain coherent when browser or sandbox is unavailable
-- degraded mode must still support sensible Program, Brief, and correction behavior
+- degraded mode must still support sensible Watch, Digest, and correction behavior
 - do not make core validation depend on optional enrichments being online
 
 ## 6. Primary vs Secondary Tool Philosophy
 
 Primary product surfaces:
 
-- Home or Brief feed
-- Programs
+- Home or Digest feed
+- Watches
 - Ask
 - Memory Trust
 
@@ -93,18 +93,19 @@ Examples that should stay internal by default:
 
 Preferred user-facing nouns:
 
-- Program
-- Brief
-- Action
+- Watch
+- Digest
+- To-Do
 - Memory
-- Evidence
+- Source
+- Activity (for background work visibility)
 
 ## 8. Boundary Test For New Work
 
 Before adding a new concept or surface, ask:
 
-1. Does this strengthen the Ask -> Program -> Brief -> Correction/Action loop?
-2. Does this preserve the Program and Brief object model?
+1. Does this strengthen the Ask -> Watch -> Digest -> Correction/To-Do loop?
+2. Does this preserve the Watch and Digest object model?
 3. Does this improve trust, provenance, or recurring follow-through?
 4. Can this remain coherent when optional enrichments are unavailable?
 

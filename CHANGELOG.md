@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Product language rename:** Program → Watch, Brief → Digest, Belief → Memory, Action → To-Do
+- **Library domain:** Unified `/api/library/*` API combining memories, documents, and research findings
+- **Merged Library page:** Single page with Memories, Documents, Findings tabs and unified search
+- **CLI renamed:** `pai library` commands replace `pai memory` and `pai knowledge` (old commands deprecated)
+- **MCP tools renamed:** `library-*` tools replace `remember`, `recall`, `knowledge-*` (old names deprecated)
+- **Agent harness:** Plan → Execute → Reflect pattern scaffolded in core
+- **Feature flags:** Config-driven phased rollout for domain restructure
+- **Telegram renamed:** Commands updated to `/digests`, `/watches`, `/library`, `/todo`
+
 ### Added
 
 - **Brief provenance trail** — Daily brief detail views now show a "Why this brief?" collapsible panel that traces the full provenance chain: which sources, beliefs, corrections, and evidence shaped the recommendation. Memory assumption cards display inline origin badges (you said, web, document, inferred). New `brief_beliefs` junction table links briefs to the exact beliefs selected during generation, and corrections track which brief prompted them. New `GET /api/inbox/:id/provenance` endpoint assembles the full chain.

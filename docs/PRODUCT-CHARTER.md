@@ -2,14 +2,14 @@
 
 ## What `pai` Is Now
 
-`pai` is a self-hosted AI that keeps track of ongoing decisions and briefs the user with their preferences in mind.
+`pai` is a self-hosted AI that keeps track of ongoing decisions and digests the user with their preferences in mind.
 
 The current product is not trying to win by being the broadest personal AI surface. It is trying to win by doing four things reliably:
 
 - remembering durable user preferences, constraints, and corrections
 - following ongoing decisions in the background
-- producing decision-ready briefs instead of raw research dumps
-- improving the next brief when the user corrects the system
+- producing decision-ready digests instead of raw research dumps
+- improving the next digest when the user corrects the system
 
 ## What `pai` Is Not
 
@@ -27,10 +27,10 @@ The current product is not trying to win by being the broadest personal AI surfa
 The current product loop is:
 
 1. Ask
-2. `Keep watching this` or implicit Program creation
-3. Brief
-4. Correction or saved move
-5. Next brief improves
+2. `Keep watching this` or implicit Watch creation
+3. Digest
+4. Correction or To-Do
+5. Next digest improves
 
 The loop is the product. Breadth is allowed only if it makes this loop more trustworthy, more continuous, or more useful.
 
@@ -54,11 +54,11 @@ Good examples:
 
 Primary product nouns:
 
-- Program
-- Brief
-- Action (user-facing: Saved move when a recommendation is explicitly kept alive)
-- Belief
-- Evidence
+- Watch
+- Digest
+- To-Do (user-facing: follow-through for Watches and Digests)
+- Memory
+- Source
 
 Secondary or internal nouns that should not lead the product:
 
@@ -77,15 +77,16 @@ The current anti-goals are deliberate:
 - do not turn memory trust into a power-user-only backend feature
 - do not let chat become the only place where the product value lives
 - do not expose internal execution nouns as if they were user value
+- do not let To-Dos become a standalone task system; they exist as follow-through for Watches and Digests
 
 ## Current 90-Day Focus
 
 For the current operating window, focus on:
 
-- making Programs and Briefs the dominant product loop
-- treating persisted follow-through as optional saved move state, not default backlog
+- making Watches and Digests the dominant product loop
+- treating persisted follow-through as optional To-Do state, not default backlog
 - improving memory provenance, correction handling, and trust visibility
-- keeping recommendation-first brief quality high
+- keeping recommendation-first digest quality high
 - clarifying mobile and Telegram as companion surfaces, not full control planes
 - reducing product-surface symmetry and implementation-noun leakage
 
@@ -95,9 +96,9 @@ Breadth is frozen unless the change clearly strengthens the core loop.
 
 A proposed feature or integration must answer at least one of these questions with evidence:
 
-- Does it improve Program continuity?
-- Does it improve brief quality or actionability?
+- Does it improve Watch continuity?
+- Does it improve digest quality or actionability?
 - Does it improve memory provenance, correction handling, or trust?
-- Does it improve recommendation-to-saved-move follow-through?
+- Does it improve recommendation-to-To-Do follow-through?
 
 If the answer is no, the default decision is to defer it.

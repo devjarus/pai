@@ -2,7 +2,7 @@
 
 This document defines the portable primitives that agents, scripts, and humans should use when coordinating work in this repository.
 
-## Program
+## Watch
 
 Purpose:
 - The product object for an ongoing decision or watch.
@@ -14,13 +14,13 @@ What it should contain:
 - the recurring question or watch
 - user preferences and constraints relevant to the decision
 - cadence or trigger rules
-- latest brief, open actions, and recent corrections
+- latest digest, open to-dos, and recent corrections
 
 What it must not become:
 - a generic bucket for every background process
 - a synonym for raw schedules or job rows
 
-## Brief
+## Digest
 
 Purpose:
 - The decision-ready artifact delivered to the user.
@@ -31,46 +31,46 @@ Who uses it:
 What it should contain:
 - recommendation
 - what changed
-- evidence
+- sources
 - memory assumptions
-- next actions as candidate moves, not automatically saved moves
+- next actions as candidate moves, not automatically saved to-dos
 - correction hooks
 
 What it must not become:
 - a raw execution log
 - a dump of research notes without a recommendation
 
-## Action (User-facing: Saved Move)
+## To-Do
 
 Purpose:
-- An optional, user-owned saved move that emerges when a brief reaches a decision-ready moment or the user explicitly asks pai to keep one manual move alive.
+- An optional, user-owned follow-through item that emerges when a digest reaches a decision-ready moment or the user explicitly asks pai to keep one manual move alive.
 
 Who uses it:
-- users, inline brief surfaces, secondary saved-move views, Telegram, and future approval-based automation
+- users, inline digest surfaces, secondary to-do views, Telegram, and future approval-based automation
 
 What it should contain:
 - clear next step
 - why now
-- origin brief or program
+- origin digest or watch
 - owner
 - status and timing or expiry
 
 What it must not become:
-- a default output for every Program
+- a default output for every Watch
 - an internal agent-quality or prompt-improvement task
 - a parallel task-management product with its own strategy
 
 How it should surface:
-- as a recommended move inside a Brief first
-- as a saved move only after explicit user intent
+- as a recommended move inside a Digest first
+- as a saved to-do only after explicit user intent
 
-## Belief
+## Memory
 
 Purpose:
 - Durable memory about the user, the system state, or a stable inferred fact.
 
 Who uses it:
-- memory subsystem, assistant pipeline, brief generation, trust UX
+- memory subsystem, assistant pipeline, digest generation, trust UX
 
 What it should contain:
 - statement
@@ -83,13 +83,13 @@ What it must not become:
 - an untraceable cache entry
 - a place to hide unverifiable assumptions
 
-## Evidence
+## Source
 
 Purpose:
-- The external or observed support for a belief, brief, or recommendation.
+- The external or observed support for a memory, digest, or recommendation.
 
 Who uses it:
-- brief generation, memory governance, knowledge retrieval, validation harness
+- digest generation, memory governance, knowledge retrieval, validation harness
 
 What it should contain:
 - source reference
