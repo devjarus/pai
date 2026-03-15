@@ -102,7 +102,7 @@ The codebase is organized into four domain pillars plus a shared foundation:
 | Library | `packages/library` | Memories, Documents, Findings, unified search, ingestion | Library |
 | Watches | `packages/watches` | Watch definitions, scheduling, templates, depth levels, delta research | Watches |
 | Digests | server/briefing + routes/digests | Digest generation, ratings, corrections, suggestions, feedback loop | Digests |
-| Tasks | `packages/tasks` (Phase 4) | To-Dos, Goals, follow-through | Tasks |
+| Tasks | `packages/plugin-tasks` | To-Dos, Goals, follow-through, linked to Watches and Digests | Tasks |
 
 Shared foundation lives in `packages/core`: LLM client, storage, telemetry, auth, agent harness.
 
@@ -145,6 +145,10 @@ These patterns were validated during Phase 1 implementation. Follow them to avoi
 **Feedback as prompt context:** User ratings and feedback text are injected into the LLM prompt, not the generation logic. This is the lightest integration that still influences output quality. Always wrap feedback queries in try/catch to never break generation.
 
 **Suggestions from structure:** Digest `next_actions` are already structured — extracting them as to-do suggestions is pure data mapping, no LLM needed.
+
+**Dashboard as integration surface:** The Home page pulls from all four domains (Library stats, Watches list, Digests latest, Tasks open). It's the proof that the pillar boundaries work — each domain provides a clean hook and the dashboard composes them.
+
+**Onboarding teaches product language:** The 4-step onboarding introduces Watch, Library, and Digest naturally through user actions, not definitions. "Tell me about yourself" → Library. "What to track?" → Watch. The product explains itself through use.
 
 ## Validation Expectations
 

@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Feedback loop:** Low digest ratings and user feedback influence next generation prompt
 - **Auto-suggest to-dos:** Digest recommendations surface as actionable to-do suggestions
 - **Digests UI:** Rating widget, correction dialog, suggested to-dos section in digest detail
+- **Home dashboard:** New landing page with latest digest summary, active watches, open to-dos, library stats, and quick ask
+- **Simplified onboarding:** 4-step flow — welcome, LLM setup, first memory, first watch
+- **To-Do source links:** Each to-do shows which Watch or Digest it came from with clickable links
+- **Navigation update:** Home as default landing, Digests as dedicated nav item, 6-item sidebar
 
 ### Added
 
