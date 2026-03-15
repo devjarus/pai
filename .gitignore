@@ -20,6 +20,7 @@ docs/plans/
 test-results/
 playwright-report/
 scripts/
+!harness/scripts/
 harness/runs/
 .superpowers/
 docs/superpowers/

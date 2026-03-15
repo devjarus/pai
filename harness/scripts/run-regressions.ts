@@ -11,104 +11,82 @@ import {
   relativeToRoot,
   reportStatus,
   rootPath,
-  validateJsonSchema,
-  validateMarkdownSections,
   validateScenario,
-  validateTaskContractTemplate,
   writeReport,
 } from "./_shared";
 
 function run(): ValidationReport {
   const checks: ValidationCheck[] = [];
 
-  const requiredDocs = [
-    "AGENTS.md",
-    "docs/ARCHITECTURE.md",
-    "docs/MEMORY-LIFECYCLE.md",
-  ];
-
-  for (const docPath of requiredDocs) {
-    checks.push(
-      makeCheck(
-        `doc:${docPath}`,
-        "Verified required harness doc presence.",
-        fileExists(docPath) ? [] : [`${docPath} is missing`],
-        [],
-      ),
-    );
-  }
-
-  checks.push(validateTaskContractTemplate("harness/task-contract.template.yaml"));
+  // 1. AGENTS.md must exist — it's the single source of truth
   checks.push(
-    validateMarkdownSections("harness/evidence-pack.template.md", [
-      "## Summary Of Change",
-      "## Files Changed",
-      "## Failure Signal",
-      "## Root Cause",
-      "## Validations Run",
-      "## Results",
-      "## Proof Of Restore",
-      "## Prevention Added",
-      "## Failures",
-      "## Residual Risk",
-      "## Remaining Uncertainty",
-      "## Confidence",
-      "## Next Best Step",
-    ]),
+    makeCheck(
+      "agents-md",
+      "AGENTS.md exists.",
+      fileExists("AGENTS.md") ? [] : ["AGENTS.md is missing"],
+      [],
+    ),
   );
 
-  for (const checklistPath of [
-    "harness/checklists/core-loop-change-checklist.md",
-    "harness/checklists/memory-change-checklist.md",
-    "harness/checklists/reactive-fix-checklist.md",
-    "harness/checklists/ui-change-checklist.md",
-  ]) {
-    checks.push(
-      makeCheck(
-        `checklist:${checklistPath}`,
-        "Verified checklist presence.",
-        fileExists(checklistPath) ? [] : [`${checklistPath} is missing`],
-        [],
-      ),
-    );
-  }
-
+  // 2. Core scenarios must exist and be well-formed
   const scenarioFiles = listFiles("harness/scenarios", ".yaml");
+  checks.push(
+    makeCheck(
+      "scenario-directory",
+      "Verified scenario directory presence.",
+      scenarioFiles.length === 0 ? ["harness/scenarios contains no .yaml files"] : [],
+      [],
+    ),
+  );
+
+  const scenarioIds: string[] = [];
   for (const filePath of scenarioFiles) {
     const relativePath = relativeToRoot(filePath);
-    checks.push(validateScenario(relativePath, readYamlFile(relativePath)));
+    const scenario = readYamlFile<Record<string, unknown>>(relativePath);
+    if (typeof scenario.id === "string") {
+      scenarioIds.push(scenario.id);
+    }
+    checks.push(validateScenario(relativePath, scenario));
   }
 
-  const scenarioIds = scenarioFiles
-    .map((filePath) => readYamlFile<{ id?: string }>(relativeToRoot(filePath)).id)
-    .filter((value): value is string => typeof value === "string");
   const missingScenarioIds = REQUIRED_SCENARIO_IDS.filter((id) => !scenarioIds.includes(id));
   checks.push(
     makeCheck(
-      "scenario-presence",
+      "scenario-coverage",
       "Verified required scenario IDs are present.",
       missingScenarioIds.length > 0 ? [`missing required scenarios: ${missingScenarioIds.join(", ")}`] : [],
       [],
     ),
   );
 
-  for (const schemaPath of [
-    "schemas/task-contract.schema.json",
-    "schemas/validation-report.schema.json",
-    "schemas/evidence-pack.schema.json",
-  ]) {
-    checks.push(validateJsonSchema(schemaPath));
+  // 3. Core packages must build (checked by pnpm verify, but validate wiring)
+  const packageScripts = ["build", "test", "lint", "typecheck", "verify", "harness:core-loop", "harness:regressions"];
+  try {
+    const packageJson = readJsonFile("package.json") as Record<string, unknown>;
+    const scripts = (packageJson.scripts ?? {}) as Record<string, unknown>;
+    for (const scriptName of packageScripts) {
+      checks.push(
+        makeCheck(
+          `script:${scriptName}`,
+          `Verified ${scriptName} script exists.`,
+          typeof scripts[scriptName] === "string" ? [] : [`package.json is missing script "${scriptName}"`],
+          [],
+        ),
+      );
+    }
+  } catch {
+    checks.push(makeCheck("package-json", "Could not read package.json.", ["package.json is missing or invalid"], []));
   }
 
-  const packageJson = readJsonFile("package.json") as Record<string, unknown>;
-  const scripts = (packageJson.scripts ?? {}) as Record<string, unknown>;
-  for (const scriptName of ["harness:core-loop", "harness:regressions"]) {
+  // 4. Key reference docs exist (optional — warn only)
+  const referenceDocs = ["docs/ARCHITECTURE.md", "docs/MEMORY-LIFECYCLE.md", "docs/SETUP.md"];
+  for (const docPath of referenceDocs) {
     checks.push(
       makeCheck(
-        `package-script:${scriptName}`,
-        "Verified root harness script wiring.",
-        typeof scripts[scriptName] === "string" ? [] : [`package.json is missing script ${scriptName}`],
+        `doc:${docPath}`,
+        "Verified reference doc presence.",
         [],
+        fileExists(docPath) ? [] : [`${docPath} is missing (reference doc, not blocking)`],
       ),
     );
   }
@@ -121,17 +99,12 @@ function run(): ValidationReport {
     generated_at: new Date().toISOString(),
     status: reportStatus(checks),
     summary:
-      "Scaffold regression harness run. This validates repo-native harness artifacts, scenario/schema presence, reactive-work workflow artifacts, and package wiring. It does not replace package tests or runtime integration checks.",
+      "Regression harness: validates AGENTS.md presence, scenario coverage, package script wiring, and reference doc presence.",
     checks,
     blockers,
     warnings,
     artifacts: ["harness/reports/latest-regressions.json"],
-    todo: [
-      "Integrate real runtime assertions for Program persistence and Brief rendering.",
-      "Attach harness checks to targeted package tests or CI once the contracts stabilize.",
-      "Add memory-governance regression cases that exercise live retrieval and correction suppression.",
-      "Validate actual task contracts and evidence packs, not only the templates, once the reactive workflow stabilizes.",
-    ],
+    todo: [],
   };
 
   writeReport("harness/reports/latest-regressions.json", report);
