@@ -5,8 +5,10 @@
 ```bash
 pnpm install && pnpm build
 pnpm verify                   # MUST pass before claiming done
+pnpm harness:core-loop        # integration test: Watch → Digest → Correction → Improvement
 pnpm dev:ui                   # UI dev server
 pnpm start                    # API at http://127.0.0.1:3141
+pnpm e2e                      # Playwright browser tests
 ```
 
 ## What pai Is

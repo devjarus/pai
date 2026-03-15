@@ -20,6 +20,8 @@ import { listPrograms, scheduleMigrations } from "../../packages/plugin-schedule
 import { assistantPlugin } from "../../packages/plugin-assistant/src/index.js";
 
 import { generateBriefing, briefingMigrations } from "../../packages/server/src/briefing.js";
+import { findingsMigrations, createFinding, listFindings, unifiedSearch } from "../../packages/library/src/index.js";
+import { digestRatingsMigrations, rateDigest, getAverageRating } from "../../packages/server/src/digest-ratings.js";
 import {
   HarnessScenario,
   REQUIRED_SCENARIO_IDS,
@@ -110,6 +112,8 @@ async function runExecutableScenario(relativePath: string): Promise<ValidationCh
     storage.migrate("product_events", productEventMigrations);
     storage.migrate("schedules", scheduleMigrations);
     storage.migrate("briefing", briefingMigrations);
+    storage.migrate("findings", findingsMigrations);
+    storage.migrate("digest_ratings", digestRatingsMigrations);
 
     const ctx = createHarnessContext(storage);
     const thread = createThread(storage, {
@@ -252,6 +256,44 @@ async function runExecutableScenario(relativePath: string): Promise<ValidationCh
         blockers.push(`${scenario.id}: corrected briefing is missing a correction hook`);
       }
     }
+    // --- Phase 1-3 additions: Library findings + Digest ratings ---
+
+    // Research findings should be ingestible into Library
+    const finding = createFinding(storage, {
+      goal: scenario.initial_user_message,
+      domain: "general",
+      summary: `Research finding for ${scenario.expected_program_behavior.program_title}`,
+      confidence: 0.8,
+      agentName: "Researcher",
+      depthLevel: "standard",
+      sources: [],
+      watchId: initialProgram.id,
+    });
+    if (!finding.id) {
+      blockers.push(`${scenario.id}: failed to create research finding in Library`);
+    }
+
+    // Findings should appear in Library listing
+    const findings = listFindings(storage);
+    if (!findings.some((f) => f.id === finding.id)) {
+      blockers.push(`${scenario.id}: created finding not found in Library listing`);
+    }
+
+    // Unified search should find the finding
+    const searchResults = unifiedSearch(storage, scenario.expected_program_behavior.program_title);
+    if (!searchResults.some((r) => r.sourceType === "finding")) {
+      warnings.push(`${scenario.id}: unified search did not return the research finding (FTS may not match)`);
+    }
+
+    // Digest rating should persist
+    if (firstBrief) {
+      rateDigest(storage, firstBrief.id, 4, "Good recommendations");
+      const avg = getAverageRating(storage);
+      if (avg === null || avg < 1) {
+        blockers.push(`${scenario.id}: digest rating was not persisted`);
+      }
+    }
+
   } catch (error) {
     blockers.push(`${scenario.id} runtime execution failed: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
