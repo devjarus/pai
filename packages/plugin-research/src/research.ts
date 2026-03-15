@@ -15,6 +15,7 @@ import {
   deriveReportVisuals,
   extractPresentationBlocks,
   instrumentedGenerateText,
+  runAgentHarness,
 } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent, createBrowserTools } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
@@ -1299,78 +1300,126 @@ export async function runResearchInBackground(
     }
 
     const budget = getContextBudget(ctx.provider ?? "ollama", ctx.model ?? "", ctx.contextWindow);
-    const { result } = await instrumentedGenerateText(
-      { storage: ctx.storage, logger: ctx.logger },
-      {
-        model: ctx.llm.getModel() as LanguageModel,
-        system: systemPrompt,
-        messages: [
-          { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
-        ],
-        tools,
-        toolChoice: "auto",
-        stopWhen: stepCountIs(15),
-        maxRetries: 1,
-        timeout: RESEARCH_LLM_TIMEOUT,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
+
+    // Wrap research execution with agent harness for plan/reflect tracking
+    let rawReport = "";
+    const harnessResult = await runAgentHarness({
+      goal: job.goal,
+      context: [],
+      budget: {
+        maxTokens: 50000,
+        maxToolCalls: (job.budgetMaxSearches || 5) + (job.budgetMaxPages || 8),
+        maxDurationMs: 300000,
       },
-      {
-        spanType: "llm",
-        process: "research.run",
-        surface: "worker",
-        threadId: job.threadId,
-        jobId,
-        provider: ctx.provider ?? "ollama",
-        model: ctx.model ?? "",
-        requestSizeChars: job.goal.length,
-      },
-    );
-
-    let rawReport = result.text;
-
-    // If the LLM exhausted all steps on tool calls without producing a report,
-    // do a follow-up call to synthesize findings from the tool results.
-    if (!rawReport) {
-      ctx.logger.warn(`Research job ${jobId}: no report text, running synthesis pass`);
-      const toolResults = result.steps
-        .flatMap((s) => s.toolResults ?? [])
-        .map((r) => String((r as Record<string, unknown>).result ?? ""))
-        .filter((r) => r.length > 10)
-        .join("\n\n---\n\n")
-        .slice(0, 30_000);
-
-      if (toolResults) {
-        const { result: synthResult } = await instrumentedGenerateText(
+      depth: "standard",
+      execute: async (harnessCtx) => {
+        const { result } = await instrumentedGenerateText(
           { storage: ctx.storage, logger: ctx.logger },
           {
             model: ctx.llm.getModel() as LanguageModel,
             system: systemPrompt,
             messages: [
               { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
-              { role: "assistant", content: `I've gathered the following research data:\n\n${toolResults}` },
-              { role: "user", content: "Now synthesize all findings into the structured markdown report." },
             ],
+            tools,
+            toolChoice: "auto",
+            stopWhen: stepCountIs(15),
             maxRetries: 1,
+            timeout: RESEARCH_LLM_TIMEOUT,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
           },
           {
             spanType: "llm",
-            process: "research.synthesize",
+            process: "research.run",
             surface: "worker",
             threadId: job.threadId,
             jobId,
             provider: ctx.provider ?? "ollama",
             model: ctx.model ?? "",
-            requestSizeChars: toolResults.length,
+            requestSizeChars: job.goal.length,
           },
         );
-        rawReport = synthResult.text || "";
-      }
-    }
 
-    if (!rawReport) rawReport = "Research completed but no report was generated.";
+        // Track tool calls used via harness context
+        const toolCallCount = result.steps.reduce(
+          (sum, s) => sum + (s.toolCalls?.length ?? 0),
+          0,
+        );
+        harnessCtx.toolCallsUsed = toolCallCount;
+
+        let reportText = result.text;
+
+        // If the LLM exhausted all steps on tool calls without producing a report,
+        // do a follow-up call to synthesize findings from the tool results.
+        if (!reportText) {
+          ctx.logger.warn(`Research job ${jobId}: no report text, running synthesis pass`);
+          const toolResults = result.steps
+            .flatMap((s) => s.toolResults ?? [])
+            .map((r) => String((r as Record<string, unknown>).result ?? ""))
+            .filter((r) => r.length > 10)
+            .join("\n\n---\n\n")
+            .slice(0, 30_000);
+
+          if (toolResults) {
+            const { result: synthResult } = await instrumentedGenerateText(
+              { storage: ctx.storage, logger: ctx.logger },
+              {
+                model: ctx.llm.getModel() as LanguageModel,
+                system: systemPrompt,
+                messages: [
+                  { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
+                  { role: "assistant", content: `I've gathered the following research data:\n\n${toolResults}` },
+                  { role: "user", content: "Now synthesize all findings into the structured markdown report." },
+                ],
+                maxRetries: 1,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
+              },
+              {
+                spanType: "llm",
+                process: "research.synthesize",
+                surface: "worker",
+                threadId: job.threadId,
+                jobId,
+                provider: ctx.provider ?? "ollama",
+                model: ctx.model ?? "",
+                requestSizeChars: toolResults.length,
+              },
+            );
+            reportText = synthResult.text || "";
+          }
+        }
+
+        if (!reportText) reportText = "Research completed but no report was generated.";
+
+        // Capture full report via closure for use after harness completes
+        rawReport = reportText;
+
+        return {
+          findings: [{
+            goal: job.goal,
+            summary: reportText.slice(0, 500),
+            confidence: 0.7,
+            sources: [],
+          }],
+          rawOutput: reportText,
+        };
+      },
+    });
+
+    // Log agent harness reflection in steps_log
+    {
+      const updatedJob = getResearchJob(ctx.storage, jobId);
+      const currentSteps: string[] = updatedJob?.stepsLog ?? [];
+      currentSteps.push(`Agent harness: confidence=${harnessResult.reflection.confidence}, ${harnessResult.reflection.completeness}`);
+      currentSteps.push(`Agent harness: plan=[${harnessResult.plan.join("; ")}]`);
+      currentSteps.push(`Agent harness: toolCalls=${harnessResult.usage.toolCallsUsed}, duration=${harnessResult.usage.durationMs}ms`);
+      if (harnessResult.reflection.suggestSecondPass) {
+        currentSteps.push("Agent harness: suggests deeper research on next run");
+      }
+      updateJob(ctx.storage, jobId, { steps_log: JSON.stringify(currentSteps) });
+    }
     let { report, structuredResult, renderSpec } = extractPresentationBlocks(rawReport);
 
     // Generate charts for stock research via sandbox (if available)
