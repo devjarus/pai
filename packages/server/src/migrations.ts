@@ -7,6 +7,7 @@ import { swarmMigrations } from "@personal-ai/plugin-swarm";
 import { briefingMigrations } from "./briefing.js";
 import { learningMigrations } from "./learning.js";
 import { scheduleMigrations } from "@personal-ai/plugin-schedules";
+import { findingsMigrations } from "@personal-ai/library";
 
 /** All plugin migrations in registration order */
 export const allMigrations: Array<[string, Migration[]]> = [
@@ -25,6 +26,7 @@ export const allMigrations: Array<[string, Migration[]]> = [
   ["artifacts", artifactMigrations],
   ["telemetry", telemetryMigrations],
   ["product_events", productEventMigrations],
+  ["findings", findingsMigrations],
 ];
 
 /** Run all plugin migrations on a storage instance */

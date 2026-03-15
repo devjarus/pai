@@ -391,6 +391,9 @@ importers:
       '@personal-ai/core':
         specifier: workspace:*
         version: link:../core
+      '@personal-ai/library':
+        specifier: workspace:*
+        version: link:../library
       '@personal-ai/plugin-assistant':
         specifier: workspace:*
         version: link:../plugin-assistant
