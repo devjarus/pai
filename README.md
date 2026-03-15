@@ -3,18 +3,18 @@
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/sFecIN?referralCode=g0LiHY&utm_medium=integration&utm_source=template&utm_campaign=generic)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/devjarus/pai)
 
-Self-hosted AI for recurring decisions. Start with Ask, let `pai` keep track of what matters in the background, and get recommendation-first briefs shaped by your preferences, constraints, and corrections.
+Your second brain that watches things for you. Start with Ask, set up Watches for things you care about, and get recommendation-first Digests shaped by your preferences, constraints, and corrections.
 
-**What makes pai different:** It is organized around Programs and Briefs instead of broad assistant surface area. Memory evolves over time, recurring questions stay in context, and the next brief improves when you correct the system.
+**What makes pai different:** It remembers what matters, researches in the background, and delivers personalized Digests that improve every time you correct them. Knowledge compounds — research findings feed your Library, corrections make future Digests smarter.
 
 ## Features
 
-- **Programs** — recurring decisions or commitments with cadence, preferences, constraints, and follow-through context
-- **Brief-first home** — recommendation, what changed, evidence, memory assumptions, and next actions delivered in one place
+- **Watches** — recurring monitoring with templates (price, news, competitor, availability), depth levels, and delta-focused research that builds on previous findings
+- **Digests** — recommendation-first updates with what changed, evidence, memory assumptions, and suggested to-dos. Rate them, correct them, and the next one improves
+- **Library** — unified knowledge layer combining memories, documents, and research findings with cross-source search
 - **Persistent memory** — beliefs with lifecycle (reinforce, contradict, decay, synthesize), semantic search, and correction-aware context reuse
-- **Background research and analysis** — lighter research or deeper analysis runs feeding the same brief workflow
-- **Companion surfaces** — web UI as the control center, with Telegram, CLI, and MCP as supporting delivery and power-user surfaces
-- **Supporting tools** — web search, knowledge ingestion, sandbox execution, and task tracking remain available without becoming the main product story
+- **Home dashboard** — latest digest, active watches, open to-dos, and library stats at a glance
+- **Companion surfaces** — web UI, Telegram, CLI, and MCP for Claude Code / Cursor integration
 
 ## Quick Start
 
@@ -67,13 +67,13 @@ Open `http://127.0.0.1:3141` after starting the server:
 
 | Page | Description |
 |------|-------------|
-| **Home** (`/`) | Brief feed for daily and research updates, with recommendation-first detail views and refresh. |
-| **Programs** | Recurring decisions or commitments that `pai` keeps watching over time. |
-| **Ask** | Chat control surface for one-off questions, follow-ups, and creating/refining ongoing work. |
-| **Memory** | Browse remembered preferences, constraints, and other beliefs that shape future briefs. |
-| **Settings** | LLM provider, model, API key, data directory, Telegram bot config, and advanced controls. |
-
-Supporting routes such as Tasks, Knowledge, Jobs, Timeline, and Schedules remain available, but they are secondary surfaces rather than the primary product loop.
+| **Home** (`/`) | Dashboard with latest digest, active watches, open to-dos, library stats, and quick ask. |
+| **Digests** (`/digests`) | Feed of daily and research digests with ratings, inline corrections, and suggested to-dos. |
+| **Watches** (`/watches`) | Recurring monitors with templates, depth levels, linked findings and digests. |
+| **Chat** (`/ask`) | Chat for questions, follow-ups, and creating watches. |
+| **Library** (`/library`) | Unified view of memories, documents, and research findings with cross-source search. |
+| **Tasks** (`/tasks`) | To-dos linked to watches and digests. |
+| **Settings** | LLM provider, model, API key, Telegram config, and diagnostics. |
 
 ## Telegram Bot
 
@@ -89,7 +89,7 @@ node packages/plugin-telegram/dist/index.js
 # Option 2: via server (enable Telegram in Settings UI, then pnpm start)
 ```
 
-Commands: `/start`, `/help`, `/clear`, `/tasks`, `/memories`, `/jobs`, `/research <query>` — or just send any message.
+Commands: `/start`, `/help`, `/clear`, `/tasks`, `/digests`, `/watches`, `/library`, `/todo`, `/research <query>` — or just send any message.
 
 The bot knows who's talking (owner vs. family/friends) and attributes memories to the correct person.
 Research and analysis reports stay inside Telegram: the bot sends a protected preview, inline visuals, and an attached HTML report document instead of publishing a public article link.
@@ -109,7 +109,7 @@ Native integration with Claude Code, Cursor, Windsurf, and any MCP-compatible ag
 }
 ```
 
-**19 tools:** `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `memory-stats`, `memory-synthesize`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`, `goal-list`, `goal-add`, `goal-done`, `knowledge-learn`, `knowledge-search`, `knowledge-sources`, `knowledge-forget`
+**Tools:** `library-remember`, `library-search`, `library-context`, `library-memories`, `library-forget`, `library-stats`, `library-synthesize`, `library-learn-url`, `library-documents`, `library-forget-document`, `tasks-list`, `tasks-add`, `tasks-done`, `tasks-edit`, `tasks-reopen`, `goals-list`, `goals-add`, `goals-done` (old tool names also work)
 
 ## CLI
 
@@ -120,36 +120,27 @@ pnpm -C packages/cli link --global    # one-time setup, then use `pai` directly
 ```
 
 ```bash
-# Memory
-pai memory remember "Alex prefers Zustand over Redux"
-pai memory recall "state management preference"
-pai memory beliefs
-pai memory forget <id-or-prefix>
-pai memory reflect                    # find duplicates + stale beliefs
-pai memory synthesize                 # generate meta-beliefs from clusters
-pai memory stats
-pai memory export backup.json
-pai memory import backup.json
+# Library (memories, documents, search)
+pai library remember "Alex prefers Zustand over Redux"
+pai library search "state management preference"
+pai library memories
+pai library forget <id-or-prefix>
+pai library stats
+pai library learn "https://react.dev/learn"
+pai library documents
 
 # Tasks
 pai task add "Ship v0.1" --priority high --due 2026-03-01
 pai task list
 pai task done <id-or-prefix>
-pai task ai-suggest                   # LLM prioritization with memory context
 
 # Goals
 pai goal add "Launch v1"
 pai goal list
 pai goal done <id-or-prefix>
 
-# Knowledge
-pai knowledge learn "https://react.dev/learn"
-pai knowledge search "React state management"
-pai knowledge list
-pai knowledge forget <id-or-prefix>
-
 # All commands support --json and prefix-matched IDs
-pai --json memory recall "topic"
+pai --json library search "topic"
 ```
 
 ## How Memory Works
@@ -186,17 +177,19 @@ Beliefs decay with a 30-day half-life (adjustable via stability). Frequently acc
 
 ```
 packages/
-  core/               Config, Storage, LLM Client, Logger, Memory, Knowledge, Threads
-  cli/                Commander.js CLI + MCP server (19 tools)
-  plugin-assistant/   Personal Assistant agent (tools, system prompt, afterResponse)
-  plugin-curator/     Memory Curator agent (health analysis, dedup, contradiction resolution)
-  plugin-tasks/       Tasks + Goals with AI prioritization
-  plugin-research/    Background research agent (domain-specific: flight, stock, crypto, news)
-  plugin-swarm/       Sub-agent swarm (parallel task decomposition, shared blackboard)
+  core/               Shared foundation: LLM client, storage, memory, knowledge, telemetry, agent harness
+  library/            Library domain: unified search, research findings, ingestion pipelines
+  watches/            Watches domain: templates, depth levels, delta research
+  server/             Fastify API (REST + SSE + digest ratings + background workers)
+  ui/                 React + Vite + Tailwind + shadcn/ui (Home, Library, Watches, Digests, Tasks)
+  cli/                Commander.js CLI + MCP server
+  plugin-assistant/   Chat agent with tools and memory recall
+  plugin-research/    Background research with agent harness
+  plugin-swarm/       Parallel sub-agent coordination
   plugin-schedules/   Scheduled recurring jobs
-  plugin-telegram/    Telegram bot (grammY, standalone or server-managed)
-  server/             Fastify API (REST + SSE streaming + static UI)
-  ui/                 React + Vite + Tailwind + shadcn/ui
+  plugin-tasks/       To-dos + Goals
+  plugin-curator/     Memory health (dedup, contradiction resolution)
+  plugin-telegram/    Telegram bot (grammY)
 ```
 
 Data stored at `~/.personal-ai/data/`. SQLite with WAL mode for the default storage backend.
@@ -227,7 +220,7 @@ Environment variables or `~/.personal-ai/config.json` (editable via Settings UI)
 ## Development
 
 ```bash
-pnpm test                # 712 tests (vitest)
+pnpm test                # 1028+ tests (vitest)
 pnpm test:watch          # watch mode
 pnpm test:coverage       # v8 coverage with thresholds
 pnpm typecheck           # type-check all packages
