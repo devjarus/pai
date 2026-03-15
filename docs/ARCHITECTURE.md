@@ -68,15 +68,15 @@ sandbox/              Docker sidecar — Python 3.12 + Node.js 20 for isolated c
 
 The user-facing shell is intentionally organized around the recurring decision loop, not around storage primitives or raw backlog history.
 
-- `Home` leads with active Programs, open saved moves, and the latest Brief. Historical briefs remain available below as archive.
-- `Ask` is the main creation surface for new Programs and follow-up questions.
-- `Programs` is the durable watch list over `scheduled_jobs`.
-- `Brief detail` is the primary decision artifact: recommendation, what changed, evidence, memory assumptions, recommended moves, and correction.
-- `Actions` remain stored in `tasks`, but user-facing product behavior treats them as optional saved moves linked to a Brief or explicit user intent. The standalone list is secondary to inline recommended moves inside Briefs.
+- `Home` leads with active Watches, open To-Dos, and the latest Digest. Historical digests remain available below as archive.
+- `Ask` is the main creation surface for new Watches and follow-up questions.
+- `Watches` is the durable watch list over `scheduled_jobs`.
+- `Digest detail` is the primary decision artifact: recommendation, what changed, sources, memory assumptions, recommended moves, and correction.
+- `To-Dos` remain stored in `tasks`, but user-facing product behavior treats them as optional To-Dos linked to a Digest or explicit user intent. The standalone list is secondary to inline recommended moves inside Digests.
 
 This is important architecturally because the system may store much more than it should immediately surface. The shell should reflect the current loop state, not dump every internal artifact with equal weight.
 
-Structured report rendering is also shared across those surfaces through `ResultRenderer` and the `json-render` registry. That renderer must stay theme-aware because the same Brief or report artifact can appear in Inbox detail, chat tool output, Jobs, and other loop-adjacent views.
+Structured report rendering is also shared across those surfaces through `ResultRenderer` and the `json-render` registry. That renderer must stay theme-aware because the same Digest or report artifact can appear in Inbox detail, chat tool output, Jobs, and other loop-adjacent views.
 
 ---
 

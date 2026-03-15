@@ -19,7 +19,7 @@ Complete instructions for installing, configuring, and using Personal AI.
   - [Chat](#chat)
   - [Memory](#memory)
   - [Knowledge Base](#knowledge-base)
-  - [Saved Moves & Legacy Goals](#saved-moves--legacy-goals)
+  - [To-Dos & Legacy Goals](#to-dos--legacy-goals)
   - [Settings](#settings)
 - [CLI Usage](#cli-usage)
 - [Troubleshooting](#troubleshooting)
@@ -413,8 +413,8 @@ PAI_TELEGRAM_TOKEN=7123456789:AAF...
 
 ### Step 3: Chat
 
-Open your bot in Telegram and send any message. The bot responds using the same assistant pipeline as the web UI — it has access to memory, web search, saved moves, and knowledge.
-When a brief or Program-linked research/analysis run finishes, the bot sends a protected Telegram update. Daily/program briefs arrive as concise recommendation-first messages. Research and analysis runs still include a short gist, any chart images, and an attached PDF report document. Reports are no longer published to a public third-party article service.
+Open your bot in Telegram and send any message. The bot responds using the same assistant pipeline as the web UI — it has access to memory, web search, To-Dos, and knowledge.
+When a digest or Watch-linked research/analysis run finishes, the bot sends a protected Telegram update. Daily/watch digests arrive as concise recommendation-first messages. Research and analysis runs still include a short gist, any chart images, and an attached PDF report document. Reports are no longer published to a public third-party article service.
 
 ### Telegram commands
 
@@ -422,15 +422,15 @@ When a brief or Program-linked research/analysis run finishes, the bot sends a p
 |---------|-------------|
 | `/start` | Welcome message |
 | `/help` | List available commands |
-| `/briefs` | Show recent briefs linked to this chat |
-| `/programs` | Show active Programs |
+| `/briefs` | Show recent digests linked to this chat |
+| `/programs` | Show active Watches |
 | `/clear` | Clear conversation history |
-| `/tasks` | Show saved moves |
+| `/tasks` | Show To-Dos |
 | `/memories` | Show top 10 memories |
-| `/reply <brief-id> <message>` | Ask a follow-up tied to a brief |
-| `/action <brief-id> \| <title>` | Save a move from a brief |
-| `/done <task-id>` | Mark a saved move done |
-| `/correct <belief-id> \| <replacement>` | Correct a stored belief used by future briefs |
+| `/reply <brief-id> <message>` | Ask a follow-up tied to a digest |
+| `/action <brief-id> \| <title>` | Save a To-Do from a digest |
+| `/done <task-id>` | Mark a To-Do done |
+| `/correct <belief-id> \| <replacement>` | Correct a stored memory used by future digests |
 
 Or just send any text message to chat naturally.
 
@@ -497,19 +497,19 @@ You can also:
 - Re-learn a page (refresh content)
 - Crawl sub-pages from a source
 
-### Saved Moves & Legacy Goals
+### To-Dos & Legacy Goals
 
-Use a saved move when a Brief reaches a real decision-ready moment and you want pai to keep one manual move alive across future briefs.
+Use a To-Do when a Digest reaches a real decision-ready moment and you want pai to keep one manual move alive across future digests.
 
-- **"Save this: buy the outbound fare before tonight"** — stores a bounded manual move as a saved move
-- **"Show my open saved moves"** — lists the moves you still care about
-- **"Mark the fare step done"** — closes the loop so later briefs know the move happened
+- **"Save this: buy the outbound fare before tonight"** — stores a bounded manual move as a To-Do
+- **"Show my open To-Dos"** — lists the moves you still care about
+- **"Mark the fare step done"** — closes the loop so later digests know the move happened
 
-Saved moves are not meant to be a separate general-purpose task manager. They are the optional layer between a recommendation and a completed move.
+To-Dos are not meant to be a separate general-purpose task manager. They are the optional layer between a recommendation and a completed move.
 
-Saved moves have: title, description, status, priority (low/medium/high), due date, and optional linkage back to a Brief or Program.
+To-Dos have: title, description, status, priority (low/medium/high), due date, and optional linkage back to a Digest or Watch.
 
-Legacy goals still exist for cleanup and backward compatibility, but new product work should flow through Programs, Briefs, and optional saved moves.
+Legacy goals still exist for cleanup and backward compatibility, but new product work should flow through Watches, Digests, and optional To-Dos.
 
 ### Settings
 
@@ -521,7 +521,7 @@ The **Settings** page lets you configure:
 - **API Key** — your provider API key (stored locally, never sent to pai servers)
 - **Embed Model** — model used for semantic search
 - **Data Directory** — where your database lives (default: `~/.personal-ai/data/`)
-- **Background Workers** — toggle briefing generation, background learning, and knowledge cleanup
+- **Background Workers** — toggle digest generation, background learning, and knowledge cleanup
 - **Diagnostics** — owner-local observability for token usage, process hotspots, thread/job traces, and recent failures. Data stays inside the current instance and is surfaced only in Settings.
 
 Changes take effect immediately — no restart needed.
@@ -551,7 +551,7 @@ pai memory import backup.json          # restore
 
 ### Task Commands
 
-The CLI still uses `task` commands for compatibility, even though the web product presents these items as saved moves.
+The CLI still uses `task` commands for compatibility, even though the web product presents these items as To-Dos.
 
 ```bash
 pai task add "Review PR #42" --priority high --due 2026-03-15

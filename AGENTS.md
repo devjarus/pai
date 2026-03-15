@@ -1,171 +1,144 @@
 # AGENTS.md
 
-This file is the front door for any coding agent working in `pai`. It is intentionally short. Treat it as the coordinator, not the full handbook.
+Instructions for any coding agent working on `pai` — a self-hosted personal AI that watches things for you, remembers what matters, and keeps you updated with personalized digests.
 
-For runtime/setup detail, use [docs/SETUP.md](docs/SETUP.md). For system internals, use [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/MEMORY-LIFECYCLE.md](docs/MEMORY-LIFECYCLE.md).
-
-## Repo Quick Start
+## Quick Start
 
 ```bash
-pnpm install
-pnpm build
-pnpm start
-pnpm dev:ui
+pnpm install          # install dependencies
+pnpm build            # build all packages
+pnpm test             # run all tests (1028+ tests, must all pass)
+pnpm lint             # lint check
+pnpm typecheck        # TypeScript strict check
+pnpm verify           # build + lint + typecheck + test (run before claiming done)
 
-pnpm test
-pnpm lint
-pnpm typecheck
-pnpm verify
-
-pnpm harness:core-loop
-pnpm harness:regressions
+pnpm dev:ui           # start UI dev server (Vite + React)
+pnpm start            # start API server at http://127.0.0.1:3141
+pnpm stop             # stop the server
+pnpm e2e              # Playwright end-to-end tests
 ```
 
-Useful existing entrypoints:
+## What This Product Is
 
-- `pnpm pai ...` for CLI workflows
-- `pnpm e2e` for Playwright coverage
-- `pnpm stop` to stop the local server
+A self-hosted AI that keeps track of ongoing decisions and delivers digests to users with their preferences in mind.
 
-## Required Read Order
+**Core loop:** Ask → Watch creation → Digest → Correction or To-Do → Next digest improves.
 
-Read these in order before making non-trivial changes:
+**The four domains:**
 
-1. [docs/PRODUCT-CHARTER.md](docs/PRODUCT-CHARTER.md)
-2. [docs/PRIMITIVES.md](docs/PRIMITIVES.md)
-3. [docs/DEFINITION-OF-DONE.md](docs/DEFINITION-OF-DONE.md)
-4. Relevant files under [docs/decisions](docs/decisions)
-5. Relevant checklists under [harness/checklists](harness/checklists)
+| Domain | What it does | Package | API |
+|--------|-------------|---------|-----|
+| **Library** | Unified knowledge — memories, documents, research findings | `packages/library` | `/api/library/*` |
+| **Watches** | Recurring monitoring with templates and depth levels | `packages/watches` | `/api/watches/*` |
+| **Digests** | Decision-ready outputs with ratings and corrections | `packages/server` (briefing) | `/api/digests/*` |
+| **Tasks** | To-dos that emerge from digests, linked to watches | `packages/plugin-tasks` | `/api/tasks/*` |
 
-Read these as needed for implementation detail:
+Shared foundation in `packages/core`: LLM client, storage (SQLite), telemetry, auth, agent harness.
 
-- [docs/ARCHITECTURE-BOUNDARIES.md](docs/ARCHITECTURE-BOUNDARIES.md)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/MEMORY-LIFECYCLE.md](docs/MEMORY-LIFECYCLE.md)
-- [docs/SETUP.md](docs/SETUP.md)
+**Product nouns (user-facing → internal code):**
 
-## Mandatory Workflow
+| User sees | Code uses | Notes |
+|-----------|-----------|-------|
+| Memory | `Belief` | Durable knowledge with confidence + decay |
+| Document | `KnowledgeSource` | Ingested URLs and uploads |
+| Finding | `ResearchFinding` | Structured research output |
+| Watch | `ScheduledJob` / `Program` | Recurring monitoring |
+| Digest | `Briefing` | Generated output with recommendations |
+| To-Do | `Task` | Follow-through action |
+| Source | `Evidence` | External reference backing a claim |
+| Activity | `Job` | Background work (hidden by default) |
 
-Before coding:
+## Rules
 
-- Create a task contract from [harness/task-contract.template.yaml](harness/task-contract.template.yaml) for any multi-step task, architecture change, or core-loop change.
-- Save it under `harness/runs/`.
-- Keep per-task files in `harness/runs/` local to the working tree; do not commit them.
-- Set `work_mode` in the task contract. Use `reactive` when the task is triggered by CI, coverage, build, regression, or another failing guardrail.
-- Confirm scope, success criteria, validations, and escalation conditions before editing code.
+1. **Run `pnpm verify` before claiming work is done.** All tests must pass, no type errors, no lint errors.
+2. **Don't break existing tests.** If you add a migration, update the count in `packages/server/test/migrations.test.ts`.
+3. **Update docs when you change behavior.** If you rename a concept, add an API, or change the core loop — update CHANGELOG.md and relevant docs in the same commit.
+4. **Stay in scope.** Don't refactor unrelated code. Don't add features that weren't asked for.
+5. **Keep changes small and reviewable.** One concern per commit. Commit often.
+6. **Use new product language in user-facing surfaces.** UI labels, CLI output, API responses, Telegram messages use Watch/Digest/Memory/To-Do. Internal code can keep Belief/Briefing/ScheduledJob.
 
-During work:
+## Codebase Patterns
 
-- Stay within scope.
-- Avoid unrelated cleanup unless the task contract is updated first.
-- Keep an evidence pack updated during long sessions using [harness/evidence-pack.template.md](harness/evidence-pack.template.md).
-- For reactive work, record the failure signal, restore condition, root cause, proof of restore, and prevention step in the evidence pack.
-- Record meaningful architectural or product tradeoffs in `docs/decisions/*` when the task changes repo expectations.
-- If a change materially alters product behavior, architecture boundaries, memory/correction rules, validation expectations, or operator workflow, update the relevant docs in the same task.
-- Relevant docs may include `README.md`, `docs/ARCHITECTURE*.md`, `docs/MEMORY-LIFECYCLE.md`, `docs/SETUP.md`, `docs/DEFINITION-OF-DONE.md`, `docs/decisions/*`, and `CHANGELOG.md`.
+These patterns are validated by the codebase. Follow them to avoid common mistakes.
 
-Before claiming completion:
+**Testing:**
+- `createStorage` requires a real directory path — use `mkdtempSync` for temp dirs, never `:memory:`
+- Migration count test: `packages/server/test/migrations.test.ts` asserts total count — update it when adding migrations
 
-- Run the relevant tests and harness checks.
-- Use at least one relevant checklist from `harness/checklists/*`.
-- Produce or update an evidence pack.
-- Confirm whether docs changed. If a significant behavior or workflow change did not require a doc update, say why in the evidence pack and final handoff.
-- For reactive work, rerun the failing gate when possible and capture whether the fix added a durable guard.
-- State uncertainty honestly.
-- Escalate if ambiguity, missing validation, or scope drift remains.
+**Server routes:**
+- `validate(schema, data)` — schema FIRST, data second (see `packages/server/src/validate.ts`)
+- Error responses: `reply.status(404).send({ error: "..." })` — never use `app.httpErrors`
+- Fastify throws on duplicate route paths — don't add 301 redirects while old routes still exist
+- URL learning: fetch page via `fetchPageAsMarkdown` first, then `learnFromContent` — never pass raw URL
 
-## Long-Session Rule
+**React/UI:**
+- `<Navigate to="/path/:id" />` doesn't interpolate params — use a component with `useParams()`
+- Hooks follow TanStack Query patterns — see any `use-*.ts` file in `packages/ui/src/hooks/`
+- Follow existing shadcn/ui + Tailwind patterns
 
-For work that spans multiple steps, multiple files, or touches the Ask → Watch → Digest → Correction loop:
+**Architecture:**
+- Domain packages re-export from underlying packages with user-facing aliases (see `packages/watches/src/index.ts`)
+- Domains interact through TypeScript functions, not HTTP — the boundary is the module interface
+- Not every domain needs its own package — Digests lives in the server because briefing logic is deeply integrated
+- Always verify function signatures by reading `packages/core/src/index.ts` before calling core functions
+- Core exports `AgentContext` — avoid naming collisions (use `AgentHarnessContext` etc.)
 
-- create a task contract under `harness/runs/`
-- maintain an evidence pack alongside it
-- use at least one relevant checklist
-- update the task contract before continuing if scope changes
+**Research system:**
+- Agent harness pattern: plan → execute → reflect → ingest (see `packages/core/src/agent-harness/`)
+- Depth levels (quick/standard/deep) control research effort per watch
+- Delta context: previous findings appended to goal so agents don't repeat themselves
+- Findings flow to Library via `ingestResearchResult` — this is how knowledge compounds
+- Feedback loop: digest ratings influence next generation via prompt context (wrapped in try/catch)
 
-## Product Rules Summary
+## Key Files
 
-- Core loop: Ask → Watch creation → Digest → Correction or To-Do → Next digest improves.
-- Primary product nouns: `Watch`, `Digest`, `To-Do`, `Memory`, `Source`.
-- Internal-only nouns (code): `Belief`, `Briefing`, `ScheduledJob`, `Episode`. These map to user-facing names at the API/UI boundary.
-- `Chat` (Thread) is an interaction container, not a primary product object.
-- `Activity` (Job) is a user-facing noun for background work visibility, collapsed by default.
-- Browser automation and sandbox execution are optional enrichments, not core correctness dependencies.
-- Do not promote internal nouns like `swarm`, `blackboard`, or `schedule` into the main product story unless a decision log changes that rule.
+| What | Where |
+|------|-------|
+| All core exports | `packages/core/src/index.ts` |
+| Memory/belief CRUD | `packages/core/src/memory/memory.ts` |
+| Knowledge ingestion | `packages/core/src/knowledge.ts` |
+| Research findings | `packages/library/src/findings.ts` |
+| Unified search | `packages/library/src/search.ts` |
+| Ingestion pipelines | `packages/library/src/ingestion.ts` |
+| Watch templates | `packages/watches/src/templates.ts` |
+| Depth levels | `packages/watches/src/depth.ts` |
+| Briefing generation | `packages/server/src/briefing.ts` |
+| Digest ratings | `packages/server/src/digest-ratings.ts` |
+| Background dispatch | `packages/server/src/background-dispatcher.ts` |
+| Worker loop | `packages/server/src/workers.ts` |
+| Server migrations | `packages/server/src/migrations.ts` |
+| Route registration | `packages/server/src/index.ts` |
+| UI router | `packages/ui/src/App.tsx` |
+| UI navigation | `packages/ui/src/components/Layout.tsx` |
+| Product charter | `docs/PRODUCT-CHARTER.md` |
+| Architecture spec | `docs/superpowers/specs/2026-03-15-four-pillars-roadmap-design.md` |
 
-## Four Pillars Architecture
+## When Making Significant Changes
 
-The codebase is organized into four domain pillars plus a shared foundation:
+For multi-step tasks, architecture changes, or core-loop modifications:
 
-| Domain | Package | Owns | User-Facing Name |
-|--------|---------|------|-----------------|
-| Library | `packages/library` | Memories, Documents, Findings, unified search, ingestion | Library |
-| Watches | `packages/watches` | Watch definitions, scheduling, templates, depth levels, delta research | Watches |
-| Digests | server/briefing + routes/digests | Digest generation, ratings, corrections, suggestions, feedback loop | Digests |
-| Tasks | `packages/plugin-tasks` | To-Dos, Goals, follow-through, linked to Watches and Digests | Tasks |
+1. **Read first:** [docs/PRODUCT-CHARTER.md](docs/PRODUCT-CHARTER.md), [docs/PRIMITIVES.md](docs/PRIMITIVES.md), [docs/DEFINITION-OF-DONE.md](docs/DEFINITION-OF-DONE.md)
+2. **Plan before coding** — understand the scope and what tests you'll need
+3. **Test as you go** — write tests first when adding new functions
+4. **Update docs in the same task** — don't defer doc updates
+5. **Run `pnpm verify`** before claiming done
 
-Shared foundation lives in `packages/core`: LLM client, storage, telemetry, auth, agent harness.
+For reactive work (fixing CI failures, test failures, build breaks):
+- Find the root cause before applying a fix
+- Add a guard (test or check) that prevents the same failure
+- Record what broke and why in the commit message
 
-Domains interact through **exported TypeScript functions** (same process), not HTTP. The boundary is the module interface.
+## Validation
 
-See: [docs/superpowers/specs/2026-03-15-four-pillars-roadmap-design.md](docs/superpowers/specs/2026-03-15-four-pillars-roadmap-design.md)
+```bash
+pnpm verify              # must pass — build + lint + typecheck + test
+pnpm harness:core-loop   # run when touching Watches, Digests, memory, corrections
+pnpm harness:regressions # run for repo-wide integrity checks
+pnpm e2e                 # run when touching UI flows
+```
 
-## Agent Execution Patterns (Learned)
-
-These patterns were validated during Phase 1 implementation. Follow them to avoid repeated mistakes.
-
-**Storage tests:** `createStorage` requires a real directory path. Use `mkdtempSync` for temp directories in tests — never `:memory:`.
-
-**Validation:** `validate(schema, data)` — schema first, data second. Every route file follows this. Read `packages/server/src/validate.ts` if unsure.
-
-**Error responses:** Use `reply.status(404).send({ error: "..." })` in Fastify routes. Do NOT use `app.httpErrors` — `@fastify/sensible` may not be registered.
-
-**Migration counts:** `packages/server/test/migrations.test.ts` asserts the total migration count. Update it when adding new migrations.
-
-**Route conflicts:** Fastify throws on duplicate route paths. When adding new routes alongside existing ones (e.g., `/api/library/memories` alongside `/api/beliefs`), do NOT add 301 redirects if the old routes still exist — comment them for when old routes are removed.
-
-**React Router params:** `<Navigate to="/path/:id" />` does NOT interpolate params. Use a redirect component with `useParams()` for parameterized redirects.
-
-**LLM client API:** `correctBelief` is async and requires `LLMClient`. Always verify function signatures by reading actual exports in `packages/core/src/index.ts`.
-
-**Page fetching:** URL learning must fetch page content first via `fetchPageAsMarkdown`, then pass to `learnFromContent`. Never call `learnFromContent` with a raw URL.
-
-**Naming collisions:** Core already exports `AgentContext`. New types should use distinct names (e.g., `AgentHarnessContext`).
-
-**Concurrent agents on same package:** When dispatching parallel agents, ensure they touch different files. Two agents modifying `server/src/index.ts` simultaneously causes merge conflicts. Workers.ts and routes/ are safe to parallelize.
-
-**Wrap, don't rewrite:** When integrating new patterns (e.g., agent harness) into existing code, wrap with callbacks rather than restructuring. The harness wraps research execution — it doesn't replace the LLM call logic.
-
-**Re-export with aliases:** Domain packages (library, watches) re-export from underlying packages with user-facing names. This keeps internal code stable while presenting a clean API. See `packages/watches/src/index.ts` for the pattern.
-
-**Depth + delta = compounding:** Research depth levels control effort per run. Delta context (previous findings appended to the goal) ensures agents don't repeat themselves. Together they make each Watch run more valuable than the last.
-
-**In-place domains are fine:** Not every domain needs a new package. Digests stayed in the server package because briefing logic is deeply woven into workers, dispatch, and generation. A clean API surface (`/api/digests/*`) is sufficient domain boundary.
-
-**Feedback as prompt context:** User ratings and feedback text are injected into the LLM prompt, not the generation logic. This is the lightest integration that still influences output quality. Always wrap feedback queries in try/catch to never break generation.
-
-**Suggestions from structure:** Digest `next_actions` are already structured — extracting them as to-do suggestions is pure data mapping, no LLM needed.
-
-**Dashboard as integration surface:** The Home page pulls from all four domains (Library stats, Watches list, Digests latest, Tasks open). It's the proof that the pillar boundaries work — each domain provides a clean hook and the dashboard composes them.
-
-**Onboarding teaches product language:** The 4-step onboarding introduces Watch, Library, and Digest naturally through user actions, not definitions. "Tell me about yourself" → Library. "What to track?" → Watch. The product explains itself through use.
-
-## Validation Expectations
-
-- The source of truth for completion is [docs/DEFINITION-OF-DONE.md](docs/DEFINITION-OF-DONE.md).
-- Release blockers and warn-only issues are defined there and must be reflected in the evidence pack.
-- Use `pnpm harness:core-loop` when the change touches Watches, Digests, memory trust, correction handling, or recurring follow-through.
-- Use `pnpm harness:regressions` for repo-wide harness integrity checks.
-- Pick the checklist that matches the work:
-  - `core-loop-change-checklist.md`
-  - `memory-change-checklist.md`
-  - `reactive-fix-checklist.md`
-  - `ui-change-checklist.md`
-
-## Repo Conventions That Still Apply
-
-- Run the existing build/test/dev commands above. Do not invent alternate workflows when the repo already has one.
-- Update `CHANGELOG.md` for user-facing product changes.
-- Keep changes small, single-purpose, and reviewable.
-- Prefer repo-native artifacts over agent-specific notes.
-- After significant project changes, record durable context with `pnpm pai memory remember "<what changed and why>"` if the local runtime is available.
+Checklists (use when relevant):
+- `harness/checklists/core-loop-change-checklist.md`
+- `harness/checklists/memory-change-checklist.md`
+- `harness/checklists/ui-change-checklist.md`
+- `harness/checklists/reactive-fix-checklist.md`

@@ -44,7 +44,7 @@ At minimum, select the validations that match the work:
 - `pnpm test` or targeted package tests for code changes
 - `pnpm lint` when linted sources are touched
 - `pnpm typecheck` when types or build wiring are affected
-- `pnpm harness:core-loop` for Program, Brief, correction, provenance, or recurring follow-through changes
+- `pnpm harness:core-loop` for Watch, Digest, correction, provenance, or recurring follow-through changes
 - `pnpm harness:regressions` for repo-level harness integrity or cross-cutting changes
 
 ## Reactive Restore Work
