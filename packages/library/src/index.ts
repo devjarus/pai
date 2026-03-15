@@ -14,5 +14,6 @@ export type { ResearchFinding, CreateFindingInput, ResearchFindingSource } from 
 // Finding embeddings
 export { storeFindingEmbedding, getFindingEmbedding, embedFinding } from "./findings-embed.js";
 
-// Unified search (new — will be implemented in Task 3)
-// export { unifiedSearch } from "./search.js";
+// Unified search
+export { unifiedSearch } from "./search.js";
+export type { LibrarySearchResult, LibrarySourceType } from "./search.js";
