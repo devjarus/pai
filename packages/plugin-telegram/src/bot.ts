@@ -1,4 +1,4 @@
-import { Bot } from "grammy";
+import { Bot, type CommandContext, type Context } from "grammy";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { listBeliefs, getThread, formatDateTime, parseTimestamp, getArtifact, correctBelief, recordProductEvent } from "@personal-ai/core";
 import { addTask, completeTask, listTasks } from "@personal-ai/plugin-tasks";
@@ -27,7 +27,7 @@ const TOOL_STATUS: Record<string, string> = {
   web_search: "\uD83D\uDD0D Searching the web...",
   memory_recall: "\uD83E\uDDE0 Recalling memories...",
   memory_remember: "\uD83D\uDCDD Storing in memory...",
-  memory_beliefs: "\uD83D\uDCDA Listing beliefs...",
+  memory_beliefs: "\uD83D\uDCDA Listing memories...",
   memory_correct: "\uD83E\uDDFD Correcting memory...",
   task_list: "\uD83D\uDCCB Checking saved moves...",
   task_add: "\u2795 Saving move...",
@@ -110,10 +110,10 @@ function parseBriefSummary(sections: string): string {
       return parsed.goal.trim();
     }
     if (typeof parsed.report === "string" && parsed.report.trim().length > 0) {
-      return parsed.report.split("\n").map((line) => line.trim()).find(Boolean) ?? "Brief ready";
+      return parsed.report.split("\n").map((line) => line.trim()).find(Boolean) ?? "Digest ready";
     }
   } catch {
-    return "Brief ready";
+    return "Digest ready";
   }
   return "Brief ready";
 }
@@ -177,15 +177,15 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
   bot.api.setMyCommands([
     { command: "start", description: "Welcome message" },
     { command: "help", description: "List available commands" },
-    { command: "briefs", description: "Show recent briefs" },
-    { command: "programs", description: "Show active Programs" },
+    { command: "digests", description: "Show recent digests" },
+    { command: "watches", description: "Show active Watches" },
     { command: "clear", description: "Clear conversation history" },
     { command: "tasks", description: "Show saved moves" },
-    { command: "memories", description: "Show recent memories" },
-    { command: "reply", description: "Reply to a brief by ID" },
-    { command: "action", description: "Save a move from a brief" },
+    { command: "library", description: "Show recent memories" },
+    { command: "reply", description: "Reply to a digest by ID" },
+    { command: "todo", description: "Save a to-do from a digest" },
     { command: "done", description: "Mark a saved move done" },
-    { command: "correct", description: "Correct a belief by ID" },
+    { command: "correct", description: "Correct a memory by ID" },
   ]).catch((err) => {
     ctx.logger.warn(`Failed to register bot commands: ${err instanceof Error ? err.message : String(err)}`);
   });
@@ -198,15 +198,15 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       "Just send me a message and I'll respond. I remember our conversations across sessions.\n\n" +
       "<b>Commands:</b>\n" +
       "/help — Show available commands\n" +
-      "/briefs — Show recent briefs for this chat\n" +
-      "/programs — Show active Programs\n" +
+      "/digests — Show recent digests for this chat\n" +
+      "/watches — Show active Watches\n" +
       "/clear — Start a fresh conversation\n" +
       "/tasks — Show your saved moves\n" +
-      "/memories — Show recent memories\n" +
-      "/reply &lt;brief-id&gt; &lt;message&gt; — Follow up on a brief\n" +
-      "/action &lt;brief-id&gt; | &lt;title&gt; — Save a move from a brief\n" +
+      "/library — Show recent memories\n" +
+      "/reply &lt;digest-id&gt; &lt;message&gt; — Follow up on a digest\n" +
+      "/todo &lt;digest-id&gt; | &lt;title&gt; — Save a to-do from a digest\n" +
       "/done &lt;move-id&gt; — Mark a saved move done\n" +
-      "/correct &lt;belief-id&gt; | &lt;replacement&gt; — Correct a belief",
+      "/correct &lt;memory-id&gt; | &lt;replacement&gt; — Correct a memory",
       { parse_mode: "HTML" },
     );
   });
@@ -217,39 +217,41 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       "<b>Available Commands</b>\n\n" +
       "/start — Welcome message\n" +
       "/help — This help message\n" +
-      "/briefs — Show recent briefs for this chat\n" +
-      "/programs — List active Programs\n" +
+      "/digests — Show recent digests for this chat\n" +
+      "/watches — List active Watches\n" +
       "/clear — Clear conversation history and start fresh\n" +
       "/tasks — List your saved moves\n" +
-      "/memories — Show your top 10 memories\n" +
-      "/reply &lt;brief-id&gt; &lt;message&gt; — Continue a brief discussion\n" +
-      "/action &lt;brief-id&gt; | &lt;title&gt; — Save a move linked to a brief\n" +
+      "/library — Show your top 10 memories\n" +
+      "/reply &lt;digest-id&gt; &lt;message&gt; — Continue a digest discussion\n" +
+      "/todo &lt;digest-id&gt; | &lt;title&gt; — Save a to-do linked to a digest\n" +
       "/done &lt;move-id&gt; — Mark a saved move done\n" +
-      "/correct &lt;belief-id&gt; | &lt;replacement&gt; — Replace a belief used by future briefs\n\n" +
+      "/correct &lt;memory-id&gt; | &lt;replacement&gt; — Replace a memory used by future digests\n\n" +
       "Or just send any message to chat!",
       { parse_mode: "HTML" },
     );
   });
 
-  bot.command("briefs", async (tgCtx) => {
+  const digestsHandler = async (tgCtx: CommandContext<Context>) => {
     try {
       const briefings = listRecentBriefingsForChat(ctx, tgCtx.chat.id, tgCtx.from?.username);
       if (briefings.length === 0) {
-        await tgCtx.reply("No recent briefs are linked to this chat yet.");
+        await tgCtx.reply("No recent digests are linked to this chat yet.");
         return;
       }
       const lines = briefings.map((briefing) => {
         const summary = parseBriefSummary(briefing.sections);
         return `• <code>${escapeHTML(briefing.id.slice(0, 12))}</code> · ${escapeHTML(briefing.type)} · ${escapeHTML(formatRelativeTime(briefing.generated_at))}\n${escapeHTML(summary.slice(0, 140))}`;
       });
-      await tgCtx.reply(`<b>Recent Briefs</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
+      await tgCtx.reply(`<b>Recent Digests</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
     } catch (err) {
-      ctx.logger.error("Failed to list Telegram briefs", { error: err instanceof Error ? err.message : String(err) });
-      await tgCtx.reply("Failed to load recent briefs.");
+      ctx.logger.error("Failed to list Telegram digests", { error: err instanceof Error ? err.message : String(err) });
+      await tgCtx.reply("Failed to load recent digests.");
     }
-  });
+  };
+  bot.command("digests", digestsHandler);
+  bot.command("briefs", digestsHandler); // legacy alias
 
-  bot.command("programs", async (tgCtx) => {
+  const watchesHandler = async (tgCtx: CommandContext<Context>) => {
     try {
       const threadId = getExistingThreadId(ctx, tgCtx.chat.id);
       const activePrograms = listPrograms(ctx.storage, "active");
@@ -257,33 +259,35 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         ? activePrograms.filter((program) => program.threadId === threadId || program.chatId === tgCtx.chat.id)
         : activePrograms;
       if (programs.length === 0) {
-        await tgCtx.reply("No active Programs for this chat yet. Ask me to keep watching something.");
+        await tgCtx.reply("No active Watches for this chat yet. Ask me to keep watching something.");
         return;
       }
       const lines = programs.slice(0, 8).map((program) => {
         const cadence = program.intervalHours >= 24 ? `${Math.round(program.intervalHours / 24)}d` : `${program.intervalHours}h`;
         const delivery = program.deliveryMode === "change-gated" ? "change-gated" : "interval";
-        return `• <b>${escapeHTML(program.title)}</b> (${escapeHTML(program.family)} · ${escapeHTML(program.executionMode)} · ${delivery})\nNext brief: ${escapeHTML(formatDateTime(ctx.config.timezone, parseTimestamp(program.nextRunAt)).full)} · cadence ${escapeHTML(cadence)}`;
+        return `• <b>${escapeHTML(program.title)}</b> (${escapeHTML(program.family)} · ${escapeHTML(program.executionMode)} · ${delivery})\nNext digest: ${escapeHTML(formatDateTime(ctx.config.timezone, parseTimestamp(program.nextRunAt)).full)} · cadence ${escapeHTML(cadence)}`;
       });
-      await tgCtx.reply(`<b>Active Programs</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
+      await tgCtx.reply(`<b>Active Watches</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
     } catch (err) {
-      ctx.logger.error("Failed to list Telegram programs", { error: err instanceof Error ? err.message : String(err) });
-      await tgCtx.reply("Failed to load Programs.");
+      ctx.logger.error("Failed to list Telegram watches", { error: err instanceof Error ? err.message : String(err) });
+      await tgCtx.reply("Failed to load Watches.");
     }
-  });
+  };
+  bot.command("watches", watchesHandler);
+  bot.command("programs", watchesHandler); // legacy alias
 
   bot.command("reply", async (tgCtx) => {
     const raw = tgCtx.match?.trim() ?? "";
     const firstSpace = raw.indexOf(" ");
     if (firstSpace <= 0) {
-      await tgCtx.reply("Usage: /reply <brief-id> <message>");
+      await tgCtx.reply("Usage: /reply <digest-id> <message>");
       return;
     }
     const briefId = raw.slice(0, firstSpace).trim();
     const message = raw.slice(firstSpace + 1).trim();
     const briefing = resolveBriefing(ctx, briefId);
     if (!briefing || !message) {
-      await tgCtx.reply("Brief not found, or the reply message is empty.");
+      await tgCtx.reply("Digest not found, or the reply message is empty.");
       return;
     }
     const threadId = getOrCreateThread(ctx, tgCtx.chat.id, tgCtx.from?.username);
@@ -303,16 +307,16 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     );
   });
 
-  bot.command("action", async (tgCtx) => {
+  const todoHandler = async (tgCtx: CommandContext<Context>) => {
     const raw = tgCtx.match?.trim() ?? "";
     const [briefId, actionTitle] = raw.split("|").map((part) => part.trim());
     if (!briefId || !actionTitle) {
-      await tgCtx.reply("Usage: /action <brief-id> | <action title>");
+      await tgCtx.reply("Usage: /todo <digest-id> | <to-do title>");
       return;
     }
     const briefing = resolveBriefing(ctx, briefId);
     if (!briefing) {
-      await tgCtx.reply("Brief not found.");
+      await tgCtx.reply("Digest not found.");
       return;
     }
     try {
@@ -335,7 +339,9 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     } catch (err) {
       await tgCtx.reply(`Failed to save move: ${err instanceof Error ? err.message : "unknown error"}`);
     }
-  });
+  };
+  bot.command("todo", todoHandler);
+  bot.command("action", todoHandler); // legacy alias
 
   bot.command("done", async (tgCtx) => {
     const taskId = tgCtx.match?.trim();
@@ -365,7 +371,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     const raw = tgCtx.match?.trim() ?? "";
     const [beliefId, replacement] = raw.split("|").map((part) => part.trim());
     if (!beliefId || !replacement) {
-      await tgCtx.reply("Usage: /correct <belief-id> | <replacement belief>");
+      await tgCtx.reply("Usage: /correct <memory-id> | <replacement memory>");
       return;
     }
     try {
@@ -383,9 +389,9 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
           correctionEpisodeId: result.correctionEpisode.id,
         },
       });
-      await tgCtx.reply("Belief corrected. Future briefs will use the replacement belief.");
+      await tgCtx.reply("Memory corrected. Future digests will use the replacement memory.");
     } catch (err) {
-      await tgCtx.reply(`Failed to correct belief: ${err instanceof Error ? err.message : "unknown error"}`);
+      await tgCtx.reply(`Failed to correct memory: ${err instanceof Error ? err.message : "unknown error"}`);
     }
   });
 
@@ -416,8 +422,8 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     }
   });
 
-  // /memories — Show top beliefs
-  bot.command("memories", async (tgCtx) => {
+  // /library — Show top memories
+  const libraryHandler = async (tgCtx: CommandContext<Context>) => {
     try {
       const beliefs = listBeliefs(ctx.storage, "active");
       if (beliefs.length === 0) {
@@ -428,10 +434,12 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       const lines = top.map((b, i) => `${i + 1}. ${escapeHTML(b.statement)}`);
       await tgCtx.reply(`<b>Recent Memories</b>\n\n${lines.join("\n")}`, { parse_mode: "HTML" });
     } catch (err) {
-      ctx.logger.error("Failed to list beliefs", { error: err instanceof Error ? err.message : String(err) });
+      ctx.logger.error("Failed to list memories", { error: err instanceof Error ? err.message : String(err) });
       await tgCtx.reply("Failed to load memories.");
     }
-  });
+  };
+  bot.command("library", libraryHandler);
+  bot.command("memories", libraryHandler); // legacy alias
 
   // /schedules — Show active scheduled jobs
   bot.command("schedules", async (tgCtx) => {
@@ -458,8 +466,8 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     }
   });
 
-  // /jobs — Show recent research & swarm jobs
-  bot.command("jobs", async (tgCtx) => {
+  // /activities — Show recent research & swarm activities
+  const activitiesHandler = async (tgCtx: CommandContext<Context>) => {
     try {
       const researchJobs = listResearchJobs(ctx.storage).map((j) => ({ ...j, source: "research" as const }));
       const swarmJobs = listSwarmJobs(ctx.storage).map((j) => ({ ...j, source: "swarm" as const }));
@@ -468,7 +476,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         .slice(0, 10);
 
       if (allJobs.length === 0) {
-        await tgCtx.reply("No recent jobs. Ask me to research something!");
+        await tgCtx.reply("No recent activities. Ask me to research something!");
         return;
       }
 
@@ -482,12 +490,14 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         const ago = formatRelativeTime(j.createdAt);
         return `${icon} "${escapeHTML(j.goal.slice(0, 50))}" — ${status} ${j.status} (${ago})`;
       });
-      await tgCtx.reply(`<b>Recent Jobs</b>\n\n${lines.join("\n")}`, { parse_mode: "HTML" });
+      await tgCtx.reply(`<b>Recent Activities</b>\n\n${lines.join("\n")}`, { parse_mode: "HTML" });
     } catch (err) {
-      ctx.logger.error("Failed to list jobs", { error: err instanceof Error ? err.message : String(err) });
-      await tgCtx.reply("Failed to load jobs.");
+      ctx.logger.error("Failed to list activities", { error: err instanceof Error ? err.message : String(err) });
+      await tgCtx.reply("Failed to load activities.");
     }
-  });
+  };
+  bot.command("activities", activitiesHandler);
+  bot.command("jobs", activitiesHandler); // legacy alias
 
   // /research <query> — Start a research job directly
   bot.command("research", async (tgCtx) => {

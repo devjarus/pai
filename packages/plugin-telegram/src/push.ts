@@ -120,8 +120,8 @@ function normalizeBriefTitle(row: BriefingPushRow, sections: Record<string, unkn
   if (typeof sections.goal === "string" && sections.goal.trim().length > 0) {
     return sections.goal.trim();
   }
-  if (row.type === "daily") return "Daily Brief";
-  return "Brief";
+  if (row.type === "daily") return "Daily Digest";
+  return "Digest";
 }
 
 function getReportMarkdown(sections: Record<string, unknown>): string | null {
@@ -144,10 +144,10 @@ function isStandardBriefSection(sections: Record<string, unknown>): sections is 
 }
 
 function resolveBriefLabel(row: BriefingPushRow, execution?: string | null): string {
-  if (row.type === "daily") return "Daily Brief";
+  if (row.type === "daily") return "Daily Digest";
   if (row.type === "swarm" || execution === "analysis") return "Analysis Complete";
   if (row.type === "research" || execution === "research") return "Research Complete";
-  return row.program_id ? "Program Update" : "Brief Update";
+  return row.program_id ? "Watch Update" : "Digest Update";
 }
 
 function resolveBriefEmoji(row: BriefingPushRow, execution?: string | null): string {
@@ -165,7 +165,7 @@ function buildFallbackReportHtml(
 ): string {
   const label = resolveBriefLabel(row, execution);
   const gist = markdownToTelegramHTML(buildTelegramDigestMarkdown(reportMarkdown));
-  return `${resolveBriefEmoji(row, execution)} <b>${escapeHTML(label)}: ${escapeHTML(title)}</b>\n\n${gist}\n\n<i>Full report attached as PDF.</i>`;
+  return `${resolveBriefEmoji(row, execution)} <b>${escapeHTML(label)}: ${escapeHTML(title)}</b>\n\n${gist}\n\n<i>Full report attached as document.</i>`;
 }
 
 function buildStandardBriefHtml(
@@ -272,7 +272,7 @@ async function checkAndPushResearch(
         }
 
         storage.run("UPDATE briefings SET telegram_sent_at = datetime('now') WHERE id = ?", [row.id]);
-        logger.info(chatIds.length > 0 ? "Brief pushed to Telegram" : "Brief ready (no Telegram chat target)", {
+        logger.info(chatIds.length > 0 ? "Digest pushed to Telegram" : "Digest ready (no Telegram chat target)", {
           briefingId: row.id,
           type: row.type,
           chatCount: chatIds.length,
