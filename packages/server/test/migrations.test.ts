@@ -49,10 +49,11 @@ describe("allMigrations", () => {
     expect(names).toContain("schedules");
     expect(names).toContain("inbox");
     expect(names).toContain("learning");
+    expect(names).toContain("findings");
   });
 
-  it("has 15 entries total", () => {
-    expect(allMigrations).toHaveLength(15);
+  it("has 16 entries total", () => {
+    expect(allMigrations).toHaveLength(16);
   });
 });
 
