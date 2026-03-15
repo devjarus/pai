@@ -140,3 +140,7 @@ export type { SpecToHtmlOptions } from "./spec-to-html.js";
 
 // Document parsing (PDF, Excel)
 export { parseBinaryDocument, isBinaryDocument, parsePdf, parseExcel } from "./document-parser.js";
+
+// Agent harness
+export { runAgentHarness } from "./agent-harness/index.js";
+export type { AgentHarnessOptions, AgentResult, AgentBudget, AgentHarnessContext, AgentExecutionResult } from "./agent-harness/index.js";
