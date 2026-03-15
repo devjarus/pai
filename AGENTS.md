@@ -14,11 +14,11 @@ pnpm e2e                      # Playwright end-to-end tests
 
 ## What pai Is
 
-A self-hosted AI that keeps track of ongoing decisions and delivers personalized digests.
+A self-hosted personal AI — it remembers what matters, watches things in the background, and delivers personalized digests. Think "second brain that keeps you updated."
 
-**Core loop:** Ask → Watch creation → Digest → Correction or To-Do → Next digest improves.
+**Core loop:** Ask → Watch → Digest → Correction or To-Do → Next digest improves.
 
-**What pai is NOT:** a generic AI OS, a research workbench, a standalone task manager, or an autonomous action-taking agent. Breadth is frozen unless it strengthens the core loop.
+The core loop is the backbone, but the product can grow beyond it. New capabilities are welcome when they make the system more useful.
 
 ## Four Domains
 
@@ -30,6 +30,8 @@ A self-hosted AI that keeps track of ongoing decisions and delivers personalized
 | **Tasks** | `packages/plugin-tasks` | `/api/tasks/*` | To-dos linked to watches and digests, goals |
 
 **Shared foundation** in `packages/core`: LLM client, storage (SQLite), telemetry, auth, agent harness.
+
+**Other packages:** `plugin-assistant` (chat agent), `plugin-research` (research agents), `plugin-swarm` (parallel agents), `plugin-telegram` (Telegram bot), `plugin-curator` (memory health), `cli` (CLI + MCP server), `ui` (React SPA).
 
 Domains interact through TypeScript functions (same process), not HTTP.
 
@@ -46,42 +48,40 @@ User-facing language differs from code. Use the left column in UI/CLI/messages, 
 | Digest | `Briefing` |
 | To-Do | `Task` |
 | Source | `Evidence` |
-| Activity | `Job` (hidden by default) |
+| Activity | `Job` |
 
 ## Rules
 
-1. **`pnpm verify` must pass** before claiming done — no exceptions
+1. **`pnpm verify` must pass** before claiming done
 2. **Don't break existing tests.** If you add a migration, update the count in `packages/server/test/migrations.test.ts`
 3. **Update CHANGELOG.md** when you change user-facing behavior
 4. **Stay in scope.** Don't refactor unrelated code or add unrequested features
-5. **Use new product language** in user-facing surfaces (Watch/Digest/Memory/To-Do). Internal code keeps Belief/Briefing/ScheduledJob
+5. **Use product language** in user-facing surfaces. Internal code keeps its own names
 
 ## Where New Work Goes
 
-**Before adding anything, ask:** Does this strengthen the Ask → Watch → Digest → Correction loop? If no, defer it.
-
 | Type of work | Where it goes |
 |-------------|--------------|
-| New data entity | `packages/library` (if knowledge/memory related) or relevant domain package |
-| New API endpoint | `packages/server/src/routes/` — create a new route file, register in `index.ts` |
+| New data entity | `packages/library` (knowledge related) or relevant domain package |
+| New API endpoint | `packages/server/src/routes/` — new file, register in `index.ts` |
 | New UI page | `packages/ui/src/pages/` — wire in `App.tsx`, add to `Layout.tsx` nav if needed |
 | New hook | `packages/ui/src/hooks/use-*.ts` — export from `hooks/index.ts` |
-| New background job | `packages/server/src/workers.ts` (scheduling) + `background-dispatcher.ts` (execution) |
-| Research improvement | `packages/plugin-research/` — wrap with agent harness |
+| New background job | `packages/server/src/workers.ts` + `background-dispatcher.ts` |
+| Research improvement | `packages/plugin-research/` — use agent harness pattern |
 | New delivery surface | Follow `packages/plugin-telegram/` as the pattern |
-| Memory/belief change | `packages/core/src/memory/` — read MEMORY-LIFECYCLE.md first |
+| Memory/belief change | `packages/core/src/memory/` — read `docs/MEMORY-LIFECYCLE.md` first |
 
 ## Codebase Patterns
 
 **Testing:** `createStorage` needs a real directory — use `mkdtempSync`, never `:memory:`
 
-**Routes:** `validate(schema, data)` — schema FIRST. Errors: `reply.status(404).send({ error: "..." })`. Fastify throws on duplicate paths — don't add redirects while old routes exist.
+**Routes:** `validate(schema, data)` — schema FIRST. Errors: `reply.status(404).send({ error: "..." })`. Fastify throws on duplicate paths.
 
 **React:** `<Navigate to="/path/:id" />` doesn't interpolate params — use `useParams()`. Follow TanStack Query patterns in existing `use-*.ts` hooks.
 
-**Architecture:** Domain packages re-export with user-facing aliases (see `packages/watches/src/index.ts`). Not every domain needs a package — Digests lives in server. Always check `packages/core/src/index.ts` for actual function signatures before calling.
+**Architecture:** Domain packages re-export with user-facing aliases (see `packages/watches/src/index.ts`). Not every domain needs a package. Always check `packages/core/src/index.ts` for function signatures.
 
-**Research:** Agent harness (plan → execute → reflect → ingest) in `packages/core/src/agent-harness/`. Depth levels control effort. Delta context prevents repeating old findings. Findings flow to Library via `ingestResearchResult`. Feedback loop: ratings influence generation prompts (wrapped in try/catch).
+**Research:** Agent harness (plan → execute → reflect → ingest) in `packages/core/src/agent-harness/`. Depth levels control effort. Delta context prevents repeating old findings. Findings flow to Library via `ingestResearchResult`.
 
 ## Key Files
 
@@ -99,38 +99,33 @@ User-facing language differs from code. Use the left column in UI/CLI/messages, 
 | UI router | `packages/ui/src/App.tsx` |
 | UI navigation | `packages/ui/src/components/Layout.tsx` |
 
-## Product Guardrails
+## Design Principles
 
-These protect the product from drifting. Read them before proposing new features.
+Guidelines, not gates. Use judgment.
 
-**Watches are not generic schedulers.** A Watch is an ongoing decision — not a bucket for every background process.
+**Digests should recommend, not dump.** Users want answers, not raw research. Every digest should have a recommendation and reasoning.
 
-**Digests must recommend, not dump.** A Digest contains a recommendation, what changed, sources, memory assumptions, and next actions. Never raw research notes without a recommendation.
+**Memory should be traceable.** Provenance, confidence, correction state matter. When changing memory logic, preserve traceability.
 
-**To-Dos are follow-through, not a task manager.** They emerge from Digest recommendations and link back to Watches. They are not a standalone backlog.
+**Make it work for one user first.** pai is self-hosted for a technical individual. Optimize for that before scaling to teams or non-technical users.
 
-**Memory must be traceable.** Every memory has provenance, origin, confidence, and correction state. Changes to memory must preserve or improve traceability.
+**Prefer compounding over one-shot.** Research should build on previous findings. Corrections should improve future digests. The system should get smarter over time.
 
-**Core loop works without optional services.** Browser automation and sandbox are enrichments. Watch → Digest → Correction must work when they're unavailable.
-
-**Internal nouns stay internal.** Swarm, blackboard, queue, schedule — these are implementation details. Don't expose them in UI, CLI, or API responses.
+**Keep the bar low for new features.** If something makes the user's life easier, ship it. Don't gate features behind philosophical purity tests. Test it, ship it, iterate.
 
 ## Evolving the Product
 
-Agents working on this project long-term should improve it, not just execute tasks.
+Agents working on this project should improve it, not just execute tasks.
 
-**Check quality signals:**
-- Digest ratings in `digest_ratings` table — low average means digests aren't useful
-- Telemetry spans in `telemetry_spans` — high error rates or slow spans indicate problems
-- Product events in `product_events` — track what users actually use
+**Quality signals to check:**
+- `digest_ratings` table — are digests useful?
+- `telemetry_spans` — error rates, slow operations
+- `product_events` — what do users actually use?
 
-**After completing work, consider:**
-- Did I discover a pattern that future work should follow? → Add it to "Codebase Patterns" above
-- Did I find a gotcha that wasted time? → Add it to "Codebase Patterns" above
-- Did the product boundary test ("does this strengthen the core loop?") reveal a gap? → Note it in the commit message
-- Is there a test that should exist but doesn't? → Write it
+**After completing work:**
+- Found a pattern? Add it to Codebase Patterns above
+- Found a gotcha? Add it too
+- Missing test coverage? Write the test
+- See an opportunity to improve UX? Note it in the commit or propose it
 
-**When proposing improvements:**
-- Start from user impact, not code elegance
-- Small, shipped improvements beat ambitious rewrites
-- If unsure whether a change fits the product direction, check the guardrails above
+**This file is a living document.** Update it when the product evolves. If a section no longer reflects reality, change it. If a pattern is wrong, fix it. The goal is for any agent to land here and be productive in 2 minutes.
