@@ -219,7 +219,7 @@ export interface PluginContext {
   exitCode?: number;
   contextProvider?: (query: string) => Promise<string>;
   backgroundJobs?: {
-    enqueueResearch?: (args: { goal: string; threadId: string | null; resultType?: string; sourceKind?: BackgroundJobSourceKind; sourceScheduleId?: string | null }) => Promise<string> | string;
+    enqueueResearch?: (args: { goal: string; threadId: string | null; resultType?: string; sourceKind?: BackgroundJobSourceKind; sourceScheduleId?: string | null; budgetMaxSearches?: number; budgetMaxPages?: number }) => Promise<string> | string;
     enqueueSwarm?: (args: { goal: string; threadId: string | null; resultType?: string; sourceKind?: BackgroundJobSourceKind; sourceScheduleId?: string | null }) => Promise<string> | string;
     enqueueBriefing?: (args?: { sourceKind?: BackgroundJobSourceKind; reason?: string }) => Promise<string> | string;
   };

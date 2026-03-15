@@ -45,6 +45,7 @@
     "@personal-ai/plugin-schedules": "workspace:*",
     "@personal-ai/plugin-swarm": "workspace:*",
     "@personal-ai/plugin-tasks": "workspace:*",
+    "@personal-ai/watches": "workspace:*",
     "@personal-ai/plugin-telegram": "workspace:*",
     "ai": "^6.0.0",
     "bcryptjs": "^3.0.3",

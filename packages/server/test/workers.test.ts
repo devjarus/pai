@@ -287,6 +287,8 @@ describe("WorkerLoop", () => {
       threadId: "t1",
       sourceKind: "schedule",
       sourceScheduleId: "s1",
+      budgetMaxSearches: 5,
+      budgetMaxPages: 8,
     });
 
     loop.stop();

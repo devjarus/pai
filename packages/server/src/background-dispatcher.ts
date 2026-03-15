@@ -79,6 +79,8 @@ export class BackgroundDispatcher {
     resultType?: string;
     sourceKind?: BackgroundJobSourceKind;
     sourceScheduleId?: string | null;
+    budgetMaxSearches?: number;
+    budgetMaxPages?: number;
   }): Promise<string> {
     const queuedAt = new Date().toISOString();
     const sourceKind = args.sourceKind ?? "manual";
@@ -88,6 +90,8 @@ export class BackgroundDispatcher {
       resultType: args.resultType as never,
       sourceKind,
       sourceScheduleId: args.sourceScheduleId ?? null,
+      ...(args.budgetMaxSearches != null && { maxSearches: args.budgetMaxSearches }),
+      ...(args.budgetMaxPages != null && { maxPages: args.budgetMaxPages }),
     });
     upsertJob(this.ctx.storage, {
       id: jobId,
