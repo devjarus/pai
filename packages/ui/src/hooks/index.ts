@@ -16,3 +16,4 @@ export * from "./use-observability";
 export * from "./use-grid-feed";
 export * from "./use-library";
 export * from "./use-watches";
+export * from "./use-digests";

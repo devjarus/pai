@@ -1008,3 +1008,43 @@ export function getFindings(watchId?: string): Promise<ResearchFinding[]> {
   const qs = watchId ? `?watchId=${encodeURIComponent(watchId)}` : "";
   return request(`/library/findings${qs}`);
 }
+
+// ---- Digests ----
+
+export function getDigests(): Promise<{ digests: Array<{ id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string }> }> {
+  return request("/digests");
+}
+
+export function getDigest(id: string): Promise<{ digest: Record<string, unknown> }> {
+  return request(`/digests/${id}`);
+}
+
+export function getDigestSources(id: string): Promise<{ sources: Array<{ id: string; type: string; statement: string; confidence: number }> }> {
+  return request(`/digests/${id}/sources`);
+}
+
+export function refreshDigests(): Promise<{ ok: boolean; digestId?: string; message?: string }> {
+  return request("/digests/refresh", { method: "POST", body: "{}" });
+}
+
+export function correctDigest(id: string, input: { beliefId: string; correctedStatement: string; note?: string }): Promise<{ ok: boolean }> {
+  return request(`/digests/${id}/correct`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function rateDigest(id: string, input: { rating: number; feedback?: string }): Promise<{ ok: boolean }> {
+  return request(`/digests/${id}/rate`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function rerunDigestResearch(id: string): Promise<{ ok: boolean; jobId: string }> {
+  return request(`/digests/${id}/rerun`, { method: "POST", body: "{}" });
+}
+
+export function getDigestSuggestions(id: string): Promise<{ suggestions: Array<{ title: string; description?: string; priority?: string }> }> {
+  return request(`/digests/${id}/suggestions`);
+}

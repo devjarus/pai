@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { marked } from "marked";
 import { recordProductEventApi } from "@/api";
 import type { Program } from "@/api";
-import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig, useCreateProgram, useCorrectBelief, useCreateTask, usePrograms, useTasks } from "@/hooks";
+import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig, useCreateProgram, useCorrectBelief, useCreateTask, usePrograms, useTasks, useRateDigest, useDigestSuggestions, useCorrectDigest } from "@/hooks";
 import type { BriefingRawContextBelief, Task } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +44,9 @@ import {
   BookOpenIcon,
   ListTodoIcon,
   InboxIcon,
+  StarIcon,
+  PencilIcon,
+  PlusCircleIcon,
 } from "lucide-react";
 
 const STORAGE_KEY = "pai-inbox-read";
@@ -715,6 +718,10 @@ function InboxDetail({ id }: { id: string }) {
           </div>
         )}
 
+        <DigestSuggestionsSection digestId={id} briefTitle={item.type === "daily" ? dailyBriefingTitle(item.sections) : (sections.goal ?? "Digest")} />
+
+        <DigestRatingWidget digestId={id} />
+
         <Dialog
           open={!!selectedBeliefSource}
           onOpenChange={(open) => {
@@ -919,19 +926,7 @@ function DailyBriefingV2Detail({
           </div>
           <div className="space-y-3">
             {sections.memory_assumptions!.map((item, index) => (
-              <div
-                key={index}
-                className="cursor-pointer rounded-md border border-border/20 bg-card/40 p-4 transition-colors hover:border-violet-500/30"
-                onClick={() => navigate("/memory")}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-foreground">{item.statement}</span>
-                  <Badge variant="outline" className="text-[10px] uppercase">
-                    {item.confidence ?? "medium"}
-                  </Badge>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">{item.provenance}</p>
-              </div>
+              <AssumptionCard key={index} assumption={item} briefId={briefId} />
             ))}
           </div>
         </div>
@@ -1090,6 +1085,231 @@ function DailyBriefingV2Detail({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---- Assumption correction card (inline in memory_assumptions) ----
+
+function AssumptionCard({
+  assumption,
+  briefId,
+}: {
+  assumption: { statement?: string; confidence?: "low" | "medium" | "high"; provenance?: string };
+  briefId: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [correctedText, setCorrectedText] = useState(assumption.statement ?? "");
+  const correctDigestMut = useCorrectDigest();
+
+  const handleSubmitAssumptionCorrection = async () => {
+    const text = correctedText.trim();
+    if (!text || text === (assumption.statement ?? "").trim()) {
+      toast.error("Update the statement before saving");
+      return;
+    }
+    try {
+      await correctDigestMut.mutateAsync({
+        id: briefId,
+        beliefId: "", // assumption-level correction, no specific belief ID
+        correctedStatement: text,
+        note: `Corrected assumption: "${assumption.statement}"`,
+      });
+      toast.success("Correction saved");
+      setEditing(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save correction");
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="rounded-md border border-violet-500/30 bg-card/40 p-4 space-y-3">
+        <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Original assumption</div>
+        <p className="text-sm text-muted-foreground">{assumption.statement}</p>
+        <Textarea
+          value={correctedText}
+          onChange={(e) => setCorrectedText(e.target.value)}
+          rows={3}
+          placeholder="Enter the corrected statement"
+        />
+        <div className="flex gap-2">
+          <Button size="sm" onClick={handleSubmitAssumptionCorrection} disabled={correctDigestMut.isPending}>
+            {correctDigestMut.isPending ? "Saving..." : "Save"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={correctDigestMut.isPending}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-border/20 bg-card/40 p-4 transition-colors hover:border-violet-500/30">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-foreground">{assumption.statement}</span>
+        <Badge variant="outline" className="text-[10px] uppercase">
+          {assumption.confidence ?? "medium"}
+        </Badge>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+          onClick={(e) => {
+            e.stopPropagation();
+            setCorrectedText(assumption.statement ?? "");
+            setEditing(true);
+          }}
+          title="Correct this assumption"
+        >
+          <PencilIcon className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">{assumption.provenance}</p>
+    </div>
+  );
+}
+
+// ---- Digest rating widget ----
+
+function DigestRatingWidget({ digestId }: { digestId: string }) {
+  const [rating, setRating] = useState<number>(0);
+  const [feedback, setFeedback] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const rateDigestMut = useRateDigest();
+
+  const handleSubmitRating = async () => {
+    if (rating === 0) return;
+    try {
+      await rateDigestMut.mutateAsync({ id: digestId, rating, feedback: feedback.trim() || undefined });
+      setSubmitted(true);
+      toast.success("Thanks for rating this digest");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save rating");
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="mt-6 rounded-lg border border-border/20 bg-card/40 p-4 text-center">
+        <div className="flex items-center justify-center gap-1 mb-1">
+          {[1, 2, 3, 4, 5].map((s) => (
+            <StarIcon key={s} className={`h-4 w-4 ${s <= rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"}`} />
+          ))}
+        </div>
+        <p className="text-sm text-muted-foreground">Rating saved. Thank you!</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6 rounded-lg border border-border/20 bg-card/40 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <StarIcon className="h-4 w-4 text-amber-400" />
+        <span className="font-mono text-sm font-semibold text-foreground">Rate This Digest</span>
+      </div>
+      <div className="flex items-center gap-1 mb-3">
+        {[1, 2, 3, 4, 5].map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => setRating(s)}
+            className="p-1 transition-colors hover:scale-110"
+            title={`${s} star${s !== 1 ? "s" : ""}`}
+          >
+            <StarIcon className={`h-5 w-5 ${s <= rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/40 hover:text-amber-300"}`} />
+          </button>
+        ))}
+        {rating > 0 && <span className="ml-2 text-xs text-muted-foreground">{rating}/5</span>}
+      </div>
+      {rating > 0 && (
+        <>
+          <Textarea
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            rows={2}
+            placeholder="Optional feedback..."
+            className="mb-3"
+          />
+          <Button size="sm" onClick={handleSubmitRating} disabled={rateDigestMut.isPending}>
+            {rateDigestMut.isPending ? "Submitting..." : "Submit Rating"}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---- Digest suggestions section ----
+
+function DigestSuggestionsSection({ digestId, briefTitle }: { digestId: string; briefTitle: string }) {
+  const { data, isLoading } = useDigestSuggestions(digestId);
+  const createTaskMut = useCreateTask();
+  const [createdTitles, setCreatedTitles] = useState<Set<string>>(() => new Set());
+
+  const suggestions = data?.suggestions ?? [];
+
+  if (isLoading || suggestions.length === 0) return null;
+
+  const handleCreateTodo = async (suggestion: { title: string; description?: string; priority?: string }) => {
+    try {
+      await createTaskMut.mutateAsync({
+        title: suggestion.title,
+        description: suggestion.description,
+        priority: suggestion.priority ?? "medium",
+        sourceType: "briefing",
+        sourceId: digestId,
+        sourceLabel: briefTitle,
+      });
+      setCreatedTitles((prev) => {
+        const next = new Set(prev);
+        next.add(suggestion.title);
+        return next;
+      });
+      toast.success("To-do created");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create to-do");
+    }
+  };
+
+  return (
+    <div className="mt-6 space-y-3">
+      <div className="flex items-center gap-2">
+        <LightbulbIcon className="h-4 w-4 text-amber-400" />
+        <span className="font-mono text-sm font-semibold text-foreground">Suggested To-Dos</span>
+      </div>
+      <div className="space-y-3">
+        {suggestions.map((suggestion, index) => {
+          const alreadyCreated = createdTitles.has(suggestion.title);
+          return (
+            <div key={index} className="rounded-md border border-border/20 bg-card/40 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-foreground">{suggestion.title}</span>
+                {suggestion.priority && (
+                  <Badge variant="outline" className="text-[10px] uppercase">
+                    {suggestion.priority}
+                  </Badge>
+                )}
+              </div>
+              {suggestion.description && (
+                <p className="mt-2 text-xs text-muted-foreground">{suggestion.description}</p>
+              )}
+              <div className="mt-3">
+                {alreadyCreated ? (
+                  <Button variant="outline" size="sm" disabled>
+                    <CheckCircle2Icon className="mr-1 h-3 w-3" /> Created
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={() => handleCreateTodo(suggestion)} disabled={createTaskMut.isPending}>
+                    <PlusCircleIcon className="mr-1 h-3 w-3" /> Create To-Do
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
