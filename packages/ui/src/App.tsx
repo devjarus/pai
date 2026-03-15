@@ -14,7 +14,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Layout from "./components/Layout";
 import Chat from "./pages/Chat";
-import Memory from "./pages/Memory";
+import Library from "./pages/Library";
 import Programs from "./pages/Programs";
 import Timeline from "./pages/Timeline";
 import Settings from "./pages/Settings";
@@ -99,7 +99,7 @@ export default function App() {
             <Route path="/grid" element={<ErrorBoundary><Grid /></ErrorBoundary>} />
             <Route path="/ask" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
             <Route path="/chat" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
-            <Route path="/library" element={<ErrorBoundary><Memory /></ErrorBoundary>} />
+            <Route path="/library" element={<ErrorBoundary><Library /></ErrorBoundary>} />
             <Route path="/memory" element={<Navigate to="/library" replace />} />
             <Route path="/timeline" element={<ErrorBoundary><Timeline /></ErrorBoundary>} />
             <Route path="/knowledge" element={<Navigate to="/library" replace />} />

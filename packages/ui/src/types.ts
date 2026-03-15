@@ -538,6 +538,51 @@ export interface ArtifactMeta {
   createdAt: string;
 }
 
+// ---- Library types ----
+
+export type LibrarySourceType = "memory" | "document" | "finding";
+
+export interface LibrarySearchResult {
+  id: string;
+  sourceType: LibrarySourceType;
+  title: string;
+  snippet: string;
+  score: number;
+  createdAt: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface LibraryStats {
+  beliefs: {
+    total: number;
+    active: number;
+    invalidated: number;
+    forgotten: number;
+  };
+  episodes: number;
+  avgConfidence: number;
+  documentsCount: number;
+  findingsCount: number;
+}
+
+export interface ResearchFinding {
+  id: string;
+  watchId?: string;
+  digestId?: string;
+  goal: string;
+  domain: string;
+  summary: string;
+  structuredData?: Record<string, unknown>;
+  sources: Array<{ url: string; title: string; fetchedAt: string; relevance: number }>;
+  confidence: number;
+  agentName: string;
+  depthLevel: "quick" | "standard" | "deep";
+  previousFindingId?: string;
+  delta?: { changed: string[]; significance: number };
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BriefProvenanceSource {
   kind: string;
   label: string;

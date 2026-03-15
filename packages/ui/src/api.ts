@@ -28,6 +28,9 @@ import type {
   RecentError,
   TelemetrySpan,
   BriefProvenance,
+  LibrarySearchResult,
+  LibraryStats,
+  ResearchFinding,
 } from "./types";
 
 const BASE = "/api";
@@ -843,4 +846,19 @@ export function resumeScheduleApi(id: string): Promise<{ ok: boolean }> {
     method: "PATCH",
     body: JSON.stringify({ action: "resume" }),
   });
+}
+
+// ---- Library (unified) ----
+
+export function librarySearch(q: string, limit = 20): Promise<LibrarySearchResult[]> {
+  return request(`/library/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+}
+
+export function getLibraryStats(): Promise<LibraryStats> {
+  return request("/library/stats");
+}
+
+export function getFindings(watchId?: string): Promise<ResearchFinding[]> {
+  const qs = watchId ? `?watchId=${encodeURIComponent(watchId)}` : "";
+  return request(`/library/findings${qs}`);
 }

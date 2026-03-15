@@ -14,3 +14,4 @@ export * from "./use-learning";
 export * from "./use-timezone";
 export * from "./use-observability";
 export * from "./use-grid-feed";
+export * from "./use-library";
