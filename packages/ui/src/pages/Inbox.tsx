@@ -257,7 +257,7 @@ function buildBriefActionDescription(briefTitle: string, action: { detail?: stri
   return [
     action.detail?.trim(),
     action.timing ? `Timing: ${action.timing}` : null,
-    `Saved from brief: ${briefTitle}`,
+    `Saved from digest: ${briefTitle}`,
   ]
     .filter((item): item is string => !!item && item.length > 0)
     .join("\n\n");
@@ -315,9 +315,9 @@ function isDailyBriefingV2(raw: Record<string, unknown>): raw is Record<string, 
 
 function dailyBriefingTitle(raw: Record<string, unknown>): string {
   if (isDailyBriefingV2(raw)) {
-    return raw.title ?? raw.recommendation?.summary ?? "Daily Briefing";
+    return raw.title ?? raw.recommendation?.summary ?? "Daily Digest";
   }
-  return (raw as DailyBriefingLegacy).greeting ?? "Daily Briefing";
+  return (raw as DailyBriefingLegacy).greeting ?? "Daily Digest";
 }
 
 export default function Inbox() {
@@ -451,7 +451,7 @@ function InboxDetail({ id }: { id: string }) {
     if (!selectedBeliefSource) return;
     const statement = correctionStatement.trim();
     if (!statement) {
-      toast.error("Enter the corrected belief");
+      toast.error("Enter the corrected memory");
       return;
     }
     if (statement === selectedBeliefSource.statement.trim()) {
@@ -470,7 +470,7 @@ function InboxDetail({ id }: { id: string }) {
         next.add(selectedBeliefSource.id);
         return next;
       });
-      toast.success("Correction saved. Future briefs will use the replacement belief.");
+      toast.success("Correction saved. Future digests will use the replacement memory.");
       closeCorrectionDialog();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to save correction");
@@ -484,7 +484,7 @@ function InboxDetail({ id }: { id: string }) {
       const sections = item.sections as { goal?: string; report?: string };
       const rawTitle = item.type === "research"
         ? `Research: ${sections.goal ?? "Report"}`
-        : dailyBriefingTitle(item.sections).slice(0, 60) || "Briefing Discussion";
+        : dailyBriefingTitle(item.sections).slice(0, 60) || "Digest Discussion";
       const title = rawTitle.length > 200 ? rawTitle.slice(0, 197) + "..." : rawTitle;
       const thread = await createThreadMut.mutateAsync({ title });
       await recordProductEventApi({
@@ -495,7 +495,7 @@ function InboxDetail({ id }: { id: string }) {
       });
       const context = item.type === "research"
         ? `I'd like to discuss this research report:\n\n**Goal:** ${sections.goal}\n\n${sections.report ?? ""}`
-        : `I'd like to discuss today's briefing.`;
+        : `I'd like to discuss today's digest.`;
       sessionStorage.setItem("pai-chat-auto-send", JSON.stringify({ threadId: thread.id, message: context }));
       navigate(`/ask?thread=${thread.id}`);
     } catch {
@@ -519,7 +519,7 @@ function InboxDetail({ id }: { id: string }) {
     try {
       const result = await createProgramMut.mutateAsync(watchDraft);
       if (result.created) {
-        toast.success("Program created. pai will keep watching this.");
+        toast.success("Watch created. pai will keep watching this.");
         return;
       }
       toast.message(
@@ -529,7 +529,7 @@ function InboxDetail({ id }: { id: string }) {
       );
       navigate("/programs");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create program");
+      toast.error(error instanceof Error ? error.message : "Failed to create watch");
     }
   };
 
@@ -537,7 +537,7 @@ function InboxDetail({ id }: { id: string }) {
     const actionTitle = action.title?.trim();
     if (!item || item.type !== "daily" || !actionTitle) return;
     if (briefLinkedActions.some((task) => task.status === "open" && normalizeTrackedTitle(task.title) === normalizeTrackedTitle(actionTitle))) {
-      toast.message("That move is already saved for this brief");
+      toast.message("That move is already saved for this digest");
       return;
     }
     try {
@@ -549,9 +549,9 @@ function InboxDetail({ id }: { id: string }) {
         sourceId: id,
         sourceLabel: dailyBriefingTitle(item.sections),
       });
-      toast.success("Move saved");
+      toast.success("To-do saved");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to track move");
+      toast.error(error instanceof Error ? error.message : "Failed to save to-do");
     }
   };
 
@@ -569,9 +569,9 @@ function InboxDetail({ id }: { id: string }) {
   if (!item) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-4 md:p-6">
-        <p className="text-sm text-muted-foreground">Briefing not found</p>
+        <p className="text-sm text-muted-foreground">Digest not found</p>
         <Button variant="ghost" onClick={() => navigate("/")} className="gap-2">
-          <ArrowLeftIcon className="h-4 w-4" /> Back to Inbox
+          <ArrowLeftIcon className="h-4 w-4" /> Back to Digests
         </Button>
       </div>
     );
@@ -596,7 +596,7 @@ function InboxDetail({ id }: { id: string }) {
       <div className="mx-auto max-w-3xl p-4 md:p-6">
         <div className="mb-4 flex items-center justify-between md:mb-6">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-2 text-muted-foreground hover:text-foreground">
-            <ArrowLeftIcon className="h-4 w-4" /> Inbox
+            <ArrowLeftIcon className="h-4 w-4" /> Digests
           </Button>
           <div className="flex flex-wrap items-center justify-end gap-2">
             {item?.type === "research" && (
@@ -657,7 +657,7 @@ function InboxDetail({ id }: { id: string }) {
               className="gap-2"
             >
               <CalendarClockIcon className="h-4 w-4" />
-              {existingWatch ? "Open Programs" : createProgramMut.isPending ? "Creating..." : "Keep watching this"}
+              {existingWatch ? "Open Watches" : createProgramMut.isPending ? "Creating..." : "Keep watching this"}
             </Button>
             <Button
               variant="outline"
@@ -679,7 +679,7 @@ function InboxDetail({ id }: { id: string }) {
                 {sections.execution === "analysis" ? "Analysis Report" : "Research Report"}
               </Badge>
             ) : (
-              <Badge variant="outline" className="text-[10px] border-primary/20 bg-primary/10 text-primary">Daily Briefing</Badge>
+              <Badge variant="outline" className="text-[10px] border-primary/20 bg-primary/10 text-primary">Daily Digest</Badge>
             )}
             <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
           </div>
@@ -723,26 +723,26 @@ function InboxDetail({ id }: { id: string }) {
         >
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Correct belief</DialogTitle>
+              <DialogTitle>Correct memory</DialogTitle>
               <DialogDescription>
-                Replace the belief that influenced this brief. The next brief will use the new belief instead of the old one.
+                Replace the memory that influenced this digest. The next digest will use the new memory instead of the old one.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div className="rounded-md border border-border/30 bg-muted/20 p-3">
-                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Current belief</div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Current memory</div>
                 <p className="mt-1 text-sm text-foreground">{selectedBeliefSource?.statement}</p>
               </div>
               <div className="space-y-2">
                 <label htmlFor="belief-correction" className="text-sm font-medium text-foreground">
-                  Replacement belief
+                  Replacement memory
                 </label>
                 <Textarea
                   id="belief-correction"
                   value={correctionStatement}
                   onChange={(event) => setCorrectionStatement(event.target.value)}
                   rows={4}
-                  placeholder="Describe the corrected belief"
+                  placeholder="Describe the corrected memory"
                 />
               </div>
             </div>
@@ -941,7 +941,7 @@ function DailyBriefingV2Detail({
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <BrainIcon className="h-4 w-4 text-emerald-400" />
-            <span className="font-mono text-sm font-semibold text-foreground">Beliefs Behind This Brief</span>
+            <span className="font-mono text-sm font-semibold text-foreground">Memories Behind This Digest</span>
           </div>
           <div className="space-y-3">
             {beliefSources.map((belief) => {
@@ -978,7 +978,7 @@ function DailyBriefingV2Detail({
                   </p>
                   {corrected && (
                     <p className="mt-2 text-xs text-emerald-300">
-                      Saved as a replacement belief for future briefs.
+                      Saved as a replacement memory for future digests.
                     </p>
                   )}
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -986,7 +986,7 @@ function DailyBriefingV2Detail({
                       View Memory
                     </Button>
                     <Button size="sm" onClick={() => onCorrectBelief(belief)}>
-                      Correct Belief
+                      Correct Memory
                     </Button>
                   </div>
                 </div>
@@ -1000,7 +1000,7 @@ function DailyBriefingV2Detail({
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <CheckCircle2Icon className="h-4 w-4 text-amber-400" />
-            <span className="font-mono text-sm font-semibold text-foreground">Recommended Moves</span>
+            <span className="font-mono text-sm font-semibold text-foreground">Recommended To-Dos</span>
           </div>
           <div className="space-y-3">
             {sections.next_actions!.map((action, index) => {
@@ -1038,7 +1038,7 @@ function DailyBriefingV2Detail({
                       </Button>
                     ) : (
                       <Button size="sm" onClick={() => onCreateAction(action)}>
-                        Save Move
+                        Save To-Do
                       </Button>
                     )}
                   </div>
@@ -1053,7 +1053,7 @@ function DailyBriefingV2Detail({
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <ListTodoIcon className="h-4 w-4 text-amber-400" />
-            <span className="font-mono text-sm font-semibold text-foreground">Saved Moves From This Brief</span>
+            <span className="font-mono text-sm font-semibold text-foreground">To-Dos From This Digest</span>
           </div>
           <div className="space-y-3">
             {linkedActions.map((task) => (
@@ -1082,7 +1082,7 @@ function DailyBriefingV2Detail({
           <p className="mt-2 text-sm text-muted-foreground">{sections.correction_hook.prompt}</p>
           <div className="mt-3 flex gap-2">
             <Button variant="outline" size="sm" onClick={() => navigate("/programs")}>
-              Review Programs
+              Review Watches
             </Button>
             <Button variant="ghost" size="sm" onClick={() => navigate("/ask")}>
               Open Ask
@@ -1101,7 +1101,7 @@ function DailyBriefingLegacyDetail({ sections, navigate }: { sections: DailyBrie
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <CheckCircle2Icon className="h-4 w-4 text-primary" />
-            <span className="font-mono text-sm font-semibold text-foreground">Saved Move Focus</span>
+            <span className="font-mono text-sm font-semibold text-foreground">To-Do Focus</span>
           </div>
           <p className="text-sm text-muted-foreground">{sections.taskFocus!.summary}</p>
           {sections.taskFocus!.items.map((item, index) => (
@@ -1170,7 +1170,7 @@ function DailyBriefingLegacyDetail({ sections, navigate }: { sections: DailyBrie
                     else if (item.action === "learn") navigate("/knowledge");
                   }}
                 >
-                  {item.action === "recall" ? "Recall" : item.action === "task" ? "Saved Moves" : item.action === "learn" ? "Learn" : item.action}
+                  {item.action === "recall" ? "Recall" : item.action === "task" ? "To-Dos" : item.action === "learn" ? "Learn" : item.action}
                   <ArrowRightIcon className="ml-1 h-3 w-3" />
                 </Button>
               )}
@@ -1205,7 +1205,7 @@ function InboxFeed() {
   // Track generating state transitions via query data
   useEffect(() => {
     if ((prevGeneratingRef.current || prevPendingRef.current) && !inboxData?.generating && !inboxData?.pending) {
-      toast.success("Briefing updated!");
+      toast.success("Digest updated!");
     }
     prevGeneratingRef.current = !!inboxData?.generating;
     prevPendingRef.current = !!inboxData?.pending;
@@ -1292,8 +1292,8 @@ function InboxFeed() {
     }
     return [
       activePrograms.length > 0 ? `${activePrograms.length} active watch${activePrograms.length === 1 ? "" : "es"}` : null,
-      openActions.length > 0 ? `${openActions.length} saved move${openActions.length === 1 ? "" : "s"} open` : null,
-      unreadCount > 0 ? `${unreadCount} unread brief${unreadCount === 1 ? "" : "s"}` : null,
+      openActions.length > 0 ? `${openActions.length} to-do${openActions.length === 1 ? "" : "s"} open` : null,
+      unreadCount > 0 ? `${unreadCount} unread digest${unreadCount === 1 ? "" : "s"}` : null,
     ]
       .filter((part): part is string => !!part)
       .join(" • ");
@@ -1310,19 +1310,19 @@ function InboxFeed() {
   const handleRefresh = async () => {
     try {
       const result = await refreshInboxMut.mutateAsync();
-      toast.success(result.message ?? "Briefing queued");
+      toast.success(result.message ?? "Digest queued");
     } catch {
-      toast.error("Failed to start briefing refresh");
+      toast.error("Failed to start digest refresh");
     }
   };
 
   const handleClear = async () => {
-    if (!confirm("Clear all inbox items? This cannot be undone.")) return;
+    if (!confirm("Clear all digests? This cannot be undone.")) return;
     try {
       const result = await clearInboxMut.mutateAsync();
       toast.success(`Cleared ${result.cleared} item${result.cleared !== 1 ? "s" : ""}`);
     } catch {
-      toast.error("Failed to clear inbox");
+      toast.error("Failed to clear digests");
     }
   };
 
@@ -1347,11 +1347,11 @@ function InboxFeed() {
           <div className="grid w-full gap-3 text-left">
             {[
               { icon: MessageCircleIcon, label: "Ask", desc: "Start with a question and turn it into a recurring watch" },
-              { icon: BrainIcon, label: "Memory", desc: "What I know about you, always evolving" },
-              { icon: BookOpenIcon, label: "Knowledge", desc: "Teach me web pages to reference later" },
-              { icon: ListTodoIcon, label: "Saved Moves", desc: "Manual moves pai should remember across future briefs" },
-              { icon: CalendarClockIcon, label: "Programs", desc: "Recurring decisions and watches pai keeps tracking" },
-              { icon: InboxIcon, label: "Inbox", desc: "Daily briefings appear here as you use the app" },
+              { icon: BrainIcon, label: "Memories", desc: "What I know about you, always evolving" },
+              { icon: BookOpenIcon, label: "Documents", desc: "Teach me web pages to reference later" },
+              { icon: ListTodoIcon, label: "To-Dos", desc: "Manual moves pai should remember across future digests" },
+              { icon: CalendarClockIcon, label: "Watches", desc: "Recurring decisions and watches pai keeps tracking" },
+              { icon: InboxIcon, label: "Digests", desc: "Daily digests appear here as you use the app" },
             ].map(({ icon: Icon, label, desc }) => (
               <div key={label} className="flex items-start gap-3 rounded-md border border-border/30 px-3 py-2.5">
                 <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -1375,7 +1375,7 @@ function InboxFeed() {
             <div className="flex items-center gap-3">
               <h1 className="font-mono text-lg font-semibold text-foreground">Home</h1>
               <Badge variant="outline" className="text-[10px]">
-                {items.length} brief{items.length === 1 ? "" : "s"}
+                {items.length} digest{items.length === 1 ? "" : "s"}
               </Badge>
               {unreadCount > 0 && (
                 <Badge className="text-[10px] bg-blue-500 text-white hover:bg-blue-600">
@@ -1409,14 +1409,14 @@ function InboxFeed() {
         {pending && !generating && (
           <div className="inbox-fade-in flex items-center gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-3">
             <ClockIcon className="h-4 w-4 text-yellow-400" />
-            <span className="text-sm text-yellow-300">Briefing queued. Waiting for background slot...</span>
+            <span className="text-sm text-yellow-300">Digest queued. Waiting for background slot...</span>
           </div>
         )}
 
         {generating && (
           <div className="inbox-fade-in flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
             <LoaderIcon className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-sm text-primary">Generating new briefing...</span>
+            <span className="text-sm text-primary">Generating new digest...</span>
           </div>
         )}
 
@@ -1431,7 +1431,7 @@ function InboxFeed() {
                 <div>
                   <h2 className="text-xl font-semibold text-foreground">What pai is actively watching</h2>
                   <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                    Programs keep watching in the background, briefs explain what changed, and saved moves keep the one manual move you explicitly want pai to remember.
+                    Watches keep watching in the background, digests explain what changed, and to-dos keep the one manual move you explicitly want pai to remember.
                   </p>
                 </div>
               </div>
@@ -1442,11 +1442,11 @@ function InboxFeed() {
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => navigate("/programs")} className="gap-2">
                   <CalendarClockIcon className="h-4 w-4" />
-                  Programs
+                  Watches
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => navigate("/tasks")} className="gap-2">
                   <ListTodoIcon className="h-4 w-4" />
-                  Saved Moves
+                  To-Dos
                 </Button>
               </div>
             </div>
@@ -1454,26 +1454,26 @@ function InboxFeed() {
             <div className="grid gap-3 md:grid-cols-3">
               <LoopMetricCard
                 icon={<CalendarClockIcon className="h-4 w-4 text-primary" />}
-                label="Active Programs"
+                label="Active Watches"
                 value={activePrograms.length}
                 detail={pausedPrograms.length > 0 ? `${pausedPrograms.length} paused` : "Recurring watches"}
-                actionLabel="Open Programs"
+                actionLabel="Open Watches"
                 onClick={() => navigate("/programs")}
               />
               <LoopMetricCard
                 icon={<ListTodoIcon className="h-4 w-4 text-amber-400" />}
-                label="Open Saved Moves"
+                label="Open To-Dos"
                 value={openActions.length}
-                detail={recentlyCompletedActions.length > 0 ? `${recentlyCompletedActions.length} completed this week` : "Saved manual moves still in flight"}
-                actionLabel="Open Saved Moves"
+                detail={recentlyCompletedActions.length > 0 ? `${recentlyCompletedActions.length} completed this week` : "To-dos still in flight"}
+                actionLabel="Open To-Dos"
                 onClick={() => navigate("/tasks")}
               />
               <LoopMetricCard
                 icon={<InboxIcon className="h-4 w-4 text-blue-400" />}
-                label="Latest Brief"
+                label="Latest Digest"
                 value={latestBrief ? timeAgo(latestBrief.generatedAt) : "None"}
-                detail={latestBrief ? briefingHeadline(latestBrief) : "Generate a brief after your first watch or refresh"}
-                actionLabel={latestBrief ? "Open Brief" : "Refresh"}
+                detail={latestBrief ? briefingHeadline(latestBrief) : "Generate a digest after your first watch or refresh"}
+                actionLabel={latestBrief ? "Open Digest" : "Refresh"}
                 onClick={() => {
                   if (latestBrief) {
                     handleCardClick(latestBrief.id);
@@ -1488,8 +1488,8 @@ function InboxFeed() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-foreground">Programs in motion</h3>
-                    <p className="text-xs text-muted-foreground">The watches with the clearest recent activity or saved moves.</p>
+                    <h3 className="text-sm font-semibold text-foreground">Watches in motion</h3>
+                    <p className="text-xs text-muted-foreground">The watches with the clearest recent activity or to-dos.</p>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => navigate("/programs")}>
                     View all
@@ -1522,7 +1522,7 @@ function InboxFeed() {
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="font-mono text-sm font-semibold text-foreground">Recent Briefs</h2>
+              <h2 className="font-mono text-sm font-semibold text-foreground">Recent Digests</h2>
               <p className="text-xs text-muted-foreground">Archive and reopen the latest daily, research, and analysis outputs.</p>
             </div>
             {items.length > 0 && (
@@ -1537,8 +1537,8 @@ function InboxFeed() {
         {items.length === 0 ? (
           <Card className="border-dashed border-border/40 bg-card/30">
             <CardContent className="flex flex-col gap-3 p-6 text-sm text-muted-foreground">
-              <p>No briefs yet.</p>
-              <p>Create a Program in Ask or Programs, or trigger a refresh once pai has something meaningful to summarize.</p>
+              <p>No digests yet.</p>
+              <p>Create a Watch in Ask or Watches, or trigger a refresh once pai has something meaningful to summarize.</p>
             </CardContent>
           </Card>
         ) : (
@@ -1617,7 +1617,7 @@ function ProgramSpotlightCard({
     <div className="rounded-xl border border-border/30 bg-background/60 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline" className="text-[10px] border-primary/20 bg-primary/10 text-primary">
-          Program
+          Watch
         </Badge>
         <Badge variant="outline" className="text-[10px]">
           {program.deliveryMode ?? "interval"}
@@ -1635,7 +1635,7 @@ function ProgramSpotlightCard({
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
         <span>{formatRelativeFuture(program.nextRunAt)}</span>
         <span>•</span>
-        <span>{openCount} saved move{openCount === 1 ? "" : "s"} open</span>
+        <span>{openCount} to-do{openCount === 1 ? "" : "s"} open</span>
         {completedCount > 0 && (
           <>
             <span>•</span>
@@ -1651,11 +1651,11 @@ function ProgramSpotlightCard({
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={onOpenProgram}>
-          Open Program
+          Open Watch
         </Button>
         {program.latestBriefSummary?.id && (
           <Button size="sm" onClick={onOpenBrief}>
-            Open Latest Brief
+            Open Latest Digest
           </Button>
         )}
       </div>
@@ -1689,7 +1689,7 @@ function DailyBriefingV2Card({ item, onCardClick, isRead }: { item: InboxItem; o
             <div className="flex items-center gap-2">
               <SparklesIcon className="h-4 w-4 shrink-0 text-primary" />
               <Badge variant="outline" className="text-[10px] border-primary/20 bg-primary/10 text-primary">
-                Daily Brief
+                Daily Digest
               </Badge>
               {sections.recommendation?.confidence && (
                 <Badge variant="outline" className="text-[10px] uppercase">
@@ -1767,7 +1767,7 @@ function DailyBriefingV2Card({ item, onCardClick, isRead }: { item: InboxItem; o
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <CheckCircle2Icon className="h-3.5 w-3.5 text-amber-400" />
-                  <span className="font-mono text-xs font-semibold text-foreground">Recommended Moves</span>
+                  <span className="font-mono text-xs font-semibold text-foreground">Recommended To-Dos</span>
                 </div>
                 {sections.next_actions!.slice(0, 2).map((action, index) => (
                   <div key={index} className="rounded-md border border-border/20 bg-background/40 p-3">
@@ -1824,12 +1824,12 @@ function DailyBriefingLegacyCard({ item, onCardClick, isRead }: { item: InboxIte
             <div className="flex items-center gap-2">
               <SparklesIcon className="h-4 w-4 shrink-0 text-primary" />
               <Badge variant="outline" className="text-[10px] border-primary/20 bg-primary/10 text-primary">
-                Daily Briefing
+                Daily Digest
               </Badge>
               <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
             </div>
             <p className="mt-2 text-sm font-medium text-foreground leading-relaxed">
-              {sections.greeting ?? "Daily briefing"}
+              {sections.greeting ?? "Daily digest"}
             </p>
           </div>
           <Button
@@ -1854,7 +1854,7 @@ function DailyBriefingLegacyCard({ item, onCardClick, isRead }: { item: InboxIte
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <CheckCircle2Icon className="h-3.5 w-3.5 text-primary" />
-                  <span className="font-mono text-xs font-semibold text-foreground">Saved Move Focus</span>
+                  <span className="font-mono text-xs font-semibold text-foreground">To-Do Focus</span>
                 </div>
                 <p className="text-xs text-muted-foreground">{sections.taskFocus!.summary}</p>
                 {sections.taskFocus!.items.map((t, i) => (
@@ -1926,7 +1926,7 @@ function DailyBriefingLegacyCard({ item, onCardClick, isRead }: { item: InboxIte
                           else if (s.action === "learn") navigate("/knowledge");
                         }}
                       >
-                        {s.action === "recall" ? "Recall" : s.action === "task" ? "Saved Moves" : s.action === "learn" ? "Learn" : s.action}
+                        {s.action === "recall" ? "Recall" : s.action === "task" ? "To-Dos" : s.action === "learn" ? "Learn" : s.action}
                         <ArrowRightIcon className="ml-1 h-2.5 w-2.5" />
                       </Button>
                     )}

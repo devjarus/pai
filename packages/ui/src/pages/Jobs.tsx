@@ -218,7 +218,7 @@ export default function Jobs() {
   const clearJobsMutation = useClearJobs();
 
   useEffect(() => {
-    document.title = "Jobs - pai";
+    document.title = "Activities - pai";
   }, []);
 
   const handleSelectJob = (job: BackgroundJobInfo) => {
@@ -264,7 +264,7 @@ export default function Jobs() {
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <h1 className="font-mono text-lg font-semibold text-foreground">Background Jobs</h1>
+              <h1 className="font-mono text-lg font-semibold text-foreground">Activities</h1>
               {activeCount > 0 && (
                 <Badge variant="outline" className="text-[10px] border-blue-500/20 bg-blue-500/10 text-blue-400 animate-pulse">
                   {activeCount} active
@@ -293,10 +293,10 @@ export default function Jobs() {
                   onClick={() => {
                     clearJobsMutation.mutate(undefined, {
                       onSuccess: (result) => {
-                        toast.success(`Cleared ${result.cleared} job${result.cleared !== 1 ? "s" : ""}`);
+                        toast.success(`Cleared ${result.cleared} activit${result.cleared !== 1 ? "ies" : "y"}`);
                       },
                       onError: () => {
-                        toast.error("Failed to clear jobs");
+                        toast.error("Failed to clear activities");
                       },
                     });
                   }}
@@ -315,9 +315,9 @@ export default function Jobs() {
           {jobs.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-16 text-center">
               <SearchIcon className="h-10 w-10 text-muted-foreground/30" />
-              <h2 className="font-mono text-sm font-semibold text-muted-foreground">No background jobs</h2>
+              <h2 className="font-mono text-sm font-semibold text-muted-foreground">No activities</h2>
               <p className="max-w-sm text-xs text-muted-foreground/60">
-                Background jobs appear here when you ask the assistant to research a topic or crawl web pages.
+                Activities appear here when you ask the assistant to research a topic or crawl web pages.
               </p>
             </div>
           )}

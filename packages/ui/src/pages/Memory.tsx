@@ -47,7 +47,7 @@ const typeDescriptions: Record<string, string> = {
   procedural: "Step-by-step processes and workflows. e.g. 'Deploy by running pnpm build then docker push'",
   architectural: "System design decisions and patterns. e.g. 'API uses Fastify with Zod validation'",
   insight: "Learned patterns and observations. e.g. 'Smaller PRs get reviewed faster in this team'",
-  meta: "Beliefs about the memory system itself. e.g. 'Related beliefs about testing were synthesized'",
+  meta: "Memories about the memory system itself. e.g. 'Related memories about testing were synthesized'",
 };
 
 function formatDate(dateStr: string): string {
@@ -107,7 +107,7 @@ export default function Memory() {
   const clearAllMutation = useClearAllMemory();
   const updateBeliefMutation = useUpdateBelief();
 
-  useEffect(() => { document.title = "Memory Explorer - pai"; }, []);
+  useEffect(() => { document.title = "Memories - pai"; }, []);
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -159,10 +159,10 @@ export default function Memory() {
   const handleForget = async (id: string) => {
     try {
       await forgetMutation.mutateAsync(id);
-      toast.success("Belief forgotten");
+      toast.success("Memory forgotten");
       if (selectedBelief?.id === id) setSelectedBelief(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to forget belief");
+      toast.error(err instanceof Error ? err.message : "Failed to forget memory");
     }
   };
 
@@ -200,9 +200,9 @@ export default function Memory() {
       const updated = await updateBeliefMutation.mutateAsync({ id: selectedBelief.id, statement: trimmed });
       setSelectedBelief(updated);
       setEditingStatement(null);
-      toast.success("Belief updated");
+      toast.success("Memory updated");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update belief");
+      toast.error(err instanceof Error ? err.message : "Failed to update memory");
     }
   };
 
@@ -217,16 +217,16 @@ export default function Memory() {
   return (
     <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
-        <FirstVisitBanner pageKey="memory" tip="Everything I know about you — built automatically from our conversations. Beliefs evolve as you share more." />
+        <FirstVisitBanner pageKey="memory" tip="Everything I know about you — built automatically from our conversations. Memories evolve as you share more." />
         <header className="space-y-2 border-b border-border/40 bg-background px-3 py-3 md:space-y-4 md:px-6 md:py-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
               <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
-                Memory Explorer
-                <InfoBubble text="Beliefs are facts, preferences, and insights that pai has learned. They have confidence scores that change over time as evidence reinforces or contradicts them." />
+                Memories
+                <InfoBubble text="Memories are facts, preferences, and insights that pai has learned. They have confidence scores that change over time as evidence reinforces or contradicts them." />
               </h1>
               <Badge variant="secondary" className="font-mono text-[10px]">
-                {beliefs.length} belief{beliefs.length !== 1 ? "s" : ""}
+                {beliefs.length} memor{beliefs.length !== 1 ? "ies" : "y"}
               </Badge>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
@@ -267,7 +267,7 @@ export default function Memory() {
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Semantic search across beliefs..."
+              placeholder="Semantic search across memories..."
               className="flex-1 rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
             />
             <div className="flex shrink-0 items-center gap-1.5">
@@ -403,7 +403,7 @@ export default function Memory() {
                   <path d="M12 6v6l4 2" />
                 </svg>
                 {searchInput ? (
-                  "No beliefs match your search."
+                  "No memories match your search."
                 ) : (
                   <div className="text-center">
                     <p>No memories yet.</p>
@@ -430,7 +430,7 @@ export default function Memory() {
       {selectedBelief && (isMobile ? (
         <Sheet open={!!selectedBelief} onOpenChange={(open) => { if (!open) { setSelectedBelief(null); setEditingStatement(null); } }}>
           <SheetContent side="right" showCloseButton={false} className="w-[85vw] max-w-80 gap-0 overflow-y-auto p-0">
-            <SheetTitle className="sr-only">Belief Detail</SheetTitle>
+            <SheetTitle className="sr-only">Memory Detail</SheetTitle>
             <BeliefDetailPanel belief={selectedBelief} onClose={() => { setSelectedBelief(null); setEditingStatement(null); }} editingStatement={editingStatement} setEditingStatement={setEditingStatement} handleSaveEdit={handleSaveEdit} isSavingEdit={isSavingEdit} handleForget={handleForget} />
           </SheetContent>
         </Sheet>
@@ -443,15 +443,15 @@ export default function Memory() {
       <Dialog open={showExplainer} onOpenChange={setShowExplainer}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-sm">How Memory Works</DialogTitle>
+            <DialogTitle className="text-sm">How Memories Work</DialogTitle>
           </DialogHeader>
           <div className="space-y-5 text-sm">
             <div className="rounded-lg border border-border/50 bg-muted/20 p-4 overflow-x-auto">
-              <pre className="font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre">{"Observation        LLM extracts beliefs\n─────────── ────► ┌──────────────────┐\n\"User said X\"      │  Belief created  │\n                   │  confidence: 0.7 │\n                   └────────┬─────────┘\n                            │\n           ┌────────────────┼───────────────┐\n           ▼                ▼               ▼\n     ┌──────────┐   ┌─────────────┐  ┌─────────────┐\n     │Reinforced│   │Contradicted │  │ Decays over │\n     │conf ↑    │   │conf ↓       │  │ time if not │\n     │stable ↑  │   │may become   │  │ accessed    │\n     └──────────┘   │invalidated  │  └─────────────┘\n                    └─────────────┘"}</pre>
+              <pre className="font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre">{"Observation        LLM extracts memories\n─────────── ────► ┌──────────────────┐\n\"User said X\"      │  Memory created  │\n                   │  confidence: 0.7 │\n                   └────────┬─────────┘\n                            │\n           ┌────────────────┼───────────────┐\n           ▼                ▼               ▼\n     ┌──────────┐   ┌─────────────┐  ┌─────────────┐\n     │Reinforced│   │Contradicted │  │ Decays over │\n     │conf ↑    │   │conf ↓       │  │ time if not │\n     │stable ↑  │   │may become   │  │ accessed    │\n     └──────────┘   │invalidated  │  └─────────────┘\n                    └─────────────┘"}</pre>
             </div>
 
             <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Belief Types</h3>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Memory Types</h3>
               <div className="space-y-2">
                 {TYPES.map((t) => (
                   <div key={t} className="flex gap-2">
@@ -467,9 +467,9 @@ export default function Memory() {
             <div>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Key Metrics</h3>
               <div className="space-y-1.5 text-xs text-muted-foreground">
-                <p><strong className="text-foreground/80">Confidence</strong> — How certain pai is (0-100%). Reinforced beliefs gain confidence, contradicted ones lose it.</p>
-                <p><strong className="text-foreground/80">Stability</strong> — Resistance to decay (1.0-5.0). Frequently accessed beliefs become more stable.</p>
-                <p><strong className="text-foreground/80">Importance</strong> — Retrieval priority. Higher importance beliefs surface first in search.</p>
+                <p><strong className="text-foreground/80">Confidence</strong> — How certain pai is (0-100%). Reinforced memories gain confidence, contradicted ones lose it.</p>
+                <p><strong className="text-foreground/80">Stability</strong> — Resistance to decay (1.0-5.0). Frequently accessed memories become more stable.</p>
+                <p><strong className="text-foreground/80">Importance</strong> — Retrieval priority. Higher importance memories surface first in search.</p>
               </div>
             </div>
 
@@ -478,7 +478,7 @@ export default function Memory() {
               <div className="space-y-1.5 text-xs text-muted-foreground">
                 <p><Badge variant="secondary" className="mr-1 text-[9px]">active</Badge> Currently used for recall and context.</p>
                 <p><Badge variant="destructive" className="mr-1 text-[9px]">forgotten</Badge> Soft-deleted by user. Preserved in history but not used.</p>
-                <p><Badge variant="destructive" className="mr-1 text-[9px]">invalidated</Badge> Contradicted by newer evidence. Superseded by a different belief.</p>
+                <p><Badge variant="destructive" className="mr-1 text-[9px]">invalidated</Badge> Contradicted by newer evidence. Superseded by a different memory.</p>
               </div>
             </div>
           </div>
@@ -492,7 +492,7 @@ export default function Memory() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              This will forget all active beliefs. They will be marked as &quot;forgotten&quot; and won&apos;t be used for recall, but they are preserved in history.
+              This will forget all active memories. They will be marked as &quot;forgotten&quot; and won&apos;t be used for recall, but they are preserved in history.
             </p>
             <p className="text-sm font-medium text-destructive">
               This action cannot be easily undone.
@@ -561,7 +561,7 @@ function BeliefDetailPanel({
           <CardHeader className="flex-row items-center justify-between px-4 py-0">
             <div className="flex items-center gap-2">
               <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Belief Detail
+                Memory Detail
               </CardTitle>
               {editingStatement === null && (
                 <Tooltip>
@@ -648,10 +648,10 @@ function BeliefDetailPanel({
             <Separator className="opacity-30" />
 
             <div className="grid grid-cols-2 gap-3">
-              <DetailMetric label="Confidence" value={`${Math.round(belief.confidence * 100)}%`} info="How certain pai is about this belief. Increases when reinforced, decreases when contradicted." />
-              <DetailMetric label="Stability" value={belief.stability.toFixed(1)} info="Resistance to decay (1.0-5.0). Frequently accessed beliefs become more stable over time." />
-              <DetailMetric label="Importance" value={belief.importance.toFixed(2)} info="How significant this belief is for retrieval ranking. Higher importance beliefs surface first in search." />
-              <DetailMetric label="Access Count" value={String(belief.access_count)} info="Number of times this belief has been recalled or referenced in conversations." />
+              <DetailMetric label="Confidence" value={`${Math.round(belief.confidence * 100)}%`} info="How certain pai is about this memory. Increases when reinforced, decreases when contradicted." />
+              <DetailMetric label="Stability" value={belief.stability.toFixed(1)} info="Resistance to decay (1.0-5.0). Frequently accessed memories become more stable over time." />
+              <DetailMetric label="Importance" value={belief.importance.toFixed(2)} info="How significant this memory is for retrieval ranking. Higher importance memories surface first in search." />
+              <DetailMetric label="Access Count" value={String(belief.access_count)} info="Number of times this memory has been recalled or referenced in conversations." />
             </div>
 
             <Separator className="opacity-30" />
@@ -687,7 +687,7 @@ function BeliefDetailPanel({
                 className="w-full"
                 onClick={() => handleForget(belief.id)}
               >
-                Forget this belief
+                Forget this memory
               </Button>
             )}
           </CardContent>

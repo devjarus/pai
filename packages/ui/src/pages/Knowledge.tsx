@@ -87,7 +87,7 @@ export default function Knowledge() {
   const reindexMutation = useReindexKnowledge();
   const updateTagsMutation = useUpdateKnowledgeSource();
 
-  useEffect(() => { document.title = "Knowledge Base - pai"; if (searchParams.get("action")) setSearchParams({}, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { document.title = "Documents - pai"; if (searchParams.get("action")) setSearchParams({}, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -211,7 +211,7 @@ export default function Knowledge() {
   const handleReindex = async () => {
     try {
       const result = await reindexMutation.mutateAsync();
-      toast.success(`Re-indexed ${result.reindexed} source${result.reindexed !== 1 ? "s" : ""} with contextual headers`);
+      toast.success(`Re-indexed ${result.reindexed} document${result.reindexed !== 1 ? "s" : ""} with contextual headers`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to re-index");
     }
@@ -284,10 +284,10 @@ export default function Knowledge() {
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
               <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
-                Knowledge Base
+                Documents
               </h1>
               <Badge variant="secondary" className="font-mono text-[10px]">
-                {sources.length} source{sources.length !== 1 ? "s" : ""}
+                {sources.length} document{sources.length !== 1 ? "s" : ""}
               </Badge>
             </div>
             <div className="flex items-center gap-1">
@@ -297,7 +297,7 @@ export default function Knowledge() {
                     <RefreshCwIcon className={`size-4 text-muted-foreground ${isReindexing ? "animate-spin" : ""}`} />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Re-index all sources with contextual headers</TooltipContent>
+                <TooltipContent>Re-index all documents with contextual headers</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -324,7 +324,7 @@ export default function Knowledge() {
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search knowledge base..."
+              placeholder="Search documents..."
               className="w-full rounded-lg border border-border/50 bg-background py-2 pl-9 pr-3 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
             />
           </div>
@@ -410,7 +410,7 @@ export default function Knowledge() {
                 {searchResults.length === 0 && !isSearching ? (
                   <div className="flex flex-col items-center justify-center py-16 text-sm text-muted-foreground">
                     <SearchIcon className="mb-4 size-12 opacity-20" />
-                    No matching knowledge found.
+                    No matching documents found.
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -450,7 +450,7 @@ export default function Knowledge() {
                 <div className="mb-4 opacity-20">
                   <IconBook />
                 </div>
-                <p>Knowledge base is empty.</p>
+                <p>No documents yet.</p>
                 <p className="mt-1 text-xs">Use the + button to learn from a web page.</p>
               </div>
             ) : (
@@ -532,7 +532,7 @@ export default function Knowledge() {
       {selectedSource && (isMobile ? (
         <Sheet open={!!selectedSource} onOpenChange={(open) => { if (!open) setSelectedSource(null); }}>
           <SheetContent side="right" showCloseButton={false} className="w-[85vw] max-w-96 gap-0 overflow-y-auto p-0">
-            <SheetTitle className="sr-only">Source Detail</SheetTitle>
+            <SheetTitle className="sr-only">Document Detail</SheetTitle>
             <SourceDetailPanel source={selectedSource} onClose={() => setSelectedSource(null)} editingTags={editingTags} setEditingTags={setEditingTags} tagsInput={tagsInput} setTagsInput={setTagsInput} handleSaveTags={handleSaveTags} setViewChunksSource={setViewChunksSource} handleRefresh={handleRefresh} isRefreshing={isRefreshing} handleCrawlSubPages={handleCrawlSubPages} isCrawling={isCrawling} setShowDeleteConfirm={setShowDeleteConfirm} />
           </SheetContent>
         </Sheet>
@@ -604,7 +604,7 @@ export default function Knowledge() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              Enter a web page URL. The content will be extracted, chunked, and stored in your knowledge base for future retrieval.
+              Enter a web page URL. The content will be extracted, chunked, and stored in your documents for future retrieval.
             </p>
             <input
               type="url"
@@ -682,11 +682,11 @@ export default function Knowledge() {
       <Dialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-sm">Remove Source</DialogTitle>
+            <DialogTitle className="text-sm">Remove Document</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Remove <strong className="text-foreground/80">&quot;{showDeleteConfirm?.title}&quot;</strong> and all its {showDeleteConfirm?.chunks} chunks from the knowledge base?
+              Remove <strong className="text-foreground/80">&quot;{showDeleteConfirm?.title}&quot;</strong> and all its {showDeleteConfirm?.chunks} chunks?
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(null)}>
@@ -784,7 +784,7 @@ function SourceDetailPanel({
         <Card className="gap-4 border-border/50 bg-card/30 py-4">
           <CardHeader className="flex-row items-center justify-between px-4 py-0">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Source Detail
+              Document Detail
             </CardTitle>
             <Button
               variant="ghost"
@@ -904,7 +904,7 @@ function SourceDetailPanel({
                 onClick={() => setShowDeleteConfirm(source)}
               >
                 <Trash2Icon className="mr-1.5 size-3.5" />
-                Remove source
+                Remove document
               </Button>
             </div>
           </CardContent>

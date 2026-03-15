@@ -128,7 +128,7 @@ export default function Programs() {
   });
 
   useEffect(() => {
-    document.title = "Programs - pai";
+    document.title = "Watches - pai";
     if (searchParams.get("action")) {
       const next = new URLSearchParams(searchParams);
       next.delete("action");
@@ -208,12 +208,12 @@ export default function Programs() {
     try {
       if (editing) {
         await updateProgram.mutateAsync({ id: editing.id, data: payload });
-        toast.success("Program updated");
+        toast.success("Watch updated");
       } else {
         const result = await createProgram.mutateAsync(payload);
         toast.success(
           result.created
-            ? "Program created"
+            ? "Watch created"
             : result.duplicateReason === "thread"
               ? "That thread is already being watched"
               : `Already watching this as "${result.program.title}"`,
@@ -223,17 +223,17 @@ export default function Programs() {
       setEditing(null);
       resetForm();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save program");
+      toast.error(error instanceof Error ? error.message : "Failed to save watch");
     }
   }
 
   async function handleDelete(program: Program) {
     try {
       await deleteProgram.mutateAsync(program.id);
-      toast.success("Program deleted");
+      toast.success("Watch deleted");
       setDeleting(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to delete program");
+      toast.error(error instanceof Error ? error.message : "Failed to delete watch");
     }
   }
 
@@ -241,13 +241,13 @@ export default function Programs() {
     try {
       if (program.status === "active") {
         await pauseProgram.mutateAsync(program.id);
-        toast.success("Program paused");
+        toast.success("Watch paused");
       } else {
         await resumeProgram.mutateAsync(program.id);
-        toast.success("Program resumed");
+        toast.success("Watch resumed");
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update program");
+      toast.error(error instanceof Error ? error.message : "Failed to update watch");
     }
   }
 
@@ -279,12 +279,12 @@ export default function Programs() {
     <div className="flex h-full flex-col overflow-hidden">
       <FirstVisitBanner
         pageKey="programs"
-        tip="Programs are the recurring decisions or watches you want pai to keep watching and brief you on."
+        tip="Watches are the recurring decisions or topics you want pai to keep watching and send you digests on."
       />
       <div className="flex shrink-0 items-center justify-between border-b px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
           <CalendarClockIcon className="size-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Programs</h1>
+          <h1 className="text-lg font-semibold">Watches</h1>
           {!isLoading && (
             <span className="text-sm text-muted-foreground">
               {activeCount} active{pausedCount > 0 ? `, ${pausedCount} paused` : ""}
@@ -293,7 +293,7 @@ export default function Programs() {
         </div>
         <Button size="sm" onClick={openAdd}>
           <PlusIcon className="mr-1 size-4" />
-          New Program
+          New Watch
         </Button>
       </div>
 
@@ -312,15 +312,15 @@ export default function Programs() {
           <div className="flex flex-col items-center justify-center gap-4 py-16 text-center text-muted-foreground">
             <SparklesIcon className="size-10 opacity-40" />
             <div>
-              <p className="text-lg font-medium text-foreground">No programs yet</p>
+              <p className="text-lg font-medium text-foreground">No watches yet</p>
               <p className="mt-1 max-w-md text-sm">
                 Create an ongoing decision or watch and pai will keep watching it, remember your constraints,
-                and brief you when something changes.
+                and send you a digest when something changes.
               </p>
             </div>
             <Button variant="outline" onClick={openAdd}>
               <PlusIcon className="mr-1 size-4" />
-              Create Program
+              Create Watch
             </Button>
           </div>
         ) : (
@@ -352,7 +352,7 @@ export default function Programs() {
       >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Program" : "New Program"}</DialogTitle>
+            <DialogTitle>{editing ? "Edit Watch" : "New Watch"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -394,7 +394,7 @@ export default function Programs() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium">Brief Depth</label>
+                <label className="mb-1 block text-sm font-medium">Digest Depth</label>
                 <select
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
                   value={form.executionMode}
@@ -455,7 +455,7 @@ export default function Programs() {
 
             <div>
               <label className="mb-1 block text-sm font-medium">
-                First Brief At <span className="font-normal text-muted-foreground">(optional)</span>
+                First Digest At <span className="font-normal text-muted-foreground">(optional)</span>
               </label>
               <input
                 type="datetime-local"
@@ -473,7 +473,7 @@ export default function Programs() {
               onClick={handleSave}
               disabled={programSaving || !form.title.trim() || !form.question.trim()}
             >
-              {programSaving ? "Saving..." : editing ? "Save Changes" : "Create Program"}
+              {programSaving ? "Saving..." : editing ? "Save Changes" : "Create Watch"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -482,10 +482,10 @@ export default function Programs() {
       <Dialog open={!!deleting} onOpenChange={() => setDeleting(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete Program</DialogTitle>
+            <DialogTitle>Delete Watch</DialogTitle>
           </DialogHeader>
           <p className="py-2 text-sm text-muted-foreground">
-            Delete "{deleting?.title}"? This stops future briefs for the program and leaves any saved moves as history.
+            Delete "{deleting?.title}"? This stops future digests for the watch and leaves any to-dos as history.
           </p>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDeleting(null)}>
@@ -569,28 +569,28 @@ function ProgramRow({
               <div>
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <ListTodoIcon className="size-4 text-muted-foreground" />
-                  Saved Moves
+                  To-Dos
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {actions.length === 0
-                    ? "No saved moves yet. Save one from the latest brief only when you want pai to remember a real manual step."
-                    : `${openActionCount} open${actions.length !== openActionCount ? `, ${actions.length - openActionCount} done` : ""} saved move${actions.length === 1 ? "" : "s"}`}
+                    ? "No to-dos yet. Save one from the latest digest only when you want pai to remember a real manual step."
+                    : `${openActionCount} open${actions.length !== openActionCount ? `, ${actions.length - openActionCount} done` : ""} to-do${actions.length === 1 ? "" : "s"}`}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button variant="ghost" size="sm" onClick={() => onOpenCommitments(program)}>
-                  Open Saved Moves
+                  Open To-Dos
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => onOpenPrimary(program)}>
-                  {program.latestBriefSummary?.id ? "Open Brief" : "Open Ask"}
+                  {program.latestBriefSummary?.id ? "Open Digest" : "Open Ask"}
                 </Button>
               </div>
             </div>
             {program.latestBriefSummary?.id && (
               <div className="mt-3 rounded-md border border-border/20 bg-card/30 px-3 py-2">
-                <div className="text-[11px] font-medium text-foreground">Latest brief recommendation</div>
+                <div className="text-[11px] font-medium text-foreground">Latest digest recommendation</div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {program.latestBriefSummary.recommendationSummary ?? "Open the latest brief to decide whether any recommendation is worth saving as a move."}
+                  {program.latestBriefSummary.recommendationSummary ?? "Open the latest digest to decide whether any recommendation is worth saving as a to-do."}
                 </p>
               </div>
             )}
@@ -615,10 +615,10 @@ function ProgramRow({
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
             {!isPaused && (
               <span>
-                Next brief: {formatDateTime(program.nextRunAt)} ({timeUntil(program.nextRunAt)})
+                Next digest: {formatDateTime(program.nextRunAt)} ({timeUntil(program.nextRunAt)})
               </span>
             )}
-            {program.lastRunAt && <span>Last brief: {formatDateTime(program.lastRunAt)}</span>}
+            {program.lastRunAt && <span>Last digest: {formatDateTime(program.lastRunAt)}</span>}
             <span className="font-mono text-[10px] opacity-50">{program.id}</span>
           </div>
         </div>

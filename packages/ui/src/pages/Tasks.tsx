@@ -60,7 +60,7 @@ const priorityStyles: Record<string, string> = {
 
 function taskSourceLabel(task: Task): string | null {
   if (!task.source_type) return null;
-  const prefix = task.source_type === "program" ? "From Program" : "From Brief";
+  const prefix = task.source_type === "program" ? "From Watch" : "From Digest";
   return task.source_label ? `${prefix}: ${task.source_label}` : prefix;
 }
 
@@ -93,7 +93,7 @@ export default function Tasks() {
   const [quickAddTitle, setQuickAddTitle] = useState("");
 
   useEffect(() => {
-    document.title = "Saved Moves - pai";
+    document.title = "To-Dos - pai";
     if (searchParams.get("action")) {
       const next = new URLSearchParams(searchParams);
       next.delete("action");
@@ -132,10 +132,10 @@ export default function Tasks() {
   const scopedSourceLabel =
     sourceLabelFilter ??
     tasks.find((task) => task.source_label)?.source_label ??
-    (sourceTypeFilter === "program" ? "Program" : sourceTypeFilter === "briefing" ? "Brief" : undefined);
+    (sourceTypeFilter === "program" ? "Watch" : sourceTypeFilter === "briefing" ? "Digest" : undefined);
 
   const scopedSourceKind =
-    sourceTypeFilter === "program" ? "Program" : sourceTypeFilter === "briefing" ? "Brief" : null;
+    sourceTypeFilter === "program" ? "Watch" : sourceTypeFilter === "briefing" ? "Digest" : null;
 
   const clearSourceFilter = () => {
     const next = new URLSearchParams(searchParams);
@@ -151,14 +151,14 @@ export default function Tasks() {
     try {
       if (task.status === "open") {
         await completeTaskMut.mutateAsync(task.id);
-        toast.success("Move marked done");
+        toast.success("To-do marked done");
       } else {
         await reopenTaskMut.mutateAsync(task.id);
-        toast.success("Move reopened");
+        toast.success("To-do reopened");
       }
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to update move",
+        err instanceof Error ? err.message : "Failed to update to-do",
       );
     }
   };
@@ -166,11 +166,11 @@ export default function Tasks() {
   const handleDeleteTask = async (task: Task) => {
     try {
       await deleteTaskMut.mutateAsync(task.id);
-      toast.success("Saved move deleted");
+      toast.success("To-do deleted");
       setDeletingTask(null);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to delete saved move",
+        err instanceof Error ? err.message : "Failed to delete to-do",
       );
     }
   };
@@ -214,7 +214,7 @@ export default function Tasks() {
             goalId: taskForm.goalId || undefined,
           },
         });
-        toast.success("Saved move updated");
+        toast.success("To-do updated");
       } else {
         await createTaskMut.mutateAsync({
           title,
@@ -228,12 +228,12 @@ export default function Tasks() {
             sourceLabel: scopedSourceLabel,
           } : {}),
         });
-        toast.success("Move saved");
+        toast.success("To-do saved");
       }
       setShowAddTask(false);
       setEditingTask(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save move");
+      toast.error(err instanceof Error ? err.message : "Failed to save to-do");
     }
   };
 
@@ -253,9 +253,9 @@ export default function Tasks() {
         } : {}),
       });
       setQuickAddTitle("");
-      toast.success("Move saved");
+      toast.success("To-do saved");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save move");
+      toast.error(err instanceof Error ? err.message : "Failed to save to-do");
     }
   };
 
@@ -285,10 +285,10 @@ export default function Tasks() {
   const handleClearAllTasks = async () => {
     try {
       const result = await clearAllTasksMut.mutateAsync();
-      toast.success(`Cleared ${result.cleared} saved move${result.cleared !== 1 ? "s" : ""}`);
+      toast.success(`Cleared ${result.cleared} to-do${result.cleared !== 1 ? "s" : ""}`);
       setShowClearAll(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to clear saved moves");
+      toast.error(err instanceof Error ? err.message : "Failed to clear to-dos");
     }
   };
 
@@ -315,7 +315,7 @@ export default function Tasks() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <FirstVisitBanner pageKey="tasks" tip="Saved moves are optional and user-owned. Save one only when there is a real manual move you want pai to revisit in future briefs." />
+      <FirstVisitBanner pageKey="tasks" tip="To-dos are optional and user-owned. Save one only when there is a real manual step you want pai to revisit in future digests." />
       {/* Top-level tabs */}
       <header className="space-y-2 border-b border-border/40 bg-background px-3 py-3 md:space-y-4 md:px-6 md:py-4">
         <Tabs
@@ -324,7 +324,7 @@ export default function Tasks() {
         >
             <TabsList className="h-8">
               <TabsTrigger value="actions" className="text-xs">
-              Saved Moves
+              To-Dos
               </TabsTrigger>
             {goals.length > 0 && (
               <TabsTrigger value="goals" className="text-xs">
@@ -340,10 +340,10 @@ export default function Tasks() {
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-3">
                 <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
-                  Saved Moves
+                  To-Dos
                 </h1>
                 <Badge variant="secondary" className="font-mono text-[10px]">
-                  {tasks.length} saved
+                  {tasks.length} to-do{tasks.length !== 1 ? "s" : ""}
                 </Badge>
               </div>
               <div className="flex items-center gap-1">
@@ -375,7 +375,7 @@ export default function Tasks() {
             {scopedSource && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/40 bg-card/40 px-3 py-2">
                 <div className="text-xs text-muted-foreground">
-                  Showing saved moves for {scopedSourceKind}: <span className="font-medium text-foreground">{scopedSourceLabel}</span>
+                  Showing to-dos for {scopedSourceKind}: <span className="font-medium text-foreground">{scopedSourceLabel}</span>
                 </div>
                 <Button variant="ghost" size="sm" onClick={clearSourceFilter}>
                   Show all
@@ -391,7 +391,7 @@ export default function Tasks() {
                   Legacy Goals
                 </h1>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Goals are deprecated. Existing goals remain here for reference and cleanup, but new saved moves should only come from Briefs or explicit user intent when there is a real manual move to keep alive.
+                  Goals are deprecated. Existing goals remain here for reference and cleanup, but new to-dos should only come from Digests or explicit user intent when there is a real manual step to keep alive.
                 </p>
               </div>
               <Badge variant="secondary" className="font-mono text-[10px]">
@@ -424,13 +424,13 @@ export default function Tasks() {
             tasks.length === 0 && !quickAddTitle ? (
               <div className="flex flex-col items-center justify-center py-16 text-sm text-muted-foreground">
                 <CircleIcon className="mb-4 size-12 opacity-20" />
-                <p>No saved moves found.</p>
+                <p>No to-dos found.</p>
                 <p className="mt-1 text-xs">
                   {scopedSource
-                    ? `No saved moves exist for this ${scopedSourceKind?.toLowerCase() ?? "source"} yet.`
+                    ? `No to-dos exist for this ${scopedSourceKind?.toLowerCase() ?? "source"} yet.`
                     : statusFilter === "open"
-                      ? 'Click the + button to save your first move, or switch to "All" to see completed saved moves.'
-                      : "No saved moves match the current filter."}
+                      ? 'Click the + button to add your first to-do, or switch to "All" to see completed to-dos.'
+                      : "No to-dos match the current filter."}
                 </p>
               </div>
             ) : (
@@ -442,7 +442,7 @@ export default function Tasks() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleQuickAdd();
                   }}
-                  placeholder={scopedSource ? "Save a manual move for this context..." : "Quick-save a move..."}
+                  placeholder={scopedSource ? "Add a to-do for this context..." : "Quick-add a to-do..."}
                   className="w-full rounded-lg border-transparent bg-transparent px-4 py-2 text-xs text-foreground placeholder-muted-foreground/50 outline-none transition-colors focus:border-border/40 focus:bg-card/30 focus:ring-0"
                 />
                 {tasks.map((task) => (
@@ -464,7 +464,7 @@ export default function Tasks() {
               <TargetIcon className="mb-4 size-12 opacity-20" />
               <p>No legacy goals.</p>
               <p className="mt-1 text-xs">
-                Existing goals would appear here for cleanup, but new product work should live as Programs, Briefs, and saved moves.
+                Existing goals would appear here for cleanup, but new product work should live as Watches, Digests, and to-dos.
               </p>
             </div>
           ) : (
@@ -512,7 +512,7 @@ export default function Tasks() {
                     </div>
 
                       <p className="mb-2 text-xs text-muted-foreground">
-                      {progress.done}/{progress.total} linked saved move{progress.total === 1 ? "" : "s"} done
+                      {progress.done}/{progress.total} linked to-do{progress.total === 1 ? "" : "s"} done
                     </p>
                     <div className="h-1.5 w-full rounded-full bg-muted">
                       <div
@@ -563,7 +563,7 @@ export default function Tasks() {
                         </div>
 
                         <p className="mb-2 text-xs text-muted-foreground">
-                          {progress.done}/{progress.total} linked saved move{progress.total === 1 ? "" : "s"} done
+                          {progress.done}/{progress.total} linked to-do{progress.total === 1 ? "" : "s"} done
                         </p>
                         <div className="h-1.5 w-full rounded-full bg-muted">
                           <div
@@ -594,7 +594,7 @@ export default function Tasks() {
         <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="text-sm">
-              {editingTask ? "Edit Saved Move" : "Save Move"}
+              {editingTask ? "Edit To-Do" : "Add To-Do"}
               </DialogTitle>
             </DialogHeader>
           <div className="space-y-4">
@@ -611,7 +611,7 @@ export default function Tasks() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSaveTask();
                 }}
-                placeholder="What concrete move should stay alive?"
+                placeholder="What concrete step should stay alive?"
                 className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
                 autoFocus
               />
@@ -626,7 +626,7 @@ export default function Tasks() {
                 onChange={(e) =>
                   setTaskForm((f) => ({ ...f, description: e.target.value }))
                 }
-                placeholder="Why this move matters, deadline context, or what future briefs should remember..."
+                placeholder="Why this to-do matters, deadline context, or what future digests should remember..."
                 rows={3}
                 className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
               />
@@ -713,7 +713,7 @@ export default function Tasks() {
                 ? "Saving..."
                 : editingTask
                   ? "Save Changes"
-                  : "Save Move"}
+                  : "Add To-Do"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -726,7 +726,7 @@ export default function Tasks() {
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-sm">Delete Saved Move</DialogTitle>
+            <DialogTitle className="text-sm">Delete To-Do</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -771,7 +771,7 @@ export default function Tasks() {
               <strong className="text-foreground/80">
                 &quot;{deletingGoal?.title}&quot;
               </strong>
-              ? Linked saved moves will not be deleted.
+              ? Linked to-dos will not be deleted.
             </p>
             <div className="flex justify-end gap-2">
               <Button
@@ -797,11 +797,11 @@ export default function Tasks() {
       <Dialog open={showClearAll} onOpenChange={setShowClearAll}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-sm">Clear All Saved Moves</DialogTitle>
+            <DialogTitle className="text-sm">Clear All To-Dos</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Delete all saved moves? This cannot be undone.
+              Delete all to-dos? This cannot be undone.
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setShowClearAll(false)}>
