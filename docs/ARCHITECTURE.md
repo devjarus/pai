@@ -57,7 +57,9 @@ packages/
   plugin-schedules/   Recurring scheduled research jobs
   plugin-telegram/    Telegram bot — grammY, standalone entry point, chat pipeline
   server/             Fastify API — REST + SSE + static UI + auth (JWT) + WorkerLoop + artifacts serving + server hardening
-  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Home, Chat, Memory, Knowledge, Saved Moves, Jobs, Settings, Timeline) + ToolFlightResults + ToolStockReport
+  library/            Unified knowledge layer: memories, documents, research findings, unified search, ingestion pipelines
+  watches/            Watch domain: templates, depth levels, delta research, re-exports from plugin-schedules
+  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Home, Chat, Library, Watches, Digests, Tasks, Settings) + ToolFlightResults + ToolStockReport
 
 sandbox/              Docker sidecar — Python 3.12 + Node.js 20 for isolated code execution (matplotlib, pandas, plotly, yfinance). Opt-in via `docker compose --profile sandbox`.
 ```
@@ -71,7 +73,7 @@ The user-facing shell is intentionally organized around the recurring decision l
 - `Home` leads with active Watches, open To-Dos, and the latest Digest. Historical digests remain available below as archive.
 - `Ask` is the main creation surface for new Watches and follow-up questions.
 - `Watches` is the durable watch list over `scheduled_jobs`.
-- `Digest detail` is the primary decision artifact: recommendation, what changed, sources, memory assumptions, recommended moves, and correction.
+- `Digests` surfaces daily and research briefings with recommendation, what changed, sources, memory assumptions, recommended moves, and correction.
 - `To-Dos` remain stored in `tasks`, but user-facing product behavior treats them as optional To-Dos linked to a Digest or explicit user intent. The standalone list is secondary to inline recommended moves inside Digests.
 
 This is important architecturally because the system may store much more than it should immediately surface. The shell should reflect the current loop state, not dump every internal artifact with equal weight.
@@ -506,6 +508,32 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `GET` | `/api/observability/jobs/:jobId` | Per-job diagnostics with process and agent breakdowns |
 | `GET` | `/api/observability/traces/:traceId` | Full span tree for a single trace |
 | `GET` | `/api/observability/recent-errors` | Recent failed spans with thread/job context |
+| `GET` | `/api/library/search?q=` | Unified search across memories, documents, findings |
+| `GET` | `/api/library/memories` | List memories |
+| `POST` | `/api/library/memories` | Store observation |
+| `DELETE` | `/api/library/memories/:id` | Forget memory |
+| `GET` | `/api/library/documents` | List documents |
+| `POST` | `/api/library/documents/url` | Learn from URL |
+| `DELETE` | `/api/library/documents/:id` | Delete document |
+| `GET` | `/api/library/findings` | List research findings |
+| `GET` | `/api/library/findings/:id` | Finding detail |
+| `GET` | `/api/library/stats` | Library stats |
+| `GET` | `/api/watches` | List watches |
+| `POST` | `/api/watches` | Create watch |
+| `GET` | `/api/watches/:id` | Watch detail |
+| `PATCH` | `/api/watches/:id` | Update watch |
+| `DELETE` | `/api/watches/:id` | Delete watch |
+| `POST` | `/api/watches/:id/run` | Trigger immediate research |
+| `GET` | `/api/watches/templates` | List watch templates |
+| `POST` | `/api/watches/from-template` | Create watch from template |
+| `GET` | `/api/digests` | List all digests |
+| `GET` | `/api/digests/latest` | Latest digest |
+| `GET` | `/api/digests/:id` | Digest detail |
+| `GET` | `/api/digests/:id/sources` | Digest provenance |
+| `POST` | `/api/digests/:id/correct` | Correct a memory assumption |
+| `POST` | `/api/digests/:id/rate` | Rate digest quality |
+| `POST` | `/api/digests/refresh` | Generate new digest |
+| `GET` | `/api/digests/:id/suggestions` | Suggested to-dos from digest |
 | `GET` | `/api/browse?path=` | Directory browser |
 
 ### Reinitialize Pattern
@@ -571,7 +599,7 @@ Tasks (status/priority/due date) + Goals. `ai-suggest` feeds tasks + memory to L
 - `telegram_threads` maps chat_id → thread_id (reuses same thread/message tables)
 - `runAgentChat()` — non-streaming (`generateText`), same tools as web, `stepCountIs(8)`
 - Sub-agent delegation: curator via `agent_curator` tool
-- Commands lead with `/briefs`, `/programs`, `/reply`, `/action`, `/done`, and `/correct`
+- Commands lead with `/digests`, `/watches`, `/reply`, `/todo`, `/done`, `/library`, and `/correct`
 - Multi-user: sender identity injected, owner detected via `config.telegram.ownerUsername`
 - Markdown → Telegram HTML conversion, 4096-char splitting
 - Push loop delivers daily, Program, research, and swarm briefs
@@ -582,18 +610,17 @@ Tasks (status/priority/due date) + Goals. `ai-suggest` feeds tasks + memory to L
 
 ## Web UI
 
-React SPA — Home, Chat, Memory Explorer, Knowledge, Saved Moves, Settings, Timeline. Uses TanStack Query for server state (cached queries, automatic invalidation, polling) via custom hooks in `src/hooks/use-*.ts`.
+React SPA — Home, Chat, Library, Watches, Digests, Tasks, Settings. Uses TanStack Query for server state (cached queries, automatic invalidation, polling) via custom hooks in `src/hooks/use-*.ts`.
 
 | Page | Key features |
 |------|-------------|
-| **Inbox** (`/`) | Unified feed of daily briefings and research reports. Detail view (`/inbox/:id`) with "Start Chat" button (creates thread, auto-sends research context). Staggered fade-in animations. Refresh/clear buttons. Cards navigate to Saved Moves/Memory/Knowledge. |
+| **Home** (`/`) | Dashboard with latest digest, active watches, open to-dos, library stats. |
 | **Chat** | assistant-ui primitives (`<Thread />`, `<Composer />`, `makeAssistantToolUI`) with `useExternalStoreRuntime` + `DefaultChatTransport`, thread sidebar with clear-all-threads option, tool cards, responsive mobile, token usage badge |
-| **Jobs** | Background job tracker for crawl and research jobs. Shows status, progress, and results. Clear completed jobs. |
-| **Memory** | Browse/search beliefs, type filter tabs, detail sidebar, clear all, empty state |
-| **Knowledge** | Browse sources, view chunks, search knowledge base, learn from URLs, crawl sub-pages |
-| **Saved Moves** (`/tasks`) | Secondary saved-move surface. Keeps linked Brief/Program context visible, supports source-scoped views, and only stores bounded manual moves the user explicitly wants pai to revisit. Goals remain in a legacy cleanup tab rather than a primary product noun. |
+| **Digests** (`/digests`) | Unified feed of daily briefings and research reports. Detail view (`/digests/:id`) with "Start Chat" button (creates thread, auto-sends research context). Staggered fade-in animations. Refresh/clear buttons. |
+| **Library** (`/library`) | Memories, Documents, Findings tabs with unified search. Browse/search beliefs, type filter tabs, detail sidebar, learn from URLs, crawl sub-pages. |
+| **Watches** (`/watches`) | Watch list with templates, detail with findings. Shows status, progress, and results. |
+| **Tasks/To-Dos** (`/tasks`) | Secondary saved-move surface. Keeps linked Digest/Watch context visible, supports source-scoped views, and only stores bounded manual moves the user explicitly wants pai to revisit. Goals remain in a legacy cleanup tab rather than a primary product noun. |
 | **Settings** | LLM provider dropdown with auto-populated presets (Ollama/OpenAI/Anthropic/Google), model/key, data directory browser, Telegram config, background worker toggles, and a local-only Diagnostics panel (Overview, Processes, Threads, Jobs, Errors) backed by `/api/observability/*` |
-| **Timeline** | Chronological episodes + belief changes, empty state |
 
 **Global error handling:** `ErrorBoundary` (catches React errors, refresh + copy details) and `OfflineBanner` (10s ping, amber banner, auto-dismiss on reconnect).
 
@@ -601,7 +628,7 @@ React SPA — Home, Chat, Memory Explorer, Knowledge, Saved Moves, Settings, Tim
 
 ## MCP Server
 
-19-tool MCP server over stdio. Tools: `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `memory-stats`, `memory-synthesize`, `knowledge-learn`, `knowledge-search`, `knowledge-sources`, `knowledge-forget`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`, `goal-list`, `goal-add`, `goal-done`.
+19-tool MCP server over stdio. Tools: `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `memory-stats`, `memory-synthesize`, `knowledge-learn`, `knowledge-search`, `knowledge-sources`, `knowledge-forget`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`, `goal-list`, `goal-add`, `goal-done`. New tools: `library-remember`, `library-search`, `library-context`, `library-memories`, `library-forget`, `library-stats`, `library-synthesize`, `library-learn-url`, `library-documents`, `library-forget-document`. Old tool names continue to work.
 
 ---
 
@@ -668,6 +695,17 @@ swarm_blackboard   (id, job_id FK, agent_id FK, key TEXT, value TEXT, created_at
 
 -- Artifacts — migration v2 (filesystem-backed, no BLOBs)
 artifacts          (id, job_id FK, name TEXT, mime_type TEXT, file_path TEXT, size INTEGER, created_at)
+
+-- Library (findings) — package library
+research_findings      (id, watch_id, digest_id, goal, domain, summary, structured_data,
+                        sources, confidence, agent_name, depth_level, previous_finding_id,
+                        delta, created_at, updated_at)
+research_finding_embeddings (finding_id PK, embedding TEXT)
+research_findings_fts  (FTS5 virtual table, auto-synced)
+brief_beliefs          (id, brief_id FK, belief_id FK, role, created_at)
+
+-- Digest ratings
+digest_ratings         (id, digest_id, rating INTEGER 1-5, feedback TEXT, created_at)
 ```
 
 ---
