@@ -81,6 +81,13 @@ export interface TelemetryAttributes {
   metadata?: Record<string, unknown>;
 }
 
+export interface FeatureFlags {
+  libraryDomain?: boolean;
+  watchesDomain?: boolean;
+  digestsDomain?: boolean;
+  homeDashboard?: boolean;
+}
+
 export interface Config {
   dataDir: string;
   logLevel: LogLevel;
@@ -126,6 +133,8 @@ export interface Config {
   searchUrl?: string;
   /** Pinchtab browser automation URL (e.g. http://localhost:9867). Auto-detected in Docker/Railway if unset. */
   browserUrl?: string;
+  /** Feature flags for phased domain rollout */
+  features?: FeatureFlags;
 }
 
 export interface Migration {

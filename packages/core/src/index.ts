@@ -1,5 +1,5 @@
 export type {
-  Config, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult, EmbedResult, StreamEvent,
+  Config, FeatureFlags, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult, EmbedResult, StreamEvent,
   PluginContext, Command, Plugin, AgentPlugin, AgentContext, Logger, LogLevel, LogFileOptions,
   TelemetryAttributes, TelemetryProcess, TelemetrySpanType, TelemetryStatus, TelemetrySurface, EmbedOptions,
   LlmTrafficConfig, LlmTrafficLane, BackgroundJobSourceKind, BackgroundWaitingReason,

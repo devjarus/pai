@@ -179,6 +179,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     sandboxUrl: dataDirConfig?.sandboxUrl ?? env["PAI_SANDBOX_URL"] ?? fileConfig.sandboxUrl,
     searchUrl: dataDirConfig?.searchUrl ?? env["PAI_SEARCH_URL"] ?? fileConfig.searchUrl,
     browserUrl: dataDirConfig?.browserUrl ?? env["PAI_BROWSER_URL"] ?? fileConfig.browserUrl,
+    features: {
+      libraryDomain: true,   // Phase 1 — enabled by default
+      watchesDomain: false,
+      digestsDomain: false,
+      homeDashboard: false,
+      ...(fileConfig.features ?? {}),
+      ...(dataDirConfig?.features ?? {}),
+    },
   };
 
   // Only add telegram section if any value is set
