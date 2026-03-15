@@ -19,6 +19,7 @@ import {
 import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent, createBrowserTools } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import { getProgramById, recordProgramEvaluation } from "@personal-ai/plugin-schedules";
+import { ingestResearchResult } from "@personal-ai/library";
 
 const RESEARCH_LLM_TIMEOUT = {
   totalMs: 10 * 60_000,
@@ -1496,6 +1497,23 @@ export async function runResearchInBackground(
         updateJob(ctx.storage, jobId, { briefing_id: briefingId });
       }
       if (job.sourceScheduleId) {
+        // Ingest findings into Library so future runs can build on them
+        try {
+          ingestResearchResult(ctx.storage, {
+            goal: job.goal,
+            domain: job.resultType || "general",
+            summary: briefSection.recommendation?.summary || presentation.report.slice(0, 500),
+            confidence: 0.7,
+            agentName: "Researcher",
+            depthLevel: "standard",
+            sources: [],
+            watchId: job.sourceScheduleId,
+            digestId: briefingId ?? undefined,
+          });
+        } catch (ingestErr) {
+          ctx.logger.warn(`Failed to ingest research finding: ${ingestErr instanceof Error ? ingestErr.message : String(ingestErr)}`);
+        }
+
         recordProgramEvaluation(ctx.storage, job.sourceScheduleId, {
           latestBriefId: briefingId ?? undefined,
           lastDeliveredAt: briefingId ? new Date().toISOString() : undefined,

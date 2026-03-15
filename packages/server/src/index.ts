@@ -36,6 +36,7 @@ import { registerInboxRoutes } from "./routes/inbox.js";
 import { registerJobRoutes } from "./routes/jobs.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
 import { registerLibraryRoutes } from "./routes/library.js";
+import { registerWatchesRoutes } from "./routes/watches.js";
 import { registerLearningRoutes } from "./routes/learning.js";
 import { registerObservabilityRoutes } from "./routes/observability.js";
 import { registerProductMetricRoutes } from "./routes/product-metrics.js";
@@ -427,6 +428,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   registerObservabilityRoutes(app, serverCtx);
   registerProductMetricRoutes(app, serverCtx);
   registerLibraryRoutes(app, serverCtx);
+  registerWatchesRoutes(app, serverCtx);
 
   // --- Schedule REST endpoints ---
   app.get("/api/schedules", async () => {

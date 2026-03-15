@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PluginContext } from "@personal-ai/core";
 import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads, cleanupOldTelemetrySpans, startSpan, finishSpan } from "@personal-ai/core";
 import { getDueSchedules, markScheduleRun } from "@personal-ai/plugin-schedules";
+import { resolveDepthForWatch, getPreviousFindingsContext } from "@personal-ai/watches";
 import { getLatestBriefing } from "./briefing.js";
 import { runBackgroundLearning } from "./learning.js";
 
@@ -250,11 +251,16 @@ export class WorkerLoop {
             latestBriefId: schedule.runtimeState?.latestBriefId,
             lastDeliveredAt: schedule.runtimeState?.lastDeliveredAt,
           });
+          const findingsContext = getPreviousFindingsContext(this.ctx.storage, schedule.id);
+          const fullGoal = enrichedGoal + findingsContext;
+          const depth = resolveDepthForWatch({ depthLevel: (schedule as { depthLevel?: "quick" | "standard" | "deep" }).depthLevel }, false);
           await this.ctx.backgroundJobs?.enqueueResearch?.({
-            goal: enrichedGoal,
+            goal: fullGoal,
             threadId: schedule.threadId,
             sourceKind: "schedule",
             sourceScheduleId: schedule.id,
+            budgetMaxSearches: depth.budgetMaxSearches,
+            budgetMaxPages: depth.budgetMaxPages,
           });
           continue;
         }

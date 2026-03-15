@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@personal-ai/core": "workspace:*",
+    "@personal-ai/library": "workspace:*",
     "@personal-ai/plugin-schedules": "workspace:*",
     "ai": "^6.0.0",
     "nanoid": "^5.0.0",

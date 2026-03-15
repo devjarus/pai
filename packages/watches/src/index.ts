@@ -48,3 +48,6 @@ export {
   getDepthConfig,
   resolveDepthForWatch,
 } from "./depth.js";
+
+// Delta-focused research helpers
+export { getPreviousFindingsContext } from "./delta.js";
