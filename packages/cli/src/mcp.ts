@@ -67,121 +67,204 @@ const server = new McpServer({
   description: "Persistent AI memory — belief lifecycle, semantic search, and tasks for coding agents",
 });
 
-// --- Memory tools ---
+// --- Memory tool handlers ---
+
+async function handleRemember({ text }: { text: string }) {
+  try {
+    const result = await remember(storage, llm, text, logger);
+    return ok(result);
+  } catch (e) { return err(e); }
+}
+
+async function handleRecall({ query }: { query: string }) {
+  try {
+    let beliefs: Array<{ id: string; statement: string; confidence: number; type: string }> = [];
+    try {
+      const { embedding } = await llm.embed(query);
+      const similar = semanticSearch(storage, embedding, 10, query);
+      beliefs = similar.filter((s) => s.similarity > 0.2).map((s) => ({
+        id: s.beliefId,
+        statement: s.statement,
+        confidence: s.confidence,
+        type: s.type ?? "insight",
+      }));
+    } catch {
+      // Fallback to FTS5
+    }
+    if (beliefs.length === 0) {
+      beliefs = searchBeliefs(storage, query).map((b) => ({
+        id: b.id, statement: b.statement, confidence: b.confidence, type: b.type,
+      }));
+    }
+    return ok(beliefs);
+  } catch (e) { return err(e); }
+}
+
+async function handleMemoryContext({ query }: { query: string }) {
+  try {
+    const context = await getMemoryContext(storage, query, { llm });
+    return ok({ context });
+  } catch (e) { return err(e); }
+}
+
+async function handleBeliefs({ status }: { status: string }) {
+  try {
+    return ok(listBeliefs(storage, status));
+  } catch (e) { return err(e); }
+}
+
+async function handleForget({ beliefId }: { beliefId: string }) {
+  try {
+    forgetBelief(storage, beliefId);
+    return ok({ ok: true });
+  } catch (e) { return err(e); }
+}
+
+async function handleMemoryStats() {
+  try {
+    return ok(memoryStats(storage));
+  } catch (e) { return err(e); }
+}
+
+async function handleSynthesize() {
+  try {
+    const result = await synthesize(storage, llm);
+    return ok(result);
+  } catch (e) { return err(e); }
+}
+
+// --- Memory tools (deprecated — use library-*) ---
 
 server.registerTool(
   "remember",
   {
-    description: "Store an observation and extract beliefs from it. Returns episode and belief IDs.",
+    description: "(deprecated — use library-remember) Store an observation and extract beliefs from it. Returns episode and belief IDs.",
     inputSchema: { text: z.string().describe("What you observed or learned") },
   },
-  async ({ text }) => {
-    try {
-      const result = await remember(storage, llm, text, logger);
-      return ok(result);
-    } catch (e) { return err(e); }
-  },
+  handleRemember,
 );
 
 server.registerTool(
   "recall",
   {
-    description: "Search memory for beliefs matching a query. Uses semantic search with FTS5 fallback.",
+    description: "(deprecated — use library-search) Search memory for beliefs matching a query. Uses semantic search with FTS5 fallback.",
     inputSchema: { query: z.string().describe("Search query") },
   },
-  async ({ query }) => {
-    try {
-      let beliefs: Array<{ id: string; statement: string; confidence: number; type: string }> = [];
-      try {
-        const { embedding } = await llm.embed(query);
-        const similar = semanticSearch(storage, embedding, 10, query);
-        beliefs = similar.filter((s) => s.similarity > 0.2).map((s) => ({
-          id: s.beliefId,
-          statement: s.statement,
-          confidence: s.confidence,
-          type: s.type ?? "insight",
-        }));
-      } catch {
-        // Fallback to FTS5
-      }
-      if (beliefs.length === 0) {
-        beliefs = searchBeliefs(storage, query).map((b) => ({
-          id: b.id, statement: b.statement, confidence: b.confidence, type: b.type,
-        }));
-      }
-      return ok(beliefs);
-    } catch (e) { return err(e); }
-  },
+  handleRecall,
 );
 
 server.registerTool(
   "memory-context",
   {
-    description: "Get formatted memory context (beliefs + episodes) for a topic. Useful for injecting into LLM prompts.",
+    description: "(deprecated — use library-context) Get formatted memory context (beliefs + episodes) for a topic. Useful for injecting into LLM prompts.",
     inputSchema: { query: z.string().describe("Topic to get context for") },
   },
-  async ({ query }) => {
-    try {
-      const context = await getMemoryContext(storage, query, { llm });
-      return ok({ context });
-    } catch (e) { return err(e); }
-  },
+  handleMemoryContext,
 );
 
 server.registerTool(
   "beliefs",
+  {
+    description: "(deprecated — use library-memories) List all beliefs with a given status. Returns array of belief objects.",
+    inputSchema: {
+      status: z.string().default("active").describe("Filter: active, invalidated, forgotten, pruned"),
+    },
+  },
+  handleBeliefs,
+);
+
+server.registerTool(
+  "forget",
+  {
+    description: "(deprecated — use library-forget) Soft-delete a belief by ID or prefix.",
+    inputSchema: { beliefId: z.string().describe("Belief ID or prefix (8+ chars)") },
+  },
+  handleForget,
+);
+
+server.registerTool(
+  "memory-stats",
+  {
+    description: "(deprecated — use library-stats) Get memory system statistics (belief counts, episode count, avg confidence).",
+    inputSchema: {},
+  },
+  handleMemoryStats,
+);
+
+server.registerTool(
+  "memory-synthesize",
+  {
+    description: "(deprecated — use library-synthesize) Generate meta-beliefs from clusters of related beliefs. Finds thematic groups and creates higher-level insights.",
+    inputSchema: {},
+  },
+  handleSynthesize,
+);
+
+// --- New library-* memory tools ---
+
+server.registerTool(
+  "library-remember",
+  {
+    description: "Store an observation and extract beliefs from it. Returns episode and belief IDs.",
+    inputSchema: { text: z.string().describe("What you observed or learned") },
+  },
+  handleRemember,
+);
+
+server.registerTool(
+  "library-search",
+  {
+    description: "Search memory for beliefs matching a query. Uses semantic search with FTS5 fallback.",
+    inputSchema: { query: z.string().describe("Search query") },
+  },
+  handleRecall,
+);
+
+server.registerTool(
+  "library-context",
+  {
+    description: "Get formatted memory context (beliefs + episodes) for a topic. Useful for injecting into LLM prompts.",
+    inputSchema: { query: z.string().describe("Topic to get context for") },
+  },
+  handleMemoryContext,
+);
+
+server.registerTool(
+  "library-memories",
   {
     description: "List all beliefs with a given status. Returns array of belief objects.",
     inputSchema: {
       status: z.string().default("active").describe("Filter: active, invalidated, forgotten, pruned"),
     },
   },
-  async ({ status }) => {
-    try {
-      return ok(listBeliefs(storage, status));
-    } catch (e) { return err(e); }
-  },
+  handleBeliefs,
 );
 
 server.registerTool(
-  "forget",
+  "library-forget",
   {
     description: "Soft-delete a belief by ID or prefix.",
     inputSchema: { beliefId: z.string().describe("Belief ID or prefix (8+ chars)") },
   },
-  async ({ beliefId }) => {
-    try {
-      forgetBelief(storage, beliefId);
-      return ok({ ok: true });
-    } catch (e) { return err(e); }
-  },
+  handleForget,
 );
 
 server.registerTool(
-  "memory-stats",
+  "library-stats",
   {
     description: "Get memory system statistics (belief counts, episode count, avg confidence).",
     inputSchema: {},
   },
-  async () => {
-    try {
-      return ok(memoryStats(storage));
-    } catch (e) { return err(e); }
-  },
+  handleMemoryStats,
 );
 
 server.registerTool(
-  "memory-synthesize",
+  "library-synthesize",
   {
     description: "Generate meta-beliefs from clusters of related beliefs. Finds thematic groups and creates higher-level insights.",
     inputSchema: {},
   },
-  async () => {
-    try {
-      const result = await synthesize(storage, llm);
-      return ok(result);
-    } catch (e) { return err(e); }
-  },
+  handleSynthesize,
 );
 
 // --- Task tools ---
@@ -305,85 +388,128 @@ server.registerTool(
   },
 );
 
-// --- Knowledge tools ---
+// --- Knowledge tool handlers ---
+
+async function handleKnowledgeLearn({ url }: { url: string }) {
+  try {
+    const page = await fetchPageAsMarkdown(url);
+    if (!page) return err(new Error("Could not extract content from URL. The page may require JavaScript or is not an article."));
+    const result = await learnFromContent(storage, llm, url, page.title, page.markdown);
+    if (result.skipped) return ok({ skipped: true, title: result.source.title });
+    return ok({ title: result.source.title, chunks: result.chunksStored, url: result.source.url });
+  } catch (e) { return err(e); }
+}
+
+async function handleKnowledgeSearch({ query }: { query: string }) {
+  try {
+    const results = await knowledgeSearch(storage, llm, query);
+    return ok(results.map((r) => ({
+      content: r.chunk.content.slice(0, 1000),
+      source: r.source.title,
+      url: r.source.url,
+      relevance: Math.round(r.score * 100),
+    })));
+  } catch (e) { return err(e); }
+}
+
+async function handleKnowledgeSources() {
+  try {
+    const sources = listSources(storage);
+    return ok(sources.map((s) => ({
+      id: s.id.slice(0, 8),
+      title: s.title,
+      url: s.url,
+      chunks: s.chunk_count,
+      learnedAt: s.fetched_at,
+    })));
+  } catch (e) { return err(e); }
+}
+
+async function handleKnowledgeForget({ sourceId }: { sourceId: string }) {
+  try {
+    const sources = listSources(storage);
+    const match = sources.find((s) => s.id.startsWith(sourceId));
+    if (!match) return err(new Error("Source not found"));
+    forgetSource(storage, match.id);
+    return ok({ ok: true, title: match.title, chunks: match.chunk_count });
+  } catch (e) { return err(e); }
+}
+
+// --- Knowledge tools (deprecated — use library-*) ---
 
 server.registerTool(
   "knowledge-learn",
+  {
+    description: "(deprecated — use library-learn-url) Learn from a web page — fetch, extract content, chunk, and store in the knowledge base. Returns source title and chunk count.",
+    inputSchema: {
+      url: z.string().url().describe("URL of the web page to learn from"),
+    },
+  },
+  handleKnowledgeLearn,
+);
+
+server.registerTool(
+  "knowledge-search",
+  {
+    description: "(deprecated — use library-search) Search the knowledge base for information learned from web pages. Returns matching content chunks with source attribution.",
+    inputSchema: {
+      query: z.string().describe("Search query"),
+    },
+  },
+  handleKnowledgeSearch,
+);
+
+server.registerTool(
+  "knowledge-sources",
+  {
+    description: "(deprecated — use library-documents) List all URLs/pages that have been learned and stored in the knowledge base.",
+    inputSchema: {},
+  },
+  handleKnowledgeSources,
+);
+
+server.registerTool(
+  "knowledge-forget",
+  {
+    description: "(deprecated — use library-forget-document) Remove a learned source and all its chunks from the knowledge base by source ID or prefix.",
+    inputSchema: {
+      sourceId: z.string().describe("Source ID or prefix (8+ chars)"),
+    },
+  },
+  handleKnowledgeForget,
+);
+
+// --- New library-* knowledge tools ---
+
+server.registerTool(
+  "library-learn-url",
   {
     description: "Learn from a web page — fetch, extract content, chunk, and store in the knowledge base. Returns source title and chunk count.",
     inputSchema: {
       url: z.string().url().describe("URL of the web page to learn from"),
     },
   },
-  async ({ url }) => {
-    try {
-      const page = await fetchPageAsMarkdown(url);
-      if (!page) return err(new Error("Could not extract content from URL. The page may require JavaScript or is not an article."));
-      const result = await learnFromContent(storage, llm, url, page.title, page.markdown);
-      if (result.skipped) return ok({ skipped: true, title: result.source.title });
-      return ok({ title: result.source.title, chunks: result.chunksStored, url: result.source.url });
-    } catch (e) { return err(e); }
-  },
+  handleKnowledgeLearn,
 );
 
 server.registerTool(
-  "knowledge-search",
-  {
-    description: "Search the knowledge base for information learned from web pages. Returns matching content chunks with source attribution.",
-    inputSchema: {
-      query: z.string().describe("Search query"),
-    },
-  },
-  async ({ query }) => {
-    try {
-      const results = await knowledgeSearch(storage, llm, query);
-      return ok(results.map((r) => ({
-        content: r.chunk.content.slice(0, 1000),
-        source: r.source.title,
-        url: r.source.url,
-        relevance: Math.round(r.score * 100),
-      })));
-    } catch (e) { return err(e); }
-  },
-);
-
-server.registerTool(
-  "knowledge-sources",
+  "library-documents",
   {
     description: "List all URLs/pages that have been learned and stored in the knowledge base.",
     inputSchema: {},
   },
-  async () => {
-    try {
-      const sources = listSources(storage);
-      return ok(sources.map((s) => ({
-        id: s.id.slice(0, 8),
-        title: s.title,
-        url: s.url,
-        chunks: s.chunk_count,
-        learnedAt: s.fetched_at,
-      })));
-    } catch (e) { return err(e); }
-  },
+  handleKnowledgeSources,
 );
 
 server.registerTool(
-  "knowledge-forget",
+  "library-forget-document",
   {
     description: "Remove a learned source and all its chunks from the knowledge base by source ID or prefix.",
     inputSchema: {
       sourceId: z.string().describe("Source ID or prefix (8+ chars)"),
     },
   },
-  async ({ sourceId }) => {
-    try {
-      const sources = listSources(storage);
-      const match = sources.find((s) => s.id.startsWith(sourceId));
-      if (!match) return err(new Error("Source not found"));
-      forgetSource(storage, match.id);
-      return ok({ ok: true, title: match.title, chunks: match.chunk_count });
-    } catch (e) { return err(e); }
-  },
+  handleKnowledgeForget,
 );
 
 // --- Start server ---

@@ -96,131 +96,209 @@ async function main(): Promise<void> {
   storage.migrate("telemetry", telemetryMigrations);
   ctx.contextProvider = (query: string) => getMemoryContext(storage, query, { llm });
 
+  // --- Library command mapping (memory name -> library name) ---
+  const memoryToLibrary: Record<string, string> = {
+    "memory remember": "library remember",
+    "memory recall": "library search",
+    "memory beliefs": "library memories",
+    "memory forget": "library forget",
+    "memory stats": "library stats",
+  };
+
   for (const cmd of memoryCommands(ctx)) {
-    registerCommand(program, ctx, cmd);
+    const libraryName = memoryToLibrary[cmd.name];
+    if (libraryName) {
+      // Register deprecated version
+      const deprecatedCmd = {
+        ...cmd,
+        description: `(deprecated — use 'pai ${libraryName.replace(" ", " ")}') ${cmd.description}`,
+        action: async (args: Record<string, string>, opts: Record<string, string>) => {
+          console.error(`[deprecated] Use 'pai ${libraryName}' instead`);
+          return cmd.action(args, opts);
+        },
+      };
+      registerCommand(program, ctx, deprecatedCmd);
+      // Register new library version
+      registerCommand(program, ctx, { ...cmd, name: libraryName });
+    } else {
+      registerCommand(program, ctx, cmd);
+    }
   }
 
-  // --- Knowledge commands ---
-  const knowledge = program.command("knowledge").description("Manage the knowledge base (learned web pages)");
+  // --- Knowledge commands (deprecated — use 'pai library') ---
+  const knowledge = program.command("knowledge").description("(deprecated — use 'pai library') Manage the knowledge base (learned web pages)");
 
-  knowledge
-    .command("learn")
-    .description("Learn from a web page — fetch, extract, chunk, and store in knowledge base")
-    .argument("<url>", "URL to learn from")
-    .action(async (url: string) => {
-      try {
-        const existing = hasSource(storage, url);
-        if (existing) {
-          if (program.opts()["json"]) { console.log(JSON.stringify({ skipped: true, title: existing.title })); }
-          else { console.log(`Already learned from "${existing.title}".`); }
-          return;
-        }
-        const page = await fetchPageAsMarkdown(url);
-        if (!page) {
-          if (program.opts()["json"]) { console.log(JSON.stringify({ error: "Could not extract content from URL" })); }
-          else { console.error("Could not extract content from that URL."); }
-          process.exitCode = 1;
-          return;
-        }
-        const result = await learnFromContent(storage, llm, url, page.title, page.markdown);
-        if (program.opts()["json"]) {
-          console.log(JSON.stringify({ title: result.source.title, chunks: result.chunksStored, url: result.source.url }));
-        } else {
-          console.log(`Learned from "${result.source.title}" — ${result.chunksStored} chunks stored.`);
-        }
-      } catch (err) {
-        if (program.opts()["json"]) { console.log(JSON.stringify({ error: err instanceof Error ? err.message : String(err) })); }
-        else { console.error("Error:", err instanceof Error ? err.message : err); }
-        process.exitCode = 1;
+  // Shared action handlers for knowledge commands (used by both old and new names)
+  async function knowledgeLearnAction(url: string): Promise<void> {
+    try {
+      const existing = hasSource(storage, url);
+      if (existing) {
+        if (program.opts()["json"]) { console.log(JSON.stringify({ skipped: true, title: existing.title })); }
+        else { console.log(`Already learned from "${existing.title}".`); }
+        return;
       }
-    });
-
-  knowledge
-    .command("search")
-    .description("Search the knowledge base")
-    .argument("<query>", "Search query")
-    .action(async (query: string) => {
-      try {
-        const results = await knowledgeSearch(storage, llm, query);
-        if (results.length === 0) {
-          if (program.opts()["json"]) { console.log("[]"); }
-          else { console.log("No matching knowledge found."); }
-          process.exitCode = 2;
-          return;
-        }
-        if (program.opts()["json"]) {
-          console.log(JSON.stringify(results.map((r) => ({
-            content: r.chunk.content.slice(0, 500),
-            source: r.source.title,
-            url: r.source.url,
-            relevance: Math.round(r.score * 100),
-          }))));
-        } else {
-          for (const r of results) {
-            console.log(`\n--- ${r.source.title} (${Math.round(r.score * 100)}%) ---`);
-            console.log(`URL: ${r.source.url}`);
-            console.log(r.chunk.content.slice(0, 300));
-          }
-        }
-      } catch (err) {
-        if (program.opts()["json"]) { console.log(JSON.stringify({ error: err instanceof Error ? err.message : String(err) })); }
-        else { console.error("Error:", err instanceof Error ? err.message : err); }
+      const page = await fetchPageAsMarkdown(url);
+      if (!page) {
+        if (program.opts()["json"]) { console.log(JSON.stringify({ error: "Could not extract content from URL" })); }
+        else { console.error("Could not extract content from that URL."); }
         process.exitCode = 1;
+        return;
       }
-    });
+      const result = await learnFromContent(storage, llm, url, page.title, page.markdown);
+      if (program.opts()["json"]) {
+        console.log(JSON.stringify({ title: result.source.title, chunks: result.chunksStored, url: result.source.url }));
+      } else {
+        console.log(`Learned from "${result.source.title}" — ${result.chunksStored} chunks stored.`);
+      }
+    } catch (err) {
+      if (program.opts()["json"]) { console.log(JSON.stringify({ error: err instanceof Error ? err.message : String(err) })); }
+      else { console.error("Error:", err instanceof Error ? err.message : err); }
+      process.exitCode = 1;
+    }
+  }
 
-  knowledge
-    .command("list")
-    .description("List all learned sources in the knowledge base")
-    .action(() => {
-      const sources = listSources(storage);
-      if (sources.length === 0) {
+  async function knowledgeSearchAction(query: string): Promise<void> {
+    try {
+      const results = await knowledgeSearch(storage, llm, query);
+      if (results.length === 0) {
         if (program.opts()["json"]) { console.log("[]"); }
-        else { console.log("Knowledge base is empty."); }
+        else { console.log("No matching knowledge found."); }
         process.exitCode = 2;
         return;
       }
       if (program.opts()["json"]) {
-        console.log(JSON.stringify(sources.map((s) => ({
-          id: s.id.slice(0, 8),
-          title: s.title,
-          url: s.url,
-          chunks: s.chunk_count,
-          learnedAt: s.fetched_at,
+        console.log(JSON.stringify(results.map((r) => ({
+          content: r.chunk.content.slice(0, 500),
+          source: r.source.title,
+          url: r.source.url,
+          relevance: Math.round(r.score * 100),
         }))));
       } else {
-        for (const s of sources) {
-          console.log(`${s.id.slice(0, 8)}  ${s.title} (${s.chunk_count} chunks)`);
-          console.log(`         ${s.url}`);
+        for (const r of results) {
+          console.log(`\n--- ${r.source.title} (${Math.round(r.score * 100)}%) ---`);
+          console.log(`URL: ${r.source.url}`);
+          console.log(r.chunk.content.slice(0, 300));
         }
       }
+    } catch (err) {
+      if (program.opts()["json"]) { console.log(JSON.stringify({ error: err instanceof Error ? err.message : String(err) })); }
+      else { console.error("Error:", err instanceof Error ? err.message : err); }
+      process.exitCode = 1;
+    }
+  }
+
+  function knowledgeListAction(): void {
+    const sources = listSources(storage);
+    if (sources.length === 0) {
+      if (program.opts()["json"]) { console.log("[]"); }
+      else { console.log("Knowledge base is empty."); }
+      process.exitCode = 2;
+      return;
+    }
+    if (program.opts()["json"]) {
+      console.log(JSON.stringify(sources.map((s) => ({
+        id: s.id.slice(0, 8),
+        title: s.title,
+        url: s.url,
+        chunks: s.chunk_count,
+        learnedAt: s.fetched_at,
+      }))));
+    } else {
+      for (const s of sources) {
+        console.log(`${s.id.slice(0, 8)}  ${s.title} (${s.chunk_count} chunks)`);
+        console.log(`         ${s.url}`);
+      }
+    }
+  }
+
+  function knowledgeForgetAction(sourceId: string): void {
+    try {
+      const sources = listSources(storage);
+      const match = sources.find((s) => s.id.startsWith(sourceId));
+      if (!match) {
+        if (program.opts()["json"]) { console.log(JSON.stringify({ error: "Source not found" })); }
+        else { console.error(`No source found with ID starting with "${sourceId}".`); }
+        process.exitCode = 1;
+        return;
+      }
+      forgetSource(storage, match.id);
+      if (program.opts()["json"]) {
+        console.log(JSON.stringify({ ok: true, title: match.title, chunks: match.chunk_count }));
+      } else {
+        console.log(`Removed "${match.title}" and ${match.chunk_count} chunks.`);
+      }
+    } catch (err) {
+      if (program.opts()["json"]) { console.log(JSON.stringify({ error: err instanceof Error ? err.message : String(err) })); }
+      else { console.error("Error:", err instanceof Error ? err.message : err); }
+      process.exitCode = 1;
+    }
+  }
+
+  // Register deprecated knowledge commands
+  knowledge
+    .command("learn")
+    .description("(deprecated — use 'pai library learn') Learn from a web page — fetch, extract, chunk, and store in knowledge base")
+    .argument("<url>", "URL to learn from")
+    .action(async (url: string) => {
+      console.error("[deprecated] Use 'pai library learn' instead");
+      await knowledgeLearnAction(url);
+    });
+
+  knowledge
+    .command("search")
+    .description("(deprecated — use 'pai library search') Search the knowledge base")
+    .argument("<query>", "Search query")
+    .action(async (query: string) => {
+      console.error("[deprecated] Use 'pai library search' instead");
+      await knowledgeSearchAction(query);
+    });
+
+  knowledge
+    .command("list")
+    .description("(deprecated — use 'pai library documents') List all learned sources in the knowledge base")
+    .action(() => {
+      console.error("[deprecated] Use 'pai library documents' instead");
+      knowledgeListAction();
     });
 
   knowledge
     .command("forget")
+    .description("(deprecated — use 'pai library forget-document') Remove a learned source and its chunks from the knowledge base")
+    .argument("<id>", "Source ID or prefix")
+    .action((sourceId: string) => {
+      console.error("[deprecated] Use 'pai library forget-document' instead");
+      knowledgeForgetAction(sourceId);
+    });
+
+  // --- Library knowledge subcommands (new canonical names) ---
+  // The library group is auto-created by registerCommand above for memory commands.
+  // We need to get it or create it for knowledge subcommands.
+  let library = program.commands.find((c) => c.name() === "library");
+  if (!library) {
+    library = program.command("library").description("library commands");
+  }
+
+  library
+    .command("learn")
+    .description("Learn from a web page — fetch, extract, chunk, and store in knowledge base")
+    .argument("<url>", "URL to learn from")
+    .action(async (url: string) => {
+      await knowledgeLearnAction(url);
+    });
+
+  library
+    .command("documents")
+    .description("List all learned sources in the knowledge base")
+    .action(() => {
+      knowledgeListAction();
+    });
+
+  library
+    .command("forget-document")
     .description("Remove a learned source and its chunks from the knowledge base")
     .argument("<id>", "Source ID or prefix")
     .action((sourceId: string) => {
-      try {
-        const sources = listSources(storage);
-        const match = sources.find((s) => s.id.startsWith(sourceId));
-        if (!match) {
-          if (program.opts()["json"]) { console.log(JSON.stringify({ error: "Source not found" })); }
-          else { console.error(`No source found with ID starting with "${sourceId}".`); }
-          process.exitCode = 1;
-          return;
-        }
-        forgetSource(storage, match.id);
-        if (program.opts()["json"]) {
-          console.log(JSON.stringify({ ok: true, title: match.title, chunks: match.chunk_count }));
-        } else {
-          console.log(`Removed "${match.title}" and ${match.chunk_count} chunks.`);
-        }
-      } catch (err) {
-        if (program.opts()["json"]) { console.log(JSON.stringify({ error: err instanceof Error ? err.message : String(err) })); }
-        else { console.error("Error:", err instanceof Error ? err.message : err); }
-        process.exitCode = 1;
-      }
+      knowledgeForgetAction(sourceId);
     });
 
   // Load and migrate active plugins (filter out "memory" for backwards compat)
