@@ -100,7 +100,7 @@ The codebase is organized into four domain pillars plus a shared foundation:
 | Domain | Package | Owns | User-Facing Name |
 |--------|---------|------|-----------------|
 | Library | `packages/library` | Memories, Documents, Findings, unified search, ingestion | Library |
-| Watches | `packages/watches` (Phase 2) | Watch definitions, scheduling, signal detection | Watches |
+| Watches | `packages/watches` | Watch definitions, scheduling, templates, depth levels, delta research | Watches |
 | Digests | `packages/digests` (Phase 3) | Digest generation, research agents, recommendations, corrections | Digests |
 | Tasks | `packages/tasks` (Phase 4) | To-Dos, Goals, follow-through | Tasks |
 
@@ -131,6 +131,14 @@ These patterns were validated during Phase 1 implementation. Follow them to avoi
 **Page fetching:** URL learning must fetch page content first via `fetchPageAsMarkdown`, then pass to `learnFromContent`. Never call `learnFromContent` with a raw URL.
 
 **Naming collisions:** Core already exports `AgentContext`. New types should use distinct names (e.g., `AgentHarnessContext`).
+
+**Concurrent agents on same package:** When dispatching parallel agents, ensure they touch different files. Two agents modifying `server/src/index.ts` simultaneously causes merge conflicts. Workers.ts and routes/ are safe to parallelize.
+
+**Wrap, don't rewrite:** When integrating new patterns (e.g., agent harness) into existing code, wrap with callbacks rather than restructuring. The harness wraps research execution — it doesn't replace the LLM call logic.
+
+**Re-export with aliases:** Domain packages (library, watches) re-export from underlying packages with user-facing names. This keeps internal code stable while presenting a clean API. See `packages/watches/src/index.ts` for the pattern.
+
+**Depth + delta = compounding:** Research depth levels control effort per run. Delta context (previous findings appended to the goal) ensures agents don't repeat themselves. Together they make each Watch run more valuable than the last.
 
 ## Validation Expectations
 

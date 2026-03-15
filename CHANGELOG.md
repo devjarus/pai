@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent harness:** Plan → Execute → Reflect pattern scaffolded in core
 - **Feature flags:** Config-driven phased rollout for domain restructure
 - **Telegram renamed:** Commands updated to `/digests`, `/watches`, `/library`, `/todo`
+- **Watches domain:** New `@personal-ai/watches` package wrapping Programs with templates, depth levels, and delta research
+- **Research depth:** Quick/Standard/Deep levels control agent effort per Watch
+- **Delta research:** Research agents build on previous findings stored in Library — no more repeating old results
+- **Watch templates:** Preset configurations for Price, News, Competitor, Availability watches
+- **Watch API:** `/api/watches/*` routes with template creation, manual trigger, and depth-aware dispatch
+- **Agent harness wired:** Research agents now use plan/execute/reflect tracking with confidence scoring
+- **Watches UI:** Template creation flow, Watch detail with findings tab, manual run trigger
 
 ### Added
 
