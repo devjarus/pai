@@ -8,9 +8,10 @@ import { MobileTabBar } from "./MobileTabBar";
 import { useInboxAll } from "@/hooks/use-inbox";
 
 const navItems = [
-  { to: "/", label: "Digests", icon: IconInbox },
+  { to: "/", label: "Home", icon: IconHome },
+  { to: "/digests", label: "Digests", icon: IconInbox },
   { to: "/watches", label: "Watches", icon: IconPrograms },
-  { to: "/ask", label: "Ask", icon: IconChat },
+  { to: "/ask", label: "Chat", icon: IconChat },
   { to: "/library", label: "Library", icon: IconMemory },
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
@@ -29,9 +30,9 @@ export default function Layout() {
   const latestId = inboxData?.briefings?.[0]?.id ?? null;
   const hasNewBriefing = !!latestId && latestId !== seenId;
 
-  // Mark briefing as seen when user visits Inbox
+  // Mark briefing as seen when user visits Digests
   useEffect(() => {
-    if (location.pathname === "/" && latestId) {
+    if (location.pathname.startsWith("/digests") && latestId) {
       localStorage.setItem(DIGEST_SEEN_KEY, latestId);
       setSeenId(latestId);
     }
@@ -69,7 +70,7 @@ export default function Layout() {
                   >
                     <item.icon />
                   </NavLink>
-                  {item.to === "/" && hasNewBriefing && (
+                  {item.to === "/digests" && hasNewBriefing && (
                     <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-background pointer-events-none" />
                   )}
                 </div>
@@ -93,6 +94,15 @@ export default function Layout() {
       {/* Mobile bottom tab bar */}
       <MobileTabBar hasNewBriefing={hasNewBriefing} />
     </div>
+  );
+}
+
+function IconHome() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <polyline points="9 22 9 12 15 12 15 22" />
+    </svg>
   );
 }
 

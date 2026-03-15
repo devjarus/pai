@@ -20,6 +20,7 @@ import Timeline from "./pages/Timeline";
 import Settings from "./pages/Settings";
 // Knowledge page now redirects to /library; import removed.
 import Tasks from "./pages/Tasks";
+import Home from "./pages/Home";
 import Inbox from "./pages/Inbox";
 import Jobs from "./pages/Jobs";
 import Grid from "./pages/Grid";
@@ -90,7 +91,7 @@ export default function App() {
           <Route path="/setup" element={<Setup />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route element={<AuthGate><Layout /></AuthGate>}>
-            <Route path="/" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
+            <Route path="/" element={<ErrorBoundary><Home /></ErrorBoundary>} />
             <Route path="/digests" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
             <Route path="/digests/:id" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
             <Route path="/inbox/:id" element={<InboxRedirect />} />
