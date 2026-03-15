@@ -111,7 +111,7 @@ These patterns are validated by the codebase. Follow them to avoid common mistak
 | UI router | `packages/ui/src/App.tsx` |
 | UI navigation | `packages/ui/src/components/Layout.tsx` |
 | Product charter | `docs/PRODUCT-CHARTER.md` |
-| Architecture spec | `docs/superpowers/specs/2026-03-15-four-pillars-roadmap-design.md` |
+| Architecture decisions | `docs/decisions/` |
 
 ## When Making Significant Changes
 
