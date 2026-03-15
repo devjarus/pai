@@ -13,6 +13,7 @@ import {
 } from "@personal-ai/core";
 import { listPrograms } from "@personal-ai/plugin-schedules";
 import { listGoals, listTasks } from "@personal-ai/plugin-tasks";
+import { getAverageRating, getRecentFeedback } from "./digest-ratings.js";
 
 const BRIEFING_LLM_TIMEOUT = {
   totalMs: 2 * 60_000,
@@ -1357,6 +1358,21 @@ export async function generateBriefing(
 
   const fallbackSections = buildFallbackBriefing(rawContext);
 
+  // Digest feedback loop — surface user satisfaction signals to the LLM
+  let feedbackContext = "";
+  try {
+    const avgRating = getAverageRating(ctx.storage, 10);
+    const recentFeedback = getRecentFeedback(ctx.storage, 5);
+    if (avgRating !== null) {
+      feedbackContext = `\nUSER SATISFACTION: ${avgRating.toFixed(1)}/5 (last 10 digests).`;
+      if (avgRating < 3 && recentFeedback.length > 0) {
+        feedbackContext += ` Recent feedback: ${recentFeedback.join("; ")}. Prioritize actionable, specific, concise recommendations.`;
+      }
+    }
+  } catch {
+    feedbackContext = "";
+  }
+
   const prompt = `You are a personal AI assistant generating a daily briefing for ${ownerName}.
 Today is ${rawContext.date}, ${rawContext.time}.
 
@@ -1386,7 +1402,7 @@ ${rawContext.recentActivity.length > 0 ? rawContext.recentActivity.join("\n") : 
 KNOWLEDGE SOURCES (${sources.length}):
 ${JSON.stringify(rawContext.knowledgeSources, null, 2)}
 
-${previousBriefingSummary ? `PREVIOUS BRIEFINGS (you MUST NOT repeat these — choose DIFFERENT angles):\n${previousBriefingSummary}\n` : ""}
+${previousBriefingSummary ? `PREVIOUS BRIEFINGS (you MUST NOT repeat these — choose DIFFERENT angles):\n${previousBriefingSummary}\n` : ""}${feedbackContext ? `${feedbackContext}\n` : ""}
 Guidelines:
 - Recommendation comes first. The briefing should tell the user what to do, hold, or watch next.
 - Use active Programs as the primary object when they exist. Avoid talking about raw schedules, jobs, or internal mechanics.
