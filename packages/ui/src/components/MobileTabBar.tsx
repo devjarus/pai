@@ -6,10 +6,10 @@ interface MobileTabBarProps {
 }
 
 const primaryTabs = [
-  { to: "/", label: "Home", icon: TabIconInbox },
-  { to: "/programs", label: "Programs", icon: TabIconPrograms },
+  { to: "/", label: "Digests", icon: TabIconInbox },
+  { to: "/watches", label: "Watches", icon: TabIconPrograms },
   { to: "/ask", label: "Ask", icon: TabIconChat },
-  { to: "/memory", label: "Memory", icon: TabIconMemory },
+  { to: "/library", label: "Library", icon: TabIconMemory },
   { to: "/settings", label: "Settings", icon: TabIconSettings },
 ] as const;
 

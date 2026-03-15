@@ -8,14 +8,14 @@ import { MobileTabBar } from "./MobileTabBar";
 import { useInboxAll } from "@/hooks/use-inbox";
 
 const navItems = [
-  { to: "/", label: "Home", icon: IconInbox },
-  { to: "/programs", label: "Programs", icon: IconPrograms },
+  { to: "/", label: "Digests", icon: IconInbox },
+  { to: "/watches", label: "Watches", icon: IconPrograms },
   { to: "/ask", label: "Ask", icon: IconChat },
-  { to: "/memory", label: "Memory", icon: IconMemory },
+  { to: "/library", label: "Library", icon: IconMemory },
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
 
-const INBOX_SEEN_KEY = "pai-last-seen-briefing-id";
+const DIGEST_SEEN_KEY = "pai-last-seen-digest-id";
 
 export default function Layout() {
   const location = useLocation();
@@ -24,7 +24,7 @@ export default function Layout() {
   const { data: inboxData } = useInboxAll();
 
   // Track last-seen briefing ID (persisted in localStorage)
-  const [seenId, setSeenId] = useState(() => localStorage.getItem(INBOX_SEEN_KEY));
+  const [seenId, setSeenId] = useState(() => localStorage.getItem(DIGEST_SEEN_KEY));
 
   const latestId = inboxData?.briefings?.[0]?.id ?? null;
   const hasNewBriefing = !!latestId && latestId !== seenId;
@@ -32,7 +32,7 @@ export default function Layout() {
   // Mark briefing as seen when user visits Inbox
   useEffect(() => {
     if (location.pathname === "/" && latestId) {
-      localStorage.setItem(INBOX_SEEN_KEY, latestId);
+      localStorage.setItem(DIGEST_SEEN_KEY, latestId);
       setSeenId(latestId);
     }
   }, [location.pathname, latestId]);

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Routes, Route, Link, Navigate } from "react-router-dom";
+import { Routes, Route, Link, Navigate, useParams } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/query-client";
 import { useConfig } from "./hooks";
@@ -18,7 +18,7 @@ import Memory from "./pages/Memory";
 import Programs from "./pages/Programs";
 import Timeline from "./pages/Timeline";
 import Settings from "./pages/Settings";
-import Knowledge from "./pages/Knowledge";
+// Knowledge page now redirects to /library; import removed.
 import Tasks from "./pages/Tasks";
 import Inbox from "./pages/Inbox";
 import Jobs from "./pages/Jobs";
@@ -28,6 +28,11 @@ import Login from "./pages/Login";
 import Setup from "./pages/Setup";
 import Onboarding from "./pages/Onboarding";
 import Landing from "./pages/Landing";
+
+function InboxRedirect() {
+  const { id } = useParams();
+  return <Navigate to={id ? `/digests/${id}` : "/"} replace />;
+}
 
 function NotFound() {
   return (
@@ -86,14 +91,18 @@ export default function App() {
           <Route path="/onboarding" element={<Onboarding />} />
           <Route element={<AuthGate><Layout /></AuthGate>}>
             <Route path="/" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
-            <Route path="/inbox/:id" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
-            <Route path="/programs" element={<ErrorBoundary><Programs /></ErrorBoundary>} />
+            <Route path="/digests" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
+            <Route path="/digests/:id" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
+            <Route path="/inbox/:id" element={<InboxRedirect />} />
+            <Route path="/watches" element={<ErrorBoundary><Programs /></ErrorBoundary>} />
+            <Route path="/programs" element={<Navigate to="/watches" replace />} />
             <Route path="/grid" element={<ErrorBoundary><Grid /></ErrorBoundary>} />
             <Route path="/ask" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
             <Route path="/chat" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
-            <Route path="/memory" element={<ErrorBoundary><Memory /></ErrorBoundary>} />
+            <Route path="/library" element={<ErrorBoundary><Memory /></ErrorBoundary>} />
+            <Route path="/memory" element={<Navigate to="/library" replace />} />
             <Route path="/timeline" element={<ErrorBoundary><Timeline /></ErrorBoundary>} />
-            <Route path="/knowledge" element={<ErrorBoundary><Knowledge /></ErrorBoundary>} />
+            <Route path="/knowledge" element={<Navigate to="/library" replace />} />
             <Route path="/tasks" element={<ErrorBoundary><Tasks /></ErrorBoundary>} />
             <Route path="/jobs" element={<ErrorBoundary><Jobs /></ErrorBoundary>} />
             <Route path="/schedules" element={<ErrorBoundary><Schedules /></ErrorBoundary>} />
