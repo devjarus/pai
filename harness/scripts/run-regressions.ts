@@ -23,13 +23,8 @@ function run(): ValidationReport {
 
   const requiredDocs = [
     "AGENTS.md",
-    "docs/PRODUCT-CHARTER.md",
-    "docs/PRIMITIVES.md",
-    "docs/DEFINITION-OF-DONE.md",
-    "docs/ARCHITECTURE-BOUNDARIES.md",
-    "docs/decisions/0001-roadmap-focus.md",
-    "docs/decisions/0002-programs-implicit.md",
-    "docs/decisions/0003-brief-schema.md",
+    "docs/ARCHITECTURE.md",
+    "docs/MEMORY-LIFECYCLE.md",
   ];
 
   for (const docPath of requiredDocs) {

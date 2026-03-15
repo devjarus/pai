@@ -24,7 +24,7 @@ validations_required:
 checklists_required:
   - harness/checklists/core-loop-change-checklist.md
 decision_logs_expected:
-  - docs/decisions/0001-roadmap-focus.md
+  - ""
 evidence_pack: harness/runs/TC-YYYYMMDD-slug.evidence.md
 risks:
   - ""
