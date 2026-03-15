@@ -32,3 +32,19 @@ export {
   type ProgramRuntimeState as WatchRuntimeState,
   type ScheduledJob,
 } from "@personal-ai/plugin-schedules";
+
+// Watch templates
+export {
+  type WatchTemplate,
+  type AppliedTemplate,
+  listTemplates,
+  getTemplate,
+  applyTemplate,
+} from "./templates.js";
+
+// Research depth levels
+export {
+  type DepthConfig,
+  getDepthConfig,
+  resolveDepthForWatch,
+} from "./depth.js";
