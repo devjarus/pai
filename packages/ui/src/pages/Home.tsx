@@ -126,6 +126,7 @@ export default function Home() {
 function DigestFeed() {
   const { data, isLoading } = useDigests();
   const digests = data?.digests ?? [];
+  const [showAll, setShowAll] = useState(false);
 
   if (isLoading) {
     return (
@@ -169,21 +170,25 @@ function DigestFeed() {
       {/* REST — compact feed */}
       {rest.length > 0 && (
         <div className="mt-6">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3">
             <span className="text-xs font-medium text-muted-foreground">Earlier</span>
-            {digests.length > 10 && (
-              <Link to="/digests" className="inline-flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary">
-                All {digests.length} <ArrowRightIcon className="size-3" />
-              </Link>
-            )}
           </div>
           <div className="space-y-1">
-            {rest.slice(0, 9).map((d, i) => (
-              <div key={d.id} className="animate-in fade-in slide-in-from-bottom-1" style={{ animationDelay: `${i * 50}ms`, animationFillMode: "both" }}>
+            {(showAll ? rest : rest.slice(0, 9)).map((d, i) => (
+              <div key={d.id} className={i < 9 ? "animate-in fade-in slide-in-from-bottom-1" : ""} style={i < 9 ? { animationDelay: `${i * 50}ms`, animationFillMode: "both" } : undefined}>
                 <CompactDigest digest={d} />
               </div>
             ))}
           </div>
+          {!showAll && rest.length > 9 && (
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="mt-3 flex w-full items-center justify-center gap-1 py-2 text-xs text-primary/70 hover:text-primary transition-colors"
+            >
+              Show all {digests.length} digests <ArrowRightIcon className="size-3" />
+            </button>
+          )}
         </div>
       )}
     </section>
