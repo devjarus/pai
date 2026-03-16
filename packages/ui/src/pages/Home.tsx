@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDigests } from "@/hooks/use-digests";
 import { useWatches } from "@/hooks/use-watches";
 import { useTasks, useCompleteTask } from "@/hooks/use-tasks";
 import { useLibraryStats } from "@/hooks/use-library";
-import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
+import { parseApiDate } from "@/lib/datetime";
 import {
   ArrowRightIcon,
   EyeIcon,
@@ -15,360 +15,404 @@ import {
   BrainIcon,
   FileTextIcon,
   FlaskConicalIcon,
-  MessageSquarePlusIcon,
+  SearchIcon,
 } from "lucide-react";
 
-function formatDate(dateStr: string): string {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function timeAgo(dateStr: string): string {
   const d = parseApiDate(dateStr);
-  return isNaN(d.getTime())
-    ? dateStr
-    : formatWithTimezone(d, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  if (isNaN(d.getTime())) return dateStr;
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
+function digestTypeIcon(type: string): string {
+  switch (type.toLowerCase()) {
+    case "news":
+      return "\u{1F7E2}"; // green circle
+    case "crypto":
+    case "price":
+      return "\u{1F535}"; // blue circle
+    case "daily":
+    case "general":
+      return "\u{1F4CB}"; // clipboard
+    case "competitor":
+      return "\u{1F7E0}"; // orange circle
+    default:
+      return "\u{1F4E8}"; // incoming envelope
+  }
+}
+
+function extractSummary(sections: Record<string, unknown> | undefined): string | null {
+  if (!sections) return null;
+  return (
+    (sections.recommendation as string) ??
+    (sections.summary as string) ??
+    (sections.highlights as string) ??
+    null
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
 export default function Home() {
+  const navigate = useNavigate();
+  const [askQuery, setAskQuery] = useState("");
+
   useEffect(() => {
     document.title = "Home - pai";
   }, []);
 
+  const handleAskSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = askQuery.trim();
+    navigate(q ? `/ask?q=${encodeURIComponent(q)}` : "/ask");
+  };
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <header className="border-b border-border/40 bg-background px-3 py-3 md:px-6 md:py-4">
-        <h1 className="font-mono text-sm font-semibold text-foreground">Home</h1>
+      {/* Header bar */}
+      <header className="flex items-center justify-between gap-3 border-b border-border/40 bg-background px-3 py-3 md:px-6 md:py-4">
+        <span className="font-mono text-sm font-bold tracking-tighter text-primary">pai</span>
+        <form
+          onSubmit={handleAskSubmit}
+          className="flex max-w-md flex-1 items-center gap-2"
+        >
+          <div className="relative flex-1">
+            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={askQuery}
+              onChange={(e) => setAskQuery(e.target.value)}
+              placeholder="Ask something..."
+              className="w-full rounded-lg border border-border/50 bg-background py-1.5 pl-8 pr-3 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+            />
+          </div>
+        </form>
       </header>
 
+      {/* Scrollable body */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="space-y-4 p-4 md:space-y-6 md:p-6">
-          <LatestDigestCard />
-          <div className="grid gap-4 md:grid-cols-2">
-            <ActiveWatchesCard />
-            <OpenTodosCard />
+        <div className="mx-auto max-w-5xl p-4 md:p-6">
+          {/* Main content: digests + sidebar */}
+          <div className="flex flex-col gap-6 lg:flex-row">
+            {/* Primary: Recent Digests */}
+            <div className="min-w-0 flex-1">
+              <RecentDigests />
+            </div>
+
+            {/* Sidebar */}
+            <div className="flex w-full flex-col gap-5 lg:w-72 lg:shrink-0">
+              <ActiveWatchesList />
+              <OpenTodosList />
+              <LibraryStats />
+            </div>
           </div>
-          <LibraryStatsCard />
-          <TipsCard />
-          <QuickAskCard />
+
+          {/* Tips at the bottom */}
+          <div className="mt-6">
+            <TipsCard />
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// ---- Latest Digest ----
+// ---------------------------------------------------------------------------
+// Recent Digests (primary content)
+// ---------------------------------------------------------------------------
 
-function LatestDigestCard() {
+function RecentDigests() {
   const { data, isLoading } = useDigests();
 
-  if (isLoading) {
-    return (
-      <Card className="border-border/50 bg-card/50">
-        <CardContent className="p-4 md:p-6">
-          <Skeleton className="mb-3 h-5 w-32" />
-          <Skeleton className="mb-2 h-4 w-full" />
-          <Skeleton className="mb-2 h-4 w-3/4" />
-          <Skeleton className="h-4 w-1/2" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const digests = data?.digests ?? [];
-  const latest = digests[0];
-
-  if (!latest) {
-    return (
-      <Card className="border-border/50 bg-card/50">
-        <CardContent className="flex flex-col items-center justify-center p-6 text-sm text-muted-foreground">
-          <p>No digests yet.</p>
-          <p className="mt-1 text-xs">Digests will appear here once your watches run.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Try to extract a summary from sections
-  const sections = latest.sections as Record<string, unknown> | undefined;
-  const summary =
-    (sections?.recommendation as string) ??
-    (sections?.summary as string) ??
-    (sections?.highlights as string) ??
-    null;
-
   return (
-    <Card className="border-border/50 bg-card/50 transition-colors hover:border-border/80">
-      <CardContent className="p-4 md:p-6">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Latest Digest</h2>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px] capitalize">
-              {latest.type}
-            </Badge>
-            <span className="text-[10px] text-muted-foreground">
-              {formatDate(latest.generatedAt)}
-            </span>
-          </div>
-        </div>
-        {summary ? (
-          <p className="mb-3 text-sm leading-relaxed text-foreground/80 line-clamp-3">
-            {summary}
-          </p>
-        ) : (
-          <p className="mb-3 text-sm text-muted-foreground">Digest available</p>
-        )}
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-foreground">Recent Digests</h2>
         <Link
-          to={`/digests/${latest.id}`}
-          className="inline-flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:text-primary/80"
+          to="/digests"
+          className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80"
         >
-          Read full
-          <ArrowRightIcon className="size-3" />
+          View all <ArrowRightIcon className="size-3" />
         </Link>
-      </CardContent>
-    </Card>
-  );
-}
+      </div>
 
-// ---- Active Watches ----
-
-function ActiveWatchesCard() {
-  const { data: watches, isLoading } = useWatches();
-
-  if (isLoading) {
-    return (
-      <Card className="border-border/50 bg-card/50">
-        <CardContent className="p-4">
-          <Skeleton className="mb-3 h-5 w-28" />
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="mb-2 flex items-center gap-2">
-              <Skeleton className="h-4 w-4 rounded-full" />
-              <Skeleton className="h-4 flex-1" />
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-lg border border-border/40 p-4">
+              <Skeleton className="mb-2 h-4 w-40" />
+              <Skeleton className="mb-1 h-4 w-full" />
+              <Skeleton className="h-4 w-2/3" />
             </div>
           ))}
-        </CardContent>
-      </Card>
-    );
-  }
+        </div>
+      ) : (
+        <DigestList digests={data?.digests ?? []} />
+      )}
+    </section>
+  );
+}
 
-  const items = watches ?? [];
-
-  if (items.length === 0) {
+function DigestList({
+  digests,
+}: {
+  digests: Array<{
+    id: string;
+    generatedAt: string;
+    sections: Record<string, unknown>;
+    status: string;
+    type: string;
+  }>;
+}) {
+  if (digests.length === 0) {
     return (
-      <Card className="border-border/50 bg-card/50">
-        <CardContent className="flex flex-col items-center justify-center p-6 text-sm text-muted-foreground">
-          <EyeIcon className="mb-2 size-8 opacity-20" />
-          <p>No watches yet.</p>
-          <Link to="/watches" className="mt-1 text-xs text-primary hover:text-primary/80">
-            Create a watch
-          </Link>
-        </CardContent>
-      </Card>
+      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/50 py-12 text-sm text-muted-foreground">
+        <p>No digests yet.</p>
+        <p className="mt-1 text-xs">Digests will appear here once your watches run.</p>
+      </div>
     );
   }
 
   return (
-    <Card className="border-border/50 bg-card/50">
-      <CardContent className="p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Active Watches</h2>
-          <Link to="/watches" className="text-[10px] text-primary hover:text-primary/80">
-            View all
-          </Link>
-        </div>
-        <div className="space-y-2">
-          {items.slice(0, 5).map((w) => (
-            <Link
-              key={w.id}
-              to="/watches"
-              className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-accent/50"
-            >
-              <span
-                className={
-                  w.status === "active"
-                    ? "h-2 w-2 shrink-0 rounded-full bg-green-500"
-                    : "h-2 w-2 shrink-0 rounded-full bg-amber-500"
-                }
-              />
-              <span className="min-w-0 flex-1 truncate text-foreground/80">{w.title}</span>
-              <Badge
-                variant="outline"
-                className="shrink-0 text-[9px] capitalize"
-              >
-                {w.status}
+    <div className="divide-y divide-border/40 rounded-lg border border-border/40">
+      {digests.slice(0, 8).map((d) => {
+        const summary = extractSummary(d.sections as Record<string, unknown>);
+        return (
+          <Link
+            key={d.id}
+            to={`/digests/${d.id}`}
+            className="block px-4 py-3 transition-colors hover:bg-accent/40"
+          >
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-sm leading-none">{digestTypeIcon(d.type)}</span>
+              <Badge variant="outline" className="text-[10px] capitalize">
+                {d.type}
               </Badge>
-            </Link>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+              <span className="text-[10px] text-muted-foreground">
+                {timeAgo(d.generatedAt)}
+              </span>
+            </div>
+            {summary ? (
+              <p className="text-sm leading-relaxed text-foreground/80 line-clamp-2">
+                {summary}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Digest available</p>
+            )}
+            <span className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary">
+              Read more <ArrowRightIcon className="size-3" />
+            </span>
+          </Link>
+        );
+      })}
+    </div>
   );
 }
 
-// ---- Open To-Dos ----
+// ---------------------------------------------------------------------------
+// Active Watches (sidebar)
+// ---------------------------------------------------------------------------
 
-function OpenTodosCard() {
+function ActiveWatchesList() {
+  const { data: watches, isLoading } = useWatches();
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Active Watches
+        </h2>
+        <Link
+          to="/watches"
+          className="text-[10px] text-primary hover:text-primary/80"
+        >
+          View all
+        </Link>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Skeleton className="h-3 w-3 rounded-full" />
+              <Skeleton className="h-3 flex-1" />
+            </div>
+          ))}
+        </div>
+      ) : (watches ?? []).length === 0 ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <EyeIcon className="size-3.5 opacity-40" />
+          <span>No watches yet.</span>
+          <Link to="/watches" className="text-primary hover:text-primary/80">
+            Create one
+          </Link>
+        </div>
+      ) : (
+        <ul className="space-y-1.5">
+          {(watches ?? []).slice(0, 5).map((w) => (
+            <li key={w.id}>
+              <Link
+                to="/watches"
+                className="flex items-center gap-2 rounded px-1 py-0.5 text-sm transition-colors hover:bg-accent/50"
+              >
+                <span
+                  className={
+                    w.status === "active"
+                      ? "h-2 w-2 shrink-0 rounded-full bg-green-500"
+                      : "h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                  }
+                />
+                <span className="min-w-0 flex-1 truncate text-foreground/80">
+                  {w.title}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Open To-Dos (sidebar)
+// ---------------------------------------------------------------------------
+
+function OpenTodosList() {
   const { data: tasks, isLoading } = useTasks({ status: "open" });
   const completeMut = useCompleteTask();
 
-  if (isLoading) {
-    return (
-      <Card className="border-border/50 bg-card/50">
-        <CardContent className="p-4">
-          <Skeleton className="mb-3 h-5 w-24" />
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Open To-Dos
+        </h2>
+        <Link
+          to="/tasks"
+          className="text-[10px] text-primary hover:text-primary/80"
+        >
+          View all
+        </Link>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="mb-2 flex items-center gap-2">
-              <Skeleton className="h-4 w-4 rounded" />
-              <Skeleton className="h-4 flex-1" />
+            <div key={i} className="flex items-center gap-2">
+              <Skeleton className="h-3.5 w-3.5 rounded" />
+              <Skeleton className="h-3 flex-1" />
             </div>
           ))}
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const items = (tasks ?? []).slice(0, 5);
-
-  if (items.length === 0) {
-    return (
-      <Card className="border-border/50 bg-card/50">
-        <CardContent className="flex flex-col items-center justify-center p-6 text-sm text-muted-foreground">
-          <CheckCircle2Icon className="mb-2 size-8 opacity-20" />
-          <p>All caught up!</p>
-          <p className="mt-1 text-xs">No open to-dos right now.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="border-border/50 bg-card/50">
-      <CardContent className="p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Open To-Dos</h2>
-          <Link to="/tasks" className="text-[10px] text-primary hover:text-primary/80">
-            View all
-          </Link>
         </div>
-        <div className="space-y-2">
-          {items.map((t) => (
-            <div
+      ) : (tasks ?? []).length === 0 ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <CheckCircle2Icon className="size-3.5 opacity-40" />
+          <span>All caught up!</span>
+        </div>
+      ) : (
+        <ul className="space-y-1.5">
+          {(tasks ?? []).slice(0, 5).map((t) => (
+            <li
               key={t.id}
-              className="flex items-start gap-2 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-accent/50"
+              className="flex items-start gap-2 rounded px-1 py-0.5 text-sm transition-colors hover:bg-accent/50"
             >
               <button
                 type="button"
                 aria-label="Complete task"
                 disabled={completeMut.isPending}
                 onClick={() => completeMut.mutate(t.id)}
-                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border/60 transition-colors hover:border-primary hover:bg-primary/10"
-              >
-                {/* empty checkbox */}
-              </button>
-              <span className="min-w-0 flex-1 text-foreground/80 line-clamp-1">{t.title}</span>
-            </div>
+                className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border border-border/60 transition-colors hover:border-primary hover:bg-primary/10"
+              />
+              <span className="min-w-0 flex-1 text-foreground/80 line-clamp-1">
+                {t.title}
+              </span>
+            </li>
           ))}
-        </div>
-      </CardContent>
-    </Card>
+        </ul>
+      )}
+    </section>
   );
 }
 
-// ---- Library Stats ----
+// ---------------------------------------------------------------------------
+// Library Stats (sidebar)
+// ---------------------------------------------------------------------------
 
-function LibraryStatsCard() {
+function LibraryStats() {
   const { data: stats, isLoading } = useLibraryStats();
 
-  if (isLoading) {
-    return (
-      <Card className="border-border/50 bg-card/50">
-        <CardContent className="flex gap-6 p-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="space-y-1">
-              <Skeleton className="h-6 w-10" />
-              <Skeleton className="h-3 w-16" />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!stats) return null;
-
-  const counters = [
-    { value: stats.beliefs.active, label: "memories", icon: BrainIcon },
-    { value: stats.documentsCount, label: "documents", icon: FileTextIcon },
-    { value: stats.findingsCount, label: "findings", icon: FlaskConicalIcon },
-  ];
-
   return (
-    <Card className="border-border/50 bg-card/50">
-      <CardContent className="p-4">
-        <h2 className="mb-3 text-sm font-semibold text-foreground">Library</h2>
-        <div className="flex flex-wrap gap-6">
-          {counters.map((c) => (
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Library
+        </h2>
+        <Link
+          to="/library"
+          className="text-[10px] text-primary hover:text-primary/80"
+        >
+          View all
+        </Link>
+      </div>
+
+      {isLoading ? (
+        <div className="flex gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-4 w-16" />
+          ))}
+        </div>
+      ) : !stats ? null : (
+        <div className="flex flex-wrap gap-4">
+          {[
+            { value: stats.beliefs.active, label: "memories", Icon: BrainIcon },
+            { value: stats.documentsCount, label: "documents", Icon: FileTextIcon },
+            { value: stats.findingsCount, label: "findings", Icon: FlaskConicalIcon },
+          ].map((c) => (
             <Link
               key={c.label}
               to="/library"
-              className="flex items-center gap-2 transition-colors hover:text-primary"
+              className="flex items-center gap-1.5 text-sm transition-colors hover:text-primary"
             >
-              <c.icon className="size-4 text-muted-foreground" />
-              <div>
-                <div className="text-lg font-semibold leading-none text-foreground">{c.value}</div>
-                <div className="text-[10px] text-muted-foreground">{c.label}</div>
-              </div>
+              <c.Icon className="size-3.5 text-muted-foreground" />
+              <span className="font-medium text-foreground">{c.value}</span>
+              <span className="text-[10px] text-muted-foreground">{c.label}</span>
             </Link>
           ))}
         </div>
-      </CardContent>
-    </Card>
+      )}
+    </section>
   );
 }
 
-// ---- Quick Ask ----
-
-function QuickAskCard() {
-  const navigate = useNavigate();
-  const [question, setQuestion] = useState("");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    navigate("/ask");
-  };
-
-  return (
-    <Card className="border-border/50 bg-card/50">
-      <CardContent className="p-4">
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <input
-            type="text"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="What's on your mind?"
-            className="flex-1 rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
-          />
-          <button
-            type="submit"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            <MessageSquarePlusIcon className="size-3.5" />
-            Ask
-          </button>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---- Tips / What's New ----
+// ---------------------------------------------------------------------------
+// Tips (dismissible, at bottom)
+// ---------------------------------------------------------------------------
 
 const TIPS = [
-  { text: "Try saying \"Keep me updated on GitHub trending AI repos\" — pai will automatically use structured feeds for better results.", tag: "Watches" },
-  { text: "Rate your digests! Tap the stars on any digest — low ratings will improve future ones.", tag: "Digests" },
-  { text: "Correct any memory from a digest — click the pencil icon on a memory assumption to fix it.", tag: "Library" },
-  { text: "Create Watches from templates — Price, News, Competitor, Availability, or General monitoring.", tag: "Watches" },
-  { text: "Your Library grows automatically — research findings, chat insights, and corrections all compound.", tag: "Library" },
-  { text: "Search across everything in Library — memories, documents, and research findings in one search.", tag: "Library" },
-  { text: "Digests suggest to-dos — look for the \"Suggested To-Dos\" section at the bottom of each digest.", tag: "Tasks" },
-  { text: "Connect via Telegram — get digests pushed to your phone. Set up in Settings.", tag: "Telegram" },
-  { text: "Use pai as an MCP server — connect it to Claude Code, Cursor, or any MCP-compatible tool.", tag: "MCP" },
-  { text: "Watches get smarter each run — findings compound, and the agent focuses on what's new.", tag: "Watches" },
+  { text: "Try saying \"Keep me updated on GitHub trending AI repos\" \u2014 pai will automatically use structured feeds for better results.", tag: "Watches" },
+  { text: "Rate your digests! Tap the stars on any digest \u2014 low ratings will improve future ones.", tag: "Digests" },
+  { text: "Correct any memory from a digest \u2014 click the pencil icon on a memory assumption to fix it.", tag: "Library" },
+  { text: "Create Watches from templates \u2014 Price, News, Competitor, Availability, or General monitoring.", tag: "Watches" },
+  { text: "Your Library grows automatically \u2014 research findings, chat insights, and corrections all compound.", tag: "Library" },
+  { text: "Search across everything in Library \u2014 memories, documents, and research findings in one search.", tag: "Library" },
+  { text: "Digests suggest to-dos \u2014 look for the \"Suggested To-Dos\" section at the bottom of each digest.", tag: "Tasks" },
+  { text: "Connect via Telegram \u2014 get digests pushed to your phone. Set up in Settings.", tag: "Telegram" },
+  { text: "Use pai as an MCP server \u2014 connect it to Claude Code, Cursor, or any MCP-compatible tool.", tag: "MCP" },
+  { text: "Watches get smarter each run \u2014 findings compound, and the agent focuses on what's new.", tag: "Watches" },
 ];
 
 function TipsCard() {
@@ -380,7 +424,6 @@ function TipsCard() {
   });
 
   const visibleTips = TIPS.map((tip, i) => ({ ...tip, index: i })).filter(t => !dismissed.has(t.index));
-  // Show one random tip from the non-dismissed set
   const tip = visibleTips.length > 0 ? visibleTips[Math.floor(Date.now() / 86400000) % visibleTips.length] : null;
 
   if (!tip) return null;
