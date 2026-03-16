@@ -1011,8 +1011,10 @@ export function getFindings(watchId?: string): Promise<ResearchFinding[]> {
 
 // ---- Digests ----
 
-export function getDigests(): Promise<{ digests: Array<{ id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string }> }> {
-  return request("/digests");
+export async function getDigests(): Promise<{ digests: Array<{ id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string }> }> {
+  const data = await request<{ briefings?: unknown[]; digests?: unknown[] }>("/digests");
+  // Server returns { briefings: [...] } — normalize to { digests: [...] }
+  return { digests: (data.briefings ?? data.digests ?? []) as Array<{ id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string }> };
 }
 
 export function getDigest(id: string): Promise<{ digest: Record<string, unknown> }> {

@@ -54,12 +54,12 @@ function digestTypeIcon(type: string): string {
 
 function extractSummary(sections: Record<string, unknown> | undefined): string | null {
   if (!sections) return null;
-  return (
-    (sections.recommendation as string) ??
-    (sections.summary as string) ??
-    (sections.highlights as string) ??
-    null
-  );
+  // sections.recommendation can be { summary, confidence, rationale } or a string
+  const rec = sections.recommendation as Record<string, unknown> | string | undefined;
+  if (typeof rec === "object" && rec?.summary) return String(rec.summary);
+  if (typeof rec === "string" && rec.length > 5) return rec;
+  if (sections.title) return String(sections.title);
+  return null;
 }
 
 // ---------------------------------------------------------------------------
