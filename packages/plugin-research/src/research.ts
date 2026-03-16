@@ -1147,16 +1147,24 @@ function createResearchTools(
     }),
 
     fetch_rss: tool({
-      description: `Fetch a structured RSS/Atom/JSON feed from a URL. Use this for structured data sources like GitHub trending, Reddit, Hacker News, tech news, crypto feeds. Much more reliable than web search for specific feeds. Supports RSSHub routes (e.g. /github/trending/daily/javascript, /hackernews, /producthunt/today, /reddit/subreddit/machinelearning, /techcrunch/news, /youtube/user/@handle, /cointelegraph) or direct RSS/Atom feed URLs. RSSHub base: ${ctx.rsshubUrl || "https://rsshub.app"}`,
+      description: `Fetch a structured RSS/Atom/JSON feed from a URL. Use this for structured data sources like GitHub trending, Reddit, Hacker News, tech news, crypto feeds. Much more reliable than web search for specific feeds. Supports RSSHub routes (e.g. /github/trending/daily/javascript, /hackernews, /producthunt/today, /reddit/subreddit/machinelearning, /techcrunch/news, /youtube/user/@handle, /cointelegraph) or direct RSS/Atom feed URLs. RSSHub base: ${ctx.rsshubUrl || "https://rsshub.app"}. You can filter results with filter param (regex on title/description) e.g. filter=AI|machine.learning`,
       inputSchema: z.object({
         url: z.string().describe("RSS feed URL — either a full URL (https://...) or an RSSHub route path (/github/trending/daily)"),
+        filter: z.string().optional().describe("Regex to filter items by title/description (e.g. 'AI|machine.learning')"),
+        limit: z.number().optional().describe("Max items to return (default 15)"),
       }),
-      execute: async ({ url }: { url: string }) => {
+      execute: async ({ url, filter, limit: itemLimit }: { url: string; filter?: string; limit?: number }) => {
         try {
+          const maxItems = itemLimit ?? 15;
+          // Build query params
+          const params = new URLSearchParams({ format: "json", limit: String(maxItems), brief: "300" });
+          if (filter) params.set("filter", filter);
+
           // If it's a relative path, prefix with RSSHub base URL
+          const base = ctx.rsshubUrl || "https://rsshub.app";
           const feedUrl = url.startsWith("/")
-            ? `${(ctx.rsshubUrl || "https://rsshub.app")}${url}?format=json&limit=15`
-            : url.includes("format=json") ? url : `${url}${url.includes("?") ? "&" : "?"}format=json&limit=15`;
+            ? `${base}${url}?${params.toString()}`
+            : `${url}${url.includes("?") ? "&" : "?"}${params.toString()}`;
 
           const res = await fetch(feedUrl, { signal: AbortSignal.timeout(15000) });
           if (!res.ok) return `Feed fetch failed: HTTP ${res.status}`;
