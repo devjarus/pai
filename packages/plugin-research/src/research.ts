@@ -99,6 +99,8 @@ export interface ResearchContext {
   formatSearchResults: (results: Array<{ title: string; url: string; snippet: string }>) => string;
   /** Fetch a web page as markdown — injected to avoid circular dependency */
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;
+  /** RSSHub URL for structured feed fetching (default: https://rsshub.app) */
+  rsshubUrl?: string;
 }
 
 function getProgramActionSummary(storage: Storage, programId: string | null): { openCount: number; completedCount: number; staleOpenCount: number } | null {
@@ -316,8 +318,8 @@ ${currentDateBlock(timezone)}
 
 ## Process
 1. First, check existing knowledge using knowledge_search to see what's already known about this topic
-2. Plan your research approach — focus on what's NEW or CHANGED since previous reports
-3. Execute searches using web_search — include the year "${dt.year}" in queries about recent topics
+2. Check if fetch_rss can provide structured data — use it for GitHub trending, Hacker News, Reddit, tech news, crypto, YouTube, Product Hunt, and other sites with known feeds. RSSHub routes: /github/trending/daily/{language}, /hackernews, /reddit/subreddit/{name}, /producthunt/today, /techcrunch/news, /theverge/{hub}, /cointelegraph, /youtube/user/@{handle}. RSS feeds are faster and more reliable than web search for these sources.
+3. Execute searches using web_search for topics not covered by feeds — include the year "${dt.year}" in queries about recent topics
 4. Read important pages using read_page to get detailed content. If read_page returns empty or incomplete content (common with JavaScript-rendered SPAs), use browse_navigate + browse_text as a fallback
 5. Synthesize findings into a structured report with NEW information only
 
@@ -1140,6 +1142,51 @@ function createResearchTools(
           }));
         } catch {
           return "Knowledge search unavailable.";
+        }
+      },
+    }),
+
+    fetch_rss: tool({
+      description: `Fetch a structured RSS/Atom/JSON feed from a URL. Use this for structured data sources like GitHub trending, Reddit, Hacker News, tech news, crypto feeds. Much more reliable than web search for specific feeds. Supports RSSHub routes (e.g. /github/trending/daily/javascript, /hackernews, /producthunt/today, /reddit/subreddit/machinelearning, /techcrunch/news, /youtube/user/@handle, /cointelegraph) or direct RSS/Atom feed URLs. RSSHub base: ${ctx.rsshubUrl || "https://rsshub.app"}`,
+      inputSchema: z.object({
+        url: z.string().describe("RSS feed URL — either a full URL (https://...) or an RSSHub route path (/github/trending/daily)"),
+      }),
+      execute: async ({ url }: { url: string }) => {
+        try {
+          // If it's a relative path, prefix with RSSHub base URL
+          const feedUrl = url.startsWith("/")
+            ? `${(ctx.rsshubUrl || "https://rsshub.app")}${url}?format=json&limit=15`
+            : url.includes("format=json") ? url : `${url}${url.includes("?") ? "&" : "?"}format=json&limit=15`;
+
+          const res = await fetch(feedUrl, { signal: AbortSignal.timeout(15000) });
+          if (!res.ok) return `Feed fetch failed: HTTP ${res.status}`;
+
+          const text = await res.text();
+          let data: Record<string, unknown>;
+          try {
+            data = JSON.parse(text) as Record<string, unknown>;
+          } catch {
+            // Might be XML RSS — extract basic info
+            const titles = [...text.matchAll(/<title>([^<]+)<\/title>/g)].slice(0, 10).map(m => m[1]);
+            const links = [...text.matchAll(/<link>([^<]+)<\/link>/g)].slice(0, 10).map(m => m[1]);
+            if (titles.length === 0) return "Could not parse feed — not valid RSS or JSON.";
+            return titles.map((t, i) => `- ${t}${links[i] ? ` (${links[i]})` : ""}`).join("\n");
+          }
+
+          // JSON Feed format (from RSSHub ?format=json)
+          const items = (data.items as Array<Record<string, unknown>> | undefined) || [];
+          if (items.length === 0) return "Feed returned no items.";
+
+          return items.slice(0, 15).map((item) => {
+            const title = (item.title as string) || "Untitled";
+            const url = (item.url as string) || "";
+            const content = ((item.content_text as string) || (item.content_html as string) || "").slice(0, 300);
+            const date = (item.date_published as string) || "";
+            const tags = (item.tags as string[]) || [];
+            return `## ${title}\n${url}\n${date ? `Published: ${date}` : ""}${tags.length ? `\nTags: ${tags.join(", ")}` : ""}\n${content}\n`;
+          }).join("\n---\n");
+        } catch (err) {
+          return `Feed fetch failed: ${err instanceof Error ? err.message : "unknown error"}`;
         }
       },
     }),

@@ -133,6 +133,8 @@ export interface Config {
   searchUrl?: string;
   /** Pinchtab browser automation URL (e.g. http://localhost:9867). Auto-detected in Docker/Railway if unset. */
   browserUrl?: string;
+  /** RSSHub URL for structured feed fetching (default: https://rsshub.app). Self-host or use public instance. */
+  rsshubUrl?: string;
   /** Feature flags for phased domain rollout */
   features?: FeatureFlags;
 }
