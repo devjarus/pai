@@ -24,3 +24,4 @@ scripts/
 harness/runs/
 .superpowers/
 docs/superpowers/
+agent/suggestions.json

@@ -1,0 +1,16 @@
+{
+  "name": "pai-agent",
+  "version": "0.1.0",
+  "description": "Synthetic product agent — exercises pai, finds issues, proposes improvements",
+  "type": "module",
+  "scripts": {
+    "probe": "tsx src/probe.ts",
+    "review": "tsx src/review.ts",
+    "run": "tsx src/run.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}
