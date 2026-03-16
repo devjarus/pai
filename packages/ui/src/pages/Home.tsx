@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDigests } from "@/hooks/use-digests";
 import { useWatches } from "@/hooks/use-watches";
@@ -8,17 +7,17 @@ import { useTasks, useCompleteTask } from "@/hooks/use-tasks";
 import { useLibraryStats } from "@/hooks/use-library";
 import { parseApiDate } from "@/lib/datetime";
 import {
-  ArrowRightIcon,
   CheckCircle2Icon,
   BrainIcon,
   FileTextIcon,
   FlaskConicalIcon,
   SearchIcon,
   XIcon,
+  AlertCircleIcon,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Smart data extraction — handles garbage LLM output gracefully
 // ---------------------------------------------------------------------------
 
 function timeAgo(dateStr: string): string {
@@ -27,27 +26,93 @@ function timeAgo(dateStr: string): string {
   const diffMs = Date.now() - d.getTime();
   const mins = Math.floor(diffMs / 60_000);
   if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return `${mins}m`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return `${days}d`;
 }
 
-function extractSummary(sections: Record<string, unknown> | undefined): string | null {
+/** Patterns that indicate LLM preamble or failure — not real content */
+const JUNK_PATTERNS = [
+  /^based on (my |the |available )?research/i,
+  /^I (apologize|was unable|encountered|cannot)/i,
+  /^(Let me|I'll now|I can now|Here('s| is))/i,
+  /^This brief summarizes/i,
+  /^\{/,
+];
+
+function isJunkSummary(text: string): boolean {
+  return JUNK_PATTERNS.some(p => p.test(text.trim()));
+}
+
+function isFailedDigest(sections: Record<string, unknown>): boolean {
+  const rec = sections.recommendation as Record<string, unknown> | undefined;
+  const summary = typeof rec === "object" ? String(rec?.summary ?? "") : "";
+  return /unable|apologize|failed|unavailable|error/i.test(summary);
+}
+
+function cleanSummary(raw: string): string {
+  let s = raw.trim();
+  // Strip common LLM preamble
+  s = s.replace(/^(Based on[^,:.]+[,:.]\s*)/i, "");
+  s = s.replace(/^(I'll now[^,:.]+[,:.]\s*)/i, "");
+  s = s.replace(/^(Let me[^,:.]+[,:.]\s*)/i, "");
+  s = s.replace(/^(Here('s| is)[^,:.]+[,:.]\s*)/i, "");
+  return s || raw;
+}
+
+function extractSummary(sections: Record<string, unknown>): string | null {
   if (!sections) return null;
   const rec = sections.recommendation as Record<string, unknown> | string | undefined;
-  if (typeof rec === "object") {
-    const summary = String(rec.summary ?? "");
-    if (summary.length > 10) return summary;
-    const rationale = String(rec.rationale ?? "");
-    if (rationale.length > 10) return rationale;
+
+  // Try recommendation.summary
+  if (typeof rec === "object" && rec?.summary) {
+    const s = String(rec.summary);
+    if (s.length > 10 && !isJunkSummary(s)) return cleanSummary(s);
+    // Try rationale as fallback
+    const r = String(rec.rationale ?? "");
+    if (r.length > 10 && !isJunkSummary(r)) return cleanSummary(r);
   }
-  if (typeof rec === "string" && rec.length > 10) return rec;
-  if (sections.title && String(sections.title).length > 5) return String(sections.title);
+  if (typeof rec === "string" && rec.length > 10 && !isJunkSummary(rec)) return cleanSummary(rec);
+
+  // Try what_changed
   const changes = sections.what_changed as string[] | undefined;
-  if (changes?.length) return changes[0]!;
+  if (changes?.length) {
+    const first = changes.find(c => c.length > 10 && !isJunkSummary(c));
+    if (first) return cleanSummary(first);
+  }
+
+  // Try evidence
+  const evidence = sections.evidence as Array<{ detail?: string }> | undefined;
+  if (evidence?.length) {
+    const first = evidence.find(e => e.detail && e.detail.length > 15);
+    if (first?.detail) return first.detail.slice(0, 200);
+  }
+
   return null;
+}
+
+function extractTitle(sections: Record<string, unknown>, fallbackType: string): string {
+  const raw = sections.title ? String(sections.title) : "";
+  // If title is a raw goal (too long or contains "Keep watching"), shorten it
+  if (raw.length > 60) return raw.slice(0, 57) + "...";
+  if (raw.startsWith("Keep watching")) {
+    const match = raw.match(/:\s*(.+)/);
+    return match ? match[1]!.slice(0, 50) : raw.slice(0, 50);
+  }
+  return raw || (fallbackType === "daily" ? "Daily Digest" : "Research Report");
+}
+
+/** Shorten watch title — extract the actual topic from verbose goal text */
+function shortWatchTitle(title: string): string {
+  // "Keep watching this conversation and brief me on meaningful changes: how is crypto doing now"
+  // → "how is crypto doing now"
+  const colonMatch = title.match(/:\s*(.{5,})/);
+  if (colonMatch && title.length > 50) return colonMatch[1]!.slice(0, 40);
+  if (title.startsWith("Research and compile")) return title.replace(/^Research and compile a brief ?(summary|report)? ?(of |about )?/i, "").slice(0, 40) || title.slice(0, 40);
+  if (title.length > 45) return title.slice(0, 42) + "...";
+  return title;
 }
 
 type DigestItem = { id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string };
@@ -67,46 +132,43 @@ export default function Home() {
   const navigate = useNavigate();
   const [askQuery, setAskQuery] = useState("");
 
-  useEffect(() => { document.title = "Home - pai"; }, []);
+  useEffect(() => { document.title = "pai"; }, []);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Header */}
-      <header className="flex items-center gap-4 border-b border-border/20 px-4 py-3 md:px-6">
-        <span className="text-lg font-bold tracking-tight text-foreground">pai</span>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const q = askQuery.trim();
-            navigate(q ? `/ask?q=${encodeURIComponent(q)}` : "/ask");
-          }}
-          className="ml-auto flex w-full max-w-sm"
-        >
-          <div className="relative flex-1">
-            <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/40" />
-            <input
-              type="text"
-              value={askQuery}
-              onChange={(e) => setAskQuery(e.target.value)}
-              placeholder="Ask pai anything..."
-              className="w-full rounded-full border border-border/30 bg-muted/20 py-2 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none transition-all focus:border-primary/40 focus:bg-background focus:ring-1 focus:ring-primary/20"
-            />
-          </div>
-        </form>
-      </header>
-
-      {/* Body */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl px-4 py-6 md:px-6 md:py-10">
-          <div className="flex flex-col gap-10 lg:flex-row">
+        <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-10">
 
-            {/* PRIMARY — digest feed */}
+          {/* Greeting + Ask */}
+          <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">{greeting()}</h1>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const q = askQuery.trim();
+                navigate(q ? `/ask?q=${encodeURIComponent(q)}` : "/ask");
+              }}
+              className="flex w-full max-w-sm"
+            >
+              <div className="relative flex-1">
+                <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/40" />
+                <input
+                  type="text"
+                  value={askQuery}
+                  onChange={(e) => setAskQuery(e.target.value)}
+                  placeholder="Ask pai anything..."
+                  className="w-full rounded-full border border-border/30 bg-muted/20 py-2 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none transition-all focus:border-primary/40 focus:bg-background focus:ring-1 focus:ring-primary/20"
+                />
+              </div>
+            </form>
+          </div>
+
+          {/* Two-column */}
+          <div className="flex flex-col gap-10 lg:flex-row">
             <div className="min-w-0 flex-1">
               <DigestFeed />
             </div>
-
-            {/* SIDEBAR — separated with a thin border */}
-            <aside className="flex w-full flex-col gap-8 lg:w-72 lg:shrink-0 lg:border-l lg:border-border/20 lg:pl-8">
+            <aside className="flex w-full flex-col gap-8 lg:w-64 lg:shrink-0 lg:border-l lg:border-border/15 lg:pl-8">
               <WatchesPanel />
               <TodosPanel />
               <LibraryPanel />
@@ -120,7 +182,7 @@ export default function Home() {
 }
 
 // ---------------------------------------------------------------------------
-// Digest Feed — hero first item, compact rest
+// Digest Feed
 // ---------------------------------------------------------------------------
 
 function DigestFeed() {
@@ -130,96 +192,100 @@ function DigestFeed() {
 
   if (isLoading) {
     return (
-      <section>
-        <Skeleton className="mb-6 h-7 w-48" />
-        <div className="mb-8 space-y-3">
-          <Skeleton className="h-32 w-full rounded-xl" />
-        </div>
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full rounded-lg" />
-          ))}
-        </div>
-      </section>
+      <div className="space-y-4">
+        <Skeleton className="h-36 w-full rounded-xl" />
+        {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
+      </div>
     );
   }
 
   if (digests.length === 0) {
     return (
-      <section>
-        <h1 className="mb-6 text-2xl font-bold tracking-tight text-foreground">{greeting()}</h1>
-        <div className="py-20 text-center">
-          <p className="text-lg text-muted-foreground">Your inbox is clear</p>
-          <p className="mt-2 text-sm text-muted-foreground/60">
-            Tell pai what to <Link to="/watches" className="text-primary hover:underline">keep track of</Link> and digests will start appearing here.
-          </p>
-        </div>
-      </section>
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="mb-3 text-4xl">📡</div>
+        <p className="text-base font-medium text-foreground/80">Nothing yet</p>
+        <p className="mt-1 text-sm text-muted-foreground/60">
+          <Link to="/watches" className="text-primary hover:underline">Create a Watch</Link> and your first digest will appear here.
+        </p>
+      </div>
     );
   }
 
-  const [hero, ...rest] = digests;
+  // Separate good digests from failed ones
+  const good: DigestItem[] = [];
+  const failed: DigestItem[] = [];
+  for (const d of digests) {
+    if (isFailedDigest(d.sections as Record<string, unknown>)) failed.push(d);
+    else good.push(d);
+  }
+
+  const hero = good[0];
+  const rest = good.slice(1);
+  const showRest = showAll ? rest : rest.slice(0, 7);
 
   return (
-    <section>
-      <h1 className="mb-6 text-2xl font-bold tracking-tight text-foreground">{greeting()}</h1>
-
-      {/* HERO — latest digest, bigger treatment */}
+    <div>
+      {/* Hero */}
       {hero && <HeroDigest digest={hero} />}
 
-      {/* REST — compact feed */}
+      {/* Feed */}
       {rest.length > 0 && (
         <div className="mt-6">
-          <div className="mb-3">
-            <span className="text-xs font-medium text-muted-foreground">Earlier</span>
-          </div>
-          <div className="space-y-1">
-            {(showAll ? rest : rest.slice(0, 9)).map((d, i) => (
-              <div key={d.id} className={i < 9 ? "animate-in fade-in slide-in-from-bottom-1" : ""} style={i < 9 ? { animationDelay: `${i * 50}ms`, animationFillMode: "both" } : undefined}>
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/40">Earlier</div>
+          <div className="space-y-px">
+            {showRest.map((d, i) => (
+              <div key={d.id} className={i < 7 ? "animate-in fade-in slide-in-from-bottom-1" : ""} style={i < 7 ? { animationDelay: `${i * 40}ms`, animationFillMode: "both" } : undefined}>
                 <CompactDigest digest={d} />
               </div>
             ))}
           </div>
-          {!showAll && rest.length > 9 && (
-            <button
-              type="button"
-              onClick={() => setShowAll(true)}
-              className="mt-3 flex w-full items-center justify-center gap-1 py-2 text-xs text-primary/70 hover:text-primary transition-colors"
-            >
-              Show all {digests.length} digests <ArrowRightIcon className="size-3" />
+          {!showAll && rest.length > 7 && (
+            <button type="button" onClick={() => setShowAll(true)} className="mt-2 w-full py-2 text-center text-xs text-primary/60 hover:text-primary transition-colors">
+              Show {rest.length - 7} more
             </button>
           )}
         </div>
       )}
-    </section>
+
+      {/* Failed digests — collapsed, dimmed */}
+      {failed.length > 0 && (
+        <details className="mt-6">
+          <summary className="cursor-pointer text-[11px] text-muted-foreground/40 hover:text-muted-foreground/60">
+            <AlertCircleIcon className="mr-1 inline size-3" />{failed.length} incomplete digest{failed.length > 1 ? "s" : ""}
+          </summary>
+          <div className="mt-2 space-y-px opacity-50">
+            {failed.slice(0, 5).map((d) => <CompactDigest key={d.id} digest={d} />)}
+          </div>
+        </details>
+      )}
+    </div>
   );
 }
 
 function HeroDigest({ digest }: { digest: DigestItem }) {
   const sections = digest.sections as Record<string, unknown>;
   const summary = extractSummary(sections);
-  const title = sections.title ? String(sections.title) : digest.type;
+  const title = extractTitle(sections, digest.type);
 
   return (
     <Link
       to={`/digests/${digest.id}`}
-      className={`group block rounded-xl border bg-card/50 p-5 transition-all duration-200 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-md ${digest.type === "research" ? "border-indigo-500/20 hover:border-indigo-500/40" : "border-amber-500/20 hover:border-amber-500/40"}`}
+      className={`group block rounded-xl border bg-card/50 p-6 transition-all duration-200 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-lg ${
+        digest.type === "research" ? "border-indigo-500/15 hover:border-indigo-500/30" : "border-amber-500/15 hover:border-amber-500/30"
+      }`}
     >
-      <div className="flex items-center gap-3 text-xs text-muted-foreground/60">
-        <Badge variant="secondary" className="text-[10px] font-normal capitalize">{digest.type}</Badge>
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50">
+        <span className={`h-1.5 w-1.5 rounded-full ${digest.type === "research" ? "bg-indigo-400" : "bg-amber-400"}`} />
+        <span className="capitalize">{digest.type}</span>
+        <span>·</span>
         <span>{timeAgo(digest.generatedAt)}</span>
       </div>
-      <h2 className="mt-2 text-xl font-semibold leading-snug text-foreground group-hover:text-primary transition-colors">
+      <h2 className="mt-3 text-lg font-semibold leading-snug text-foreground group-hover:text-primary transition-colors">
         {title}
       </h2>
       {summary && (
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground line-clamp-3">
-          {summary}
-        </p>
+        <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground line-clamp-3">{summary}</p>
       )}
-      <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary/70 group-hover:text-primary">
-        Read digest <ArrowRightIcon className="size-3" />
-      </span>
     </Link>
   );
 }
@@ -227,32 +293,27 @@ function HeroDigest({ digest }: { digest: DigestItem }) {
 function CompactDigest({ digest }: { digest: DigestItem }) {
   const sections = digest.sections as Record<string, unknown>;
   const summary = extractSummary(sections);
-  const title = sections.title ? String(sections.title) : digest.type;
+  const title = extractTitle(sections, digest.type);
 
   return (
     <Link
       to={`/digests/${digest.id}`}
-      className="group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/30"
+      className="group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/20"
     >
-      {/* Type indicator — thin colored bar */}
-      <div className={`mt-1 h-8 w-1 shrink-0 rounded-full ${digest.type === "research" ? "bg-indigo-400/70" : "bg-amber-400/70"}`} />
+      <div className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${digest.type === "research" ? "bg-indigo-400/60" : "bg-amber-400/60"}`} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-foreground/90 group-hover:text-primary transition-colors truncate">
-            {title}
-          </span>
-          <span className="shrink-0 text-[11px] text-muted-foreground/50">{timeAgo(digest.generatedAt)}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium text-foreground/85 group-hover:text-primary transition-colors truncate">{title}</span>
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/40">{timeAgo(digest.generatedAt)}</span>
         </div>
-        {summary && (
-          <p className="mt-0.5 text-xs text-muted-foreground/70 line-clamp-1">{summary}</p>
-        )}
+        {summary && <p className="mt-0.5 text-xs text-muted-foreground/55 line-clamp-1">{summary}</p>}
       </div>
     </Link>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Sidebar panels
+// Sidebar
 // ---------------------------------------------------------------------------
 
 function WatchesPanel() {
@@ -263,16 +324,16 @@ function WatchesPanel() {
     <section>
       <SidebarTitle label="Watches" to="/watches" count={watches?.length} />
       {isLoading ? <SidebarSkeleton rows={3} /> : items.length === 0 ? (
-        <p className="text-xs text-muted-foreground/70">
+        <p className="text-xs text-muted-foreground/50">
           No watches. <Link to="/watches" className="text-primary hover:underline">Create one</Link>
         </p>
       ) : (
         <ul className="space-y-0.5">
           {items.map((w) => (
             <li key={w.id}>
-              <Link to="/watches" className="flex items-center gap-2 rounded px-1 py-1 text-[13px] transition-colors hover:bg-muted/40">
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${w.status === "active" ? "bg-emerald-500 animate-pulse" : "bg-amber-400"}`} />
-                <span className="min-w-0 flex-1 truncate text-foreground/75">{w.title}</span>
+              <Link to="/watches" className="flex items-center gap-2 rounded px-1 py-1 text-[13px] transition-colors hover:bg-muted/30">
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${w.status === "active" ? "bg-emerald-400" : "bg-amber-400/60"}`} />
+                <span className="min-w-0 flex-1 truncate text-foreground/70">{shortWatchTitle(w.title)}</span>
               </Link>
             </li>
           ))}
@@ -291,20 +352,20 @@ function TodosPanel() {
     <section>
       <SidebarTitle label="To-Dos" to="/tasks" count={tasks?.length} />
       {isLoading ? <SidebarSkeleton rows={2} /> : items.length === 0 ? (
-        <span className="flex items-center gap-1 text-xs text-muted-foreground/70">
-          <CheckCircle2Icon className="size-3 opacity-40" /> All caught up
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground/50">
+          <CheckCircle2Icon className="size-3 opacity-40" /> All clear
         </span>
       ) : (
         <ul className="space-y-0.5">
           {items.map((t) => (
-            <li key={t.id} className="group/todo flex items-start gap-2 rounded px-1 py-1 text-[13px] transition-opacity hover:bg-muted/40">
+            <li key={t.id} className="group/todo flex items-start gap-2 rounded px-1 py-1 text-[13px] hover:bg-muted/30">
               <button
                 type="button"
                 disabled={completeMut.isPending}
                 onClick={() => completeMut.mutate(t.id)}
-                className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border border-border/40 transition-all hover:border-emerald-500 hover:bg-emerald-500/20 active:scale-90"
+                className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border border-border/40 transition-all hover:border-emerald-400 hover:bg-emerald-400/20 active:scale-90"
               />
-              <span className="min-w-0 flex-1 text-foreground/75 line-clamp-1 group-hover/todo:text-foreground transition-colors">{t.title}</span>
+              <span className="min-w-0 flex-1 text-foreground/70 line-clamp-1 group-hover/todo:text-foreground/90">{t.title}</span>
             </li>
           ))}
         </ul>
@@ -320,15 +381,15 @@ function LibraryPanel() {
     <section>
       <SidebarTitle label="Library" to="/library" />
       {isLoading ? <SidebarSkeleton rows={1} /> : stats ? (
-        <div className="flex gap-5 text-[13px]">
+        <div className="flex gap-4 text-[12px]">
           {[
             { Icon: BrainIcon, v: stats.beliefs.active, l: "memories" },
             { Icon: FileTextIcon, v: stats.documentsCount, l: "docs" },
             { Icon: FlaskConicalIcon, v: stats.findingsCount, l: "findings" },
           ].map((s) => (
-            <div key={s.l} className="flex items-center gap-1 text-muted-foreground/70">
+            <div key={s.l} className="flex items-center gap-1 text-muted-foreground/60">
               <s.Icon className="size-3" />
-              <span className="font-semibold text-foreground">{s.v}</span>
+              <span className="font-semibold text-foreground/80">{s.v}</span>
               <span className="text-[10px]">{s.l}</span>
             </div>
           ))}
@@ -338,15 +399,11 @@ function LibraryPanel() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared
-// ---------------------------------------------------------------------------
-
 function SidebarTitle({ label, to, count }: { label: string; to: string; count?: number }) {
   return (
-    <div className="mb-2.5 flex items-center justify-between">
-      <Link to={to} className="text-sm font-semibold text-foreground/90 hover:text-foreground">{label}</Link>
-      {count != null && count > 0 && <span className="text-[10px] text-muted-foreground/50">{count}</span>}
+    <div className="mb-2 flex items-center justify-between">
+      <Link to={to} className="text-sm font-semibold text-foreground/80 hover:text-foreground">{label}</Link>
+      {count != null && count > 0 && <span className="text-[10px] text-muted-foreground/35">{count}</span>}
     </div>
   );
 }
@@ -360,11 +417,11 @@ function SidebarSkeleton({ rows }: { rows: number }) {
 // ---------------------------------------------------------------------------
 
 const TIPS = [
-  "Say \"Keep me updated on GitHub trending AI repos\" to create a Watch with structured feeds.",
+  "Say \"Keep me updated on GitHub trending AI repos\" to set up a Watch.",
   "Rate digests with stars — low ratings improve future ones.",
-  "Click the pencil on any memory assumption to correct it.",
-  "Create Watches from templates: Price, News, Competitor, Availability.",
-  "Digests suggest to-dos — check the bottom of each digest.",
+  "Click the pencil on any memory to correct it.",
+  "Create Watches from templates: Price, News, Competitor.",
+  "Digests suggest to-dos at the bottom.",
   "Use pai as an MCP server with Claude Code or Cursor.",
 ];
 
@@ -372,23 +429,20 @@ function TipBanner() {
   const [dismissed, setDismissed] = useState<Set<number>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem("pai-tips-d") ?? "[]") as number[]); } catch { return new Set(); }
   });
-
   const visible = TIPS.map((t, i) => ({ t, i })).filter(x => !dismissed.has(x.i));
   const tip = visible.length > 0 ? visible[Math.floor(Date.now() / 86400000) % visible.length] : null;
   if (!tip) return null;
 
-  const dismiss = () => {
-    const next = new Set(dismissed);
-    next.add(tip.i);
-    setDismissed(next);
-    localStorage.setItem("pai-tips-d", JSON.stringify([...next]));
-  };
-
   return (
-    <div className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground/60">
-      <span className="shrink-0">💡</span>
+    <div className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground/40">
+      <span className="shrink-0 mt-px">💡</span>
       <p className="flex-1">{tip.t}</p>
-      <button type="button" onClick={dismiss} className="shrink-0 opacity-40 hover:opacity-100"><XIcon className="size-3" /></button>
+      <button type="button" onClick={() => {
+        const next = new Set(dismissed);
+        next.add(tip.i);
+        setDismissed(next);
+        localStorage.setItem("pai-tips-d", JSON.stringify([...next]));
+      }} className="shrink-0 opacity-30 hover:opacity-70"><XIcon className="size-3" /></button>
     </div>
   );
 }
