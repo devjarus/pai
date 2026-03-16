@@ -44,6 +44,7 @@ export default function Home() {
             <OpenTodosCard />
           </div>
           <LibraryStatsCard />
+          <TipsCard />
           <QuickAskCard />
         </div>
       </div>
@@ -350,6 +351,66 @@ function QuickAskCard() {
             Ask
           </button>
         </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---- Tips / What's New ----
+
+const TIPS = [
+  { text: "Try saying \"Keep me updated on GitHub trending AI repos\" — pai will automatically use structured feeds for better results.", tag: "Watches" },
+  { text: "Rate your digests! Tap the stars on any digest — low ratings will improve future ones.", tag: "Digests" },
+  { text: "Correct any memory from a digest — click the pencil icon on a memory assumption to fix it.", tag: "Library" },
+  { text: "Create Watches from templates — Price, News, Competitor, Availability, or General monitoring.", tag: "Watches" },
+  { text: "Your Library grows automatically — research findings, chat insights, and corrections all compound.", tag: "Library" },
+  { text: "Search across everything in Library — memories, documents, and research findings in one search.", tag: "Library" },
+  { text: "Digests suggest to-dos — look for the \"Suggested To-Dos\" section at the bottom of each digest.", tag: "Tasks" },
+  { text: "Connect via Telegram — get digests pushed to your phone. Set up in Settings.", tag: "Telegram" },
+  { text: "Use pai as an MCP server — connect it to Claude Code, Cursor, or any MCP-compatible tool.", tag: "MCP" },
+  { text: "Watches get smarter each run — findings compound, and the agent focuses on what's new.", tag: "Watches" },
+];
+
+function TipsCard() {
+  const [dismissed, setDismissed] = useState<Set<number>>(() => {
+    try {
+      const stored = localStorage.getItem("pai-dismissed-tips");
+      return stored ? new Set(JSON.parse(stored) as number[]) : new Set();
+    } catch { return new Set(); }
+  });
+
+  const visibleTips = TIPS.map((tip, i) => ({ ...tip, index: i })).filter(t => !dismissed.has(t.index));
+  // Show one random tip from the non-dismissed set
+  const tip = visibleTips.length > 0 ? visibleTips[Math.floor(Date.now() / 86400000) % visibleTips.length] : null;
+
+  if (!tip) return null;
+
+  const dismiss = () => {
+    const next = new Set(dismissed);
+    next.add(tip.index);
+    setDismissed(next);
+    localStorage.setItem("pai-dismissed-tips", JSON.stringify([...next]));
+  };
+
+  return (
+    <Card className="border-primary/20 bg-primary/5">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">Tip</span>
+              <Badge variant="outline" className="text-[9px]">{tip.tag}</Badge>
+            </div>
+            <p className="text-sm text-foreground/80">{tip.text}</p>
+          </div>
+          <button
+            type="button"
+            onClick={dismiss}
+            className="shrink-0 text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            Dismiss
+          </button>
+        </div>
       </CardContent>
     </Card>
   );
