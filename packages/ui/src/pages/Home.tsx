@@ -198,7 +198,7 @@ function HeroDigest({ digest }: { digest: DigestItem }) {
   return (
     <Link
       to={`/digests/${digest.id}`}
-      className="group block rounded-xl border border-border/30 bg-card/50 p-5 transition-all duration-200 hover:border-border/50 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-md"
+      className={`group block rounded-xl border bg-card/50 p-5 transition-all duration-200 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-md ${digest.type === "research" ? "border-indigo-500/20 hover:border-indigo-500/40" : "border-amber-500/20 hover:border-amber-500/40"}`}
     >
       <div className="flex items-center gap-3 text-xs text-muted-foreground/60">
         <Badge variant="secondary" className="text-[10px] font-normal capitalize">{digest.type}</Badge>
@@ -230,7 +230,7 @@ function CompactDigest({ digest }: { digest: DigestItem }) {
       className="group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/30"
     >
       {/* Type indicator — thin colored bar */}
-      <div className={`mt-1 h-8 w-1 shrink-0 rounded-full ${digest.type === "research" ? "bg-blue-500/60" : "bg-emerald-500/60"}`} />
+      <div className={`mt-1 h-8 w-1 shrink-0 rounded-full ${digest.type === "research" ? "bg-indigo-400/70" : "bg-amber-400/70"}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-medium text-foreground/90 group-hover:text-primary transition-colors truncate">
