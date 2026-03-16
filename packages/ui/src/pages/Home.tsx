@@ -52,6 +52,13 @@ function extractSummary(sections: Record<string, unknown> | undefined): string |
 
 type DigestItem = { id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string };
 
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -139,11 +146,11 @@ function DigestFeed() {
   if (digests.length === 0) {
     return (
       <section>
-        <h1 className="mb-6 text-2xl font-bold tracking-tight text-foreground">Your Digests</h1>
+        <h1 className="mb-6 text-2xl font-bold tracking-tight text-foreground">{greeting()}</h1>
         <div className="py-20 text-center">
-          <p className="text-base text-muted-foreground">No digests yet</p>
+          <p className="text-lg text-muted-foreground">Your inbox is clear</p>
           <p className="mt-2 text-sm text-muted-foreground/60">
-            Create a <Link to="/watches" className="text-primary hover:underline">Watch</Link> to start receiving research digests.
+            Tell pai what to <Link to="/watches" className="text-primary hover:underline">keep track of</Link> and digests will start appearing here.
           </p>
         </div>
       </section>
@@ -154,7 +161,7 @@ function DigestFeed() {
 
   return (
     <section>
-      <h1 className="mb-6 text-2xl font-bold tracking-tight text-foreground">Your Digests</h1>
+      <h1 className="mb-6 text-2xl font-bold tracking-tight text-foreground">{greeting()}</h1>
 
       {/* HERO — latest digest, bigger treatment */}
       {hero && <HeroDigest digest={hero} />}
@@ -171,7 +178,11 @@ function DigestFeed() {
             )}
           </div>
           <div className="space-y-1">
-            {rest.slice(0, 9).map((d) => <CompactDigest key={d.id} digest={d} />)}
+            {rest.slice(0, 9).map((d, i) => (
+              <div key={d.id} className="animate-in fade-in slide-in-from-bottom-1" style={{ animationDelay: `${i * 50}ms`, animationFillMode: "both" }}>
+                <CompactDigest digest={d} />
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -187,7 +198,7 @@ function HeroDigest({ digest }: { digest: DigestItem }) {
   return (
     <Link
       to={`/digests/${digest.id}`}
-      className="group block rounded-xl border border-border/30 bg-card/50 p-5 transition-all hover:border-border/50 hover:bg-card/70 hover:shadow-sm"
+      className="group block rounded-xl border border-border/30 bg-card/50 p-5 transition-all duration-200 hover:border-border/50 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-md"
     >
       <div className="flex items-center gap-3 text-xs text-muted-foreground/60">
         <Badge variant="secondary" className="text-[10px] font-normal capitalize">{digest.type}</Badge>
@@ -255,7 +266,7 @@ function WatchesPanel() {
           {items.map((w) => (
             <li key={w.id}>
               <Link to="/watches" className="flex items-center gap-2 rounded px-1 py-1 text-[13px] transition-colors hover:bg-muted/40">
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${w.status === "active" ? "bg-emerald-500" : "bg-amber-400"}`} />
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${w.status === "active" ? "bg-emerald-500 animate-pulse" : "bg-amber-400"}`} />
                 <span className="min-w-0 flex-1 truncate text-foreground/75">{w.title}</span>
               </Link>
             </li>
@@ -281,14 +292,14 @@ function TodosPanel() {
       ) : (
         <ul className="space-y-0.5">
           {items.map((t) => (
-            <li key={t.id} className="flex items-start gap-2 rounded px-1 py-1 text-[13px] hover:bg-muted/40">
+            <li key={t.id} className="group/todo flex items-start gap-2 rounded px-1 py-1 text-[13px] transition-opacity hover:bg-muted/40">
               <button
                 type="button"
                 disabled={completeMut.isPending}
                 onClick={() => completeMut.mutate(t.id)}
-                className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border border-border/40 hover:border-primary hover:bg-primary/10"
+                className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border border-border/40 transition-all hover:border-emerald-500 hover:bg-emerald-500/20 active:scale-90"
               />
-              <span className="min-w-0 flex-1 text-foreground/75 line-clamp-1">{t.title}</span>
+              <span className="min-w-0 flex-1 text-foreground/75 line-clamp-1 group-hover/todo:text-foreground transition-colors">{t.title}</span>
             </li>
           ))}
         </ul>
