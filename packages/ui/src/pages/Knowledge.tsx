@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { NavLink, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -279,6 +279,28 @@ export default function Knowledge() {
   return (
     <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Library navigation tabs */}
+        <nav className="flex items-center gap-1 border-b border-border/30 px-3 md:px-6">
+          {[
+            { to: "/library", label: "Memories" },
+            { to: "/library/documents", label: "Documents" },
+          ].map((tab) => (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              end={tab.to === "/library"}
+              className={({ isActive }) =>
+                `px-3 py-2.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "border-b-2 border-primary text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`
+              }
+            >
+              {tab.label}
+            </NavLink>
+          ))}
+        </nav>
         <FirstVisitBanner pageKey="knowledge" tip="Teach me web pages, docs, or articles. Paste a URL and I'll learn from it — then reference it when you ask questions." />
         <header className="space-y-2 border-b border-border/40 bg-background px-3 py-3 md:space-y-4 md:px-6 md:py-4">
           <div className="flex items-center justify-between gap-2">

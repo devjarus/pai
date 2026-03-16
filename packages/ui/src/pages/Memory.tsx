@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { NavLink } from "react-router-dom";
 import { toast } from "sonner";
 import BeliefCard from "../components/BeliefCard";
 import {
@@ -217,6 +218,28 @@ export default function Memory() {
   return (
     <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Library navigation tabs */}
+        <nav className="flex items-center gap-1 border-b border-border/30 px-3 md:px-6">
+          {[
+            { to: "/library", label: "Memories" },
+            { to: "/library/documents", label: "Documents" },
+          ].map((tab) => (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              end={tab.to === "/library"}
+              className={({ isActive }) =>
+                `px-3 py-2.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "border-b-2 border-primary text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`
+              }
+            >
+              {tab.label}
+            </NavLink>
+          ))}
+        </nav>
         <FirstVisitBanner pageKey="memory" tip="Everything I know about you — built automatically from our conversations. Memories evolve as you share more." />
         <header className="space-y-2 border-b border-border/40 bg-background px-3 py-3 md:space-y-4 md:px-6 md:py-4">
           <div className="flex items-center justify-between gap-2">
