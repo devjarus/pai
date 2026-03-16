@@ -31,6 +31,7 @@
     "@ai-sdk/cerebras": "^2.0.39",
     "@ai-sdk/google": "^3.0.30",
     "@ai-sdk/openai": "^3.0.29",
+    "@openrouter/ai-sdk-provider": "^2.3.1",
     "ai": "^6.0.0",
     "ai-sdk-ollama": "^3.7.0",
     "bcryptjs": "^3.0.3",

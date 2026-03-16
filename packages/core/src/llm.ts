@@ -4,6 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createCerebras } from "@ai-sdk/cerebras";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ai-sdk-ollama";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LLMClient, ChatMessage, ChatOptions, ChatResult, StreamEvent, Config, Logger, Storage, EmbedOptions } from "./types.js";
 import { createLogger } from "./logger.js";
 import { instrumentedEmbed, instrumentedGenerateText, instrumentedStreamText } from "./telemetry.js";
@@ -59,6 +60,8 @@ function createProviderModel(provider: Config["llm"]["provider"], model: string,
       return createCerebras({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
     case "google":
       return createGoogleGenerativeAI({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
+    case "openrouter":
+      return createOpenRouter({ apiKey: apiKey ?? "" })(model);
     case "openai":
     default:
       return createOpenAI({ baseURL: baseUrl, apiKey: apiKey ?? "" })(model);
@@ -73,6 +76,9 @@ function createProviderEmbedding(provider: string, embedModelName: string, baseU
       return createOpenAI({ baseURL: baseUrl, apiKey: apiKey ?? "" }).textEmbeddingModel(embedModelName);
     case "google":
       return createGoogleGenerativeAI({ baseURL: baseUrl, apiKey: apiKey ?? "" }).textEmbeddingModel(embedModelName);
+    case "openrouter":
+      // OpenRouter supports embeddings via OpenAI-compatible endpoint
+      return createOpenAI({ baseURL: "https://openrouter.ai/api/v1", apiKey: apiKey ?? "" }).textEmbeddingModel(embedModelName);
     case "cerebras":
     case "anthropic":
       // Anthropic and Cerebras do not offer native embeddings; return null to trigger local fallback
@@ -143,6 +149,7 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
     ollama: "nomic-embed-text",
     openai: "text-embedding-3-small",
     google: "text-embedding-004",
+    openrouter: "text-embedding-3-small",
   };
   const defaultEmbedModel = defaultEmbedModels[effectiveEmbedProvider] ?? "text-embedding-3-small";
   const embedModelName = llmConfig.embedModel ?? defaultEmbedModel;
@@ -309,6 +316,12 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
           headers: { Authorization: `Bearer ${apiKey ?? ""}` },
         });
         return { ok: res.ok, provider: "cerebras" };
+      }
+      if (provider === "openrouter") {
+        const res = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: { Authorization: `Bearer ${apiKey ?? ""}` },
+        });
+        return { ok: res.ok, provider: "openrouter" };
       }
       // openai (default)
       const res = await fetch(`${baseUrl}/models`, {

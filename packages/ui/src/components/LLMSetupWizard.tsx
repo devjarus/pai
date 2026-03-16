@@ -9,7 +9,7 @@ const isCloudDeployment =
   window.location.hostname !== "localhost" &&
   window.location.hostname !== "127.0.0.1";
 
-type ProviderKey = "ollama-local" | "ollama-cloud" | "openai" | "anthropic" | "google" | "cerebras";
+type ProviderKey = "ollama-local" | "ollama-cloud" | "openai" | "anthropic" | "google" | "cerebras" | "openrouter";
 
 const PROVIDERS: Record<ProviderKey, {
   label: string;
@@ -82,6 +82,17 @@ const PROVIDERS: Record<ProviderKey, {
     embedModel: "text-embedding-3-small",
     needsKey: true,
     keyUrl: "https://cloud.cerebras.ai/",
+  },
+  openrouter: {
+    label: "OpenRouter",
+    description: "300+ models — one key, pay per use",
+    provider: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: "anthropic/claude-sonnet-4",
+    embedModel: "text-embedding-3-small",
+    needsKey: true,
+    keyUrl: "https://openrouter.ai/keys",
+    badge: "Multi-model",
   },
 };
 
