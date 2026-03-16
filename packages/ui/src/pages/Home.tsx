@@ -39,7 +39,10 @@ const JUNK_PATTERNS = [
   /^I (apologize|was unable|encountered|cannot)/i,
   /^(Let me|I'll now|I can now|Here('s| is))/i,
   /^This brief summarizes/i,
+  /^A new research run completed/i,
+  /^Unable to retrieve/i,
   /^\{/,
+  /^research and compile/i,
 ];
 
 function isJunkSummary(text: string): boolean {
