@@ -1548,14 +1548,16 @@ export async function runResearchInBackground(
       // Ingest findings into Library so future runs can build on them
       try {
         // Extract actual sources from the brief's evidence section
+        // Extract sources from evidence — try sourceUrl first, fall back to sourceLabel if it looks like a URL
         const evidenceSources = (briefSection.evidence || [])
-          .filter((e: { sourceUrl?: string }) => e.sourceUrl)
+          .filter((e: { sourceUrl?: string; sourceLabel?: string }) => e.sourceUrl || (e.sourceLabel && e.sourceLabel.startsWith("http")))
           .map((e: { sourceUrl?: string; title?: string; sourceLabel?: string }) => ({
-            url: e.sourceUrl!,
+            url: e.sourceUrl || e.sourceLabel || "",
             title: e.title || e.sourceLabel || "Source",
             fetchedAt: new Date().toISOString(),
             relevance: 0.8,
-          }));
+          }))
+          .filter((s: { url: string }) => s.url.length > 0);
 
         // Derive confidence from research completeness
         const budgetUsed = (job.searchesUsed || 0) + (job.pagesLearned || 0);
@@ -1564,13 +1566,31 @@ export async function runResearchInBackground(
           ? Math.min(0.95, 0.5 + 0.45 * (budgetUsed / budgetTotal))
           : 0.6;
 
-        // Extract clean summary — strip LLM preamble
-        let summary = briefSection.recommendation?.summary || "";
+        // Extract clean summary — handle JSON objects, strip LLM preamble
+        let summary = "";
+        const rec = briefSection.recommendation;
+        if (rec) {
+          // recommendation.summary might be a string or the recommendation itself might be a JSON string
+          const rawSummary = typeof rec === "string" ? rec : typeof rec.summary === "string" ? rec.summary : "";
+          // If it looks like JSON, try to extract the summary field from it
+          if (rawSummary.trim().startsWith("{")) {
+            try {
+              const parsed = JSON.parse(rawSummary) as Record<string, unknown>;
+              summary = (parsed.summary as string) || (parsed.topic as string) || rawSummary.slice(0, 500);
+            } catch {
+              summary = rawSummary;
+            }
+          } else {
+            summary = rawSummary;
+          }
+        }
         if (!summary || summary.length < 20) {
-          summary = presentation.report.slice(0, 500);
+          // Fall back to first substantive line of the report
+          const lines = presentation.report.split("\n").filter((l: string) => l.trim().length > 20 && !l.startsWith("#"));
+          summary = lines[0]?.trim() || presentation.report.slice(0, 500);
         }
         // Strip common LLM preamble patterns
-        summary = summary.replace(/^(Based on (my |the )?research[^.]*\.|I (can now |will now )?compile[^.]*\.|Here('s| is)[^.]*:\s*)/i, "").trim();
+        summary = summary.replace(/^(Based on (my |the )?research[^.]*\.|I (can now |will now )?compile[^.]*\.|Here('s| is)[^.]*:\s*|Let me[^.]*\.\s*)/i, "").trim();
         if (!summary) summary = presentation.report.slice(0, 500);
 
         // Determine actual depth from budget
