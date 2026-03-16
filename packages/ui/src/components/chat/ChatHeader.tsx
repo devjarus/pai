@@ -115,7 +115,7 @@ export function ChatHeader({
             </TooltipContent>
           </Tooltip>
 
-          <h1 className="truncate font-mono text-sm font-medium text-foreground">
+          <h1 className="truncate text-sm font-semibold text-foreground">
             {activeThread?.title ?? "Chat"}
           </h1>
           {agents.length > 1 && (

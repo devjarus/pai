@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useConfig, useUpdateConfig, useMemoryStats, useBrowseDir, useHealth, useLearningRuns } from "@/hooks";
+import { useNewUI } from "@/hooks/use-new-ui";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +44,7 @@ export default function Settings() {
   const { data: learningData } = useLearningRuns();
   const { logout } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { newUI, toggleNewUI } = useNewUI();
   const navigate = useNavigate();
 
   const loading = configLoading || statsLoading;
@@ -515,6 +517,17 @@ export default function Settings() {
                   System
                 </Button>
               </div>
+            </div>
+            <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-3">
+              <label className="text-xs text-muted-foreground">New UI (experimental)</label>
+              <Button
+                variant={newUI ? "default" : "ghost"}
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                onClick={toggleNewUI}
+              >
+                {newUI ? "On" : "Off"}
+              </Button>
             </div>
           </CardContent>
         </Card>

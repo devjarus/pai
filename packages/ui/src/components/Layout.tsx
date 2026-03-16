@@ -7,8 +7,16 @@ import { OfflineBanner } from "./OfflineBanner";
 import { MobileTabBar } from "./MobileTabBar";
 import { useInboxAll } from "@/hooks/use-inbox";
 
-const navItems = [
+const legacyNavItems = [
   { to: "/", label: "Home", icon: IconInbox },
+  { to: "/programs", label: "Programs", icon: IconPrograms },
+  { to: "/ask", label: "Ask", icon: IconChat },
+  { to: "/memory", label: "Memory", icon: IconMemory },
+  { to: "/settings", label: "Settings", icon: IconSettings },
+];
+
+const newNavItems = [
+  { to: "/", label: "Briefs", icon: IconInbox },
   { to: "/programs", label: "Programs", icon: IconPrograms },
   { to: "/ask", label: "Ask", icon: IconChat },
   { to: "/memory", label: "Memory", icon: IconMemory },
@@ -17,8 +25,11 @@ const navItems = [
 
 const INBOX_SEEN_KEY = "pai-last-seen-briefing-id";
 
+import { useNewUI } from "@/hooks/use-new-ui";
+
 export default function Layout() {
   const location = useLocation();
+  const { newUI, toggleNewUI } = useNewUI();
 
   // Shared inbox query — reuses cache with Inbox page, polls every 30 min
   const { data: inboxData } = useInboxAll();
@@ -38,7 +49,21 @@ export default function Layout() {
   }, [location.pathname, latestId]);
 
   return (
-    <div className="flex h-dvh w-screen overflow-hidden bg-background">
+    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-background">
+      {/* New UI toggle bar */}
+      <div className="flex h-8 shrink-0 items-center justify-between border-b border-border/30 bg-primary/5 px-4">
+        <span className="text-[11px] text-muted-foreground">
+          {newUI ? "✨ New UI active" : "Legacy UI"}
+        </span>
+        <button
+          onClick={() => { toggleNewUI(); window.location.reload(); }}
+          className="rounded-full border border-border/50 bg-background px-3 py-0.5 text-[10px] font-medium text-foreground transition-colors hover:bg-accent"
+        >
+          {newUI ? "Switch to Legacy" : "Try New UI"}
+        </button>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
       {/* Desktop sidebar — hidden on mobile, replaced by bottom tab bar */}
       <nav className="hidden md:flex h-full w-14 flex-col items-center border-r border-border/40 bg-background py-4">
         {/* Branding */}
@@ -50,7 +75,7 @@ export default function Layout() {
 
         {/* Nav icons */}
         <div className="flex flex-1 flex-col items-center gap-1">
-          {navItems.map((item) => (
+          {(newUI ? newNavItems : legacyNavItems).map((item) => (
             <Tooltip key={item.to}>
               <TooltipTrigger asChild>
                 <div className="relative">
@@ -92,6 +117,7 @@ export default function Layout() {
 
       {/* Mobile bottom tab bar */}
       <MobileTabBar hasNewBriefing={hasNewBriefing} />
+      </div>
     </div>
   );
 }
