@@ -59,6 +59,26 @@ Memory = `Belief` · Document = `KnowledgeSource` · Finding = `ResearchFinding`
 - Agent harness: plan → execute → reflect → ingest
 - Research: depth levels + delta context = compounding knowledge
 
+## Checking Product Quality (server must be running)
+
+When fixing product issues, check live data to verify your fix works:
+
+```bash
+# Research findings — should have real summaries, sources, varied confidence
+curl -s localhost:3141/api/library/findings | jq '.[0] | {summary,sources,confidence}'
+
+# Digest quality — should have recommendation, evidence, next_actions
+curl -s localhost:3141/api/digests/latest | jq '.sections | {recommendation,evidence,next_actions}'
+
+# Error rates — should be low
+curl -s localhost:3141/api/observability/overview | jq '{errorCount,totalSpans}'
+
+# Watch health — none should be overdue
+curl -s localhost:3141/api/watches | jq '.[] | select(.status=="active") | {title,nextRunAt}'
+```
+
+Before/after pattern: capture the output before your fix, make the fix, rebuild, restart, capture again. The diff is your proof.
+
 ## This File
 
 Living document. If you find a pattern or gotcha, add it. If something is wrong, fix it. Keep it under 80 lines.
