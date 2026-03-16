@@ -56,7 +56,7 @@ export default function HomeBriefs() {
           <section className="mb-10">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground/60">Active Programs</h2>
-              <button onClick={() => navigate("/programs")} className="flex items-center gap-0.5 text-[11px] text-primary hover:underline">
+              <button onClick={() => navigate("/programs")} className="flex items-center gap-1 text-[11px] text-primary hover:underline">
                 View all <ChevronRightIcon className="size-3" />
               </button>
             </div>
@@ -69,14 +69,14 @@ export default function HomeBriefs() {
                   style={{ minWidth: 200 }}
                 >
                   <p className="truncate text-sm font-medium text-foreground">{p.title}</p>
-                  <div className="mt-1.5 flex items-center gap-2">
-                    {p.phase && <Badge variant="outline" className="h-4 px-1.5 text-[9px]">{p.phase}</Badge>}
+                  <div className="mt-2 flex items-center gap-2">
+                    {p.phase && <Badge variant="outline" className="h-4 px-2 text-[9px]">{p.phase}</Badge>}
                     <span className="text-[10px] text-muted-foreground/50">
                       {p.latestBriefSummary ? timeAgo(p.latestBriefSummary.generatedAt) : "No briefs yet"}
                     </span>
                   </div>
                   {p.actionSummary && p.actionSummary.openCount > 0 && (
-                    <p className="mt-1.5 text-[10px] text-amber-400">{p.actionSummary.openCount} open action{p.actionSummary.openCount !== 1 ? "s" : ""}</p>
+                    <p className="mt-2 text-[10px] text-amber-400">{p.actionSummary.openCount} open action{p.actionSummary.openCount !== 1 ? "s" : ""}</p>
                   )}
                 </button>
               ))}
@@ -91,7 +91,7 @@ export default function HomeBriefs() {
           {isLoading && (
             <div className="space-y-8">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="space-y-3 rounded-lg border border-border/30 p-5">
+                <div key={i} className="space-y-3 rounded-lg border border-border/30 p-4">
                   <Skeleton className="h-3 w-20" />
                   <Skeleton className="h-5 w-3/4" />
                   <Skeleton className="h-12 w-full" />
@@ -105,7 +105,7 @@ export default function HomeBriefs() {
             <p className="py-16 text-center text-sm text-muted-foreground">No briefs yet. Create a Program to start.</p>
           )}
 
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-6">
             {briefings.map((brief) => {
               const s = brief.sections as BriefSections;
               const title = s.title || s.greeting?.slice(0, 80) || (brief.type === "research" ? "Research Report" : "Daily Briefing");
@@ -120,7 +120,7 @@ export default function HomeBriefs() {
               return (
                 <article
                   key={brief.id}
-                  className="group rounded-lg border border-border/30 bg-card/30 p-5 transition-colors hover:bg-card/50"
+                  className="group rounded-lg border border-border/30 bg-card/30 p-4 transition-colors hover:bg-card/50"
                 >
                   {/* Clickable collapsed header */}
                   <button
@@ -130,14 +130,14 @@ export default function HomeBriefs() {
                   >
                     <ChevronDownIcon
                       className={cn(
-                        "mt-0.5 size-4 shrink-0 text-muted-foreground/40 transition-transform duration-200",
+                        "mt-1 size-4 shrink-0 text-muted-foreground/40 transition-transform duration-200",
                         isExpanded ? "rotate-0" : "-rotate-90"
                       )}
                     />
                     <div className="min-w-0 flex-1">
                       {/* Badge + timestamp */}
                       <div className="mb-2 flex items-center gap-2">
-                        <Badge variant="outline" className="h-4 px-1.5 text-[9px]">
+                        <Badge variant="outline" className="h-4 px-2 text-[9px]">
                           {brief.type === "research" ? "Research" : "Brief"}
                         </Badge>
                         <span className="text-[10px] text-muted-foreground/40">{timeAgo(brief.generatedAt)}</span>
@@ -206,7 +206,7 @@ export default function HomeBriefs() {
                           <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/50">Memory Used</h4>
                           {memories.slice(0, 2).map((m, i) => (
                             <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-                              <AlertCircleIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground/40" />
+                              <AlertCircleIcon className="mt-1 size-3 shrink-0 text-muted-foreground/40" />
                               <span>{m.statement}</span>
                             </div>
                           ))}
