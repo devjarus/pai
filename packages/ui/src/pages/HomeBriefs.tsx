@@ -106,7 +106,7 @@ export default function HomeBriefs() {
           )}
 
           <div className="flex flex-col gap-6">
-            {briefings.map((brief) => {
+            {briefings.map((brief, i) => {
               const s = brief.sections as BriefSections;
               const title = s.title || s.greeting?.slice(0, 80) || (brief.type === "research" ? "Research Report" : "Daily Briefing");
               const rec = s.recommendation;
@@ -120,7 +120,8 @@ export default function HomeBriefs() {
               return (
                 <article
                   key={brief.id}
-                  className="group rounded-lg border border-border/30 bg-card/30 p-4 transition-colors hover:bg-card/50"
+                  className="group animate-in fade-in-0 duration-300 rounded-lg border border-border/30 bg-card/30 p-4 transition-colors hover:bg-card/50"
+                  style={{ animationDelay: `${i * 50}ms` }}
                 >
                   {/* Clickable collapsed header */}
                   <button

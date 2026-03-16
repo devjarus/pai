@@ -171,9 +171,10 @@ export default function ProgramsNew() {
                   <span key={h} className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">{h}</span>
                 ))}
               </div>
-              {filtered.map((program) => (
+              {filtered.map((program, i) => (
                 <div key={program.id} onClick={() => navigate(`/programs?id=${program.id}`)}
-                  className="grid cursor-pointer grid-cols-[2fr_1fr_1fr_1.5fr_auto] items-center gap-3 border-b border-border/10 px-4 py-3 transition-colors hover:bg-card/30 last:border-b-0">
+                  className="grid cursor-pointer animate-in fade-in-0 duration-300 grid-cols-[2fr_1fr_1fr_1.5fr_auto] items-center gap-3 border-b border-border/10 px-4 py-3 transition-colors hover:bg-card/30 last:border-b-0"
+                  style={{ animationDelay: `${i * 50}ms` }}>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-foreground">{program.title}</p>
                     <div className="mt-1 flex items-center gap-2">
