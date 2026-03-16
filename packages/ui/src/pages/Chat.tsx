@@ -35,11 +35,19 @@ function messageToHistoryEntry(
 export default function Chat() {
   const [selectedAgent, setSelectedAgent] = useState<string | undefined>();
   const [showMemories, setShowMemories] = useState(false);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(() => {
+    return localStorage.getItem("pai-active-thread-id") || null;
+  });
   const [threadSidebarOpen, setThreadSidebarOpen] = useState(true);
 
   const activeThreadIdRef = useRef(activeThreadId);
   activeThreadIdRef.current = activeThreadId;
+
+  // Persist active thread across navigation
+  useEffect(() => {
+    if (activeThreadId) localStorage.setItem("pai-active-thread-id", activeThreadId);
+    else localStorage.removeItem("pai-active-thread-id");
+  }, [activeThreadId]);
 
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
