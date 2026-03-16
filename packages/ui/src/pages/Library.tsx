@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { Link } from "react-router-dom";
 import {
   useBeliefs,
   useKnowledgeSources,
@@ -119,9 +120,15 @@ export default function Library() {
           {isSearchMode ? (
             <SearchResultsView results={searchResults} isSearching={isSearching} query={searchQuery} />
           ) : tab === "memories" ? (
-            <MemoriesTab />
+            <>
+              <MemoriesTab />
+              <ManageLink to="/library/memories" label="Manage memories — browse, edit, forget, clear" />
+            </>
           ) : tab === "documents" ? (
-            <DocumentsTab />
+            <>
+              <DocumentsTab />
+              <ManageLink to="/library/documents" label="Manage documents — view chunks, learn URLs, delete" />
+            </>
           ) : (
             <FindingsTab />
           )}
@@ -378,6 +385,16 @@ function EmptyState({ icon, message, sub }: { icon: React.ReactNode; message: st
       <div className="mb-4 opacity-20">{icon}</div>
       <p>{message}</p>
       <p className="mt-1 text-xs">{sub}</p>
+    </div>
+  );
+}
+
+function ManageLink({ to, label }: { to: string; label: string }) {
+  return (
+    <div className="mt-6 border-t border-border/20 pt-4">
+      <Link to={to} className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors">
+        {label} <span className="text-xs">→</span>
+      </Link>
     </div>
   );
 }

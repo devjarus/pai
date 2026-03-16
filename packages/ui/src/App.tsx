@@ -18,7 +18,8 @@ import Library from "./pages/Library";
 import Programs from "./pages/Programs";
 import Timeline from "./pages/Timeline";
 import Settings from "./pages/Settings";
-// Knowledge page now redirects to /library; import removed.
+import Memory from "./pages/Memory";
+import Knowledge from "./pages/Knowledge";
 import Tasks from "./pages/Tasks";
 import Home from "./pages/Home";
 import Inbox from "./pages/Inbox";
@@ -101,6 +102,8 @@ export default function App() {
             <Route path="/ask" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
             <Route path="/chat" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
             <Route path="/library" element={<ErrorBoundary><Library /></ErrorBoundary>} />
+            <Route path="/library/memories" element={<ErrorBoundary><Memory /></ErrorBoundary>} />
+            <Route path="/library/documents" element={<ErrorBoundary><Knowledge /></ErrorBoundary>} />
             <Route path="/memory" element={<Navigate to="/library" replace />} />
             <Route path="/timeline" element={<ErrorBoundary><Timeline /></ErrorBoundary>} />
             <Route path="/knowledge" element={<Navigate to="/library" replace />} />
