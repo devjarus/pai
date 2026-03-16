@@ -152,8 +152,28 @@ function ChatInner({
     if (initializedRef.current) return;
 
     const threadParam = searchParams.get("thread");
+    const questionParam = searchParams.get("q");
+
+    if (!threadParam && !questionParam) {
+      initializedRef.current = true;
+      return;
+    }
+
+    // Quick Ask flow: start a new thread with the question from Home
+    if (questionParam && !threadParam) {
+      initializedRef.current = true;
+      // Clear the q param from URL
+      setSearchParams({}, { replace: true });
+      // Clear active thread to start fresh, then auto-send
+      setActiveThreadId(null);
+      activeThreadIdRef.current = null;
+      setTimeout(() => {
+        handleRef.current?.sendMessage?.({ parts: [{ type: "text", text: questionParam }] });
+      }, 500);
+      return;
+    }
+
     if (!threadParam) {
-      // No thread param — mark initialized so we don't re-run
       initializedRef.current = true;
       return;
     }
