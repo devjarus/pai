@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PluginContext } from "@personal-ai/core";
 import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads, cleanupOldTelemetrySpans, startSpan, finishSpan } from "@personal-ai/core";
+import { cleanupFindings } from "@personal-ai/library";
 import { getDueSchedules, markScheduleRun } from "@personal-ai/plugin-schedules";
 import { resolveDepthForWatch, getPreviousFindingsContext } from "@personal-ai/watches";
 import { getLatestBriefing } from "./briefing.js";
@@ -187,6 +188,18 @@ export class WorkerLoop {
         this.ctx.logger.warn(`Artifact cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     }, artifactCleanupMs);
+
+    // --- Findings cleanup (keep 5 per watch, delete orphans > 30 days) ---
+    setInterval(() => {
+      this.runWorkerTask("worker.cleanup", async () => {
+        const deleted = cleanupFindings(this.ctx.storage, { maxAgeDays: 30, keepPerWatch: 5 });
+        if (deleted > 0) {
+          this.ctx.logger.info(`Findings cleanup: pruned ${deleted} old finding(s)`);
+        }
+      }).catch((err) => {
+        this.ctx.logger.warn(`Findings cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS); // same 24h interval as telemetry
 
     const telemetryCleanupMs = DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS;
     this.telemetryCleanupTimer = setInterval(() => {

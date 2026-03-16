@@ -198,3 +198,42 @@ export function listFindingsForWatch(storage: Storage, watchId: string): Researc
 export function deleteFinding(storage: Storage, id: string): void {
   storage.run("DELETE FROM research_findings WHERE id = ?", [id]);
 }
+
+/**
+ * Remove findings older than maxAgeDays. Keeps the most recent `keepPerWatch`
+ * findings for each watch regardless of age.
+ */
+export function cleanupFindings(storage: Storage, options?: { maxAgeDays?: number; keepPerWatch?: number }): number {
+  const maxAge = options?.maxAgeDays ?? 30;
+  const keepPerWatch = options?.keepPerWatch ?? 5;
+
+  // First: delete orphaned findings (no watch) older than maxAge
+  const cutoff = new Date(Date.now() - maxAge * 24 * 60 * 60 * 1000).toISOString();
+  const orphanResult = storage.run(
+    "DELETE FROM research_findings WHERE watch_id IS NULL AND created_at < ?",
+    [cutoff],
+  );
+
+  // Second: for each watch, keep only the most recent N findings
+  const watches = storage.query<{ watch_id: string }>(
+    "SELECT DISTINCT watch_id FROM research_findings WHERE watch_id IS NOT NULL",
+  );
+
+  let watchPruned = 0;
+  for (const { watch_id } of watches) {
+    const excess = storage.query<{ id: string }>(
+      `SELECT id FROM research_findings WHERE watch_id = ? ORDER BY created_at DESC LIMIT -1 OFFSET ?`,
+      [watch_id, keepPerWatch],
+    );
+    if (excess.length > 0) {
+      const ids = excess.map((r) => r.id);
+      // Also enforce age — only delete excess that are older than maxAge
+      for (const id of ids) {
+        storage.run("DELETE FROM research_findings WHERE id = ? AND created_at < ?", [id, cutoff]);
+        watchPruned++;
+      }
+    }
+  }
+
+  return (orphanResult.changes ?? 0) + watchPruned;
+}
