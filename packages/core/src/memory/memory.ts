@@ -1578,9 +1578,29 @@ export async function retrieveContext(
     }
   }
 
+  // --- Research findings (from Library) ---
+  let findings: Array<{ summary: string; domain: string; goal: string; createdAt: string }> = [];
+  try {
+    // Dynamic import to avoid circular dependency — library depends on core
+    const ftsQuery = query.split(/\s+/).filter(w => w.length > 2).map(w => `"${w}"`).join(" OR ");
+    if (ftsQuery) {
+      const rows = storage.query<{ summary: string; domain: string; goal: string; created_at: string }>(
+        `SELECT rf.summary, rf.domain, rf.goal, rf.created_at
+         FROM research_findings rf
+         JOIN research_findings_fts fts ON rf.rowid = fts.rowid
+         WHERE research_findings_fts MATCH ?
+         ORDER BY fts.rank LIMIT 5`,
+        [ftsQuery],
+      );
+      findings = rows.map(r => ({ summary: r.summary, domain: r.domain, goal: r.goal, createdAt: r.created_at }));
+    }
+  } catch {
+    // research_findings table may not exist — continue without
+  }
+
   // --- Format ---
   beliefs.sort((a, b) => b.confidence - a.confidence);
-  const formatted = formatUnifiedContext(beliefs, knowledge, episodes);
+  const formatted = formatUnifiedContext(beliefs, knowledge, episodes, findings);
 
   return { beliefs, knowledge, formatted };
 }
@@ -1589,6 +1609,7 @@ function formatUnifiedContext(
   beliefs: UnifiedRetrievalResult["beliefs"],
   knowledge: UnifiedRetrievalResult["knowledge"],
   episodes: Array<{ action: string; timestamp: string }>,
+  findings?: Array<{ summary: string; domain: string; goal: string; createdAt: string }>,
 ): string {
   const sections: string[] = [];
 
@@ -1613,6 +1634,12 @@ function formatUnifiedContext(
       return `- [knowledge|${pct}%] (${src}) ${snippet}`;
     }).join("\n");
     sections.push(`## Knowledge base\n${lines}`);
+  }
+
+  // Research findings section
+  if (findings && findings.length > 0) {
+    const lines = findings.map((f) => `- [${f.domain}|${f.createdAt}] ${f.summary.slice(0, 200)}`).join("\n");
+    sections.push(`## Research findings\n${lines}`);
   }
 
   // Episodes section

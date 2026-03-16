@@ -86,6 +86,7 @@ export interface BriefingContextInput {
     episodes: number;
   };
   knowledgeSources: Array<{ title: string; url: string }>;
+  recentFindings?: Array<{ goal: string; summary: string; domain: string; createdAt: string; watchId?: string }>;
 }
 
 export interface BriefingRow {
@@ -1263,6 +1264,21 @@ export async function generateBriefing(
     previousBriefingSummary = "";
   }
 
+  // Fetch recent research findings from Library — this makes digests aware of accumulated research
+  let recentFindings: Array<{ goal: string; summary: string; domain: string; createdAt: string; watchId?: string }> = [];
+  try {
+    const { listFindings } = await import("@personal-ai/library");
+    recentFindings = listFindings(ctx.storage).slice(0, 10).map((f) => ({
+      goal: f.goal,
+      summary: f.summary,
+      domain: f.domain,
+      createdAt: f.createdAt,
+      watchId: f.watchId,
+    }));
+  } catch {
+    recentFindings = [];
+  }
+
   const now = new Date();
   let ownerName = "there";
   try {
@@ -1348,6 +1364,7 @@ export async function generateBriefing(
       origin: belief.origin ?? undefined,
     })),
     recentActivity: recentEpisodes.map((episode) => episode.content.slice(0, 100)),
+    recentFindings: recentFindings.length > 0 ? recentFindings : undefined,
     stats: {
       totalBeliefs: stats.beliefs.active,
       avgConfidence: stats.avgConfidence,
@@ -1402,6 +1419,7 @@ ${rawContext.recentActivity.length > 0 ? rawContext.recentActivity.join("\n") : 
 KNOWLEDGE SOURCES (${sources.length}):
 ${JSON.stringify(rawContext.knowledgeSources, null, 2)}
 
+${recentFindings.length > 0 ? `RECENT RESEARCH FINDINGS (from background research — incorporate these, don't repeat raw):\n${recentFindings.map((f) => `- [${f.domain}] ${f.summary.slice(0, 200)}`).join("\n")}\n` : ""}
 ${previousBriefingSummary ? `PREVIOUS BRIEFINGS (you MUST NOT repeat these — choose DIFFERENT angles):\n${previousBriefingSummary}\n` : ""}${feedbackContext ? `${feedbackContext}\n` : ""}
 Guidelines:
 - Recommendation comes first. The briefing should tell the user what to do, hold, or watch next.

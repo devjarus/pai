@@ -17,7 +17,7 @@ import {
   instrumentedGenerateText,
   runAgentHarness,
 } from "@personal-ai/core";
-import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent, createBrowserTools } from "@personal-ai/core";
+import { upsertJob, updateJobStatus, knowledgeSearch, appendMessages, learnFromContent, createBrowserTools, stripEnrichmentFromGoal } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import { getProgramById, recordProgramEvaluation } from "@personal-ai/plugin-schedules";
 import { ingestResearchResult } from "@personal-ai/library";
@@ -1545,23 +1545,64 @@ export async function runResearchInBackground(
         );
         updateJob(ctx.storage, jobId, { briefing_id: briefingId });
       }
-      if (job.sourceScheduleId) {
-        // Ingest findings into Library so future runs can build on them
-        try {
-          ingestResearchResult(ctx.storage, {
-            goal: job.goal,
-            domain: job.resultType || "general",
-            summary: briefSection.recommendation?.summary || presentation.report.slice(0, 500),
-            confidence: 0.7,
-            agentName: "Researcher",
-            depthLevel: "standard",
-            sources: [],
-            watchId: job.sourceScheduleId,
-            digestId: briefingId ?? undefined,
-          });
-        } catch (ingestErr) {
-          ctx.logger.warn(`Failed to ingest research finding: ${ingestErr instanceof Error ? ingestErr.message : String(ingestErr)}`);
+      // Ingest findings into Library so future runs can build on them
+      try {
+        // Extract actual sources from the brief's evidence section
+        const evidenceSources = (briefSection.evidence || [])
+          .filter((e: { sourceUrl?: string }) => e.sourceUrl)
+          .map((e: { sourceUrl?: string; title?: string; sourceLabel?: string }) => ({
+            url: e.sourceUrl!,
+            title: e.title || e.sourceLabel || "Source",
+            fetchedAt: new Date().toISOString(),
+            relevance: 0.8,
+          }));
+
+        // Derive confidence from research completeness
+        const budgetUsed = (job.searchesUsed || 0) + (job.pagesLearned || 0);
+        const budgetTotal = (job.budgetMaxSearches || 5) + (job.budgetMaxPages || 8);
+        const researchConfidence = budgetTotal > 0
+          ? Math.min(0.95, 0.5 + 0.45 * (budgetUsed / budgetTotal))
+          : 0.6;
+
+        // Extract clean summary — strip LLM preamble
+        let summary = briefSection.recommendation?.summary || "";
+        if (!summary || summary.length < 20) {
+          summary = presentation.report.slice(0, 500);
         }
+        // Strip common LLM preamble patterns
+        summary = summary.replace(/^(Based on (my |the )?research[^.]*\.|I (can now |will now )?compile[^.]*\.|Here('s| is)[^.]*:\s*)/i, "").trim();
+        if (!summary) summary = presentation.report.slice(0, 500);
+
+        // Determine actual depth from budget
+        const actualDepth = (job.budgetMaxSearches || 5) <= 2 ? "quick"
+          : (job.budgetMaxSearches || 5) >= 10 ? "deep"
+          : "standard";
+
+        // Find previous finding for this watch to link delta chain
+        let previousFindingId: string | undefined;
+        if (job.sourceScheduleId) {
+          const { listFindingsForWatch } = await import("@personal-ai/library");
+          const prev = listFindingsForWatch(ctx.storage, job.sourceScheduleId);
+          if (prev.length > 0 && prev[0]) previousFindingId = prev[0].id;
+        }
+
+        ingestResearchResult(ctx.storage, {
+          goal: stripEnrichmentFromGoal(job.goal),
+          domain: job.resultType || "general",
+          summary,
+          confidence: researchConfidence,
+          agentName: "Researcher",
+          depthLevel: actualDepth,
+          sources: evidenceSources,
+          watchId: job.sourceScheduleId ?? undefined,
+          digestId: briefingId ?? undefined,
+          previousFindingId,
+        });
+      } catch (ingestErr) {
+        ctx.logger.warn(`Failed to ingest research finding: ${ingestErr instanceof Error ? ingestErr.message : String(ingestErr)}`);
+      }
+
+      if (job.sourceScheduleId) {
 
         recordProgramEvaluation(ctx.storage, job.sourceScheduleId, {
           latestBriefId: briefingId ?? undefined,
