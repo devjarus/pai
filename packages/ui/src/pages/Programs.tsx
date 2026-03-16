@@ -8,7 +8,6 @@ import {
   EyeIcon,
   FileTextIcon,
   LayoutTemplateIcon,
-  ListTodoIcon,
   PauseIcon,
   PencilIcon,
   PlayIcon,
@@ -19,7 +18,6 @@ import {
 } from "lucide-react";
 
 import type { Program } from "../api";
-import type { Task } from "../types";
 import type { ResearchFinding } from "../types";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import {
@@ -28,7 +26,6 @@ import {
   usePauseProgram,
   usePrograms,
   useResumeProgram,
-  useTasks,
   useUpdateProgram,
   useWatches,
   useCreateWatch,
@@ -124,7 +121,6 @@ export default function Programs() {
   const programsQuery = usePrograms();
   const programs = watchesQuery.data ?? programsQuery.data ?? [];
   const isLoading = watchesQuery.isLoading && programsQuery.isLoading;
-  const { data: tasks = [] } = useTasks({ status: "all" });
 
   // Watches mutations (primary)
   const createWatch = useCreateWatch();
@@ -178,16 +174,6 @@ export default function Programs() {
     () => programs.filter((program) => program.status === "paused").length,
     [programs],
   );
-  const actionsByProgramId = useMemo(() => {
-    const grouped = new Map<string, Task[]>();
-    for (const task of tasks) {
-      if (task.source_type !== "program" || !task.source_id) continue;
-      const current = grouped.get(task.source_id) ?? [];
-      current.push(task);
-      grouped.set(task.source_id, current);
-    }
-    return grouped;
-  }, [tasks]);
 
   function resetForm() {
     setForm({
@@ -313,15 +299,6 @@ export default function Programs() {
     }
   }
 
-  function openCommitments(program: Program) {
-    const params = new URLSearchParams({
-      sourceType: "program",
-      sourceId: program.id,
-      sourceLabel: program.title,
-    });
-    navigate(`/tasks?${params.toString()}`);
-  }
-
   function openProgramPrimary(program: Program) {
     if (program.latestBriefSummary?.id) {
       navigate(`/inbox/${program.latestBriefSummary.id}`);
@@ -404,9 +381,8 @@ export default function Programs() {
               <ProgramRow
                 key={program.id}
                 program={program}
-                actions={actionsByProgramId.get(program.id) ?? []}
                 onOpenPrimary={openProgramPrimary}
-                onOpenCommitments={openCommitments}
+
                 onEdit={openEdit}
                 onDelete={setDeleting}
                 onTogglePause={handleTogglePause}
@@ -615,9 +591,7 @@ export default function Programs() {
 
 function ProgramRow({
   program,
-  actions,
   onOpenPrimary,
-  onOpenCommitments,
   onEdit,
   onDelete,
   onTogglePause,
@@ -625,9 +599,7 @@ function ProgramRow({
   onTriggerRun,
 }: {
   program: Program;
-  actions: Task[];
   onOpenPrimary: (program: Program) => void;
-  onOpenCommitments: (program: Program) => void;
   onEdit: (program: Program) => void;
   onDelete: (program: Program) => void;
   onTogglePause: (program: Program) => void;
@@ -636,11 +608,6 @@ function ProgramRow({
 }) {
   const isPaused = program.status === "paused";
   const visibleSignals = [...program.preferences.slice(0, 2), ...program.constraints.slice(0, 2)].slice(0, 3);
-  const visibleActions = [...actions]
-    .sort((a, b) => (a.status === b.status ? 0 : a.status === "open" ? -1 : 1))
-    .slice(0, 3);
-  const openActionCount = actions.filter((action) => action.status === "open").length;
-
   return (
     <div
       className={`group rounded-xl border border-border/40 bg-card/40 p-4 transition-colors hover:bg-muted/30 ${isPaused ? "opacity-70" : ""}`}
@@ -676,54 +643,29 @@ function ProgramRow({
               ))}
             </div>
           )}
-          <div className="mt-4 rounded-lg border border-border/30 bg-background/50 p-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <ListTodoIcon className="size-4 text-muted-foreground" />
-                  To-Dos
+          {/* Latest digest summary — clean, no to-dos here */}
+          {program.latestBriefSummary?.id && (
+            <div className="mt-4 rounded-lg border border-border/30 bg-background/50 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-medium text-muted-foreground">Latest digest</div>
+                  <p className="mt-1 text-sm text-foreground line-clamp-2">
+                    {program.latestBriefSummary.recommendationSummary ?? "No recommendation yet"}
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {actions.length === 0
-                    ? "No to-dos yet. Save one from the latest digest only when you want pai to remember a real manual step."
-                    : `${openActionCount} open${actions.length !== openActionCount ? `, ${actions.length - openActionCount} done` : ""} to-do${actions.length === 1 ? "" : "s"}`}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="ghost" size="sm" onClick={() => onOpenCommitments(program)}>
-                  Open To-Dos
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => onOpenPrimary(program)}>
-                  {program.latestBriefSummary?.id ? "Open Digest" : "Open Ask"}
+                <Button variant="outline" size="sm" className="shrink-0" onClick={() => onOpenPrimary(program)}>
+                  Open Digest
                 </Button>
               </div>
             </div>
-            {program.latestBriefSummary?.id && (
-              <div className="mt-3 rounded-md border border-border/20 bg-card/30 px-3 py-2">
-                <div className="text-[11px] font-medium text-foreground">Latest digest recommendation</div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {program.latestBriefSummary.recommendationSummary ?? "Open the latest digest to decide whether any recommendation is worth saving as a to-do."}
-                </p>
-              </div>
-            )}
-            {visibleActions.length > 0 && (
-              <div className="mt-3 space-y-2">
-                {visibleActions.map((action) => (
-                  <div key={action.id} className="rounded-md border border-border/20 bg-card/40 px-3 py-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm text-foreground">{action.title}</span>
-                      <Badge variant="outline" className="text-[10px] uppercase">
-                        {action.status}
-                      </Badge>
-                    </div>
-                    {action.description && (
-                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{action.description}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
+          {/* Activity indicator — show when research/swarm is running */}
+          {program.actionSummary && program.actionSummary.openCount > 0 && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="inline-block size-2 animate-pulse rounded-full bg-primary" />
+              {program.actionSummary.openCount} open to-do{program.actionSummary.openCount !== 1 ? "s" : ""} — view in Tasks
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
             {!isPaused && (
               <span>
