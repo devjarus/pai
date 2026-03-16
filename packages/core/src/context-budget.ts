@@ -6,6 +6,7 @@ const PROVIDER_DEFAULTS: Record<string, number> = {
   anthropic: 200_000,
   google: 1_000_000,
   cerebras: 131_072,
+  openrouter: 200_000,
 };
 
 export interface ContextBudget {

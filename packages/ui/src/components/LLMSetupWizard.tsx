@@ -208,7 +208,7 @@ export default function LLMSetupWizard({ onComplete, onSkip }: Props) {
 
   // Provider picker (cloud providers)
   if (step === "provider") {
-    const cloudProviders: ProviderKey[] = ["ollama-cloud", "openai", "anthropic", "google", "cerebras"];
+    const cloudProviders: ProviderKey[] = ["ollama-cloud", "openai", "anthropic", "google", "cerebras", "openrouter"];
     return (
       <div className="space-y-3">
         <p className="text-center text-xs text-muted-foreground">Pick your AI provider</p>

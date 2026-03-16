@@ -82,7 +82,7 @@ function getEnvOverrides(): string[] {
 }
 
 const updateConfigSchema = z.object({
-  provider: z.enum(["ollama", "openai", "anthropic", "google", "cerebras"]).optional(),
+  provider: z.enum(["ollama", "openai", "anthropic", "google", "cerebras", "openrouter"]).optional(),
   model: z.string().optional(),
   baseUrl: z
     .string()
@@ -311,7 +311,7 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
   // This performs a tiny generation instead of a shallow health check so
   // provider-specific quota, billing, auth, and model access issues surface.
   const testConfigSchema = z.object({
-    provider: z.enum(["ollama", "openai", "anthropic", "google", "cerebras"]),
+    provider: z.enum(["ollama", "openai", "anthropic", "google", "cerebras", "openrouter"]),
     model: z.string().min(1),
     baseUrl: z.string().url(),
     apiKey: z.string().optional(),
