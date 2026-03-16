@@ -3,7 +3,7 @@ import type { PluginContext } from "@personal-ai/core";
 import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads, cleanupOldTelemetrySpans, startSpan, finishSpan } from "@personal-ai/core";
 import { cleanupFindings } from "@personal-ai/library";
 import { getDueSchedules, markScheduleRun } from "@personal-ai/plugin-schedules";
-import { resolveDepthForWatch, getPreviousFindingsContext } from "@personal-ai/watches";
+import { resolveDepthForWatch, getPreviousFindingsContext, resolveRssRoute, fetchRssFeed, formatFeedContext } from "@personal-ai/watches";
 import { getLatestBriefing } from "./briefing.js";
 import { runBackgroundLearning } from "./learning.js";
 
@@ -265,7 +265,24 @@ export class WorkerLoop {
             lastDeliveredAt: schedule.runtimeState?.lastDeliveredAt,
           });
           const findingsContext = getPreviousFindingsContext(this.ctx.storage, schedule.id);
-          const fullGoal = enrichedGoal + findingsContext;
+
+          // Try to pre-fetch RSS feed data for this Watch goal
+          let rssContext = "";
+          try {
+            const rssMatch = resolveRssRoute(schedule.goal);
+            if (rssMatch) {
+              const rsshubUrl = this.ctx.config.rsshubUrl || "https://rsshub.app";
+              const items = await fetchRssFeed(rsshubUrl, rssMatch.route, { filter: rssMatch.filter, limit: 15 });
+              if (items && items.length > 0) {
+                rssContext = formatFeedContext(items, rssMatch.label);
+                this.ctx.logger.info(`RSS feed pre-fetched for Watch`, { watchId: schedule.id, route: rssMatch.route, items: items.length });
+              }
+            }
+          } catch {
+            // RSS pre-fetch failed — continue with web search
+          }
+
+          const fullGoal = enrichedGoal + findingsContext + rssContext;
           const depth = resolveDepthForWatch({ depthLevel: (schedule as { depthLevel?: "quick" | "standard" | "deep" }).depthLevel }, false);
           await this.ctx.backgroundJobs?.enqueueResearch?.({
             goal: fullGoal,

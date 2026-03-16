@@ -51,3 +51,7 @@ export {
 
 // Delta-focused research helpers
 export { getPreviousFindingsContext } from "./delta.js";
+
+// RSS feed resolution and pre-fetch
+export { resolveRssRoute, fetchRssFeed, formatFeedContext } from "./rss.js";
+export type { RssFeedItem } from "./rss.js";
