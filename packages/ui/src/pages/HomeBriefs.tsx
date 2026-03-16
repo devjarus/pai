@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRightIcon, ChevronRightIcon, ChevronDownIcon, CheckCircleIcon, AlertCircleIcon } from "lucide-react";
 import { useInboxAll } from "@/hooks/use-inbox";
@@ -46,6 +46,15 @@ export default function HomeBriefs() {
   const briefings = data?.briefings ?? [];
   const activePrograms = programs.filter(p => p.status === "active" || p.status === "running");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const briefIdToProgram = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of programs) {
+      if (p.latestBriefId) map.set(p.latestBriefId, p.title);
+      if (p.latestBriefSummary?.id) map.set(p.latestBriefSummary.id, p.title);
+    }
+    return map;
+  }, [programs]);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-background">
@@ -120,11 +129,19 @@ export default function HomeBriefs() {
               const memories = s.memory_assumptions ?? [];
               const correction = s.correction_hook;
               const isExpanded = expandedId === brief.id;
+              const isHighConfidence = rec?.confidence === "high";
+              const hasOpenActions = actions.length > 0;
+              const isOld = Date.now() - parseApiDate(brief.generatedAt).getTime() > 86400000;
+              const programName = briefIdToProgram.get(brief.id);
 
               return (
                 <article
                   key={brief.id}
-                  className="group animate-in fade-in-0 duration-300 rounded-lg border border-border/30 bg-card/30 p-4 transition-colors hover:bg-card/50"
+                  className={cn(
+                    "group animate-in fade-in-0 duration-300 rounded-lg border border-border/30 bg-card/30 p-4 transition-colors hover:bg-card/50",
+                    isHighConfidence && "border-l-2 border-l-emerald-500",
+                    isOld && "opacity-70"
+                  )}
                   style={{ animationDelay: `${i * 50}ms` }}
                 >
                   {/* Clickable collapsed header */}
@@ -149,11 +166,19 @@ export default function HomeBriefs() {
                       </div>
 
                       {/* Title */}
-                      <h3 className="mb-2 text-sm font-semibold text-foreground">{title}</h3>
+                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                        {title}
+                        {hasOpenActions && <span className="size-1.5 shrink-0 rounded-full bg-amber-400" />}
+                      </h3>
 
-                      {/* Recommendation summary (always visible) */}
+                      {/* Program badge + recommendation summary (always visible) */}
+                      <div className="flex items-center gap-2">
+                        {programName && (
+                          <Badge variant="outline" className="h-4 shrink-0 px-2 text-[10px] text-muted-foreground/50">{programName}</Badge>
+                        )}
+                      </div>
                       {rec?.summary && (
-                        <p className="text-xs text-muted-foreground line-clamp-2">{rec.summary}</p>
+                        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{rec.summary}</p>
                       )}
                     </div>
                   </button>
