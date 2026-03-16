@@ -300,7 +300,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     });
     await handleChat(
       tgCtx.chat.id,
-      `Continue the discussion for brief ${briefing.id}. Brief summary: ${parseBriefSummary(briefing.sections)}\n\nUser follow-up: ${message}`,
+      `Continue the discussion for digest ${briefing.id}. Digest summary: ${parseBriefSummary(briefing.sections)}\n\nUser follow-up: ${message}`,
       { username: tgCtx.from?.username, displayName: tgCtx.from?.first_name },
       bot.api.sendMessage.bind(bot.api),
       tgCtx.chat.type,
@@ -407,7 +407,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     try {
       const tasks = listTasks(ctx.storage, "open");
       if (tasks.length === 0) {
-        await tgCtx.reply("No open saved moves. Save one from a brief or message when you want me to keep it alive.");
+        await tgCtx.reply("No open to-dos. Save one from a digest or message when you want me to keep it alive.");
         return;
       }
       const lines = tasks.map((t) => {
