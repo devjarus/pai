@@ -106,13 +106,19 @@ function extractSummary(sections: Record<string, unknown>): string | null {
 }
 
 function extractTitle(sections: Record<string, unknown>, fallbackType: string): string {
-  const raw = sections.title ? String(sections.title) : "";
-  // If title is a raw goal (too long or contains "Keep watching"), shorten it
-  if (raw.length > 60) return raw.slice(0, 57) + "...";
-  if (raw.startsWith("Keep watching")) {
-    const match = raw.match(/:\s*(.+)/);
-    return match ? match[1]!.slice(0, 50) : raw.slice(0, 50);
-  }
+  let raw = sections.title ? String(sections.title) : "";
+
+  // Strip common goal preambles to get to the actual topic
+  raw = raw.replace(/^Keep watching this (conversation|topic) and brief me on meaningful changes:\s*/i, "");
+  raw = raw.replace(/^Research and compile a brief (summary|report) (of |about )?/i, "");
+  raw = raw.replace(/^Provide a deep-dive analysis of\s*/i, "");
+  raw = raw.replace(/^Research\s+/i, "");
+  raw = raw.replace(/^Track\s+/i, "Track ");
+
+  // Capitalize first letter
+  if (raw.length > 0) raw = raw.charAt(0).toUpperCase() + raw.slice(1);
+
+  if (raw.length > 55) return raw.slice(0, 52) + "...";
   return raw || (fallbackType === "daily" ? "Daily Digest" : "Research Report");
 }
 

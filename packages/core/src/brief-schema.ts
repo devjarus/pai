@@ -85,6 +85,25 @@ function firstMeaningfulLine(report: string): string | null {
     ?? null;
 }
 
+/** Extract a short title from the report — first markdown heading or first sentence */
+function extractReportTitle(report: string, maxLen = 50): string | null {
+  // Try first markdown heading
+  const headingMatch = report.match(/^#{1,3}\s+(.+)/m);
+  if (headingMatch) {
+    const heading = headingMatch[1]!.replace(/\*+/g, "").trim();
+    if (heading.length > 5 && heading.length <= maxLen) return heading;
+    if (heading.length > maxLen) return heading.slice(0, maxLen - 3) + "...";
+  }
+  // Try first sentence of first meaningful line
+  const line = firstMeaningfulLine(report);
+  if (line) {
+    const sentence = line.split(/[.!?]/)[0]!.trim();
+    if (sentence.length > 5 && sentence.length <= maxLen) return sentence;
+    if (sentence.length > maxLen) return sentence.slice(0, maxLen - 3) + "...";
+  }
+  return null;
+}
+
 function parseStructuredResult(raw?: string | null): Record<string, unknown> | null {
   if (!raw) return null;
   try {
@@ -171,21 +190,26 @@ export function buildReportBriefSection(input: BuildReportBriefSectionInput): St
     });
   }
 
+  // Derive a clean title from the report content, falling back to program title or goal
+  const reportTitle = extractReportTitle(input.report);
+  const briefTitle = reportTitle ?? input.program?.title ?? cleanGoal;
+
   return {
-    title: input.program?.title ?? cleanGoal,
+    title: briefTitle,
     recommendation: {
       summary: staleFollowThrough
-        ? `Resolve the stale linked action before changing the recommendation for ${input.program?.title ?? cleanGoal}.`
+        ? `Resolve the stale linked action before changing the recommendation for ${briefTitle}.`
         : recommendationSummary,
       confidence: staleFollowThrough ? "high" : structuredRecommendation(structured) ? "high" : "medium",
       rationale: staleFollowThrough
         ? `${actionSummary!.staleOpenCount} linked action${actionSummary!.staleOpenCount === 1 ? "" : "s"} are stale, so follow-through should be closed before broadening the watch.`
-        : `This brief summarizes the latest ${input.execution === "analysis" ? "analysis" : "research"} run for ${cleanGoal}${input.program?.objective ? ` against the objective "${input.program.objective}".` : "."}`,
+        : recommendationSummary, // Use the actual recommendation as rationale, not a meta-description
     },
     what_changed: [
-      `A new ${input.execution === "analysis" ? "analysis" : "research"} run completed for ${cleanGoal}.`,
+      // Use first meaningful line from report as the change signal, not "A new research run completed"
+      firstMeaningfulLine(input.report) ?? `New ${input.execution === "analysis" ? "analysis" : "research"} completed.`,
       ...(actionSummary && actionSummary.openCount > 0
-        ? [`${actionSummary.openCount} linked action${actionSummary.openCount === 1 ? "" : "s"} remain open for this Program.`]
+        ? [`${actionSummary.openCount} linked action${actionSummary.openCount === 1 ? "" : "s"} remain open.`]
         : []),
     ],
     evidence,

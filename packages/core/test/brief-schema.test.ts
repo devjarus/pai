@@ -44,14 +44,16 @@ describe("brief-schema", () => {
       },
     });
 
-    expect(section.title).toBe("Atlas watch");
+    // Title derived from report heading when available
+    expect(section.title).toBe("Heading");
     expect(section.recommendation).toEqual({
       summary: "Hold launch until rollback verification clears.",
       confidence: "high",
-      rationale: "This brief summarizes the latest analysis run for Track Atlas launch readiness against the objective \"Only alert on launch blockers that require operator action.\".",
+      rationale: "Hold launch until rollback verification clears.",
     });
-    expect(section.what_changed).toContain("A new analysis run completed for Track Atlas launch readiness.");
-    expect(section.what_changed).toContain("2 linked actions remain open for this Program.");
+    // what_changed uses first meaningful line from report
+    expect(section.what_changed[0]).toBe("Fallback line");
+    expect(section.what_changed).toContain("2 linked actions remain open.");
     expect(section.evidence).toEqual([
       {
         title: "Latest analysis run",
@@ -125,8 +127,10 @@ describe("brief-schema", () => {
       },
     });
 
+    // Title from report heading
+    expect(section.title).toBe("Heading");
     expect(section.recommendation).toEqual({
-      summary: "Resolve the stale linked action before changing the recommendation for Monitor ticket prices.",
+      summary: "Resolve the stale linked action before changing the recommendation for Heading.",
       confidence: "high",
       rationale: "2 linked actions are stale, so follow-through should be closed before broadening the watch.",
     });
@@ -165,8 +169,8 @@ describe("brief-schema", () => {
       report: "No meaningful changes have been reported.",
     });
 
-    // None of the user-facing fields should contain the enrichment text
-    expect(section.title).toBe("Track H4 visa appointments");
+    // Title derived from report content, goal stripped of enrichment
+    expect(section.title).toBe("No meaningful changes have been reported");
     expect(section.goal).toBe("Track H4 visa appointments");
     expect(section.appendix?.goal).toBe("Track H4 visa appointments");
     expect(section.recommendation.rationale).not.toContain("PREVIOUS FINDINGS");
