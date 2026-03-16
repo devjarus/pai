@@ -55,14 +55,18 @@ function isFailedDigest(sections: Record<string, unknown>): boolean {
   return /unable|apologize|failed|unavailable|error/i.test(summary);
 }
 
-function cleanSummary(raw: string): string {
+function cleanSummary(raw: string): string | null {
   let s = raw.trim();
-  // Strip common LLM preamble
   s = s.replace(/^(Based on[^,:.]+[,:.]\s*)/i, "");
   s = s.replace(/^(I'll now[^,:.]+[,:.]\s*)/i, "");
   s = s.replace(/^(Let me[^,:.]+[,:.]\s*)/i, "");
   s = s.replace(/^(Here('s| is)[^,:.]+[,:.]\s*)/i, "");
-  return s || raw;
+  s = s.replace(/^(A new research run[^,:.]+[,:.]\s*)/i, "");
+  // If after cleaning we have less than 15 chars of real content, it's junk
+  if (!s || s.length < 15) return null;
+  // If it still starts with a junk pattern after cleaning, give up
+  if (isJunkSummary(s)) return null;
+  return s;
 }
 
 function extractSummary(sections: Record<string, unknown>): string | null {
@@ -71,25 +75,30 @@ function extractSummary(sections: Record<string, unknown>): string | null {
 
   // Try recommendation.summary
   if (typeof rec === "object" && rec?.summary) {
-    const s = String(rec.summary);
-    if (s.length > 10 && !isJunkSummary(s)) return cleanSummary(s);
-    // Try rationale as fallback
-    const r = String(rec.rationale ?? "");
-    if (r.length > 10 && !isJunkSummary(r)) return cleanSummary(r);
+    const cleaned = cleanSummary(String(rec.summary));
+    if (cleaned) return cleaned;
+    // Try rationale
+    const rCleaned = cleanSummary(String(rec.rationale ?? ""));
+    if (rCleaned) return rCleaned;
   }
-  if (typeof rec === "string" && rec.length > 10 && !isJunkSummary(rec)) return cleanSummary(rec);
+  if (typeof rec === "string") {
+    const cleaned = cleanSummary(rec);
+    if (cleaned) return cleaned;
+  }
 
   // Try what_changed
   const changes = sections.what_changed as string[] | undefined;
   if (changes?.length) {
-    const first = changes.find(c => c.length > 10 && !isJunkSummary(c));
-    if (first) return cleanSummary(first);
+    for (const c of changes) {
+      const cleaned = cleanSummary(c);
+      if (cleaned) return cleaned;
+    }
   }
 
   // Try evidence
   const evidence = sections.evidence as Array<{ detail?: string }> | undefined;
   if (evidence?.length) {
-    const first = evidence.find(e => e.detail && e.detail.length > 15);
+    const first = evidence.find(e => e.detail && e.detail.length > 15 && !isJunkSummary(e.detail));
     if (first?.detail) return first.detail.slice(0, 200);
   }
 
