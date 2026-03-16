@@ -1589,9 +1589,8 @@ export async function runResearchInBackground(
           const lines = presentation.report.split("\n").filter((l: string) => l.trim().length > 20 && !l.startsWith("#"));
           summary = lines[0]?.trim() || presentation.report.slice(0, 500);
         }
-        // Strip common LLM preamble patterns
-        summary = summary.replace(/^(Based on (my |the )?research[^.]*\.|I (can now |will now )?compile[^.]*\.|Here('s| is)[^.]*:\s*|Let me[^.]*\.\s*)/i, "").trim();
-        if (!summary) summary = presentation.report.slice(0, 500);
+        // Truncate to reasonable length
+        if (summary.length > 500) summary = summary.slice(0, 500);
 
         // Determine actual depth from budget
         const actualDepth = (job.budgetMaxSearches || 5) <= 2 ? "quick"
