@@ -56,7 +56,7 @@ export default function HomeBriefs() {
           <section className="mb-10">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground/60">Active Programs</h2>
-              <button onClick={() => navigate("/programs")} className="flex items-center gap-1 text-[11px] text-primary hover:underline">
+              <button onClick={() => navigate("/programs")} className="flex items-center gap-1 text-[10px] text-primary hover:underline">
                 View all <ChevronRightIcon className="size-3" />
               </button>
             </div>
@@ -68,10 +68,10 @@ export default function HomeBriefs() {
                   className="shrink-0 rounded-lg border border-border/40 bg-card/50 px-4 py-3 text-left transition-colors hover:bg-card/80"
                   style={{ minWidth: 200 }}
                 >
-                  <p className="truncate text-sm font-medium text-foreground">{p.title}</p>
+                  <p className="truncate text-sm font-semibold text-foreground">{p.title}</p>
                   <div className="mt-2 flex items-center gap-2">
-                    {p.phase && <Badge variant="outline" className="h-4 px-2 text-[9px]">{p.phase}</Badge>}
-                    <span className="text-[10px] text-muted-foreground/50">
+                    {p.phase && <Badge variant="outline" className="h-4 px-2 text-[10px]">{p.phase}</Badge>}
+                    <span className="text-[10px] text-muted-foreground/40">
                       {p.latestBriefSummary ? timeAgo(p.latestBriefSummary.generatedAt) : "No briefs yet"}
                     </span>
                   </div>
@@ -137,7 +137,7 @@ export default function HomeBriefs() {
                     <div className="min-w-0 flex-1">
                       {/* Badge + timestamp */}
                       <div className="mb-2 flex items-center gap-2">
-                        <Badge variant="outline" className="h-4 px-2 text-[9px]">
+                        <Badge variant="outline" className="h-4 px-2 text-[10px]">
                           {brief.type === "research" ? "Research" : "Brief"}
                         </Badge>
                         <span className="text-[10px] text-muted-foreground/40">{timeAgo(brief.generatedAt)}</span>
@@ -164,7 +164,7 @@ export default function HomeBriefs() {
                       {/* What changed */}
                       {changes.length > 0 && (
                         <div>
-                          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/50">What Changed</h4>
+                          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">What Changed</h4>
                           <ul className="space-y-1">
                             {changes.slice(0, 3).map((c, i) => (
                               <li key={i} className="text-xs text-muted-foreground">• {c}</li>
@@ -176,8 +176,8 @@ export default function HomeBriefs() {
                       {/* Recommendation detail */}
                       {rec?.summary && (
                         <div className="rounded-md bg-primary/5 border border-primary/10 px-3 py-2">
-                          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-primary/60">Recommendation</h4>
-                          <p className="text-sm text-foreground">{rec.summary}</p>
+                          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Recommendation</h4>
+                          <p className="text-xs text-muted-foreground">{rec.summary}</p>
                           {rec.confidence && (
                             <span className={cn("mt-1 inline-block text-[10px]", confidenceColor[rec.confidence] ?? "text-muted-foreground")}>
                               {rec.confidence} confidence
@@ -189,7 +189,7 @@ export default function HomeBriefs() {
                       {/* Evidence */}
                       {evidence.length > 0 && (
                         <div>
-                          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/50">Evidence</h4>
+                          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Evidence</h4>
                           {evidence.slice(0, 2).map((e, i) => (
                             <div key={i} className="mb-1 text-xs text-muted-foreground">
                               <span className="font-medium text-foreground/80">{e.title}</span>
@@ -203,7 +203,7 @@ export default function HomeBriefs() {
                       {/* Memory assumptions */}
                       {memories.length > 0 && (
                         <div>
-                          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/50">Memory Used</h4>
+                          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Memory Used</h4>
                           {memories.slice(0, 2).map((m, i) => (
                             <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
                               <AlertCircleIcon className="mt-1 size-3 shrink-0 text-muted-foreground/40" />
@@ -216,7 +216,7 @@ export default function HomeBriefs() {
                       {/* Actions */}
                       {actions.length > 0 && (
                         <div>
-                          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/50">Next Actions</h4>
+                          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Next Actions</h4>
                           {actions.slice(0, 3).map((a, i) => (
                             <div key={i} className="flex items-center gap-2 py-1 text-xs">
                               <CheckCircleIcon className="size-3 shrink-0 text-muted-foreground/40" />
@@ -229,7 +229,7 @@ export default function HomeBriefs() {
 
                       {/* Correction hook */}
                       {correction?.prompt && (
-                        <p className="text-[11px] italic text-muted-foreground/50">{correction.prompt}</p>
+                        <p className="text-[10px] italic text-muted-foreground/40">{correction.prompt}</p>
                       )}
 
                       {/* View full */}

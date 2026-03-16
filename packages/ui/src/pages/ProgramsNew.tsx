@@ -107,7 +107,7 @@ export default function ProgramsNew() {
       <header className="border-b border-border/40">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <div>
-            <h1 className="text-base font-bold tracking-tight text-foreground">Programs</h1>
+            <h1 className="text-base font-bold text-foreground">Programs</h1>
             <p className="text-xs text-muted-foreground">Recurring decision workflows</p>
           </div>
           <div className="flex items-center gap-2">
@@ -157,7 +157,7 @@ export default function ProgramsNew() {
             <div className="space-y-2">{[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}</div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-16">
-              <p className="text-sm text-muted-foreground">{programs.length === 0 ? "No programs yet." : "No programs match your filter."}</p>
+              <p className="text-xs text-muted-foreground">{programs.length === 0 ? "No programs yet." : "No programs match your filter."}</p>
               {programs.length === 0 && (
                 <Button size="sm" variant="outline" onClick={() => setShowCreate(true)} className="gap-2 text-xs">
                   <PlusIcon className="size-3.5" /> Create your first program
@@ -175,10 +175,10 @@ export default function ProgramsNew() {
                 <div key={program.id} onClick={() => navigate(`/programs?id=${program.id}`)}
                   className="grid cursor-pointer grid-cols-[2fr_1fr_1fr_1.5fr_auto] items-center gap-3 border-b border-border/10 px-4 py-3 transition-colors hover:bg-card/30 last:border-b-0">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{program.title}</p>
+                    <p className="truncate text-sm font-semibold text-foreground">{program.title}</p>
                     <div className="mt-1 flex items-center gap-2">
-                      <span className="text-[10px] text-muted-foreground/50 capitalize">{program.family}</span>
-                      {program.phase && <Badge variant="outline" className="h-3.5 px-1 text-[8px]">{program.phase}</Badge>}
+                      <span className="text-[10px] text-muted-foreground/40 capitalize">{program.family}</span>
+                      {program.phase && <Badge variant="outline" className="h-3.5 px-1 text-[10px]">{program.phase}</Badge>}
                     </div>
                   </div>
                   <div>{statusBadge(program.status)}</div>
@@ -188,7 +188,7 @@ export default function ProgramsNew() {
                   <div className="min-w-0">
                     {program.latestBriefSummary ? (
                       <>
-                        <p className="truncate text-xs text-foreground/80">{program.latestBriefSummary.recommendationSummary || "Brief generated"}</p>
+                        <p className="truncate text-xs text-muted-foreground">{program.latestBriefSummary.recommendationSummary || "Brief generated"}</p>
                         <p className="text-[10px] text-muted-foreground/40">{timeUntil(program.nextRunAt)} until next</p>
                       </>
                     ) : <span className="text-xs text-muted-foreground/40">No briefs yet</span>}
