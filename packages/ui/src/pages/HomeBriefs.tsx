@@ -6,6 +6,7 @@ import { usePrograms } from "@/hooks";
 import { parseApiDate } from "@/lib/datetime";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 function timeAgo(dateStr: string): string {
@@ -262,13 +263,15 @@ export default function HomeBriefs() {
                         <p className="text-[10px] italic text-muted-foreground/40">{correction.prompt}</p>
                       )}
 
-                      {/* View full */}
-                      <button
-                        onClick={() => navigate(`/inbox/${brief.id}`)}
-                        className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                      >
-                        View full brief <ArrowRightIcon className="size-3" />
-                      </button>
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button variant="ghost" size="xs" onClick={() => navigate("/ask")}>
+                          Ask follow-up
+                        </Button>
+                        <Button variant="ghost" size="xs" onClick={() => navigate(`/inbox/${brief.id}`)}>
+                          View full brief <ArrowRightIcon className="size-3" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </article>
