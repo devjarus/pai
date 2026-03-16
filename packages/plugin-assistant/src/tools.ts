@@ -452,7 +452,7 @@ export function createAgentTools(ctx: AgentContext) {
     program_create: tool({
       description: "Create a Program for an ongoing decision or commitment. Use this when the user asks you to keep watching something, monitor it, check back regularly, or brief them over time. Use execution_mode='analysis' for deeper multi-agent reports with visuals and execution_mode='research' for lighter recurring research. Keep Program setup lightweight and prefer this over schedule language in user-facing flows.",
       inputSchema: z.object({
-        title: z.string().describe("Short Program title (e.g., 'Atlas launch readiness')"),
+        title: z.string().describe("Short human-readable title, max 5 words. Examples: 'Crypto Market Watch', 'GPU Price Tracker', 'AI News Daily', 'Flight Deals Tokyo'. NEVER use the full question or goal as the title."),
         question: z.string().describe("The recurring question or commitment this Program should keep watching"),
         family: z.enum(["general", "work", "travel", "buying"]).optional().describe("Optional Program family when the domain is clear"),
         execution_mode: z.enum(["research", "analysis"]).optional().describe("Use 'analysis' for deeper multi-agent analysis with chart visuals; otherwise use 'research'. Defaults to 'research'."),
