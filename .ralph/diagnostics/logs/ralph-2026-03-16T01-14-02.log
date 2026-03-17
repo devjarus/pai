@@ -1,6 +1,0 @@
-2026-03-16T08:14:02.202501Z  INFO ralph_core::event_loop: Memory injection check: enabled=true, inject=Auto, workspace_root="/Users/sunchit/Documents/projects/pai"
-2026-03-16T08:14:02.202573Z  INFO ralph_core::event_loop: Looking for memories at: "/Users/sunchit/Documents/projects/pai/.ralph/agent/memories.md" (exists: false)
-2026-03-16T08:14:02.202583Z  INFO ralph_core::event_loop: Successfully loaded 0 memories from store
-2026-03-16T08:14:02.202587Z  INFO ralph_core::event_loop: Memory store is empty - no memories to inject
-2026-03-16T08:14:02.203371Z  INFO ralph_core::event_loop: Injecting ready tasks (0 ready, 0 open, 4 closed) into prompt
-2026-03-16T08:14:06.222452Z  INFO ralph_tui::app: Ctrl+C detected, signaling main loop
