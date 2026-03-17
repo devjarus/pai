@@ -202,7 +202,7 @@ export function ThreadSidebar({
           className={cn(
             "group flex cursor-pointer items-center justify-between border-b border-border/30 py-1.5 pr-2 transition-colors",
             thread.id === activeThreadId
-              ? "bg-primary/10 text-foreground"
+              ? "bg-primary/15 border-l-2 border-l-primary text-foreground"
               : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
           )}
           style={{ paddingLeft: 10 + depth * 14 }}
@@ -268,7 +268,7 @@ export function ThreadSidebar({
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className="ml-1 shrink-0 text-muted-foreground"
+                  className="ml-1 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreHorizontalIcon className="size-3.5" />

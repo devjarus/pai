@@ -3,6 +3,7 @@ import { Routes, Route, Link, Navigate } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/query-client";
 import { useConfig } from "./hooks";
+import { useNewUI } from "./hooks/use-new-ui";
 import { setConfiguredTimezone } from "./lib/datetime";
 
 const ReactQueryDevtools = lazy(() =>
@@ -16,11 +17,13 @@ import Layout from "./components/Layout";
 import Chat from "./pages/Chat";
 import Memory from "./pages/Memory";
 import Programs from "./pages/Programs";
+import ProgramsNew from "./pages/ProgramsNew";
 import Timeline from "./pages/Timeline";
 import Settings from "./pages/Settings";
 import Knowledge from "./pages/Knowledge";
 import Tasks from "./pages/Tasks";
 import Inbox from "./pages/Inbox";
+import HomeBriefs from "./pages/HomeBriefs";
 import Jobs from "./pages/Jobs";
 import Grid from "./pages/Grid";
 import Schedules from "./pages/Schedules";
@@ -73,6 +76,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function HomeSwitch() { const { newUI } = useNewUI(); return newUI ? <HomeBriefs /> : <Inbox />; }
+function ProgramsSwitch() { const { newUI } = useNewUI(); return newUI ? <ProgramsNew /> : <Programs />; }
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -85,9 +91,9 @@ export default function App() {
           <Route path="/setup" element={<Setup />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route element={<AuthGate><Layout /></AuthGate>}>
-            <Route path="/" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
+            <Route path="/" element={<ErrorBoundary><HomeSwitch /></ErrorBoundary>} />
             <Route path="/inbox/:id" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
-            <Route path="/programs" element={<ErrorBoundary><Programs /></ErrorBoundary>} />
+            <Route path="/programs" element={<ErrorBoundary><ProgramsSwitch /></ErrorBoundary>} />
             <Route path="/grid" element={<ErrorBoundary><Grid /></ErrorBoundary>} />
             <Route path="/ask" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
             <Route path="/chat" element={<ErrorBoundary><Chat /></ErrorBoundary>} />

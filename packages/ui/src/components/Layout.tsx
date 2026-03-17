@@ -7,8 +7,16 @@ import { OfflineBanner } from "./OfflineBanner";
 import { MobileTabBar } from "./MobileTabBar";
 import { useInboxAll } from "@/hooks/use-inbox";
 
-const navItems = [
+const legacyNavItems = [
   { to: "/", label: "Home", icon: IconInbox },
+  { to: "/programs", label: "Programs", icon: IconPrograms },
+  { to: "/ask", label: "Ask", icon: IconChat },
+  { to: "/memory", label: "Memory", icon: IconMemory },
+  { to: "/settings", label: "Settings", icon: IconSettings },
+];
+
+const newNavItems = [
+  { to: "/", label: "Briefs", icon: IconInbox },
   { to: "/programs", label: "Programs", icon: IconPrograms },
   { to: "/ask", label: "Ask", icon: IconChat },
   { to: "/memory", label: "Memory", icon: IconMemory },
@@ -17,8 +25,11 @@ const navItems = [
 
 const INBOX_SEEN_KEY = "pai-last-seen-briefing-id";
 
+import { useNewUI } from "@/hooks/use-new-ui";
+
 export default function Layout() {
   const location = useLocation();
+  const { newUI, toggleNewUI } = useNewUI();
 
   // Shared inbox query — reuses cache with Inbox page, polls every 30 min
   const { data: inboxData } = useInboxAll();
@@ -38,7 +49,8 @@ export default function Layout() {
   }, [location.pathname, latestId]);
 
   return (
-    <div className="flex h-dvh w-screen overflow-hidden bg-background">
+    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-background">
+      <div className="flex flex-1 overflow-hidden">
       {/* Desktop sidebar — hidden on mobile, replaced by bottom tab bar */}
       <nav className="hidden md:flex h-full w-14 flex-col items-center border-r border-border/40 bg-background py-4">
         {/* Branding */}
@@ -50,7 +62,7 @@ export default function Layout() {
 
         {/* Nav icons */}
         <div className="flex flex-1 flex-col items-center gap-1">
-          {navItems.map((item) => (
+          {(newUI ? newNavItems : legacyNavItems).map((item) => (
             <Tooltip key={item.to}>
               <TooltipTrigger asChild>
                 <div className="relative">
@@ -80,6 +92,14 @@ export default function Layout() {
             </Tooltip>
           ))}
         </div>
+
+        {/* UI toggle pill */}
+        <button
+          onClick={() => { toggleNewUI(); window.location.reload(); }}
+          className="mt-2 rounded-full border border-border/50 bg-background px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          {newUI ? "✨ New" : "Classic"}
+        </button>
       </nav>
 
       {/* Main content — bottom padding on mobile to clear tab bar */}
@@ -92,6 +112,7 @@ export default function Layout() {
 
       {/* Mobile bottom tab bar */}
       <MobileTabBar hasNewBriefing={hasNewBriefing} />
+      </div>
     </div>
   );
 }
