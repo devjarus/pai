@@ -15,11 +15,12 @@ flowchart TD
     C --> D["llm.embed(text) -> storeEpisodeEmbedding()"]
     C --> E["extractBeliefs(llm, text)"]
 
-    E --> E1["LLM chat: extract JSON\n{fact, factType, importance, subject}"]
+    E --> E1["LLM chat: extract JSON\n{fact, factType, importance, subject, relatedTo, temporal}"]
     E1 --> E2["Strip markdown fences, parse JSON"]
     E2 --> E3["Validate factType in {factual, preference, procedural, architectural}"]
     E3 --> E4["Clamp importance 1-10, normalize subject to lowercase"]
-    E4 --> E5["On parse failure: raw text as 'factual', importance=5, subject='owner'"]
+    E4 --> E4a["Enrich statement:\n[related: entity] [when: ISO date]"]
+    E4a --> E5["On parse failure: raw text as 'factual', importance=5, subject='owner'"]
 
     D --> F["processNewBelief(fact, factType, episodeId, importance, subject)"]
     E --> F
@@ -154,6 +155,12 @@ flowchart TD
         P2 --> P3["Filter: effectiveConfidence < threshold"]
         P3 --> P4["Set status='pruned' for each"]
         P4 --> P5["Log 'pruned' change"]
+    end
+
+    subgraph AutoDedup ["Scheduled Dedup (24h)"]
+        AD1["reflect(similarityThreshold=0.85)"] --> AD2["Find duplicate clusters"]
+        AD2 --> AD3["mergeDuplicates(clusters)"]
+        AD3 --> AD4["Keep highest-confidence belief\nInvalidate duplicates"]
     end
 
     subgraph Decay

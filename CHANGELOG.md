@@ -17,7 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shared datetime utilities** — Consolidated 14 duplicate `timeAgo`/`formatDate`/`formatInterval` functions across 11 UI files into `lib/datetime.ts`.
 - **Unified Library API** — All memory and knowledge routes consolidated under `/api/library/*`. Deleted legacy `/api/beliefs`, `/api/remember`, `/api/forget`, `/api/knowledge/*` route files. UI retargeted to canonical paths.
 - **Memory quality improvements** — Removed insight belief generation (universally unused platitudes), widened dedup check from top-1 to top-3 candidates, added subject alias table for identity resolution, added scheduled belief pruning, filtered codebase-related beliefs from learning worker, removed per-message auto-memory extraction (background learning worker handles it — cuts ~8 LLM calls per chat message).
+- **Rating feedback loop** — Digest ratings now structurally affect belief scoring. Beliefs from poorly-rated digests (1-2 stars) get -5 to -10 penalty in future digests. Beliefs from well-rated digests (4-5 stars) get +4 to +8 bonus.
+- **Entity-aware memory extraction** — `extractBeliefs()` and background learning now extract `relatedTo` (entity connection) and `temporal` (ISO date) context, stored as `[related: X]` and `[when: Y]` tags in belief statements.
+- **Scheduled belief dedup** — 24h automatic merging of near-duplicate beliefs (cosine > 0.85) via `reflect()` + `mergeDuplicates()`.
+- **Active jobs banner** — Home page sidebar shows a compact indicator when research/swarm jobs are running or queued, linking to `/jobs` for details.
 
+### Fixed
+- **Research job retry on abort** — "This operation was aborted" from LLM providers is now treated as a transient error, triggering automatic retry (up to 2 times) instead of permanent failure.
 
 - **Product language rename:** Program → Watch, Brief → Digest, Belief → Memory, Action → To-Do
 - **Library domain:** Unified `/api/library/*` API combining memories, documents, and research findings

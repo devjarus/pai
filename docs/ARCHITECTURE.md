@@ -219,7 +219,10 @@ Input: "Alex prefers Zustand over Redux"
     │
     └── extractBeliefs(llm, text)                       (parallel)
           │
-          Returns: { fact, factType, importance, subject }
+          Returns: { fact, factType, importance, subject, relatedTo, temporal }
+          │  relatedTo: entity the fact connects to (person, place, project)
+          │  temporal: ISO date if time-bound (appointment, deadline)
+          │  → statement enriched with [related: X] [when: Y] tags
           │
           ▼
         processNewBelief:
@@ -310,6 +313,7 @@ COUNT user messages in thread % 5 === 0?
 | `backfillSubjects` | LLM re-tags all "owner" beliefs with correct person names |
 | `export/import` | Full backup/restore with dedup on import |
 | `scheduled pruning` | Automatic pruning every 24h removes beliefs below confidence threshold |
+| `scheduled dedup` | Automatic 24h merge of near-duplicate beliefs (cosine > 0.85) via reflect() + mergeDuplicates() |
 
 ---
 
@@ -381,6 +385,22 @@ Background timer (every 6 hours) OR manual refresh (POST /api/inbox/refresh)
 | `memory_assumptions` | Beliefs, preferences, and constraints that materially shaped the brief |
 | `next_actions` | Concrete follow-through actions or checks |
 | `correction_hook` | Prompt that invites a correction for the next brief |
+
+### Belief Scoring for Digests
+
+`scoreBriefingBelief()` ranks beliefs for inclusion in digests. Factors:
+
+| Factor | Weight | Source |
+|--------|--------|--------|
+| Focus match (keyword overlap with programs/tasks) | 8-14 | program titles, task names |
+| Freshness (≤3d = 12, ≤14d = 6) | 0-12 | `freshness_at` or `updated_at` |
+| Origin (user-said = 10, web/doc = 6, synthesized = -4) | -4 to 10 | `origin` field |
+| **Rating bonus** (high-rated digests boost, low-rated penalize) | -10 to +8 | `digest_ratings` + `brief_beliefs` |
+| Importance | 2-20 | `importance` × 2 |
+| Access count | 0-6 | capped at 6 |
+| Confidence | 0-20 | `confidence` × 20 |
+
+Beliefs with `correction_state='corrected'` or `confidence < 0.55` are excluded entirely.
 
 ### Scheduling
 
