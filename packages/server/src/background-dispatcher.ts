@@ -252,7 +252,7 @@ export class BackgroundDispatcher {
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      const isTransient = /fetch failed|econnrefused|enotfound|econnreset|etimedout|cannot reach|rate limit|too many requests|429|503/i.test(errorMsg);
+      const isTransient = /fetch failed|econnrefused|enotfound|econnreset|etimedout|cannot reach|rate limit|too many requests|aborted|abort|429|503/i.test(errorMsg);
 
       // Check attempt count before retrying
       const attempts = this.ctx.storage.query<{ attempt_count: number }>(
