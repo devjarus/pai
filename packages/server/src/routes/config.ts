@@ -41,10 +41,13 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
       enabled: telegram?.enabled ?? false,
       hasToken: !!telegram?.token,
     },
+    timezone: config.timezone ?? null,
+    webSearchEnabled: config.webSearchEnabled ?? true,
     workers: {
       backgroundLearning: (workers as Record<string, unknown> | undefined)?.backgroundLearning !== false,
       briefing: (workers as Record<string, unknown> | undefined)?.briefing !== false,
       knowledgeCleanup: (workers as Record<string, unknown> | undefined)?.knowledgeCleanup !== false,
+      briefingTime: (workers as Record<string, unknown> | undefined)?.briefingTime ?? null,
       llmTraffic: {
         maxConcurrent: ((workers as Record<string, unknown> | undefined)?.llmTraffic as Record<string, unknown> | undefined)?.maxConcurrent ?? 6,
         startGapMs: ((workers as Record<string, unknown> | undefined)?.llmTraffic as Record<string, unknown> | undefined)?.startGapMs ?? 1500,
@@ -112,6 +115,8 @@ const updateConfigSchema = z.object({
   llmTrafficReservedInteractiveSlots: z.number().int().min(0).optional(),
   knowledgeDefaultTtlDays: z.number().int().positive().nullable().optional(),
   knowledgeFreshnessDecayDays: z.number().int().positive().optional(),
+  briefingTime: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:MM format").nullable().optional(),
+  webSearchEnabled: z.boolean().optional(),
   debugResearch: z.boolean().optional(),
   sandboxUrl: z.string().optional().refine(
     (v) => {
@@ -204,6 +209,7 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       body.backgroundLearning !== undefined ||
       body.briefingEnabled !== undefined ||
       body.knowledgeCleanup !== undefined ||
+      body.briefingTime !== undefined ||
       body.llmTrafficMaxConcurrent !== undefined ||
       body.llmTrafficStartGapMs !== undefined ||
       body.llmTrafficStartupDelayMs !== undefined ||
@@ -215,6 +221,7 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       if (body.backgroundLearning !== undefined) workersUpdate.backgroundLearning = body.backgroundLearning;
       if (body.briefingEnabled !== undefined) workersUpdate.briefing = body.briefingEnabled;
       if (body.knowledgeCleanup !== undefined) workersUpdate.knowledgeCleanup = body.knowledgeCleanup;
+      if (body.briefingTime !== undefined) workersUpdate.briefingTime = body.briefingTime;
       const existingTraffic = (existingWorkers.llmTraffic as Record<string, unknown> | undefined) ?? {};
       const llmTrafficUpdate: Record<string, unknown> = { ...existingTraffic };
       if (body.llmTrafficMaxConcurrent !== undefined) llmTrafficUpdate.maxConcurrent = body.llmTrafficMaxConcurrent;
@@ -256,6 +263,10 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       update.browserUrl = body.browserUrl || undefined;
     }
 
+    if (body.webSearchEnabled !== undefined) {
+      update.webSearchEnabled = body.webSearchEnabled;
+    }
+
     // Telegram settings
     if (body.telegramToken !== undefined || body.telegramEnabled !== undefined) {
       const existingTelegram = ctx.config.telegram ?? {};
@@ -294,14 +305,19 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     // Apply user's explicit changes on top of the reloaded config.
     // loadConfig() prefers env vars, but the user explicitly chose new values
     // via the Settings UI — honour those for the running session.
-    if (Object.keys(llmUpdate).length > 0) {
-      Object.assign(serverCtx.ctx.config.llm, llmUpdate);
-    }
-    if (body.dataDir) {
-      (serverCtx.ctx.config as unknown as Record<string, unknown>).dataDir = body.dataDir;
-    }
-    if (body.timezone !== undefined) {
-      serverCtx.ctx.config.timezone = body.timezone || undefined;
+    const reloaded = serverCtx.ctx.config;
+    for (const [key, value] of Object.entries(update)) {
+      if (key === "llm" && typeof value === "object") {
+        Object.assign(reloaded.llm, value);
+      } else if (key === "workers" && typeof value === "object") {
+        (reloaded as unknown as Record<string, unknown>).workers = { ...reloaded.workers, ...value as Record<string, unknown> };
+      } else if (key === "knowledge" && typeof value === "object") {
+        (reloaded as unknown as Record<string, unknown>).knowledge = { ...reloaded.knowledge, ...value as Record<string, unknown> };
+      } else if (key === "telegram" && typeof value === "object") {
+        (reloaded as unknown as Record<string, unknown>).telegram = { ...reloaded.telegram, ...value as Record<string, unknown> };
+      } else {
+        (reloaded as unknown as Record<string, unknown>)[key] = value;
+      }
     }
 
     return sanitizeConfig(serverCtx.ctx.config as never);
