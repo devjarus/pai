@@ -5,7 +5,8 @@ import { useDigests } from "@/hooks/use-digests";
 import { useWatches } from "@/hooks/use-watches";
 import { useTasks, useCompleteTask } from "@/hooks/use-tasks";
 import { useLibraryStats } from "@/hooks/use-library";
-import { parseApiDate } from "@/lib/datetime";
+import { timeAgoCompact } from "@/lib/datetime";
+import { stripMarkdown } from "@/lib/utils";
 import {
   CheckCircle2Icon,
   BrainIcon,
@@ -15,23 +16,11 @@ import {
   XIcon,
   AlertCircleIcon,
 } from "lucide-react";
+import { QueryError } from "@/components/QueryError";
 
 // ---------------------------------------------------------------------------
 // Smart data extraction — handles garbage LLM output gracefully
 // ---------------------------------------------------------------------------
-
-function timeAgo(dateStr: string): string {
-  const d = parseApiDate(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  const diffMs = Date.now() - d.getTime();
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  return `${days}d`;
-}
 
 /** Patterns that indicate LLM preamble or failure — not real content */
 const JUNK_PATTERNS = [
@@ -62,6 +51,7 @@ function cleanSummary(raw: string): string | null {
   s = s.replace(/^(Let me[^,:.]+[,:.]\s*)/i, "");
   s = s.replace(/^(Here('s| is)[^,:.]+[,:.]\s*)/i, "");
   s = s.replace(/^(A new research run[^,:.]+[,:.]\s*)/i, "");
+  s = stripMarkdown(s);
   // If after cleaning we have less than 15 chars of real content, it's junk
   if (!s || s.length < 15) return null;
   // If it still starts with a junk pattern after cleaning, give up
@@ -114,6 +104,7 @@ function extractTitle(sections: Record<string, unknown>, fallbackType: string): 
   raw = raw.replace(/^Provide a deep-dive analysis of\s*/i, "");
   raw = raw.replace(/^Research\s+/i, "");
   raw = raw.replace(/^Track\s+/i, "Track ");
+  raw = stripMarkdown(raw);
 
   // Capitalize first letter
   if (raw.length > 0) raw = raw.charAt(0).toUpperCase() + raw.slice(1);
@@ -159,7 +150,7 @@ export default function Home() {
 
           {/* Greeting + Ask */}
           <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">{greeting()}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">{greeting()}</h1>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -186,11 +177,17 @@ export default function Home() {
             <div className="min-w-0 flex-1">
               <DigestFeed />
             </div>
-            <aside className="flex w-full flex-col gap-8 lg:w-64 lg:shrink-0 lg:border-l lg:border-border/15 lg:pl-8">
-              <WatchesPanel />
-              <TodosPanel />
-              <LibraryPanel />
-              <TipBanner />
+            <aside className="flex w-full flex-col lg:w-64 lg:shrink-0 lg:border-l lg:border-border/15 lg:pl-8">
+              <div className="flex flex-col gap-10">
+                <WatchesPanel />
+                <TodosPanel />
+              </div>
+              <div className="pt-2 mt-8">
+                <LibraryPanel />
+              </div>
+              <div className="mt-auto pt-4">
+                <TipBanner />
+              </div>
             </aside>
           </div>
         </div>
@@ -204,7 +201,7 @@ export default function Home() {
 // ---------------------------------------------------------------------------
 
 function DigestFeed() {
-  const { data, isLoading } = useDigests();
+  const { data, isLoading, isError, refetch } = useDigests();
   const digests = data?.digests ?? [];
   const [showAll, setShowAll] = useState(false);
 
@@ -215,6 +212,10 @@ function DigestFeed() {
         {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
       </div>
     );
+  }
+
+  if (isError) {
+    return <QueryError message="Failed to load digests." onRetry={refetch} />;
   }
 
   if (digests.length === 0) {
@@ -252,7 +253,7 @@ function DigestFeed() {
           <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/40">Earlier</div>
           <div className="space-y-px">
             {showRest.map((d, i) => (
-              <div key={d.id} className={i < 7 ? "animate-in fade-in slide-in-from-bottom-1" : ""} style={i < 7 ? { animationDelay: `${i * 40}ms`, animationFillMode: "both" } : undefined}>
+              <div key={d.id} className={i < 7 ? "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1" : ""} style={i < 7 ? { animationDelay: `${i * 40}ms`, animationFillMode: "both" } : undefined}>
                 <CompactDigest digest={d} />
               </div>
             ))}
@@ -296,7 +297,7 @@ function HeroDigest({ digest }: { digest: DigestItem }) {
         <span className={`h-1.5 w-1.5 rounded-full ${digest.type === "research" ? "bg-indigo-400" : "bg-amber-400"}`} />
         <span className="capitalize">{digest.type}</span>
         <span>·</span>
-        <span>{timeAgo(digest.generatedAt)}</span>
+        <span>{timeAgoCompact(digest.generatedAt)}</span>
       </div>
       <h2 className="mt-3 text-lg font-semibold leading-snug text-foreground group-hover:text-primary transition-colors">
         {title}
@@ -316,13 +317,13 @@ function CompactDigest({ digest }: { digest: DigestItem }) {
   return (
     <Link
       to={`/digests/${digest.id}`}
-      className="group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/20"
+      className="group flex items-start gap-3 px-3 py-2.5 transition-colors hover:bg-muted/20"
     >
       <div className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${digest.type === "research" ? "bg-indigo-400/60" : "bg-amber-400/60"}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm font-medium text-foreground/85 group-hover:text-primary transition-colors truncate">{title}</span>
-          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/40">{timeAgo(digest.generatedAt)}</span>
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/40">{timeAgoCompact(digest.generatedAt)}</span>
         </div>
         {summary && <p className="mt-0.5 text-xs text-muted-foreground/55 line-clamp-1">{summary}</p>}
       </div>
@@ -452,7 +453,7 @@ function TipBanner() {
   if (!tip) return null;
 
   return (
-    <div className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground/40">
+    <div className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground/70">
       <span className="shrink-0 mt-px">💡</span>
       <p className="flex-1">{tip.t}</p>
       <button type="button" onClick={() => {
@@ -460,7 +461,7 @@ function TipBanner() {
         next.add(tip.i);
         setDismissed(next);
         localStorage.setItem("pai-tips-d", JSON.stringify([...next]));
-      }} className="shrink-0 opacity-30 hover:opacity-70"><XIcon className="size-3" /></button>
+      }} className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"><XIcon className="size-3" /></button>
     </div>
   );
 }

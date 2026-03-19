@@ -333,11 +333,11 @@ describe("runBackgroundLearning", () => {
   it("counts reinforced vs created beliefs correctly", async () => {
     // Insert thread data so signals are non-empty
     storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t3', 'Count test', datetime('now'), datetime('now'), 1)");
-    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m3', 't3', 'user', 'I like Vitest', datetime('now'), 1)");
+    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m3', 't3', 'user', 'I like cooking pasta', datetime('now'), 1)");
 
     const llmResponse = JSON.stringify([
-      { fact: "User likes Vitest", factType: "preference", importance: 6, subject: "owner" },
-      { fact: "User uses pnpm", factType: "procedural", importance: 5, subject: "owner" },
+      { fact: "User likes cooking pasta", factType: "preference", importance: 6, subject: "owner" },
+      { fact: "User enjoys Italian food", factType: "preference", importance: 5, subject: "owner" },
     ]);
     mockGenerateText.mockResolvedValue({ text: llmResponse });
     // First fact is new, second is reinforcement

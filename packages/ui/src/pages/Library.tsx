@@ -14,14 +14,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { SearchIcon, BrainIcon, FileTextIcon, FlaskConicalIcon } from "lucide-react";
 import type { Belief, KnowledgeSource, ResearchFinding, LibrarySearchResult } from "../types";
-import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
+import { formatDate } from "@/lib/datetime";
 
 type LibraryTab = "memories" | "documents" | "findings";
-
-function formatDate(dateStr: string): string {
-  const d = parseApiDate(dateStr);
-  return isNaN(d.getTime()) ? dateStr : formatWithTimezone(d, { year: "numeric", month: "numeric", day: "numeric" });
-}
 
 const confidenceColor = (c: number) => {
   if (c >= 0.8) return "text-green-400 bg-green-500/15 border-green-500/30";

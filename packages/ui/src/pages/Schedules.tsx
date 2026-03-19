@@ -13,7 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
+import { formatDateTime, parseApiDate } from "@/lib/datetime";
 import {
   PlusIcon,
   Trash2Icon,
@@ -24,6 +24,7 @@ import {
   CalendarClockIcon,
 } from "lucide-react";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 function formatInterval(hours: number): string {
   if (hours < 24) return `${hours}h`;
@@ -33,16 +34,6 @@ function formatInterval(hours: number): string {
   return `${days}d`;
 }
 
-function formatDateTime(iso: string): string {
-  const d = parseApiDate(iso);
-  if (isNaN(d.getTime())) return iso;
-  return formatWithTimezone(d, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  } );
-}
 
 function timeUntil(iso: string): string {
   const diff = parseApiDate(iso).getTime() - Date.now();
@@ -296,22 +287,15 @@ export default function Schedules() {
       </Dialog>
 
       {/* Delete Confirmation */}
-      <Dialog open={!!deleting} onOpenChange={() => setDeleting(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete Schedule</DialogTitle>
-          </DialogHeader>
-          <p className="py-2 text-sm text-muted-foreground">
-            Delete "{deleting?.label}"? This will stop all future runs. This cannot be undone.
-          </p>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => deleting && handleDelete(deleting)}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(open) => { if (!open) setDeleting(null); }}
+        title="Delete Schedule"
+        confirmLabel="Delete"
+        onConfirm={() => deleting && handleDelete(deleting)}
+      >
+        Delete "{deleting?.label}"? This will stop all future runs. This cannot be undone.
+      </ConfirmDialog>
     </div>
   );
 }

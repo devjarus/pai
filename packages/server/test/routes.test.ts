@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
-import { registerMemoryRoutes } from "../src/routes/memory.js";
+import { registerLibraryRoutes } from "../src/routes/library.js";
 import { registerAgentRoutes, threadMigrations } from "../src/routes/agents.js";
 import { registerConfigRoutes } from "../src/routes/config.js";
 import { registerTaskRoutes } from "../src/routes/tasks.js";
@@ -598,7 +598,7 @@ describe("memory routes", () => {
     app = Fastify();
     addTestErrorHandler(app);
     serverCtx = createMockServerCtx();
-    registerMemoryRoutes(app, serverCtx);
+    registerLibraryRoutes(app, serverCtx);
     await app.ready();
   });
 
@@ -606,12 +606,12 @@ describe("memory routes", () => {
     await app.close();
   });
 
-  // -- GET /api/beliefs ----------------------------------------------------
+  // -- GET /api/library/memories ----------------------------------------------------
 
-  it("GET /api/beliefs returns beliefs list", async () => {
+  it("GET /api/library/memories returns beliefs list", async () => {
     vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF, MOCK_BELIEF_FACTUAL]);
 
-    const res = await app.inject({ method: "GET", url: "/api/beliefs" });
+    const res = await app.inject({ method: "GET", url: "/api/library/memories" });
 
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.payload);
@@ -620,28 +620,28 @@ describe("memory routes", () => {
     expect(listBeliefs).toHaveBeenCalledWith(serverCtx.ctx.storage, "active");
   });
 
-  it("GET /api/beliefs defaults to status=active", async () => {
+  it("GET /api/library/memories defaults to status=active", async () => {
     vi.mocked(listBeliefs).mockReturnValue([]);
 
-    await app.inject({ method: "GET", url: "/api/beliefs" });
+    await app.inject({ method: "GET", url: "/api/library/memories" });
 
     expect(listBeliefs).toHaveBeenCalledWith(serverCtx.ctx.storage, "active");
   });
 
-  it("GET /api/beliefs?status=forgotten passes status through", async () => {
+  it("GET /api/library/memories?status=forgotten passes status through", async () => {
     vi.mocked(listBeliefs).mockReturnValue([]);
 
-    await app.inject({ method: "GET", url: "/api/beliefs?status=forgotten" });
+    await app.inject({ method: "GET", url: "/api/library/memories?status=forgotten" });
 
     expect(listBeliefs).toHaveBeenCalledWith(serverCtx.ctx.storage, "forgotten");
   });
 
-  it("GET /api/beliefs?type=preference filters by type", async () => {
+  it("GET /api/library/memories?type=preference filters by type", async () => {
     vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF, MOCK_BELIEF_FACTUAL]);
 
     const res = await app.inject({
       method: "GET",
-      url: "/api/beliefs?type=preference",
+      url: "/api/library/memories?type=preference",
     });
 
     expect(res.statusCode).toBe(200);
@@ -650,12 +650,12 @@ describe("memory routes", () => {
     expect(body[0].type).toBe("preference");
   });
 
-  it("GET /api/beliefs?type=procedural returns empty when no match", async () => {
+  it("GET /api/library/memories?type=procedural returns empty when no match", async () => {
     vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF, MOCK_BELIEF_FACTUAL]);
 
     const res = await app.inject({
       method: "GET",
-      url: "/api/beliefs?type=procedural",
+      url: "/api/library/memories?type=procedural",
     });
 
     expect(res.statusCode).toBe(200);
@@ -663,14 +663,14 @@ describe("memory routes", () => {
     expect(body).toHaveLength(0);
   });
 
-  // -- GET /api/beliefs/:id ------------------------------------------------
+  // -- GET /api/library/memories/:id ------------------------------------------------
 
-  it("GET /api/beliefs/:id returns single belief by full ID", async () => {
+  it("GET /api/library/memories/:id returns single belief by full ID", async () => {
     vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF, MOCK_BELIEF_FACTUAL]);
 
     const res = await app.inject({
       method: "GET",
-      url: `/api/beliefs/${MOCK_BELIEF.id}`,
+      url: `/api/library/memories/${MOCK_BELIEF.id}`,
     });
 
     expect(res.statusCode).toBe(200);
@@ -679,12 +679,12 @@ describe("memory routes", () => {
     expect(body.statement).toBe("User prefers Vitest over Jest");
   });
 
-  it("GET /api/beliefs/:id supports prefix matching", async () => {
+  it("GET /api/library/memories/:id supports prefix matching", async () => {
     vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF, MOCK_BELIEF_FACTUAL]);
 
     const res = await app.inject({
       method: "GET",
-      url: "/api/beliefs/belief_abc",
+      url: "/api/library/memories/belief_abc",
     });
 
     expect(res.statusCode).toBe(200);
@@ -692,12 +692,12 @@ describe("memory routes", () => {
     expect(body.id).toBe(MOCK_BELIEF.id);
   });
 
-  it("GET /api/beliefs/:id returns 404 when not found", async () => {
+  it("GET /api/library/memories/:id returns 404 when not found", async () => {
     vi.mocked(listBeliefs).mockReturnValue([MOCK_BELIEF]);
 
     const res = await app.inject({
       method: "GET",
-      url: "/api/beliefs/nonexistent_id",
+      url: "/api/library/memories/nonexistent_id",
     });
 
     expect(res.statusCode).toBe(404);
@@ -705,7 +705,7 @@ describe("memory routes", () => {
     expect(body.error).toBe("Belief not found");
   });
 
-  it("POST /api/beliefs/:id/correct supersedes a belief", async () => {
+  it("POST /api/library/memories/:id/correct supersedes a belief", async () => {
     vi.mocked(correctBelief).mockResolvedValue({
       invalidatedBelief: {
         ...MOCK_BELIEF,
@@ -730,7 +730,7 @@ describe("memory routes", () => {
 
     const res = await app.inject({
       method: "POST",
-      url: `/api/beliefs/${MOCK_BELIEF.id}/correct`,
+      url: `/api/library/memories/${MOCK_BELIEF.id}/correct`,
       payload: { statement: "User prefers Vitest for this repo" },
     });
 
@@ -746,12 +746,12 @@ describe("memory routes", () => {
     );
   });
 
-  it("POST /api/beliefs/:id/correct returns 400 for unchanged statements", async () => {
+  it("POST /api/library/memories/:id/correct returns 400 for unchanged statements", async () => {
     vi.mocked(correctBelief).mockRejectedValue(new Error("Correction must change the belief statement"));
 
     const res = await app.inject({
       method: "POST",
-      url: `/api/beliefs/${MOCK_BELIEF.id}/correct`,
+      url: `/api/library/memories/${MOCK_BELIEF.id}/correct`,
       payload: { statement: MOCK_BELIEF.statement },
     });
 
@@ -760,9 +760,9 @@ describe("memory routes", () => {
     expect(body.error).toContain("must change");
   });
 
-  // -- GET /api/search -----------------------------------------------------
+  // -- GET /api/library/memories/search ------------------------------------
 
-  it("GET /api/search?q=test returns semantic search results", async () => {
+  it("GET /api/library/memories/search?q=test returns semantic search results", async () => {
     // semanticSearch returns { beliefId, similarity, ... }
     vi.mocked(semanticSearch).mockReturnValue([
       { beliefId: MOCK_BELIEF.id, similarity: 0.85 },
@@ -778,7 +778,7 @@ describe("memory routes", () => {
 
     const res = await app.inject({
       method: "GET",
-      url: "/api/search?q=testing+framework",
+      url: "/api/library/memories/search?q=testing+framework",
     });
 
     expect(res.statusCode).toBe(200);
@@ -790,12 +790,12 @@ describe("memory routes", () => {
       telemetry: {
         process: "embed.memory",
         surface: "web",
-        route: "/api/search",
+        route: "/api/library/memories/search",
       },
     });
   });
 
-  it("GET /api/search filters out low-similarity results", async () => {
+  it("GET /api/library/memories/search filters out low-similarity results", async () => {
     vi.mocked(semanticSearch).mockReturnValue([
       { beliefId: MOCK_BELIEF.id, similarity: 0.85 },
       { beliefId: MOCK_BELIEF_FACTUAL.id, similarity: 0.1 }, // below threshold
@@ -812,7 +812,7 @@ describe("memory routes", () => {
 
     const res = await app.inject({
       method: "GET",
-      url: "/api/search?q=test",
+      url: "/api/library/memories/search?q=test",
     });
 
     const body = JSON.parse(res.payload);
@@ -821,13 +821,13 @@ describe("memory routes", () => {
     expect(body[1].similarity).toBe(0.1);
   });
 
-  it("GET /api/search falls back to FTS when embedding fails", async () => {
+  it("GET /api/library/memories/search falls back to FTS when embedding fails", async () => {
     vi.mocked(serverCtx.ctx.llm.embed).mockRejectedValueOnce(new Error("Embedding unavailable"));
     vi.mocked(searchBeliefs).mockReturnValue([MOCK_BELIEF]);
 
     const res = await app.inject({
       method: "GET",
-      url: "/api/search?q=vitest",
+      url: "/api/library/memories/search?q=vitest",
     });
 
     expect(res.statusCode).toBe(200);
@@ -836,10 +836,10 @@ describe("memory routes", () => {
     expect(searchBeliefs).toHaveBeenCalledWith(serverCtx.ctx.storage, "vitest");
   });
 
-  it("GET /api/search with no query returns empty array", async () => {
+  it("GET /api/library/memories/search with no query returns empty array", async () => {
     const res = await app.inject({
       method: "GET",
-      url: "/api/search",
+      url: "/api/library/memories/search",
     });
 
     expect(res.statusCode).toBe(200);
@@ -848,10 +848,10 @@ describe("memory routes", () => {
     expect(serverCtx.ctx.llm.embed).not.toHaveBeenCalled();
   });
 
-  it("GET /api/search?q= with empty string returns empty array", async () => {
+  it("GET /api/library/memories/search?q= with empty string returns empty array", async () => {
     const res = await app.inject({
       method: "GET",
-      url: "/api/search?q=",
+      url: "/api/library/memories/search?q=",
     });
 
     expect(res.statusCode).toBe(200);
@@ -859,9 +859,9 @@ describe("memory routes", () => {
     expect(body).toEqual([]);
   });
 
-  // -- GET /api/stats ------------------------------------------------------
+  // -- GET /api/library/stats ------------------------------------------------------
 
-  it("GET /api/stats returns memory stats", async () => {
+  it("GET /api/library/stats returns memory stats", async () => {
     const stats = {
       totalBeliefs: 42,
       activeBeliefs: 38,
@@ -871,7 +871,7 @@ describe("memory routes", () => {
     };
     vi.mocked(memoryStats).mockReturnValue(stats);
 
-    const res = await app.inject({ method: "GET", url: "/api/stats" });
+    const res = await app.inject({ method: "GET", url: "/api/library/stats" });
 
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.payload);
@@ -880,9 +880,9 @@ describe("memory routes", () => {
     expect(memoryStats).toHaveBeenCalledWith(serverCtx.ctx.storage);
   });
 
-  // -- POST /api/remember --------------------------------------------------
+  // -- POST /api/library/memories --------------------------------------------------
 
-  it("POST /api/remember stores observation and returns result", async () => {
+  it("POST /api/library/memories stores observation and returns result", async () => {
     const rememberResult = {
       episode: { id: "ep_001", content: "test observation" },
       beliefs: [MOCK_BELIEF],
@@ -891,7 +891,7 @@ describe("memory routes", () => {
 
     const res = await app.inject({
       method: "POST",
-      url: "/api/remember",
+      url: "/api/library/memories",
       payload: { text: "test observation" },
     });
 
@@ -907,10 +907,10 @@ describe("memory routes", () => {
     );
   });
 
-  it("POST /api/remember without text returns 400", async () => {
+  it("POST /api/library/memories without text returns 400", async () => {
     const res = await app.inject({
       method: "POST",
-      url: "/api/remember",
+      url: "/api/library/memories",
       payload: {},
     });
 
@@ -920,10 +920,10 @@ describe("memory routes", () => {
     expect(remember).not.toHaveBeenCalled();
   });
 
-  it("POST /api/remember with null body returns 400", async () => {
+  it("POST /api/library/memories with null body returns 400", async () => {
     const res = await app.inject({
       method: "POST",
-      url: "/api/remember",
+      url: "/api/library/memories",
       headers: { "content-type": "application/json" },
       payload: "null",
     });
@@ -931,12 +931,12 @@ describe("memory routes", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  // -- POST /api/forget/:id ------------------------------------------------
+  // -- DELETE /api/library/memories/:id -------------------------------------
 
-  it("POST /api/forget/:id calls forgetBelief and returns ok", async () => {
+  it("DELETE /api/library/memories/:id calls forgetBelief and returns ok", async () => {
     const res = await app.inject({
-      method: "POST",
-      url: "/api/forget/belief_abc123",
+      method: "DELETE",
+      url: "/api/library/memories/belief_abc123",
     });
 
     expect(res.statusCode).toBe(200);
@@ -2033,14 +2033,17 @@ describe("program routes", () => {
       openQuestions: [],
     };
     mockGetProgramById.mockReturnValue(program);
+    // Use relative dates so the stale check doesn't rot over time
+    const recentDate = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(); // 1 day ago (not stale)
+    const recentDue = new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(); // 1 day from now
     mockListTasks.mockReturnValue([
       {
         id: "task-1",
         title: "Contact infra owner",
         status: "open",
         priority: 1,
-        due_date: "2026-03-14T09:00:00.000Z",
-        created_at: "2026-03-11T09:00:00.000Z",
+        due_date: recentDue,
+        created_at: recentDate,
         completed_at: null,
         source_type: "program",
         source_id: "prog-1",
@@ -2051,7 +2054,7 @@ describe("program routes", () => {
         status: "open",
         priority: 2,
         due_date: null,
-        created_at: "2026-03-11T09:00:00.000Z",
+        created_at: recentDate,
         completed_at: null,
         source_type: "briefing",
         source_id: "brief-999",
@@ -2137,8 +2140,8 @@ describe("program routes", () => {
           title: "Contact infra owner",
           status: "open",
           priority: 1,
-          dueDate: "2026-03-14T09:00:00.000Z",
-          createdAt: "2026-03-11T09:00:00.000Z",
+          dueDate: expect.any(String),
+          createdAt: expect.any(String),
           completedAt: null,
         }],
         researchJobs: [{
@@ -2939,7 +2942,7 @@ describe("Zod validation errors", () => {
     app = Fastify();
     addTestErrorHandler(app);
     serverCtx = createMockServerCtx();
-    registerMemoryRoutes(app, serverCtx);
+    registerLibraryRoutes(app, serverCtx);
     registerAuthRoutes(app, serverCtx);
     registerTaskRoutes(app, serverCtx);
     await app.ready();
@@ -2949,10 +2952,10 @@ describe("Zod validation errors", () => {
     await app.close();
   });
 
-  it("returns 400 for POST /api/remember with empty text", async () => {
+  it("returns 400 for POST /api/library/memories with empty text", async () => {
     const res = await app.inject({
       method: "POST",
-      url: "/api/remember",
+      url: "/api/library/memories",
       payload: { text: "" },
     });
     expect(res.statusCode).toBe(400);
@@ -2960,10 +2963,10 @@ describe("Zod validation errors", () => {
     expect(body.error).toBeDefined();
   });
 
-  it("returns 400 for POST /api/remember with missing text", async () => {
+  it("returns 400 for POST /api/library/memories with missing text", async () => {
     const res = await app.inject({
       method: "POST",
-      url: "/api/remember",
+      url: "/api/library/memories",
       payload: {},
     });
     expect(res.statusCode).toBe(400);

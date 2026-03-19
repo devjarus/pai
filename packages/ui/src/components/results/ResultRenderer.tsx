@@ -57,6 +57,62 @@ function parseSpec(spec: unknown): Spec | null {
 }
 
 /**
+ * Detect raw JSON report text and convert to readable markdown.
+ * Handles cases where the LLM output JSON without code fences.
+ */
+function sanitizeMarkdown(text: string | undefined): string | undefined {
+  if (!text) return text;
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return text;
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    // Only convert known report structures (news, research, etc.)
+    if (!parsed.topic && !parsed.summary && !parsed.articles && !parsed.ticker && !parsed.findings) {
+      return text;
+    }
+    const lines: string[] = [];
+    const topic = (parsed.topic ?? parsed.title ?? "Research Report") as string;
+    const summary = (parsed.summary ?? parsed.description ?? "") as string;
+    lines.push(`# ${topic}`);
+    if (summary) lines.push("", summary);
+
+    const items = (parsed.articles ?? parsed.findings ?? parsed.results) as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(items) && items.length > 0) {
+      lines.push("", "## Key Findings");
+      for (const item of items) {
+        lines.push("", `### ${item.title ?? "Untitled"}`);
+        if (item.source) lines.push(`*Source: ${item.source as string}*`);
+        if (item.url) lines.push(`[Read more](${item.url as string})`);
+        const keyPoints = item.keyPoints as string[] | undefined;
+        if (Array.isArray(keyPoints)) {
+          for (const point of keyPoints) lines.push(`- ${point}`);
+        }
+      }
+    }
+
+    const timeline = parsed.timeline as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(timeline) && timeline.length > 0) {
+      lines.push("", "## Timeline");
+      for (const event of timeline) lines.push(`- **${event.date as string}** — ${event.event as string}`);
+    }
+
+    const sources = parsed.sources as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(sources) && sources.length > 0) {
+      lines.push("", "## Sources");
+      for (const src of sources) {
+        const title = (src.title ?? src.name ?? "Source") as string;
+        const url = src.url as string | undefined;
+        lines.push(url ? `- [${title}](${url})` : `- ${title}`);
+      }
+    }
+
+    return lines.join("\n");
+  } catch {
+    return text;
+  }
+}
+
+/**
  * Universal result renderer with fallback chain:
  * 1. json-render spec -> <Renderer />
  * 2. markdown -> <MarkdownContent />
@@ -67,11 +123,12 @@ function parseSpec(spec: unknown): Spec | null {
 export function ResultRenderer({
   spec,
   structuredResult,
-  markdown,
+  markdown: rawMarkdown,
   resultType,
   visuals = [],
   debug,
 }: ResultRendererProps) {
+  const markdown = sanitizeMarkdown(rawMarkdown);
   const [showDebug, setShowDebug] = useState(false);
   const stateRef = useRef<StateModel>({});
   const setStateRef = useRef<

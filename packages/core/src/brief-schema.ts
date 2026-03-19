@@ -72,9 +72,13 @@ interface BuildReportBriefSectionInput {
  * These are internal prompts that should never appear in user-facing briefs.
  */
 export function stripEnrichmentFromGoal(goal: string): string {
-  const marker = "\n\nIMPORTANT — PREVIOUS FINDINGS";
-  const idx = goal.indexOf(marker);
-  return idx === -1 ? goal : goal.slice(0, idx).trim();
+  // Match both old and new enrichment markers
+  const markers = ["\n\nCONTEXT — WHAT WAS ALREADY COVERED", "\n\nIMPORTANT — PREVIOUS FINDINGS"];
+  for (const marker of markers) {
+    const idx = goal.indexOf(marker);
+    if (idx !== -1) return goal.slice(0, idx).trim();
+  }
+  return goal;
 }
 
 function firstMeaningfulLine(report: string): string | null {

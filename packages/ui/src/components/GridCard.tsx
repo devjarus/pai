@@ -11,7 +11,7 @@ import {
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
-import { parseApiDate } from "@/lib/datetime";
+import { timeAgo } from "@/lib/datetime";
 import type { GridCard as GridCardData, GridCardType as CardType } from "@/hooks/use-grid-feed";
 
 const typeConfig: Record<CardType, { icon: typeof BrainIcon; label: string; accent: string; badge: string }> = {
@@ -22,18 +22,6 @@ const typeConfig: Record<CardType, { icon: typeof BrainIcon; label: string; acce
   task:      { icon: CheckSquareIcon,   label: "Saved Move", accent: "border-l-rose-500",    badge: "text-rose-700 dark:text-rose-400 bg-rose-100 dark:bg-rose-500/10" },
   knowledge: { icon: BookOpenIcon,      label: "Knowledge", accent: "border-l-cyan-500",    badge: "text-cyan-700 dark:text-cyan-400 bg-cyan-100 dark:bg-cyan-500/10" },
 };
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - parseApiDate(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return `${Math.floor(days / 7)}w ago`;
-}
 
 interface GridCardProps {
   card: GridCardData;

@@ -48,7 +48,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
+import { formatDateTime, formatInterval, parseApiDate } from "@/lib/datetime";
 
 type ProgramFamily = Program["family"];
 type ExecutionMode = Program["executionMode"];
@@ -71,24 +71,6 @@ function linesValue(values: string[]): string {
   return values.join("\n");
 }
 
-function formatInterval(hours: number): string {
-  if (hours < 24) return `${hours}h cadence`;
-  const days = Math.round(hours / 24);
-  if (days === 1) return "Daily cadence";
-  if (days === 7) return "Weekly cadence";
-  return `${days}d cadence`;
-}
-
-function formatDateTime(iso: string): string {
-  const parsed = parseApiDate(iso);
-  if (Number.isNaN(parsed.getTime())) return iso;
-  return formatWithTimezone(parsed, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function timeUntil(iso: string): string {
   const diff = parseApiDate(iso).getTime() - Date.now();

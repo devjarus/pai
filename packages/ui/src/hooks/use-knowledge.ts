@@ -41,7 +41,11 @@ export function useCrawlStatus() {
   return useQuery({
     queryKey: knowledgeKeys.crawlStatus(),
     queryFn: () => getCrawlStatus(),
-    refetchInterval: 3000,
+    refetchInterval: (query) => {
+      const jobs = query.state.data?.jobs;
+      const hasActive = Array.isArray(jobs) && jobs.some((j: { status: string }) => j.status === "running" || j.status === "pending");
+      return hasActive ? 3000 : false;
+    },
   });
 }
 

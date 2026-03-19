@@ -21,7 +21,7 @@ describe("extractBeliefs", () => {
     expect(result.fact).toBe("User likes coffee in the morning");
     expect(result.factType).toBe("preference");
     expect(result.importance).toBe(7);
-    expect(result.insight).toBe("Morning routines provide consistency");
+    expect(result.insight).toBeNull();
   });
 
   it("should handle LLM returning plain text by using it as factual", async () => {
@@ -131,7 +131,7 @@ describe("remember", () => {
     });
   });
 
-  it("should store both fact and insight beliefs when insight is extracted", async () => {
+  it("should store only fact belief even when insight is in LLM response (insights are disabled)", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn().mockResolvedValue({
         text: '{"fact":"User likes coffee in the morning","factType":"preference","importance":7,"insight":"Morning routines provide consistency"}',
@@ -139,20 +139,19 @@ describe("remember", () => {
       }),
       embed: vi.fn()
         .mockResolvedValueOnce({ embedding: [0.5, 0.5, 0.0] })   // episode embedding
-        .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] })   // fact embedding
-        .mockResolvedValueOnce({ embedding: [0.0, 1.0, 0.0] }),  // insight embedding
+        .mockResolvedValueOnce({ embedding: [1.0, 0.0, 0.0] }),   // fact embedding
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
 
     const result = await remember(storage, mockLLM, "I like coffee in the morning");
-    expect(result.beliefIds).toHaveLength(2); // Fact + insight
+    expect(result.beliefIds).toHaveLength(1); // Only fact, no insight
     expect(result.isReinforcement).toBe(false);
 
     const beliefTypes = storage.query<{ type: string }>(
-      "SELECT type FROM beliefs WHERE id IN (?, ?) ORDER BY type",
-      [result.beliefIds[0], result.beliefIds[1]],
+      "SELECT type FROM beliefs WHERE id = ?",
+      [result.beliefIds[0]],
     ).map((row) => row.type);
-    expect(beliefTypes).toEqual(["insight", "preference"]);
+    expect(beliefTypes).toEqual(["preference"]);
   });
 
   it("should reinforce existing belief when semantically similar", async () => {

@@ -84,7 +84,7 @@ export { knowledgeMigrations, chunkContent, hasSource, listSources, getSourceChu
 export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult, KnowledgeCleanupResult } from "./knowledge.js";
 
 // Memory
-export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, correctBelief, updateBeliefContent, memoryStats, memoryCommands, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, generateMemoryFile, backfillSubjects, consolidateConversation, findContradictions, getCorePreferences, getBeliefHistory, listBeliefProvenance } from "./memory/index.js";
+export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searchBeliefs, findSimilarBeliefs, semanticSearch, recordAccess, forgetBelief, correctBelief, updateBeliefContent, memoryStats, memoryCommands, countSupportingEpisodes, linkSupersession, linkBeliefs, getLinkedBeliefs, synthesize, mergeDuplicates, pruneBeliefs, reflect, generateMemoryFile, backfillSubjects, consolidateConversation, findContradictions, getCorePreferences, getBeliefHistory, listBeliefProvenance, resolveSubjectAlias, addSubjectAlias } from "./memory/index.js";
 export { remember, rememberStructured } from "./memory/index.js";
 export type { Belief, Episode, BeliefChange, BeliefOrigin, BeliefCorrectionState, BeliefProvenance, CorrectBeliefResult, MemoryStats, MemoryExport, MemoryExportV1, MemoryExportV2, SimilarBelief, ReflectionResult, UnifiedRetrievalResult, ConsolidationResult, RememberOptions, RememberProvenanceInput, StructuredMemoryInput } from "./memory/index.js";
 

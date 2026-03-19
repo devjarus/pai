@@ -15,10 +15,8 @@ import { assistantPlugin } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
 import { createBot, startResearchPushLoop } from "@personal-ai/plugin-telegram";
 import { registerAuthRoutes, extractToken } from "./routes/auth.js";
-import { registerMemoryRoutes } from "./routes/memory.js";
 import { registerAgentRoutes } from "./routes/agents.js";
 import { registerConfigRoutes } from "./routes/config.js";
-import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 import { registerProgramRoutes } from "./routes/programs.js";
 import {
@@ -416,10 +414,8 @@ export async function createServer(options?: { port?: number; host?: string }) {
   });
 
   registerAuthRoutes(app, serverCtx);
-  registerMemoryRoutes(app, serverCtx);
   registerAgentRoutes(app, serverCtx);
   registerConfigRoutes(app, serverCtx);
-  registerKnowledgeRoutes(app, serverCtx);
   registerTaskRoutes(app, serverCtx);
   registerProgramRoutes(app, serverCtx);
   registerInboxRoutes(app, serverCtx);
@@ -533,9 +529,9 @@ export async function createServer(options?: { port?: number; host?: string }) {
     const path = routeOptions.path;
     if (path === "/api/chat") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 20, timeWindow: "1 minute" } };
-    } else if (path === "/api/knowledge/learn") {
+    } else if (path === "/api/library/documents/url") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: "1 minute" } };
-    } else if (path === "/api/remember") {
+    } else if (path === "/api/library/memories") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: "1 minute" } };
     } else if (path === "/api/auth/login") {
       // Strict rate limit to prevent brute-force attacks

@@ -64,6 +64,56 @@ function trimReport(report: string): string {
   return report.trim().replace(/\n{3,}/g, "\n\n");
 }
 
+/** Convert structured JSON (news/research) into readable markdown when LLM forgot code fences. */
+function structuredJsonToMarkdown(data: Record<string, unknown>): string {
+  const lines: string[] = [];
+  const topic = data.topic ?? data.title ?? "Research Report";
+  const summary = data.summary ?? data.description ?? "";
+
+  lines.push(`# ${topic}`);
+  if (summary) lines.push("", String(summary));
+
+  // Articles / findings array
+  const items = (data.articles ?? data.findings ?? data.results) as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(items) && items.length > 0) {
+    lines.push("", "## Key Findings");
+    for (const item of items) {
+      const title = item.title ?? item.name ?? "Untitled";
+      const source = item.source ?? "";
+      const url = item.url ?? "";
+      const keyPoints = item.keyPoints as string[] | undefined;
+      lines.push("", `### ${title}`);
+      if (source) lines.push(`*Source: ${source}*`);
+      if (url) lines.push(`[Read more](${url})`);
+      if (Array.isArray(keyPoints)) {
+        for (const point of keyPoints) lines.push(`- ${point}`);
+      }
+    }
+  }
+
+  // Timeline
+  const timeline = data.timeline as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(timeline) && timeline.length > 0) {
+    lines.push("", "## Timeline");
+    for (const event of timeline) {
+      lines.push(`- **${event.date}** — ${event.event}`);
+    }
+  }
+
+  // Sources
+  const sources = data.sources as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(sources) && sources.length > 0) {
+    lines.push("", "## Sources");
+    for (const src of sources) {
+      const title = src.title ?? src.name ?? "Source";
+      const url = src.url ?? "";
+      lines.push(url ? `- [${title}](${url})` : `- ${title}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 function inferVisualKind(name: string): "chart" | "image" {
   return /(chart|graph|plot|trend|price|forecast|volume|compare)/i.test(name) ? "chart" : "image";
 }
@@ -253,6 +303,19 @@ export function extractPresentationBlocks(text: string): {
 
   // Strip LLM-echoed instruction text about the render spec
   report = report.replace(/^(?:Fill in (?:the )?actual values|IMPORTANT:.*Fill in|Available components:).*$/gim, "");
+
+  // If the report is raw JSON (LLM forgot code fences), extract it as structuredResult
+  // and generate a readable markdown summary so the UI has something to render
+  if (!structuredResult) {
+    const trimmed = report.trim();
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      const parsed = parseJson<Record<string, unknown>>(trimmed);
+      if (parsed && (parsed.topic || parsed.summary || parsed.articles || parsed.ticker || parsed.findings)) {
+        structuredResult = trimmed;
+        report = structuredJsonToMarkdown(parsed);
+      }
+    }
+  }
 
   return { report: trimReport(report), structuredResult, renderSpec };
 }

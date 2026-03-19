@@ -2,6 +2,12 @@ import type { Plugin, PluginContext, Command, Migration } from "@personal-ai/cor
 
 export { runResearchInBackground, createResearchJob, getResearchJob, listResearchJobs, listPendingResearchJobs, cancelResearchJob, recoverStaleResearchJobs, cancelAllRunningResearchJobs, clearCompletedJobs } from "./research.js";
 export type { ResearchJob, ResearchContext } from "./research.js";
+export { RESEARCH_LLM_TIMEOUT } from "./types.js";
+export type { ResearchJobRow } from "./types.js";
+export { mapRow, updateResearchJob, getProgramActionSummary } from "./repository.js";
+export { getPromptForResultType } from "./prompts.js";
+export { createResearchTools } from "./tools.js";
+export { generateStockChartCode } from "./charts.js";
 
 export const researchMigrations: Migration[] = [
   {

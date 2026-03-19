@@ -45,6 +45,44 @@ describe("report presentation helpers", () => {
     expect(blocks.report).toBe("# Report");
   });
 
+  it("extracts raw JSON (no code fences) as structuredResult with markdown fallback", () => {
+    const rawJson = JSON.stringify({
+      topic: "Global Conflict Escalation",
+      summary: "The conflict has escalated dramatically.",
+      articles: [
+        {
+          title: "Daily Report: Second Iran War",
+          source: "Israel-Alma",
+          url: "https://example.com/report",
+          date: "2026-03-17",
+          keyPoints: ["Iran attacked 7+ cities", "UAE intercepted missiles"],
+        },
+      ],
+      timeline: [
+        { date: "2026-03-15", event: "Iran launches missile attacks" },
+      ],
+      sources: [
+        { title: "Reuters", url: "https://reuters.com" },
+      ],
+    });
+
+    const blocks = extractPresentationBlocks(rawJson);
+
+    expect(blocks.structuredResult).toBe(rawJson);
+    expect(blocks.report).toContain("# Global Conflict Escalation");
+    expect(blocks.report).toContain("The conflict has escalated dramatically.");
+    expect(blocks.report).toContain("Daily Report: Second Iran War");
+    expect(blocks.report).toContain("Iran attacked 7+ cities");
+    expect(blocks.report).toContain("2026-03-15");
+    expect(blocks.report).toContain("[Reuters](https://reuters.com)");
+  });
+
+  it("does not extract non-report JSON as structuredResult", () => {
+    const blocks = extractPresentationBlocks('{"random": "data", "count": 42}');
+    expect(blocks.structuredResult).toBeUndefined();
+    expect(blocks.report).toContain('"random"');
+  });
+
   it("parses visuals.json manifests", () => {
     const visuals = parseVisualManifest(JSON.stringify({
       visuals: [

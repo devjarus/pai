@@ -5,7 +5,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { typeColorMap, typeDotMap, typeBorderLeftMap } from "@/lib/belief-colors";
 import { InfoBubble } from "../components/InfoBubble";
+import { QueryError } from "@/components/QueryError";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import { useBeliefs, useAppTimezone } from "@/hooks";
 import type { Belief, BeliefType } from "../types";
@@ -13,32 +15,6 @@ import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 
 const TYPES: BeliefType[] = ["factual", "preference", "procedural", "architectural", "insight", "meta"];
 
-const typeColorMap: Record<string, string> = {
-  factual: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  preference: "bg-purple-500/15 text-purple-400 border-purple-500/30",
-  procedural: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  architectural: "bg-orange-500/15 text-orange-400 border-orange-500/30",
-  insight: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  meta: "bg-pink-500/15 text-pink-400 border-pink-500/30",
-};
-
-const dotColors: Record<string, string> = {
-  factual: "bg-blue-500",
-  preference: "bg-purple-500",
-  procedural: "bg-emerald-500",
-  architectural: "bg-orange-500",
-  insight: "bg-amber-500",
-  meta: "bg-pink-500",
-};
-
-const cardAccentColors: Record<string, string> = {
-  factual: "border-l-blue-500/60",
-  preference: "border-l-purple-500/60",
-  procedural: "border-l-emerald-500/60",
-  architectural: "border-l-orange-500/60",
-  insight: "border-l-amber-500/60",
-  meta: "border-l-pink-500/60",
-};
 
 export default function Timeline() {
   const timezone = useAppTimezone();
@@ -46,7 +22,7 @@ export default function Timeline() {
 
   useEffect(() => { document.title = "Timeline - pai"; }, []);
 
-  const { data: rawBeliefs = [], isLoading: loading } = useBeliefs({
+  const { data: rawBeliefs = [], isLoading: loading, isError, refetch } = useBeliefs({
     type: filterType || undefined,
   });
 
@@ -130,6 +106,8 @@ export default function Timeline() {
                 </div>
               ))}
             </div>
+          ) : isError ? (
+            <QueryError message="Failed to load timeline." onRetry={refetch} />
           ) : beliefs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-sm text-muted-foreground">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mb-4 opacity-30">
@@ -157,8 +135,8 @@ export default function Timeline() {
                     <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border/40" />
 
                     {items.map((belief) => {
-                      const dotClass = dotColors[belief.type] ?? "bg-muted-foreground";
-                      const accentClass = cardAccentColors[belief.type] ?? "border-l-border";
+                      const dotClass = typeDotMap[belief.type] ?? "bg-muted-foreground";
+                      const accentClass = typeBorderLeftMap[belief.type] ?? "border-l-border";
                       const badgeClass = typeColorMap[belief.type] ?? "bg-muted text-muted-foreground";
 
                       return (

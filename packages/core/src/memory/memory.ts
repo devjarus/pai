@@ -148,6 +148,15 @@ export const memoryMigrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_belief_provenance_source ON belief_provenance(source_kind, source_id);
     `,
   },
+  {
+    version: 13,
+    up: `
+      CREATE TABLE IF NOT EXISTS subject_aliases (
+        alias TEXT PRIMARY KEY,
+        canonical TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export interface Episode {
@@ -506,6 +515,21 @@ export function pruneBeliefs(storage: Storage, threshold = 0.05): string[] {
     logBeliefChange(storage, { beliefId: b.id, changeType: "pruned", detail: `Effective confidence ${effectiveConfidence(b).toFixed(3)} below threshold ${threshold}` });
   }
   return toPrune.map((b) => b.id);
+}
+
+export function resolveSubjectAlias(storage: Storage, subject: string): string {
+  const row = storage.query<{ canonical: string }>(
+    "SELECT canonical FROM subject_aliases WHERE alias = ?",
+    [subject.toLowerCase().trim()],
+  );
+  return row[0]?.canonical ?? subject.toLowerCase().trim();
+}
+
+export function addSubjectAlias(storage: Storage, alias: string, canonical: string): void {
+  storage.run(
+    "INSERT OR REPLACE INTO subject_aliases (alias, canonical) VALUES (?, ?)",
+    [alias.toLowerCase().trim(), canonical.toLowerCase().trim()],
+  );
 }
 
 export function linkBeliefToEpisode(storage: Storage, beliefId: string, episodeId: string): void {

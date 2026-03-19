@@ -1,19 +1,10 @@
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { typeColorMap, typeBorderLeftMap } from "@/lib/belief-colors";
 import type { Belief } from "../types";
 import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
 import { useAppTimezone } from "@/hooks";
-
-const typeColorMap: Record<string, string> = {
-  factual: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  preference: "bg-purple-500/15 text-purple-400 border-purple-500/30",
-  procedural: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  architectural: "bg-orange-500/15 text-orange-400 border-orange-500/30",
-  insight: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  meta: "bg-pink-500/15 text-pink-400 border-pink-500/30",
-};
 
 interface BeliefCardProps {
   belief: Belief;
@@ -25,12 +16,14 @@ export default function BeliefCard({ belief, onForget, onClick }: BeliefCardProp
   const timezone = useAppTimezone();
   const confidencePercent = Math.round(belief.confidence * 100);
   const typeClass = typeColorMap[belief.type] ?? "bg-muted text-muted-foreground border-border";
+  const borderLeft = typeBorderLeftMap[belief.type] ?? "border-l-border";
   const isActive = belief.status === "active";
 
   return (
-    <Card
+    <div
       className={cn(
-        "group cursor-pointer gap-3 border-border/50 bg-card/50 py-4 transition-all hover:border-primary/30 hover:shadow-md hover:shadow-primary/5",
+        "group cursor-pointer border-l-2 rounded-r-lg bg-card/30 px-4 py-3.5 transition-all hover:bg-card/60",
+        borderLeft,
         !isActive && "opacity-50",
       )}
       onClick={() => onClick?.(belief)}
@@ -44,37 +37,35 @@ export default function BeliefCard({ belief, onForget, onClick }: BeliefCardProp
       }}
     >
       {/* Header: type badge + confidence */}
-      <div className="flex items-center justify-between px-4">
+      <div className="flex items-center justify-between">
         <Badge
           variant="outline"
           className={cn("rounded-md text-[10px] font-medium uppercase tracking-wider", typeClass)}
         >
           {belief.type}
         </Badge>
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="font-mono text-xs text-muted-foreground/70">
           {confidencePercent}%
         </span>
       </div>
 
       {/* Statement */}
-      <CardContent className="px-4 py-0">
-        <p className="text-sm leading-relaxed text-foreground/85">
-          {belief.statement}
-        </p>
-      </CardContent>
+      <p className="mt-2 text-sm leading-relaxed text-foreground/85">
+        {belief.statement}
+      </p>
 
       {/* Confidence bar */}
-      <div className="px-4">
-        <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+      <div className="mt-3">
+        <div className="h-0.5 w-full overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full bg-primary transition-all"
+            className="h-full rounded-full bg-primary/60 transition-all"
             style={{ width: `${confidencePercent}%` }}
           />
         </div>
       </div>
 
       {/* Footer */}
-      <CardFooter className="flex items-center justify-between px-4 py-0 text-[11px] text-muted-foreground">
+      <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground/60">
         <span>{formatWithTimezone(parseApiDate(belief.created_at), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }, timezone)}</span>
         <div className="flex items-center gap-2">
           {!isActive && (
@@ -96,7 +87,7 @@ export default function BeliefCard({ belief, onForget, onClick }: BeliefCardProp
             </Button>
           )}
         </div>
-      </CardFooter>
-    </Card>
+      </div>
+    </div>
   );
 }

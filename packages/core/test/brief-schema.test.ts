@@ -4,17 +4,25 @@ import { buildBriefSignalHash, buildReportBriefSection, stripEnrichmentFromGoal 
 
 describe("stripEnrichmentFromGoal", () => {
   it("returns the original goal when no enrichment is present", () => {
-    expect(stripEnrichmentFromGoal("Track H4 visa appointments")).toBe("Track H4 visa appointments");
+    expect(stripEnrichmentFromGoal("Track weekly tech news")).toBe("Track weekly tech news");
   });
 
-  it("strips LLM enrichment instructions appended by buildEnrichedResearchGoal", () => {
+  it("strips old-style enrichment instructions", () => {
     const enriched =
-      "Track H4 visa appointments\n\n" +
+      "Track weekly tech news\n\n" +
       "IMPORTANT — PREVIOUS FINDINGS (do NOT repeat these):\n" +
       "No new slots available.\n\n" +
-      "Focus ONLY on what is NEW or CHANGED since 2026-03-14. " +
-      "If nothing meaningful changed, say so in one sentence instead of restating old findings.";
-    expect(stripEnrichmentFromGoal(enriched)).toBe("Track H4 visa appointments");
+      "Focus ONLY on what is NEW or CHANGED since 2026-03-14.";
+    expect(stripEnrichmentFromGoal(enriched)).toBe("Track weekly tech news");
+  });
+
+  it("strips new-style enrichment instructions appended by buildEnrichedResearchGoal", () => {
+    const enriched =
+      "Track weekly tech news\n\n" +
+      "CONTEXT — WHAT WAS ALREADY COVERED (use as baseline, not as your report):\n" +
+      "No new slots available.\n\n" +
+      "Your job since 2026-03-14: find FRESH information the previous report missed.";
+    expect(stripEnrichmentFromGoal(enriched)).toBe("Track weekly tech news");
   });
 });
 
@@ -157,7 +165,7 @@ describe("brief-schema", () => {
 
   it("strips enrichment instructions from goal so they do not leak into briefs", () => {
     const enrichedGoal =
-      "Track H4 visa appointments\n\n" +
+      "Track weekly tech news\n\n" +
       "IMPORTANT — PREVIOUS FINDINGS (do NOT repeat these):\n" +
       "No new slots available.\n\n" +
       "Focus ONLY on what is NEW or CHANGED since 2026-03-14. " +
@@ -171,8 +179,8 @@ describe("brief-schema", () => {
 
     // Title derived from report content, goal stripped of enrichment
     expect(section.title).toBe("No meaningful changes have been reported");
-    expect(section.goal).toBe("Track H4 visa appointments");
-    expect(section.appendix?.goal).toBe("Track H4 visa appointments");
+    expect(section.goal).toBe("Track weekly tech news");
+    expect(section.appendix?.goal).toBe("Track weekly tech news");
     expect(section.recommendation.rationale).not.toContain("PREVIOUS FINDINGS");
     expect(section.what_changed[0]).not.toContain("PREVIOUS FINDINGS");
   });

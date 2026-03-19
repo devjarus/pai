@@ -6,10 +6,15 @@ import {
   unifiedSearch,
   listBeliefs,
   getBeliefHistory,
+  listBeliefProvenance,
+  searchBeliefs,
+  semanticSearch,
   forgetBelief,
+  correctBelief,
   remember,
   memoryStats,
   listSources,
+  getSourceChunks,
   forgetSource,
   learnFromContent,
   listFindings,
@@ -18,10 +23,37 @@ import {
   deleteFinding,
 } from "@personal-ai/library";
 import type { Belief } from "@personal-ai/library";
-import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
+import {
+  recordProductEvent,
+  updateBeliefContent,
+  knowledgeSearch,
+  reindexSource,
+  reindexAllSources,
+  isBinaryDocument,
+  parseBinaryDocument,
+  listJobs,
+  clearCompletedBackgroundJobs,
+} from "@personal-ai/core";
+import { fetchPageAsMarkdown, discoverSubPages } from "@personal-ai/plugin-assistant/page-fetch";
+import { runCrawlInBackground } from "@personal-ai/plugin-assistant/tools";
+
+// --- Schemas ---
 
 const rememberSchema = z.object({
   text: z.string().min(1, "text is required").max(10_000, "Text too long (max 10,000 characters)"),
+});
+
+const updateBeliefSchema = z.object({
+  statement: z.string().min(1, "statement is required").max(10_000, "Statement too long"),
+});
+
+const correctBeliefSchema = z.object({
+  statement: z.string().min(1, "statement is required").max(10_000, "Statement too long"),
+  note: z.string().max(5_000, "Note too long").optional(),
+  briefId: z.string().max(255).optional(),
+  programId: z.string().max(255).optional(),
+  threadId: z.string().max(255).optional(),
+  channel: z.string().max(32).optional(),
 });
 
 const learnUrlSchema = z.object({
@@ -33,7 +65,20 @@ const learnUrlSchema = z.object({
     .refine((u) => {
       try { return ["http:", "https:"].includes(new URL(u).protocol); } catch { return false; }
     }, "URL must use http or https"),
+  crawl: z.boolean().optional(),
   force: z.boolean().optional(),
+});
+
+const uploadSchema = z.object({
+  fileName: z.string().min(1, "File name is required").max(255, "File name too long"),
+  content: z.string().min(1, "File content is required").max(5_000_000, "File too large (max 5MB)"),
+  mimeType: z.string().optional(),
+  analyze: z.boolean().optional(),
+});
+
+const patchSourceSchema = z.object({
+  tags: z.string().nullable().optional(),
+  maxAgeDays: z.number().int().positive().nullable().optional(),
 });
 
 export function registerLibraryRoutes(app: FastifyInstance, { ctx }: ServerContext): void {
@@ -45,12 +90,84 @@ export function registerLibraryRoutes(app: FastifyInstance, { ctx }: ServerConte
     return unifiedSearch(ctx.storage, query, limit);
   });
 
-  // --- Memories (beliefs) ---
-  app.get<{ Querystring: { status?: string } }>("/api/library/memories", async (request) => {
-    const status = request.query.status ?? "active";
-    return listBeliefs(ctx.storage, status);
+  // --- Document-specific search (knowledge base only, with freshness decay) ---
+  app.get<{ Querystring: { q: string } }>("/api/library/documents/search", async (request) => {
+    const query = request.query.q;
+    if (!query) return [];
+    try {
+      const results = await knowledgeSearch(ctx.storage, ctx.llm, query, 5, {
+        freshnessDecayDays: ctx.config.knowledge?.freshnessDecayDays,
+      });
+      return results.map((r) => ({
+        content: r.chunk.content.slice(0, 1000),
+        source: r.source.title,
+        url: r.source.url,
+        sourceId: r.source.id,
+        relevance: Math.round(r.score * 100),
+      }));
+    } catch {
+      return [];
+    }
   });
 
+  // =============================================
+  // Memories (beliefs) — static routes first
+  // =============================================
+
+  // Semantic search for memories
+  app.get<{ Querystring: { q: string } }>("/api/library/memories/search", async (request) => {
+    const query = request.query.q;
+    if (!query) return [];
+
+    try {
+      const { embedding } = await ctx.llm.embed(query, {
+        telemetry: { process: "embed.memory", surface: "web", route: "/api/library/memories/search" },
+      });
+      const results = semanticSearch(ctx.storage, embedding, 20, query);
+      return results.map((r) => {
+        const full = ctx.storage.query<Belief>(
+          "SELECT * FROM beliefs WHERE id = ?", [r.beliefId],
+        )[0];
+        return full ? { ...full, similarity: r.similarity } : null;
+      }).filter(Boolean);
+    } catch {
+      return searchBeliefs(ctx.storage, query);
+    }
+  });
+
+  // Clear all active beliefs
+  app.post("/api/library/memories/clear", async () => {
+    const active = listBeliefs(ctx.storage, "active");
+    let cleared = 0;
+    for (const belief of active) {
+      try {
+        forgetBelief(ctx.storage, belief.id);
+        cleared++;
+      } catch {
+        // skip beliefs that fail
+      }
+    }
+    return { ok: true, cleared };
+  });
+
+  // List memories with optional status and type filters
+  app.get<{ Querystring: { status?: string; type?: string } }>("/api/library/memories", async (request) => {
+    const status = request.query.status ?? "active";
+    let beliefs = listBeliefs(ctx.storage, status);
+    if (request.query.type) {
+      beliefs = beliefs.filter((b: Belief) => b.type === request.query.type);
+    }
+    return beliefs;
+  });
+
+  // Create a memory
+  app.post("/api/library/memories", async (request) => {
+    const { text } = validate(rememberSchema, request.body);
+    const result = await remember(ctx.storage, ctx.llm, text, ctx.logger);
+    return result;
+  });
+
+  // Get single memory with history
   app.get<{ Params: { id: string } }>("/api/library/memories/:id", async (request, reply) => {
     const beliefs = listBeliefs(ctx.storage, "all");
     const belief = beliefs.find((b: Belief) => b.id === request.params.id || b.id.startsWith(request.params.id));
@@ -59,32 +176,167 @@ export function registerLibraryRoutes(app: FastifyInstance, { ctx }: ServerConte
     return { ...belief, history };
   });
 
-  app.post("/api/library/memories", async (request) => {
-    const { text } = validate(rememberSchema, request.body);
-    const result = await remember(ctx.storage, ctx.llm, text, ctx.logger);
-    return result;
+  // Get memory history
+  app.get<{ Params: { id: string } }>("/api/library/memories/:id/history", async (request, reply) => {
+    const beliefs = listBeliefs(ctx.storage, "all");
+    const belief = beliefs.find((entry: Belief) => entry.id === request.params.id || entry.id.startsWith(request.params.id));
+    if (!belief) return reply.status(404).send({ error: "Belief not found" });
+    return { history: getBeliefHistory(ctx.storage, belief.id) };
   });
 
+  // Get memory provenance
+  app.get<{ Params: { id: string } }>("/api/library/memories/:id/provenance", async (request, reply) => {
+    const beliefs = listBeliefs(ctx.storage, "all");
+    const belief = beliefs.find((entry: Belief) => entry.id === request.params.id || entry.id.startsWith(request.params.id));
+    if (!belief) return reply.status(404).send({ error: "Belief not found" });
+    return { provenance: listBeliefProvenance(ctx.storage, belief.id) };
+  });
+
+  // Update belief statement
+  app.patch<{ Params: { id: string } }>("/api/library/memories/:id", async (request, reply) => {
+    const { statement } = validate(updateBeliefSchema, request.body);
+    try {
+      const updated = await updateBeliefContent(ctx.storage, ctx.llm, request.params.id, statement);
+      return updated;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update belief";
+      const status = message.includes("not found") ? 404 : 500;
+      return reply.status(status).send({ error: message });
+    }
+  });
+
+  // Correct a belief
+  app.post<{ Params: { id: string } }>("/api/library/memories/:id/correct", async (request, reply) => {
+    const { statement, note, briefId, programId, threadId, channel } = validate(correctBeliefSchema, request.body);
+    try {
+      const result = await correctBelief(ctx.storage, ctx.llm, request.params.id, { statement, note });
+      recordProductEvent(ctx.storage, {
+        eventType: "belief_corrected",
+        channel: channel ?? "web",
+        programId: programId ?? null,
+        briefId: briefId ?? null,
+        beliefId: result.replacementBelief.id,
+        threadId: threadId ?? null,
+      });
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to correct belief";
+      const normalized = message.toLowerCase();
+      const status = normalized.includes("not found")
+        ? 404
+        : normalized.includes("ambiguous") || normalized.includes("must change")
+          ? 400
+          : 500;
+      return reply.status(status).send({ error: message });
+    }
+  });
+
+  // Delete a memory
   app.delete<{ Params: { id: string } }>("/api/library/memories/:id", async (request) => {
     forgetBelief(ctx.storage, request.params.id);
     return { ok: true };
   });
 
-  // --- Documents (knowledge sources) ---
-  app.get("/api/library/documents", async () => {
-    return listSources(ctx.storage).map((s) => ({
-      id: s.id,
-      title: s.title,
-      url: s.url,
-      chunks: s.chunk_count,
-      learnedAt: s.fetched_at,
-      tags: s.tags ?? null,
-      maxAgeDays: s.max_age_days ?? null,
-    }));
+  // =============================================
+  // Documents (knowledge sources) — static routes first
+  // =============================================
+
+  // Upload a document (text, PDF, Excel)
+  app.post<{ Body: { fileName: string; content: string; mimeType?: string; analyze?: boolean } }>("/api/library/documents/upload", { bodyLimit: 5_242_880 }, async (request, reply) => {
+    const { fileName, content, mimeType, analyze } = validate(uploadSchema, request.body);
+    const ext = fileName.split(".").pop()?.toLowerCase();
+    const textSupported = new Set(["txt", "md", "markdown", "csv", "json", "xml", "html"]);
+    const binarySupported = new Set(["pdf", "xlsx", "xls", "xlsm", "xlsb"]);
+    if (ext && !textSupported.has(ext) && !binarySupported.has(ext)) {
+      return reply.status(415).send({
+        error: "Unsupported file type. Supported: .txt, .md, .csv, .json, .xml, .html, .pdf, .xlsx, .xls",
+      });
+    }
+
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 120);
+    const sourceUrl = `upload://${Date.now()}-${safeName}`;
+
+    try {
+      // For binary formats, decode base64 and extract text
+      let textContent: string;
+      const mime = mimeType ?? "text/plain";
+      if (isBinaryDocument(mime, fileName)) {
+        const buffer = Buffer.from(content, "base64");
+        textContent = await parseBinaryDocument(buffer, mime, fileName);
+        if (!textContent.trim()) {
+          return reply.status(422).send({ error: "Could not extract text content from the document" });
+        }
+      } else {
+        textContent = content;
+      }
+
+      const result = await learnFromContent(ctx.storage, ctx.llm, sourceUrl, fileName, textContent, { force: true });
+      let analysis: string | undefined;
+      if (analyze) {
+        const snippet = textContent.length > 12_000 ? `${textContent.slice(0, 12_000)}\n\n[truncated]` : textContent;
+        const response = await ctx.llm.chat([
+          {
+            role: "system",
+            content: "You analyze uploaded documents. Return concise markdown with: Summary, Key points (3-7 bullets), and Suggested follow-up questions.",
+          },
+          {
+            role: "user",
+            content: `Analyze this document. File: ${fileName}. MIME: ${mime}\n\n${snippet}`,
+          },
+        ], {
+          telemetry: {
+            process: "memory.summarize",
+            surface: "web",
+            route: "/api/library/documents/upload",
+          },
+        });
+        analysis = response.text;
+      }
+
+      return {
+        ok: true,
+        title: result.source.title,
+        sourceId: result.source.id,
+        chunks: result.chunksStored,
+        analysis,
+      };
+    } catch (err) {
+      return reply.status(500).send({ error: err instanceof Error ? err.message : "Failed to process uploaded document" });
+    }
   });
 
-  app.post<{ Body: { url: string; force?: boolean } }>("/api/library/documents/url", async (request, reply) => {
-    const { url, force } = validate(learnUrlSchema, request.body);
+  // Crawl status
+  app.get("/api/library/documents/crawl-status", async () => {
+    // Clean up completed jobs older than 30 minutes
+    clearCompletedBackgroundJobs(ctx.storage, 30 * 60 * 1000);
+
+    const crawlJobs = listJobs(ctx.storage)
+      .filter((j) => j.type === "crawl")
+      .map((j) => ({
+        url: j.label,
+        status: j.status,
+        progress: j.progress,
+        startedAt: j.startedAt,
+        ...(j.error ? { error: j.error } : {}),
+        ...(j.result ? { result: j.result } : {}),
+      }));
+
+    return { jobs: crawlJobs };
+  });
+
+  // Re-index all sources
+  app.post("/api/library/documents/reindex", async (_request, reply) => {
+    try {
+      const count = await reindexAllSources(ctx.storage, ctx.llm);
+      return { ok: true, reindexed: count };
+    } catch (err) {
+      return reply.status(500).send({ error: err instanceof Error ? err.message : "Failed to re-index" });
+    }
+  });
+
+  // Learn from URL (with optional crawl and force re-learn)
+  app.post<{ Body: { url: string; crawl?: boolean; force?: boolean } }>("/api/library/documents/url", async (request, reply) => {
+    const { url, crawl, force } = validate(learnUrlSchema, request.body);
 
     try {
       const page = await fetchPageAsMarkdown(url);
@@ -103,12 +355,106 @@ export function registerLibraryRoutes(app: FastifyInstance, { ctx }: ServerConte
         response.chunks = result.chunksStored;
       }
 
+      // Optionally crawl sub-pages in background
+      if (crawl) {
+        const subPages = await discoverSubPages(url);
+        if (subPages.length > 0) {
+          runCrawlInBackground(ctx.storage, ctx.llm, url, subPages).catch(() => {});
+          response.crawling = true;
+          response.subPages = Math.min(subPages.length, 30);
+        }
+      }
+
       return response;
     } catch (err) {
       return reply.status(500).send({ error: err instanceof Error ? err.message : "Failed to learn from URL" });
     }
   });
 
+  // List documents
+  app.get("/api/library/documents", async () => {
+    return listSources(ctx.storage).map((s) => ({
+      id: s.id,
+      title: s.title,
+      url: s.url,
+      chunks: s.chunk_count,
+      learnedAt: s.fetched_at,
+      tags: s.tags ?? null,
+      maxAgeDays: s.max_age_days ?? null,
+    }));
+  });
+
+  // Get chunks for a source
+  app.get<{ Params: { id: string } }>("/api/library/documents/:id/chunks", async (request, reply) => {
+    const { id } = request.params;
+    const chunks = getSourceChunks(ctx.storage, id);
+    if (chunks.length === 0) {
+      const sources = listSources(ctx.storage);
+      if (!sources.some((s) => s.id === id)) {
+        return reply.status(404).send({ error: "Source not found" });
+      }
+    }
+    return chunks.map((c) => ({
+      id: c.id,
+      content: c.content,
+      chunkIndex: c.chunk_index,
+    }));
+  });
+
+  // Update source metadata (tags, maxAgeDays)
+  app.patch<{ Params: { id: string }; Body: { tags?: string | null; maxAgeDays?: number | null } }>("/api/library/documents/:id", async (request, reply) => {
+    const { id } = request.params;
+    const body = validate(patchSourceSchema, request.body);
+    const sources = listSources(ctx.storage);
+    const source = sources.find((s) => s.id === id);
+    if (!source) return reply.status(404).send({ error: "Source not found" });
+
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (body.tags !== undefined) { sets.push("tags = ?"); params.push(body.tags ?? null); }
+    if (body.maxAgeDays !== undefined) { sets.push("max_age_days = ?"); params.push(body.maxAgeDays ?? null); }
+
+    if (sets.length > 0) {
+      params.push(id);
+      ctx.storage.run(`UPDATE knowledge_sources SET ${sets.join(", ")} WHERE id = ?`, params);
+    }
+    return { ok: true };
+  });
+
+  // Crawl sub-pages for an existing source
+  app.post<{ Params: { id: string } }>("/api/library/documents/:id/crawl", async (request, reply) => {
+    const { id } = request.params;
+    const sources = listSources(ctx.storage);
+    const source = sources.find((s) => s.id === id);
+    if (!source) return reply.status(404).send({ error: "Source not found" });
+
+    try {
+      const subPages = await discoverSubPages(source.url);
+      if (subPages.length === 0) {
+        return { ok: true, subPages: 0, message: "No sub-pages found" };
+      }
+      runCrawlInBackground(ctx.storage, ctx.llm, source.url, subPages).catch(() => {});
+      return { ok: true, subPages: Math.min(subPages.length, 30), crawling: true };
+    } catch (err) {
+      return reply.status(500).send({ error: err instanceof Error ? err.message : "Failed to discover sub-pages" });
+    }
+  });
+
+  // Re-index a single source
+  app.post<{ Params: { id: string } }>("/api/library/documents/:id/reindex", async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const chunks = await reindexSource(ctx.storage, ctx.llm, id);
+      return { ok: true, chunks };
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("Source not found")) {
+        return reply.status(404).send({ error: "Source not found" });
+      }
+      return reply.status(500).send({ error: err instanceof Error ? err.message : "Failed to re-index source" });
+    }
+  });
+
+  // Delete a document
   app.delete<{ Params: { id: string } }>("/api/library/documents/:id", async (request, reply) => {
     const removed = forgetSource(ctx.storage, request.params.id);
     if (!removed) return reply.status(404).send({ error: "Source not found" });
@@ -147,15 +493,4 @@ export function registerLibraryRoutes(app: FastifyInstance, { ctx }: ServerConte
       findingsCount: findings.length,
     };
   });
-
-  // --- 301 Redirects from old paths ---
-  // When the legacy memory.ts and knowledge.ts route files are removed,
-  // uncomment these redirects to preserve backward compatibility:
-  //
-  // GET  /api/beliefs          -> /api/library/memories
-  // POST /api/remember         -> /api/library/memories
-  // GET  /api/stats            -> /api/library/stats
-  // GET  /api/knowledge/sources -> /api/library/documents
-  // POST /api/knowledge/learn   -> /api/library/documents/url
-  // GET  /api/knowledge/search  -> /api/library/search
 }

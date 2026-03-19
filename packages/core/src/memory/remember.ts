@@ -1,6 +1,6 @@
 import type { LLMClient, Storage, Logger } from "../types.js";
 import type { Belief, BeliefOrigin } from "./memory.js";
-import { addBeliefProvenance, createEpisode, createBelief, findSimilarBeliefs, storeEmbedding, storeEpisodeEmbedding, reinforceBelief, linkBeliefToEpisode, logBeliefChange, countSupportingEpisodes, linkSupersession, linkBeliefs } from "./memory.js";
+import { addBeliefProvenance, createEpisode, createBelief, findSimilarBeliefs, storeEmbedding, storeEpisodeEmbedding, reinforceBelief, linkBeliefToEpisode, logBeliefChange, countSupportingEpisodes, linkSupersession, linkBeliefs, resolveSubjectAlias } from "./memory.js";
 
 const VALID_FACT_TYPES = new Set(["factual", "preference", "procedural", "architectural"]);
 
@@ -99,13 +99,13 @@ export async function extractBeliefs(
     {
       role: "system",
       content:
-        'Extract a personal fact and an optional generalized insight from the observation. ' +
-        'The fact should preserve what the user said/experienced. The insight (if any) should be a broader lesson. ' +
+        'Extract a personal fact from the observation. ' +
+        'The fact should preserve what the user said/experienced. ' +
         'Classify the fact type as one of: "factual" (objective truth), "preference" (user likes/dislikes), ' +
         '"procedural" (how to do something), "architectural" (system design decision). ' +
         'Rate importance 1-10: 1-3 trivial/transient, 4-6 useful context, 7-9 core preference/decision, 10 critical constraint. ' +
         'Identify the subject: who is this fact ABOUT? Use their name (e.g., "Alex", "Bob") or "owner" if about the AI owner. ' +
-        'Reply with JSON only: {"fact":"...","factType":"...","importance":N,"insight":"...","subject":"..."} or {"fact":"...","factType":"...","importance":N,"insight":null,"subject":"owner"}. ' +
+        'Reply with JSON only: {"fact":"...","factType":"...","importance":N,"subject":"..."} or {"fact":"...","factType":"...","importance":N,"subject":"owner"}. ' +
         'Keep each under 20 words.',
     },
     { role: "user", content: text },
@@ -129,7 +129,7 @@ export async function extractBeliefs(
     const factType = normalizeFactType(parsed.factType);
     const importance = normalizeImportance(parsed.importance);
     const subject = normalizeSubject(parsed.subject);
-    return { fact: parsed.fact, factType, importance, insight: parsed.insight ?? null, subject };
+    return { fact: parsed.fact, factType, importance, insight: null, subject };
   } catch {
     return { fact: result.text.trim(), factType: "factual", importance: 5, insight: null, subject: "owner" };
   }
@@ -242,6 +242,11 @@ async function processNewBelief(
   subject?: string,
   options?: RememberOptions,
 ): Promise<{ beliefId: string; isReinforcement: boolean }> {
+  // Resolve subject alias before storing
+  if (subject) {
+    subject = resolveSubjectAlias(storage, subject);
+  }
+
   let embedding: number[] | null = null;
   try {
     const result = await llm.embed(statement, {
@@ -307,31 +312,31 @@ async function processNewBelief(
     return { beliefId: match.beliefId, isReinforcement: true };
   }
 
-  if (similar.length > 0 && similar[0]!.similarity > 0.7) {
-    // Grey zone (0.70-0.85): classify relationship before deciding action
-    const topMatch = similar[0]!;
-    const relationship = await classifyRelationship(llm, statement, topMatch.statement, logger);
+  // Grey zone (0.70-0.85): check top 3 candidates for relationship
+  const greyZoneCandidates = similar.filter((s) => s.similarity > 0.7).slice(0, 3);
+  for (const candidate of greyZoneCandidates) {
+    const relationship = await classifyRelationship(llm, statement, candidate.statement, logger);
 
     if (relationship === "REINFORCEMENT") {
       // Paraphrase, intensity change, or specificity increase — reinforce existing belief
-      reinforceBelief(storage, topMatch.beliefId);
-      linkBeliefToEpisode(storage, topMatch.beliefId, episodeId);
-      addBeliefProvenance(storage, { beliefId: topMatch.beliefId, sourceKind: "episode", sourceId: episodeId, sourceLabel: "Memory episode", relation: "reinforced-by" });
+      reinforceBelief(storage, candidate.beliefId);
+      linkBeliefToEpisode(storage, candidate.beliefId, episodeId);
+      addBeliefProvenance(storage, { beliefId: candidate.beliefId, sourceKind: "episode", sourceId: episodeId, sourceLabel: "Memory episode", relation: "reinforced-by" });
       for (const provenance of options?.provenance ?? []) {
-        addBeliefProvenance(storage, { beliefId: topMatch.beliefId, ...provenance });
+        addBeliefProvenance(storage, { beliefId: candidate.beliefId, ...provenance });
       }
       logBeliefChange(storage, {
-        beliefId: topMatch.beliefId,
+        beliefId: candidate.beliefId,
         changeType: "reinforced",
-        detail: `Grey-zone reinforcement (${topMatch.similarity.toFixed(2)}): "${statement}"`,
+        detail: `Grey-zone reinforcement (${candidate.similarity.toFixed(2)}): "${statement}"`,
         episodeId,
       });
-      logger?.info("Belief reinforced via grey-zone classification", { beliefId: topMatch.beliefId, similarity: topMatch.similarity });
-      return { beliefId: topMatch.beliefId, isReinforcement: true };
+      logger?.info("Belief reinforced via grey-zone classification", { beliefId: candidate.beliefId, similarity: candidate.similarity });
+      return { beliefId: candidate.beliefId, isReinforcement: true };
     }
 
     if (relationship === "CONTRADICTION") {
-      const contradictedId = topMatch.beliefId;
+      const contradictedId = candidate.beliefId;
       const supportCount = countSupportingEpisodes(storage, contradictedId);
 
       if (supportCount >= 3) {
@@ -422,7 +427,7 @@ async function processNewBelief(
       return { beliefId: belief.id, isReinforcement: false };
     }
 
-    // INDEPENDENT: fall through to create new belief (related but compatible)
+    // INDEPENDENT: continue checking next candidate
   }
 
   // No match or low similarity — create new
@@ -489,27 +494,6 @@ async function storeStructuredBeliefs(
   );
   beliefIds.push(factResult.beliefId);
   if (factResult.isReinforcement) isReinforcement = true;
-
-  if (input.insight) {
-    const insightResult = await processNewBelief(
-      storage,
-      llm,
-      input.insight,
-      "insight",
-      episodeId,
-      logger,
-      Math.max(1, Math.min(10, input.importance - 1)),
-      input.subject,
-      {
-        origin: "synthesized",
-        provenance: options?.provenance,
-        freshnessAt: options?.freshnessAt,
-        sensitive: options?.sensitive,
-      },
-    );
-    beliefIds.push(insightResult.beliefId);
-    if (insightResult.isReinforcement) isReinforcement = true;
-  }
 
   return { beliefIds, isReinforcement };
 }

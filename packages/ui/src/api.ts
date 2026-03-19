@@ -201,30 +201,30 @@ export function getBeliefs(params?: {
   if (params?.status) qs.set("status", params.status);
   if (params?.type) qs.set("type", params.type);
   const query = qs.toString();
-  return request<Belief[]>(`/beliefs${query ? `?${query}` : ""}`);
+  return request<Belief[]>(`/library/memories${query ? `?${query}` : ""}`);
 }
 
 export function searchMemory(q: string): Promise<Belief[]> {
-  return request<Belief[]>(`/search?q=${encodeURIComponent(q)}`);
+  return request<Belief[]>(`/library/memories/search?q=${encodeURIComponent(q)}`);
 }
 
 export function getStats(): Promise<MemoryStats> {
-  return request<MemoryStats>("/stats");
+  return request<MemoryStats>("/library/stats");
 }
 
 export function remember(text: string): Promise<{ ok: boolean }> {
-  return request("/remember", {
+  return request("/library/memories", {
     method: "POST",
     body: JSON.stringify({ text }),
   });
 }
 
 export function forgetBelief(id: string): Promise<{ ok: boolean }> {
-  return request(`/forget/${id}`, { method: "POST", body: "{}" });
+  return request(`/library/memories/${id}`, { method: "DELETE" });
 }
 
 export function updateBelief(id: string, statement: string): Promise<Belief> {
-  return request<Belief>(`/beliefs/${id}`, {
+  return request<Belief>(`/library/memories/${id}`, {
     method: "PATCH",
     body: JSON.stringify({ statement }),
   });
@@ -234,7 +234,7 @@ export function correctBelief(id: string, input: { statement: string; note?: str
   invalidatedBelief: Belief;
   replacementBelief: Belief;
 }> {
-  return request(`/beliefs/${id}/correct`, {
+  return request(`/library/memories/${id}/correct`, {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -261,7 +261,7 @@ export function recordProductEventApi(input: {
 }
 
 export function clearAllMemory(): Promise<{ ok: boolean; cleared: number }> {
-  return request("/memory/clear", { method: "POST", body: "{}" });
+  return request("/library/memories/clear", { method: "POST", body: "{}" });
 }
 
 // ---- Agents ----
@@ -347,15 +347,15 @@ export function getObservabilityRecentErrors(range: ObservabilityRange): Promise
 // ---- Knowledge ----
 
 export function getKnowledgeSources(): Promise<KnowledgeSource[]> {
-  return request<KnowledgeSource[]>("/knowledge/sources");
+  return request<KnowledgeSource[]>("/library/documents");
 }
 
 export function searchKnowledge(q: string): Promise<KnowledgeSearchResult[]> {
-  return request<KnowledgeSearchResult[]>(`/knowledge/search?q=${encodeURIComponent(q)}`);
+  return request<KnowledgeSearchResult[]>(`/library/documents/search?q=${encodeURIComponent(q)}`);
 }
 
 export function learnFromUrl(url: string, options?: { crawl?: boolean; force?: boolean }): Promise<{ ok: boolean; title?: string; chunks?: number; skipped?: boolean; crawling?: boolean; subPages?: number }> {
-  return request("/knowledge/learn", {
+  return request("/library/documents/url", {
     method: "POST",
     body: JSON.stringify({ url, ...options }),
   });
@@ -363,41 +363,41 @@ export function learnFromUrl(url: string, options?: { crawl?: boolean; force?: b
 
 
 export function uploadKnowledgeDocument(input: { fileName: string; content: string; mimeType?: string; analyze?: boolean }): Promise<{ ok: boolean; title: string; sourceId: string; chunks: number; analysis?: string }> {
-  return request("/knowledge/upload", {
+  return request("/library/documents/upload", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 export function crawlSubPages(sourceId: string): Promise<{ ok: boolean; subPages: number; crawling?: boolean; message?: string }> {
-  return request(`/knowledge/sources/${sourceId}/crawl`, {
+  return request(`/library/documents/${sourceId}/crawl`, {
     method: "POST",
     body: "{}",
   });
 }
 
 export function getCrawlStatus(): Promise<{ jobs: CrawlJob[] }> {
-  return request<{ jobs: CrawlJob[] }>("/knowledge/crawl-status");
+  return request<{ jobs: CrawlJob[] }>("/library/documents/crawl-status");
 }
 
 export function getSourceChunks(id: string): Promise<Array<{ id: string; content: string; chunkIndex: number }>> {
-  return request<Array<{ id: string; content: string; chunkIndex: number }>>(`/knowledge/sources/${id}/chunks`);
+  return request<Array<{ id: string; content: string; chunkIndex: number }>>(`/library/documents/${id}/chunks`);
 }
 
 export function reindexKnowledge(): Promise<{ ok: boolean; reindexed: number }> {
-  return request("/knowledge/reindex", { method: "POST", body: "{}" });
+  return request("/library/documents/reindex", { method: "POST", body: "{}" });
 }
 
 export function reindexKnowledgeSource(id: string): Promise<{ ok: boolean; chunks: number }> {
-  return request(`/knowledge/sources/${id}/reindex`, { method: "POST", body: "{}" });
+  return request(`/library/documents/${id}/reindex`, { method: "POST", body: "{}" });
 }
 
 export function deleteKnowledgeSource(id: string): Promise<{ ok: boolean }> {
-  return request(`/knowledge/sources/${id}`, { method: "DELETE" });
+  return request(`/library/documents/${id}`, { method: "DELETE" });
 }
 
 export function updateKnowledgeSource(id: string, data: { tags?: string | null; maxAgeDays?: number | null }): Promise<{ ok: boolean }> {
-  return request(`/knowledge/sources/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } });
+  return request(`/library/documents/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
 // ---- Config ----

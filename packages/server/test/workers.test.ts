@@ -355,11 +355,11 @@ describe("buildEnrichedResearchGoal", () => {
     });
 
     expect(result).toContain("What's happening in crypto?");
-    expect(result).toContain("PREVIOUS FINDINGS");
+    expect(result).toContain("WHAT WAS ALREADY COVERED");
     expect(result).toContain("BTC at $73,800");
     expect(result).toContain("ETF inflows declining");
     expect(result).toContain("since 2026-03-12");
-    expect(result).toContain("NEW or CHANGED");
+    expect(result).toContain("FRESH information");
   });
 
   it("returns plain goal when brief sections cannot be parsed", () => {
@@ -399,8 +399,8 @@ describe("buildEnrichedResearchGoal", () => {
       latestBriefId: "brief-no-date",
     });
 
-    expect(result).toContain("PREVIOUS FINDINGS");
+    expect(result).toContain("WHAT WAS ALREADY COVERED");
     expect(result).toContain("Market stable");
-    expect(result).not.toContain("since");
+    expect(result).not.toContain("since 20");
   });
 });

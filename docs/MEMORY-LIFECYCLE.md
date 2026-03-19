@@ -4,7 +4,7 @@ This document maps the full lifecycle of beliefs in the Personal AI memory syste
 
 ## 1. Ingestion: raw and structured memory writes
 
-`remember()` handles raw text observations. It creates an episode, extracts a structured belief via LLM, and runs deduplication/contradiction logic before persisting.
+`remember()` handles raw text observations. It creates an episode, extracts a structured belief via LLM, and runs deduplication/contradiction logic before persisting. Memory extraction from conversations is handled solely by the background learning worker (runs every 2 hours via `workers.ts`), not inline during chat responses.
 
 `rememberStructured()` is the sibling path for callers that already have `{ statement, factType, importance, subject }` from an earlier extraction step. It still creates an episode and stores episode embeddings, but it skips `extractBeliefs()` and writes the structured claim directly through the same downstream belief-processing pipeline.
 
@@ -15,7 +15,7 @@ flowchart TD
     C --> D["llm.embed(text) -> storeEpisodeEmbedding()"]
     C --> E["extractBeliefs(llm, text)"]
 
-    E --> E1["LLM chat: extract JSON\n{fact, factType, importance, insight, subject}"]
+    E --> E1["LLM chat: extract JSON\n{fact, factType, importance, subject}"]
     E1 --> E2["Strip markdown fences, parse JSON"]
     E2 --> E3["Validate factType in {factual, preference, procedural, architectural}"]
     E3 --> E4["Clamp importance 1-10, normalize subject to lowercase"]
@@ -24,16 +24,20 @@ flowchart TD
     D --> F["processNewBelief(fact, factType, episodeId, importance, subject)"]
     E --> F
 
-    F --> G["Try llm.embed(statement)"]
+    F --> F0["resolveSubjectAlias(storage, subject)\ne.g. 'suraj' → 'owner'"]
+    F0 --> G["Try llm.embed(statement)"]
     G -->|Embedding failed| H["CREATE belief at confidence 0.6\nSkip dedup entirely"]
     G -->|Embedding OK| I["findSimilarBeliefs(embedding, limit=5)"]
 
     I --> J{Top similarity?}
     J -->|"> 0.85"| K["REINFORCE existing belief\n+0.1 confidence, reset updated_at\nLink episode to existing belief"]
-    J -->|"0.70 - 0.85"| L["checkContradiction(llm, statement, similar)"]
+    J -->|"0.70 - 0.85"| L["Check top 3 in grey zone"]
     J -->|"< 0.70 or no match"| M["CREATE new belief"]
 
-    L --> N{Contradiction found?}
+    L --> L1{"Any of top 3\nREINFORCEMENT?"}
+    L1 -->|Yes| K
+    L1 -->|No| L2["checkContradiction(llm, statement, top 3)"]
+    L2 --> N{Contradiction found?}
     N -->|No| M
     N -->|Yes| O["countSupportingEpisodes(oldBelief)"]
 
@@ -52,15 +56,17 @@ flowchart TD
     style M fill:#1a3d8b,color:#fff
     style H fill:#555,color:#fff
 
-    Note1["If extractBeliefs returns an insight,\nremember() stores it as type='insight'\nwith origin='synthesized'"]
-    style Note1 fill:none,stroke:#888,stroke-dasharray: 5 5
 ```
 
-Structured producers enter after episode creation with normalized `{ statement, factType, importance, subject, insight? }` input. They reuse `processNewBelief()` and all contradiction/provenance rules, but they do not pay for a second extraction call.
+Structured producers enter after episode creation with normalized `{ statement, factType, importance, subject }` input. They reuse `processNewBelief()` and all contradiction/provenance rules, but they do not pay for a second extraction call.
+
+### Subject alias resolution
+
+`processNewBelief()` calls `resolveSubjectAlias(storage, subject)` at the start to normalize subject names before dedup. Aliases are stored in the `subject_aliases` table (e.g., `"suraj"` → `"owner"`). This ensures that beliefs about the same entity converge regardless of how the subject was originally phrased.
 
 ### `checkContradiction()` detail
 
-The contradiction checker sends a batched prompt to the LLM with all candidate beliefs (those in the 0.70-0.85 similarity range). The LLM replies with a single belief index or `NONE`. Invalid responses (non-numeric, out of range) are treated as `NONE`.
+The contradiction checker sends a batched prompt to the LLM with the top 3 candidate beliefs from the 0.70-0.85 similarity range. The LLM replies with a single belief index or `NONE`. Invalid responses (non-numeric, out of range) are treated as `NONE`.
 
 ```mermaid
 flowchart LR
@@ -89,8 +95,7 @@ flowchart TD
 
     F --> G["Score = 0.50 * cosine\n      + 0.20 * importance/10\n      + 0.10 * recency\n      + 0.05 * stability/5\n      + 0.15 * subjectMatch"]
 
-    G --> H["Insight-type beliefs: score *= 0.5"]
-    H --> I["Filter: cosine >= 0.20 threshold"]
+    G --> I["Filter: cosine >= 0.20 threshold"]
     I --> J["Sort by score descending, take top N"]
 
     J --> K["Graph traversal: top-3 results"]
@@ -139,13 +144,13 @@ flowchart TD
         S1["synthesize(storage, llm)"] --> S2["reflect(similarityThreshold=0.60)"]
         S2 --> S3["For each cluster (up to 5):"]
         S3 --> S4["LLM extracts one general principle\nfrom related beliefs"]
-        S4 --> S5["CREATE meta-belief\nconfidence=0.8, stability=3.0, type='meta'"]
-        S5 --> S6["Embed meta-belief"]
-        S6 --> S7["Link meta-belief to all source beliefs"]
+        S4 --> S5["CREATE synthesized belief\nconfidence=0.8, stability=3.0"]
+        S5 --> S6["Embed synthesized belief"]
+        S6 --> S7["Link synthesized belief to all source beliefs"]
     end
 
     subgraph Prune
-        P1["pruneBeliefs(threshold=0.05)"] --> P2["Load all active beliefs"]
+        P1["pruneBeliefs(threshold=0.05)\nRuns automatically every 24h via workers.ts"] --> P2["Load all active beliefs"]
         P2 --> P3["Filter: effectiveConfidence < threshold"]
         P3 --> P4["Set status='pruned' for each"]
         P4 --> P5["Log 'pruned' change"]
@@ -178,13 +183,13 @@ flowchart TD
 | Threshold | Value | Context | Behavior |
 |-----------|-------|---------|----------|
 | Reinforce (merge) | > 0.85 | `processNewBelief` | Incoming belief is merged into the existing one. Existing belief gets +0.1 confidence and reset `updated_at`. No new belief created. |
-| Contradiction check | 0.70 - 0.85 | `processNewBelief` | Grey zone. LLM is asked whether the new statement contradicts an existing belief. If no contradiction, a new belief is created normally. |
+| Contradiction check | 0.70 - 0.85 | `processNewBelief` | Grey zone. The top 3 similar beliefs in this range are checked. If any is a reinforcement, reinforce. Otherwise the LLM is asked whether the new statement contradicts any of the top 3. If no contradiction, a new belief is created normally. |
 | Zettelkasten linking | 0.40 - 0.85 | `processNewBelief` | After creating a new belief, neighbors in this range are linked via `belief_links` (max 3 links). |
 | Duplicate detection | >= 0.85 | `reflect` | Used to identify near-duplicate clusters during reflection. |
 | Thematic clustering | >= 0.60 | `synthesize` | Used to find thematic clusters for meta-belief synthesis. |
 | Semantic search cutoff | >= 0.20 | `semanticSearch` | Cosine similarity floor. Beliefs below this threshold are excluded from search results regardless of other scoring factors. |
 | Stale belief | < 0.10 | `reflect` | Beliefs with effective confidence below this are flagged as stale. |
-| Prune default | < 0.05 | `pruneBeliefs` | Beliefs with effective confidence below this are set to `pruned` status. Configurable via `--threshold`. |
+| Prune default | < 0.05 | `pruneBeliefs` | Beliefs with effective confidence below this are set to `pruned` status. Runs automatically every 24h via `workers.ts`. Configurable via `--threshold` when run manually. |
 | Contradiction candidates | 0.40 - 0.85 | `findContradictions` | Range used by the curator plugin to find potential contradiction pairs for batch LLM analysis. |
 | Episode similarity | > 0.30 | `getMemoryContext`, `retrieveContext` | Episodes must exceed this cosine threshold to be included in context output. |
 
@@ -215,9 +220,9 @@ stateDiagram-v2
 | Property | Default | Updated by | Description |
 |----------|---------|------------|-------------|
 | `confidence` | 0.6 | Reinforce (+0.1, cap 1.0), Weaken (-0.2, min 0.1) | Base confidence before decay. |
-| `stability` | 1.0 | Access (+0.1, cap 5.0), Synthesize (set to 3.0 for meta) | Multiplier for decay half-life. `halfLife = 30 * stability` days. |
+| `stability` | 1.0 | Access (+0.1, cap 5.0), Synthesize (set to 3.0 for synthesized) | Multiplier for decay half-life. `halfLife = 30 * stability` days. |
 | `importance` | 1-10 (from LLM) | Set at creation | LLM-assigned importance. 1-3 trivial, 4-6 useful, 7-9 core, 10 critical. Normalized to 0-1 for scoring. |
-| `type` | From LLM extraction | Set at creation | One of: `factual`, `preference`, `procedural`, `architectural`, `meta` (synthesized), `insight` (legacy default). |
+| `type` | From LLM extraction | Set at creation | One of: `factual`, `preference`, `procedural`, `architectural`. |
 | `subject` | `"owner"` | Set at creation, `backfillSubjects()` | Who the belief is about. Lowercase name or `"owner"`. |
 | `origin` | `inferred` | Set at creation/correction/write path | Trust source for the belief: `user-said`, `document`, `web`, `inferred`, or `synthesized`. |
 | `freshness_at` | null | Creation, reinforcement, correction, edit | Explicit freshness timestamp separate from `updated_at`, used for trust display and provenance-aware consumers. |
@@ -260,7 +265,7 @@ effectiveConfidence = confidence * 0.5 ^ (daysSinceUpdate / (30 * stability))
 
 Examples:
 - **stability = 1.0** (default): Half-life of 30 days. After 30 days, a belief at confidence 0.6 decays to 0.3.
-- **stability = 3.0** (meta-beliefs): Half-life of 90 days. Much slower decay for synthesized knowledge.
+- **stability = 3.0** (synthesized beliefs): Half-life of 90 days. Much slower decay for synthesized knowledge.
 - **stability = 5.0** (max, reached after 40 accesses): Half-life of 150 days.
 
 Each time a belief is retrieved via `semanticSearch()`, its stability increases by 0.1 (capped at 5.0), following SM-2 spaced repetition principles. Frequently accessed beliefs naturally resist decay.
@@ -286,6 +291,8 @@ episodes              1---*  belief_episodes  *---1  beliefs
                                                        +-- belief_changes
                                                        +-- belief_links (self-join, Zettelkasten)
                                                        +-- supersedes / superseded_by (self-ref)
+
+subject_aliases  (alias → canonical subject mapping, used by resolveSubjectAlias)
 ```
 
 All tables live in a single SQLite database (`{dataDir}/personal-ai.db`) with WAL mode and foreign keys enabled. Migrations are tracked in the `_migrations` table.

@@ -65,8 +65,6 @@ export interface SwarmContext {
   browserUrl?: string;
   /** Data directory for artifact file storage */
   dataDir?: string;
-  /** RSSHub URL for structured feed fetching */
-  rsshubUrl?: string;
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   formatSearchResults: (results: Array<{ title: string; url: string; snippet: string }>) => string;
   fetchPage: (url: string) => Promise<{ title: string; markdown: string; url: string } | null>;

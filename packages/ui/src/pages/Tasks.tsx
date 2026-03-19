@@ -23,6 +23,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   PlusIcon,
@@ -34,15 +35,11 @@ import {
   CalendarIcon,
 } from "lucide-react";
 import type { Task, Goal } from "../types";
+import { QueryError } from "@/components/QueryError";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
-import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
+import { formatDate, parseApiDate } from "@/lib/datetime";
 
 type FollowThroughSource = "briefing" | "program";
-
-function formatDate(dateStr: string): string {
-  const d = parseApiDate(dateStr);
-  return isNaN(d.getTime()) ? dateStr : formatWithTimezone(d, { year: "numeric", month: "numeric", day: "numeric" } );
-}
 
 function isOverdue(dueDateStr: string): boolean {
   const due = parseApiDate(dueDateStr);
@@ -107,7 +104,7 @@ export default function Tasks() {
     taskQuery.sourceType = scopedSource.sourceType;
     taskQuery.sourceId = scopedSource.sourceId;
   }
-  const { data: tasks = [], isLoading: tasksLoading } = useTasks(taskQuery);
+  const { data: tasks = [], isLoading: tasksLoading, isError: tasksError, refetch: tasksRefetch } = useTasks(taskQuery);
   const { data: allTasks = [], isLoading: allTasksLoading } = useTasks({ status: "all" });
   const { data: goals = [], isLoading: goalsLoading } = useGoals("all");
 
@@ -420,6 +417,8 @@ export default function Tasks() {
                 </div>
               ))}
             </div>
+          ) : tasksError ? (
+            <QueryError message="Failed to load to-dos." onRetry={tasksRefetch} />
           ) : activeTab === "actions" ? (
             tasks.length === 0 && !quickAddTitle ? (
               <div className="flex flex-col items-center justify-center py-16 text-sm text-muted-foreground">
@@ -720,100 +719,45 @@ export default function Tasks() {
       </Dialog>
 
       {/* Delete Task Confirmation */}
-      <Dialog
+      <ConfirmDialog
         open={!!deletingTask}
-        onOpenChange={() => setDeletingTask(null)}
+        onOpenChange={(open) => { if (!open) setDeletingTask(null); }}
+        title="Delete To-Do"
+        confirmLabel="Delete"
+        onConfirm={() => deletingTask && handleDeleteTask(deletingTask)}
       >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-sm">Delete To-Do</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Delete{" "}
-              <strong className="text-foreground/80">
-                &quot;{deletingTask?.title}&quot;
-              </strong>
-              ? This cannot be undone.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setDeletingTask(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => deletingTask && handleDeleteTask(deletingTask)}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        Delete{" "}
+        <strong className="text-foreground/80">
+          &quot;{deletingTask?.title}&quot;
+        </strong>
+        ? This cannot be undone.
+      </ConfirmDialog>
 
       {/* Delete Goal Confirmation */}
-      <Dialog
+      <ConfirmDialog
         open={!!deletingGoal}
-        onOpenChange={() => setDeletingGoal(null)}
+        onOpenChange={(open) => { if (!open) setDeletingGoal(null); }}
+        title="Delete Legacy Goal"
+        confirmLabel="Delete"
+        onConfirm={() => deletingGoal && handleDeleteGoal(deletingGoal)}
       >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-sm">Delete Legacy Goal</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Delete{" "}
-              <strong className="text-foreground/80">
-                &quot;{deletingGoal?.title}&quot;
-              </strong>
-              ? Linked to-dos will not be deleted.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setDeletingGoal(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => deletingGoal && handleDeleteGoal(deletingGoal)}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        Delete{" "}
+        <strong className="text-foreground/80">
+          &quot;{deletingGoal?.title}&quot;
+        </strong>
+        ? Linked to-dos will not be deleted.
+      </ConfirmDialog>
 
       {/* Clear All Tasks Confirmation */}
-      <Dialog open={showClearAll} onOpenChange={setShowClearAll}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-sm">Clear All To-Dos</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Delete all to-dos? This cannot be undone.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setShowClearAll(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" size="sm" onClick={handleClearAllTasks}>
-                Clear All
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={showClearAll}
+        onOpenChange={setShowClearAll}
+        title="Clear All To-Dos"
+        confirmLabel="Clear All"
+        onConfirm={handleClearAllTasks}
+      >
+        Delete all to-dos? This cannot be undone.
+      </ConfirmDialog>
     </div>
   );
 }

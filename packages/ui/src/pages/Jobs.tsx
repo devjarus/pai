@@ -33,8 +33,9 @@ import type { SwarmAgent, ArtifactMeta } from "../types";
 import { useJobs, useJobDetail, useJobBlackboard, useJobAgents, useJobArtifacts, useCancelJob, useClearJobs, useConfig } from "@/hooks";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
 import { ArtifactGallery } from "@/components/results/ArtifactGallery";
+import { QueryError } from "@/components/QueryError";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
-import { parseApiDate } from "@/lib/datetime";
+import { parseApiDate, timeAgo } from "@/lib/datetime";
 
 const statusStyles: Record<string, string> = {
   running: "bg-blue-500/15 text-blue-400 border-blue-500/20",
@@ -93,16 +94,6 @@ const roleStyles: Record<string, string> = {
   market_analyst: "bg-green-500/15 text-green-400 border-green-500/20",
   price_analyst: "bg-green-500/15 text-green-400 border-green-500/20",
 };
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - parseApiDate(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 function formatDuration(start: string, end: string | null): string {
   if (!end) return "running...";
@@ -175,7 +166,7 @@ function sortAgents(agents: SwarmAgent[]): SwarmAgent[] {
 
 export default function Jobs() {
   const { data: configData } = useConfig();
-  const { data: jobsData, isLoading, isRefetching, refetch } = useJobs();
+  const { data: jobsData, isLoading, isError, isRefetching, refetch } = useJobs();
   const jobs = jobsData?.jobs ?? [];
 
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -250,6 +241,11 @@ export default function Jobs() {
   const reportText = presentation?.report ?? selectedJob?.report ?? selectedJob?.synthesis ?? undefined;
 
   if (isLoading) return <JobsSkeleton />;
+  if (isError) return (
+    <div className="mx-auto max-w-2xl p-6">
+      <QueryError message="Failed to load activities." onRetry={refetch} />
+    </div>
+  );
 
   const activeCount = jobs.filter((j) =>
     j.status === "pending" || j.status === "running" || j.status === "planning" || j.status === "synthesizing",
@@ -514,7 +510,7 @@ export default function Jobs() {
                               <span className="text-[10px] text-muted-foreground/60">
                                 {agent.stepsUsed} steps
                               </span>
-                              <span className="text-[10px] text-muted-foreground/40 ml-auto">
+                              <span className="text-[10px] text-muted-foreground/60 ml-auto">
                                 {formatDuration(agent.createdAt, agent.completedAt)}
                               </span>
                             </div>
@@ -663,7 +659,7 @@ export default function Jobs() {
                                 <span className="text-[10px] text-muted-foreground/60 truncate">
                                   agent: {entry.agentId.slice(0, 8)}
                                 </span>
-                                <span className="text-[10px] text-muted-foreground/40 ml-auto shrink-0">
+                                <span className="text-[10px] text-muted-foreground/60 ml-auto shrink-0">
                                   {timeAgo(entry.createdAt)}
                                 </span>
                               </div>
@@ -741,7 +737,7 @@ export default function Jobs() {
                               <span className="text-[10px] text-muted-foreground/60 truncate">
                                 agent: {entry.agentId.slice(0, 8)}
                               </span>
-                              <span className="text-[10px] text-muted-foreground/40 ml-auto shrink-0">
+                              <span className="text-[10px] text-muted-foreground/60 ml-auto shrink-0">
                                 {timeAgo(entry.createdAt)}
                               </span>
                             </div>

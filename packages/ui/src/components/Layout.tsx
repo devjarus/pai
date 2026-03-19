@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { OfflineBanner } from "./OfflineBanner";
 import { MobileTabBar } from "./MobileTabBar";
+import { PaiLogo } from "./PaiLogo";
 import { useInboxAll } from "@/hooks/use-inbox";
 
 const navItems = [
@@ -42,8 +43,8 @@ export default function Layout() {
       {/* Desktop sidebar — hidden on mobile, replaced by bottom tab bar */}
       <nav className="hidden md:flex h-full w-14 flex-col items-center border-r border-border/40 bg-background py-4">
         {/* Branding */}
-        <div className="mb-2 font-mono text-base font-bold tracking-tighter text-primary">
-          pai
+        <div className="mb-2">
+          <PaiLogo size={28} />
         </div>
 
         <Separator className="mx-2 mb-4 w-8 opacity-30" />
@@ -69,7 +70,7 @@ export default function Layout() {
                   >
                     <item.icon />
                   </NavLink>
-                  {item.to === "/digests" && hasNewBriefing && (
+                  {item.to === "/" && hasNewBriefing && (
                     <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-background pointer-events-none" />
                   )}
                 </div>

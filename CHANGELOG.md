@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Watch research for GitHub/HN/Reddit** — Research agent now uses `web_search` + `read_page` directly for trending sources instead of depending on a broken RSSHub instance. Removed all RSS/RSSHub code.
+- **Raw JSON report rendering** — News and research reports that the LLM returned as raw JSON (without code fences) now render as formatted markdown instead of dumping raw JSON to the screen.
+
 ### Changed
+- **Research plugin split** — `research.ts` (1700 lines) split into 6 focused modules: types, repository, prompts, tools, charts, and orchestration. Extracted shared `mapRow` helper to eliminate 4x duplicated row mapping.
+- **Assistant plugin split** — `index.ts` (347 lines) split into system prompt, auto-memory extraction, and plugin wiring.
+- **Shared datetime utilities** — Consolidated 14 duplicate `timeAgo`/`formatDate`/`formatInterval` functions across 11 UI files into `lib/datetime.ts`.
+- **Unified Library API** — All memory and knowledge routes consolidated under `/api/library/*`. Deleted legacy `/api/beliefs`, `/api/remember`, `/api/forget`, `/api/knowledge/*` route files. UI retargeted to canonical paths.
+- **Memory quality improvements** — Removed insight belief generation (universally unused platitudes), widened dedup check from top-1 to top-3 candidates, added subject alias table for identity resolution, added scheduled belief pruning, filtered codebase-related beliefs from learning worker, removed per-message auto-memory extraction (background learning worker handles it — cuts ~8 LLM calls per chat message).
+
+
 - **Product language rename:** Program → Watch, Brief → Digest, Belief → Memory, Action → To-Do
 - **Library domain:** Unified `/api/library/*` API combining memories, documents, and research findings
 - **Merged Library page:** Single page with Memories, Documents, Findings tabs and unified search

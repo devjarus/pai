@@ -1,10 +1,7 @@
-import path from "node:path";
-
 import {
   REQUIRED_SCENARIO_IDS,
   ValidationCheck,
   ValidationReport,
-  fileExists,
   flattenIssues,
   listFiles,
   makeCheck,
@@ -12,9 +9,7 @@ import {
   relativeToRoot,
   reportStatus,
   rootPath,
-  validateMarkdownSections,
   validateScenario,
-  validateTaskContractTemplate,
   writeReport,
 } from "./_shared";
 import { runExecutableCoreLoopScenarios } from "./core-loop-runtime";
@@ -51,32 +46,6 @@ async function run(): Promise<ValidationReport> {
       [],
     ),
   );
-
-  checks.push(validateTaskContractTemplate("harness/task-contract.template.yaml"));
-  checks.push(
-    validateMarkdownSections("harness/evidence-pack.template.md", [
-      "## Summary Of Change",
-      "## Files Changed",
-      "## Validations Run",
-      "## Remaining Uncertainty",
-      "## Confidence",
-    ]),
-  );
-
-  for (const checklistPath of [
-    "harness/checklists/core-loop-change-checklist.md",
-    "harness/checklists/memory-change-checklist.md",
-    "harness/checklists/ui-change-checklist.md",
-  ]) {
-    checks.push(
-      makeCheck(
-        `checklist:${path.basename(checklistPath)}`,
-        "Verified checklist presence.",
-        fileExists(checklistPath) ? [] : [`${checklistPath} is missing`],
-        [],
-      ),
-    );
-  }
 
   checks.push(...await runExecutableCoreLoopScenarios());
 

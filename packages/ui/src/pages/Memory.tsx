@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Sheet,
@@ -25,22 +26,15 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { typeColorMap } from "@/lib/belief-colors";
+import { QueryError } from "@/components/QueryError";
 import { InfoBubble } from "../components/InfoBubble";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
 import { Trash2Icon, HelpCircleIcon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
 import type { Belief, BeliefType } from "../types";
-import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
+import { formatDate, parseApiDate } from "@/lib/datetime";
 
 const TYPES: BeliefType[] = ["factual", "preference", "procedural", "architectural", "insight", "meta"];
-
-const typeColorMap: Record<string, string> = {
-  factual: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  preference: "bg-purple-500/15 text-purple-400 border-purple-500/30",
-  procedural: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  architectural: "bg-orange-500/15 text-orange-400 border-orange-500/30",
-  insight: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  meta: "bg-pink-500/15 text-pink-400 border-pink-500/30",
-};
 
 const typeDescriptions: Record<string, string> = {
   factual: "Objective facts about you, your projects, or your environment. e.g. 'Uses TypeScript with strict mode'",
@@ -50,11 +44,6 @@ const typeDescriptions: Record<string, string> = {
   insight: "Learned patterns and observations. e.g. 'Smaller PRs get reviewed faster in this team'",
   meta: "Memories about the memory system itself. e.g. 'Related memories about testing were synthesized'",
 };
-
-function formatDate(dateStr: string): string {
-  const d = parseApiDate(dateStr);
-  return isNaN(d.getTime()) ? dateStr : formatWithTimezone(d, {} );
-}
 
 function sortBeliefs(results: Belief[], sortBy: string): Belief[] {
   return [...results].sort((a, b) => {
@@ -99,7 +88,7 @@ export default function Memory() {
     () => ({ status: filterStatus, type: filterType || undefined }),
     [filterStatus, filterType],
   );
-  const { data: rawBeliefs = [], isLoading: beliefsLoading } = useBeliefs(beliefsParams);
+  const { data: rawBeliefs = [], isLoading: beliefsLoading, isError: beliefsError, refetch: beliefsRefetch } = useBeliefs(beliefsParams);
   const { data: rawSearchResults = [], isLoading: searchLoading } = useSearchMemory(searchQuery);
 
   // --- Mutations ---
@@ -244,7 +233,7 @@ export default function Memory() {
         <header className="space-y-2 border-b border-border/40 bg-background px-3 py-3 md:space-y-4 md:px-6 md:py-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
-              <h1 className="shrink-0 font-mono text-sm font-semibold text-foreground">
+              <h1 className="shrink-0 text-sm font-semibold text-foreground">
                 Memories
                 <InfoBubble text="Memories are facts, preferences, and insights that pai has learned. They have confidence scores that change over time as evidence reinforces or contradicts them." />
               </h1>
@@ -404,14 +393,14 @@ export default function Memory() {
             {loading ? (
               <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4">
+                  <div key={i} className="space-y-3 border-l-2 border-l-border/30 rounded-r-lg bg-card/30 px-4 py-3.5">
                     <div className="flex items-center justify-between">
                       <Skeleton className="h-5 w-20" />
                       <Skeleton className="h-4 w-10" />
                     </div>
                     <Skeleton className="h-4 w-full" />
                     <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-1 w-full" />
+                    <Skeleton className="h-0.5 w-full" />
                     <div className="flex items-center justify-between">
                       <Skeleton className="h-3 w-16" />
                       <Skeleton className="h-3 w-12" />
@@ -419,6 +408,8 @@ export default function Memory() {
                   </div>
                 ))}
               </div>
+            ) : beliefsError ? (
+              <QueryError message="Failed to load memories." onRetry={beliefsRefetch} />
             ) : beliefs.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-sm text-muted-foreground">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mb-4 opacity-30">
@@ -508,29 +499,20 @@ export default function Memory() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-sm">Clear All Memory</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              This will forget all active memories. They will be marked as &quot;forgotten&quot; and won&apos;t be used for recall, but they are preserved in history.
-            </p>
-            <p className="text-sm font-medium text-destructive">
-              This action cannot be easily undone.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setShowClearConfirm(false)} disabled={isClearing}>
-                Cancel
-              </Button>
-              <Button variant="destructive" size="sm" onClick={handleClearAll} disabled={isClearing}>
-                {isClearing ? "Clearing..." : "Clear all memory"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={showClearConfirm}
+        onOpenChange={setShowClearConfirm}
+        title="Clear All Memory"
+        confirmLabel={isClearing ? "Clearing..." : "Clear all memory"}
+        onConfirm={handleClearAll}
+      >
+        <p>
+          This will forget all active memories. They will be marked as &quot;forgotten&quot; and won&apos;t be used for recall, but they are preserved in history.
+        </p>
+        <p className="font-medium text-destructive">
+          This action cannot be easily undone.
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }

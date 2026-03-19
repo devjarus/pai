@@ -242,7 +242,7 @@ export function gatherSignals(storage: Storage): GatheredSignals {
     ).map((r) => ({
       id: r.id,
       goal: r.goal,
-      reportSnippet: (r.report ?? "").slice(0, 500),
+      reportSnippet: (r.report ?? "").slice(0, 2000),
     }));
   } catch { /* research_jobs table may not exist */ }
 
@@ -367,6 +367,11 @@ export function parseLearningResponse(text: string): ExtractedFact[] {
         (item.fact as string).length > 0
       )
       .slice(0, 10)
+      .filter((item: Record<string, unknown>) => {
+        // Reject facts about pai's own codebase/implementation
+        const codebasePatterns = /\b(migration|plugin|MCP|test suite|Vitest|tsc|harness|telemetry|thread.lock|SQLite|API route|Fastify|Docker|embed(ding)?s?|cosine|recall|belief.lifecycle|refactor)\b/i;
+        return !codebasePatterns.test(String(item.fact));
+      })
       .map((item: Record<string, unknown>) => ({
         fact: String(item.fact),
         factType: String(item.factType) as ExtractedFact["factType"],

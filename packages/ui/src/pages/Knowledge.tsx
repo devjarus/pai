@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Trash2Icon, ExternalLinkIcon, SearchIcon, PlusIcon, AlertTriangleIcon,
@@ -33,13 +34,9 @@ import {
   ChevronRightIcon,
 } from "lucide-react";
 import type { KnowledgeSource, KnowledgeSearchResult } from "../types";
-import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
+import { formatDate } from "@/lib/datetime";
+import { QueryError } from "@/components/QueryError";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
-
-function formatDate(dateStr: string): string {
-  const d = parseApiDate(dateStr);
-  return isNaN(d.getTime()) ? dateStr : formatWithTimezone(d, { year: "numeric", month: "numeric", day: "numeric" } );
-}
 
 function parseTags(tags: string | null): string[] {
   if (!tags) return [];
@@ -73,7 +70,7 @@ export default function Knowledge() {
   const [filterTag, setFilterTag] = useState<string>("");
 
   // --- TanStack Query hooks ---
-  const { data: sources = [], isLoading: loading } = useKnowledgeSources();
+  const { data: sources = [], isLoading: loading, isError: sourcesError, refetch: sourcesRefetch } = useKnowledgeSources();
   const { data: searchResults = [], isFetching: isSearching } = useSearchKnowledge(searchQuery);
   const { data: crawlData } = useCrawlStatus();
   const crawlJobs = crawlData?.jobs ?? [];
@@ -424,6 +421,8 @@ export default function Knowledge() {
                   </div>
                 ))}
               </div>
+            ) : sourcesError ? (
+              <QueryError message="Failed to load documents." onRetry={sourcesRefetch} />
             ) : isSearchMode ? (
               <div>
                 <p className="mb-4 text-xs text-muted-foreground">
@@ -701,26 +700,15 @@ export default function Knowledge() {
       </Dialog>
 
 
-      <Dialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-sm">Remove Document</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Remove <strong className="text-foreground/80">&quot;{showDeleteConfirm?.title}&quot;</strong> and all its {showDeleteConfirm?.chunks} chunks?
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(null)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" size="sm" onClick={() => showDeleteConfirm && handleDelete(showDeleteConfirm)}>
-                Remove
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!showDeleteConfirm}
+        onOpenChange={() => setShowDeleteConfirm(null)}
+        title="Remove Document"
+        confirmLabel="Remove"
+        onConfirm={() => showDeleteConfirm && handleDelete(showDeleteConfirm)}
+      >
+        Remove <strong className="text-foreground/80">&quot;{showDeleteConfirm?.title}&quot;</strong> and all its {showDeleteConfirm?.chunks} chunks?
+      </ConfirmDialog>
     </div>
   );
 }

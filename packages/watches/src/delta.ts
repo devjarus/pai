@@ -13,5 +13,5 @@ export function getPreviousFindingsContext(storage: Storage, watchId: string, li
   const recent = findings.slice(0, limit);
   const summaries = recent.map((f, i) => `${i + 1}. [${f.createdAt}] ${f.summary}`).join("\n");
 
-  return `\n\nPREVIOUS RESEARCH FINDINGS (build on these, don't repeat):\n${summaries}\n\nFocus on what is NEW or CHANGED since the last research.`;
+  return `\n\nPREVIOUS RESEARCH (baseline — go beyond this):\n${summaries}\n\nUse different search queries than before. Seek new sources, updated data, fresh perspectives, or developments the previous research didn't cover.`;
 }

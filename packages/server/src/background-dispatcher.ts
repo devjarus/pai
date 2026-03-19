@@ -244,9 +244,9 @@ export class BackgroundDispatcher {
 
     try {
       if (next.kind === "research") {
-        await runResearchInBackground(this.buildResearchContext(), next.id);
+        await runResearchInBackground(this.buildJobContext(), next.id);
       } else if (next.kind === "swarm") {
-        await runSwarmInBackground(this.buildSwarmContext(), next.id);
+        await runSwarmInBackground(this.buildJobContext(), next.id);
       } else {
         await generateBriefing(this.ctx, undefined, next.id);
       }
@@ -295,7 +295,7 @@ export class BackgroundDispatcher {
     }
   }
 
-  private buildResearchContext() {
+  private buildJobContext() {
     return {
       storage: this.ctx.storage,
       llm: this.ctx.llm,
@@ -307,26 +307,6 @@ export class BackgroundDispatcher {
       sandboxUrl: this.ctx.config.sandboxUrl,
       browserUrl: this.ctx.config.browserUrl,
       dataDir: this.ctx.config.dataDir,
-      rsshubUrl: this.ctx.config.rsshubUrl,
-      webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", this.ctx.config.searchUrl),
-      formatSearchResults,
-      fetchPage: fetchPageAsMarkdown,
-    };
-  }
-
-  private buildSwarmContext() {
-    return {
-      storage: this.ctx.storage,
-      llm: this.ctx.llm,
-      logger: this.ctx.logger,
-      timezone: this.ctx.config.timezone,
-      provider: this.ctx.config.llm.provider,
-      model: this.ctx.config.llm.model,
-      contextWindow: this.ctx.config.llm.contextWindow,
-      sandboxUrl: this.ctx.config.sandboxUrl,
-      browserUrl: this.ctx.config.browserUrl,
-      dataDir: this.ctx.config.dataDir,
-      rsshubUrl: this.ctx.config.rsshubUrl,
       webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", this.ctx.config.searchUrl),
       formatSearchResults,
       fetchPage: fetchPageAsMarkdown,

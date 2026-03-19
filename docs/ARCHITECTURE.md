@@ -24,7 +24,7 @@
        ▼                       ▼                       ▼
 ┌─────────────┐     ┌──────────────────┐     ┌────────────────┐
 │   Memory +  │     │  Agent Pipeline  │     │    Plugins     │
-│  Knowledge  │     │  (tools, LLM,   │     │  (tasks, goals │
+│  Knowledge  │     │  (tools, LLM,   │     │  (tasks,       │
 │  (beliefs,  │     │   streaming)     │     │   web search)  │
 │  episodes,  │     │                  │     │                │
 │  chunks)    │     │                  │     │                │
@@ -49,10 +49,10 @@
 packages/
   core/               Config, Storage, LLM Client, Logger, Memory, Knowledge, Threads, Plugin interfaces, Research Schemas, Sandbox Client, Artifacts
   cli/                Commander.js CLI + MCP server (stdio, 19 tools) + `pai init`
-  plugin-tasks/       Tasks + Goals with AI prioritization, clearAllTasks
-  plugin-assistant/   Personal Assistant agent — system prompt, AI SDK tools, afterResponse hook, run_code sandbox tool
+  plugin-tasks/       Tasks with AI prioritization, clearAllTasks
+  plugin-assistant/   Personal Assistant agent — split into 3 files (system-prompt, auto-memory, index), AI SDK tools, afterResponse hook, run_code sandbox tool
   plugin-curator/     Memory Curator agent — health analysis, dedup, contradiction resolution
-  plugin-research/    Background research — domain detection (flight/stock/general), domain-specific LLM prompts, structured JSON output, chart generation via sandbox
+  plugin-research/    Background research — split into 6 modules (types, repository, prompts, tools, charts, research). Domain detection (flight/stock/general), domain-specific LLM prompts, structured JSON output, chart generation via sandbox
   plugin-swarm/       Sub-agent swarm — decomposes tasks into 2-5 parallel domain-specific sub-agents with shared SQLite blackboard, budget-limited tools, and orchestrator synthesis
   plugin-schedules/   Recurring scheduled research jobs
   plugin-telegram/    Telegram bot — grammY, standalone entry point, chat pipeline
@@ -122,9 +122,8 @@ POST /api/chat { id, messages: [{ role, parts }], sessionId, agent }
           │           │     → UPDATE threads (title, count, timestamp)
           │           │
           │           ├── afterResponse (fire-and-forget):
-          │           │     → LLM extracts facts from user message
-          │           │     → validates each against assistant response
-          │           │     → remember() for confirmed facts
+          │           │     → detects URLs in user message
+          │           │     → learns from URLs in background
           │           │
           │           └── every 5th user turn → consolidateConversation()
           │                 → LLM summarizes last 10 messages
@@ -188,12 +187,13 @@ episode_embeddings                 (float[] as JSON, for semantic episode search
 
 | Field | Description |
 |-------|-------------|
-| `type` | `factual`, `preference`, `procedural`, `architectural`, `insight`, `meta` |
+| `type` | `factual`, `preference`, `procedural`, `architectural` |
 | `confidence` | 0.0-1.0, decays over time: `conf × 0.5^(days / (30 × stability))` |
-| `stability` | 1.0-5.0, increases +0.1 per retrieval (SM-2 inspired). Meta-beliefs start at 3.0 |
+| `stability` | 1.0-5.0, increases +0.1 per retrieval (SM-2 inspired) |
 | `importance` | 1-10 integer, weights retrieval ranking |
 | `status` | `active`, `invalidated`, `forgotten`, `pruned` |
 | `subject` | Who the belief is about: `owner`, `alex`, `bob`, `general` |
+| `subject_aliases` | Separate table mapping alias → canonical subject name |
 
 ### Belief Lifecycle
 
@@ -219,7 +219,7 @@ Input: "Alex prefers Zustand over Redux"
     │
     └── extractBeliefs(llm, text)                       (parallel)
           │
-          Returns: { fact, factType, importance, insight, subject }
+          Returns: { fact, factType, importance, subject }
           │
           ▼
         processNewBelief:
@@ -230,7 +230,7 @@ Input: "Alex prefers Zustand over Redux"
           ├── > 0.85 similarity → REINFORCE existing belief
           │     confidence += 0.1, link to episode
           │
-          ├── 0.7-0.85 → CLASSIFY RELATIONSHIP (LLM call → classifyRelationship())
+          ├── 0.7-0.85 → CLASSIFY RELATIONSHIP (classifies against top 3 candidates, LLM call → classifyRelationship())
           │     ├── REINFORCEMENT → boost existing belief (same as >0.85)
           │     ├── CONTRADICTION + ≥3 episodes → WEAKEN old (proportional: -min(0.2, 1/(count+1))), both coexist
           │     ├── CONTRADICTION + <3 episodes → INVALIDATE old, create replacement
@@ -282,21 +282,9 @@ Query: "What does Alex like?"
 
 **Knowledge-Memory Bridge:** The assistant's system prompt instructs it to store key takeaways from knowledge searches as beliefs via `memory_remember`. This promotes frequently-useful facts to high-confidence beliefs for instant recall.
 
-### afterResponse — Automatic Fact Extraction
+### afterResponse — URL Auto-Learning
 
-Fires after every chat response (non-blocking):
-
-```
-User message (≥15 chars) + assistant response (≥10 chars)
-    │
-    ├── LLM extracts facts (max 3), attributed to correct person
-    ├── Validation gates:
-    │     ✓ Named subject (starts with capital)
-    │     ✓ Structured (≥3 words)
-    │     ✗ Not generic ("knowledge", "life", etc.)
-    ├── LLM validates each against assistant response (CONFIRMED/REJECTED)
-    └── remember() for confirmed facts → full dedup/contradiction pipeline
-```
+Fires after every chat response (non-blocking). Detects URLs in the user message and learns from them in the background. Memory extraction is handled by the background learning worker (every 2h) instead of per-message — this eliminates ~8 LLM calls per chat message.
 
 ### Consolidation — Every 5 User Turns
 
@@ -321,6 +309,7 @@ COUNT user messages in thread % 5 === 0?
 | `forget` | Soft-delete → status='forgotten' |
 | `backfillSubjects` | LLM re-tags all "owner" beliefs with correct person names |
 | `export/import` | Full backup/restore with dedup on import |
+| `scheduled pruning` | Automatic pruning every 24h removes beliefs below confidence threshold |
 
 ---
 
@@ -361,7 +350,6 @@ Background timer (every 6 hours) OR manual refresh (POST /api/inbox/refresh)
     │
     ├── Collect context:
     │     ├── listTasks(storage, "open") → open tasks
-    │     ├── listGoals(storage) → active goals
     │     ├── memoryStats(storage) → belief counts, types
     │     ├── listBeliefs(storage, "active") → top 10 recent beliefs
     │     └── listSources(storage) → knowledge source count
@@ -420,7 +408,8 @@ Timer: every 2 hours (5-minute initial delay after server start)
     │
     ├── Build a focused prompt with all new signals
     │
-    ├── One LLM call → extract facts/preferences/insights
+    ├── One LLM call → extract facts/preferences
+    │     (filters out codebase-related beliefs / dogfooding artifacts)
     │
     └── remember() for each extracted fact
           → full dedup/contradiction pipeline
@@ -461,24 +450,13 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `POST` | `/api/threads/clear` | Clear all threads |
 | `GET` | `/api/chat/history` | Legacy history |
 | `DELETE` | `/api/chat/history` | Clear conversation |
-| `GET` | `/api/beliefs` | List beliefs (filter: status, type) |
-| `GET` | `/api/beliefs/:id` | Belief detail |
-| `GET` | `/api/search?q=` | Semantic search |
-| `GET` | `/api/stats` | Memory stats |
-| `POST` | `/api/remember` | Store observation |
-| `POST` | `/api/forget/:id` | Soft-delete belief |
-| `POST` | `/api/memory/clear` | Clear all beliefs |
-| `GET` | `/api/tasks` | List tasks (filter: status, goalId) |
+| `GET` | `/api/tasks` | List tasks (filter: status) |
 | `POST` | `/api/tasks` | Create task |
 | `PATCH` | `/api/tasks/:id` | Update task |
 | `POST` | `/api/tasks/:id/done` | Complete task |
 | `POST` | `/api/tasks/:id/reopen` | Reopen task |
 | `DELETE` | `/api/tasks/:id` | Delete task |
 | `POST` | `/api/tasks/clear` | Clear all tasks |
-| `GET` | `/api/goals` | List goals |
-| `POST` | `/api/goals` | Create goal |
-| `POST` | `/api/goals/:id/done` | Complete goal |
-| `DELETE` | `/api/goals/:id` | Delete goal |
 | `GET` | `/api/inbox` | Latest briefing |
 | `GET` | `/api/inbox/all` | Unified feed (daily + research) with `generating` flag |
 | `GET` | `/api/inbox/research` | Research briefings only |
@@ -495,10 +473,6 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `POST` | `/api/jobs/clear` | Clear completed jobs |
 | `GET` | `/api/jobs/:jobId/artifacts` | List artifacts for a job |
 | `GET` | `/api/artifacts/:id` | Serve artifact binary (charts, images) with correct MIME type |
-| `GET` | `/api/knowledge/sources` | List knowledge sources |
-| `GET` | `/api/knowledge/search?q=` | Search knowledge base |
-| `POST` | `/api/knowledge/learn` | Learn from URL |
-| `DELETE` | `/api/knowledge/sources/:id` | Delete source |
 | `GET` | `/api/config` | Current config (keys sanitized) |
 | `PUT` | `/api/config` | Update config → reinitialize() |
 | `GET` | `/api/learning/runs` | Recent learning run history |
@@ -508,15 +482,30 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `GET` | `/api/observability/jobs/:jobId` | Per-job diagnostics with process and agent breakdowns |
 | `GET` | `/api/observability/traces/:traceId` | Full span tree for a single trace |
 | `GET` | `/api/observability/recent-errors` | Recent failed spans with thread/job context |
-| `GET` | `/api/library/search?q=` | Unified search across memories, documents, findings |
-| `GET` | `/api/library/memories` | List memories |
+| `GET` | `/api/library/memories` | List beliefs (filter: status, type) |
+| `GET` | `/api/library/memories/:id` | Belief detail with history |
+| `GET` | `/api/library/memories/:id/history` | Belief revision history |
+| `GET` | `/api/library/memories/:id/provenance` | Belief provenance |
+| `PATCH` | `/api/library/memories/:id` | Update belief statement |
+| `POST` | `/api/library/memories/:id/correct` | Correct a belief |
 | `POST` | `/api/library/memories` | Store observation |
-| `DELETE` | `/api/library/memories/:id` | Forget memory |
-| `GET` | `/api/library/documents` | List documents |
-| `POST` | `/api/library/documents/url` | Learn from URL |
-| `DELETE` | `/api/library/documents/:id` | Delete document |
-| `GET` | `/api/library/findings` | List research findings |
+| `DELETE` | `/api/library/memories/:id` | Forget belief |
+| `GET` | `/api/library/memories/search?q=` | Semantic search |
+| `POST` | `/api/library/memories/clear` | Clear all beliefs |
+| `GET` | `/api/library/documents` | List knowledge sources |
+| `POST` | `/api/library/documents/url` | Learn from URL (with crawl) |
+| `POST` | `/api/library/documents/upload` | Upload document |
+| `GET` | `/api/library/documents/:id/chunks` | Source chunks |
+| `POST` | `/api/library/documents/:id/crawl` | Crawl sub-pages |
+| `POST` | `/api/library/documents/:id/reindex` | Reindex source |
+| `PATCH` | `/api/library/documents/:id` | Update metadata |
+| `DELETE` | `/api/library/documents/:id` | Delete source |
+| `GET` | `/api/library/documents/crawl-status` | Crawl job status |
+| `GET` | `/api/library/documents/search?q=` | Knowledge search |
+| `POST` | `/api/library/documents/reindex` | Reindex all |
+| `GET` | `/api/library/findings` | List findings |
 | `GET` | `/api/library/findings/:id` | Finding detail |
+| `DELETE` | `/api/library/findings/:id` | Delete finding |
 | `GET` | `/api/library/stats` | Library stats |
 | `GET` | `/api/watches` | List watches |
 | `POST` | `/api/watches` | Create watch |
@@ -580,7 +569,7 @@ interface AgentContext extends PluginContext {
 - Tools: `memory_recall` (unified retrieval), `memory_remember`, `memory_beliefs`, `memory_forget`, `web_search`, `knowledge_search`, `learn_from_url`, `task_list`, `task_add`, `task_done`
 - `memory_recall` uses `retrieveContext()` — searches beliefs + knowledge in one embedding call
 - Knowledge-memory bridge: system prompt instructs storing key knowledge takeaways as beliefs
-- `afterResponse`: extracts facts → validates against response → stores via `remember()`
+- `afterResponse`: auto-learns URLs from user messages (fire-and-forget)
 - Web search: SearXNG (self-hosted, no API key, supports search categories)
 
 ### Memory Curator (`plugin-curator`)
@@ -591,7 +580,7 @@ interface AgentContext extends PluginContext {
 
 ### Tasks Plugin (`plugin-tasks`)
 
-Tasks (status/priority/due date) + Goals. `ai-suggest` feeds tasks + memory to LLM for prioritization.
+Tasks (status/priority/due date). `ai-suggest` feeds tasks + memory to LLM for prioritization.
 
 ### Telegram Bot (`plugin-telegram`)
 
@@ -619,23 +608,23 @@ React SPA — Home, Chat, Library, Watches, Digests, Tasks, Settings. Uses TanSt
 | **Digests** (`/digests`) | Unified feed of daily briefings and research reports. Detail view (`/digests/:id`) with "Start Chat" button (creates thread, auto-sends research context). Staggered fade-in animations. Refresh/clear buttons. |
 | **Library** (`/library`) | Memories, Documents, Findings tabs with unified search. Browse/search beliefs, type filter tabs, detail sidebar, learn from URLs, crawl sub-pages. |
 | **Watches** (`/watches`) | Watch list with templates, detail with findings. Shows status, progress, and results. |
-| **Tasks/To-Dos** (`/tasks`) | Secondary saved-move surface. Keeps linked Digest/Watch context visible, supports source-scoped views, and only stores bounded manual moves the user explicitly wants pai to revisit. Goals remain in a legacy cleanup tab rather than a primary product noun. |
+| **Tasks/To-Dos** (`/tasks`) | Secondary saved-move surface. Keeps linked Digest/Watch context visible, supports source-scoped views, and only stores bounded manual moves the user explicitly wants pai to revisit. |
 | **Settings** | LLM provider dropdown with auto-populated presets (Ollama/OpenAI/Anthropic/Google), model/key, data directory browser, Telegram config, background worker toggles, and a local-only Diagnostics panel (Overview, Processes, Threads, Jobs, Errors) backed by `/api/observability/*` |
 
-**Global error handling:** `ErrorBoundary` (catches React errors, refresh + copy details) and `OfflineBanner` (10s ping, amber banner, auto-dismiss on reconnect).
+**Global error handling:** `ErrorBoundary` (catches React errors, refresh + copy details), `OfflineBanner` (10s ping, amber banner, auto-dismiss on reconnect), and `QueryError` (inline error display for failed TanStack Query requests).
 
 ---
 
 ## MCP Server
 
-19-tool MCP server over stdio. Tools: `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `memory-stats`, `memory-synthesize`, `knowledge-learn`, `knowledge-search`, `knowledge-sources`, `knowledge-forget`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`, `goal-list`, `goal-add`, `goal-done`. New tools: `library-remember`, `library-search`, `library-context`, `library-memories`, `library-forget`, `library-stats`, `library-synthesize`, `library-learn-url`, `library-documents`, `library-forget-document`. Old tool names continue to work.
+MCP server over stdio. Tools: `remember`, `recall`, `memory-context`, `beliefs`, `forget`, `memory-stats`, `memory-synthesize`, `knowledge-learn`, `knowledge-search`, `knowledge-sources`, `knowledge-forget`, `task-list`, `task-add`, `task-done`, `task-edit`, `task-reopen`. New tools: `library-remember`, `library-search`, `library-context`, `library-memories`, `library-forget`, `library-stats`, `library-synthesize`, `library-learn-url`, `library-documents`, `library-forget-document`. Old tool names continue to work.
 
 ---
 
 ## Data Model
 
 ```sql
--- Memory (core) — migrations v1-v10
+-- Memory (core) — migrations v1-v13
 episodes           (id, timestamp, context, action, outcome, tags_json)
 episode_embeddings (episode_id PK, embedding TEXT)
 beliefs            (id, statement, confidence, status, type,
@@ -647,6 +636,7 @@ belief_embeddings  (belief_id PK, embedding TEXT)
 belief_episodes    (belief_id, episode_id)
 belief_changes     (id, belief_id, change_type, detail, episode_id, created_at)
 belief_links       (belief_a, belief_b)
+subject_aliases    (alias TEXT PK, canonical TEXT)
 beliefs_fts        (FTS5 virtual table, auto-synced via triggers)
 
 -- Knowledge (core) — migrations v1-v2
@@ -663,8 +653,7 @@ thread_messages    (id, thread_id FK, role, content, parts_json, created_at, seq
 telegram_threads   (chat_id INTEGER PK, thread_id, username, created_at)
 
 -- Tasks — plugin migrations
-tasks              (id, title, description, status, priority, goal_id, due_date, created_at, completed_at)
-goals              (id, title, description, status, created_at)
+tasks              (id, title, description, status, priority, due_date, created_at, completed_at)
 
 -- Auth — migrations v1-v2
 auth_owners        (id, email, password_hash, name, created_at, updated_at)

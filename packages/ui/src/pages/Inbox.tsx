@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { marked } from "marked";
 import { recordProductEventApi } from "@/api";
+import { stripMarkdown } from "@/lib/utils";
 import type { Program } from "@/api";
 import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig, useCreateProgram, useCorrectBelief, useCreateTask, usePrograms, useTasks, useRateDigest, useDigestSuggestions, useCorrectDigest } from "@/hooks";
 import type { BriefingRawContextBelief, Task } from "@/types";
@@ -17,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import MarkdownContent from "@/components/MarkdownContent";
 import BriefProvenancePanel from "../components/BriefProvenancePanel";
 import { ResultRenderer } from "@/components/results/ResultRenderer";
-import { parseApiDate } from "@/lib/datetime";
+import { parseApiDate, timeAgo, formatInterval } from "@/lib/datetime";
 import { findMatchingProgram } from "@/lib/program-dedupe";
 import { buildInboxProgramDraft } from "@/lib/program-drafts";
 import { specToStaticHtml } from "@/lib/render-to-html";
@@ -204,29 +205,12 @@ const priorityStyles: Record<string, string> = {
   low: "bg-muted text-muted-foreground border-border/40",
 };
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - parseApiDate(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
 function beliefConfidenceLabel(value: number): "low" | "medium" | "high" {
   if (value >= 0.8) return "high";
   if (value >= 0.55) return "medium";
   return "low";
 }
 
-function formatProgramCadence(intervalHours: number): string {
-  if (intervalHours < 24) return `${intervalHours}h cadence`;
-  const days = Math.round(intervalHours / 24);
-  if (days === 1) return "Daily cadence";
-  if (days === 7) return "Weekly cadence";
-  return `${days}d cadence`;
-}
 
 function formatRelativeFuture(iso: string | null | undefined): string {
   if (!iso) return "No schedule";
@@ -318,9 +302,9 @@ function isDailyBriefingV2(raw: Record<string, unknown>): raw is Record<string, 
 
 function dailyBriefingTitle(raw: Record<string, unknown>): string {
   if (isDailyBriefingV2(raw)) {
-    return raw.title ?? raw.recommendation?.summary ?? "Daily Digest";
+    return stripMarkdown(raw.title ?? raw.recommendation?.summary ?? "Daily Digest");
   }
-  return (raw as DailyBriefingLegacy).greeting ?? "Daily Digest";
+  return stripMarkdown((raw as DailyBriefingLegacy).greeting ?? "Daily Digest");
 }
 
 export default function Inbox() {
@@ -687,7 +671,7 @@ function InboxDetail({ id }: { id: string }) {
             <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
           </div>
           <h1 className="text-xl font-semibold text-foreground">
-            {item.type === "research" ? (sections.goal ?? "Research Report") : dailyBriefingTitle(item.sections)}
+            {item.type === "research" ? stripMarkdown(sections.goal ?? "Research Report") : dailyBriefingTitle(item.sections)}
           </h1>
         </div>
 
@@ -850,10 +834,10 @@ function DailyBriefingV2Detail({
           )}
         </div>
         <p className="mt-3 text-base font-medium text-foreground">
-          {sections.recommendation?.summary ?? "No recommendation available"}
+          {stripMarkdown(sections.recommendation?.summary ?? "No recommendation available")}
         </p>
         {sections.recommendation?.rationale && (
-          <p className="mt-2 text-sm text-muted-foreground">{sections.recommendation.rationale}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{stripMarkdown(sections.recommendation.rationale)}</p>
         )}
       </div>
 
@@ -874,7 +858,7 @@ function DailyBriefingV2Detail({
           <div className="space-y-2">
             {sections.what_changed!.map((item, index) => (
               <div key={index} className="rounded-md border border-border/20 bg-card/40 px-4 py-3 text-sm text-muted-foreground">
-                {item}
+                {stripMarkdown(item)}
               </div>
             ))}
           </div>
@@ -1843,7 +1827,7 @@ function ProgramSpotlightCard({
           {program.deliveryMode ?? "interval"}
         </Badge>
         <Badge variant="outline" className="text-[10px]">
-          {formatProgramCadence(program.intervalHours)}
+          {formatInterval(program.intervalHours)}
         </Badge>
       </div>
       <div className="mt-3">
@@ -1923,7 +1907,7 @@ function DailyBriefingV2Card({ item, onCardClick, isRead }: { item: InboxItem; o
             </p>
             {sections.recommendation?.rationale && (
               <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                {sections.recommendation.rationale}
+                {stripMarkdown(sections.recommendation.rationale)}
               </p>
             )}
           </div>
@@ -2220,7 +2204,7 @@ function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; on
               <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
             </div>
             <p className="mt-2 text-sm font-medium text-foreground">
-              {sections.goal ?? "Research report"}
+              {stripMarkdown(sections.goal ?? "Research report")}
             </p>
             {!expanded && sections.report && (
               <p className="mt-1 text-xs text-muted-foreground line-clamp-2">

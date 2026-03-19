@@ -16,7 +16,7 @@ import { InfoBubble } from "../components/InfoBubble";
 import { DiagnosticsPanel } from "@/components/settings/DiagnosticsPanel";
 import { FolderIcon, FolderOpenIcon, ChevronUpIcon, ChevronDownIcon, BotIcon, CircleCheckIcon, CircleXIcon, LoaderIcon, CpuIcon, LogOutIcon, SunIcon, MoonIcon, MonitorIcon } from "lucide-react";
 import type { LearningRun } from "@/api";
-import { formatWithTimezone, parseApiDate } from "@/lib/datetime";
+import { formatWithTimezone, parseApiDate, timeAgo } from "@/lib/datetime";
 
 const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; embedModel: string }> = {
   ollama: { baseUrl: "http://localhost:11434", model: "llama3.2", embedModel: "nomic-embed-text" },
@@ -1135,17 +1135,6 @@ function NumericWorkerRow({
       </div>
     </div>
   );
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - parseApiDate(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
 }
 
 function LearningRunCard({

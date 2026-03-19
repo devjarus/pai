@@ -3,7 +3,7 @@ import type { PluginContext } from "@personal-ai/core";
 import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads, cleanupOldTelemetrySpans, startSpan, finishSpan } from "@personal-ai/core";
 import { cleanupFindings } from "@personal-ai/library";
 import { getDueSchedules, markScheduleRun } from "@personal-ai/plugin-schedules";
-import { resolveDepthForWatch, getPreviousFindingsContext, resolveRssRoute, fetchRssFeed, formatFeedContext } from "@personal-ai/watches";
+import { resolveDepthForWatch, getPreviousFindingsContext } from "@personal-ai/watches";
 import { getLatestBriefing } from "./briefing.js";
 import { runBackgroundLearning } from "./learning.js";
 
@@ -71,10 +71,11 @@ export function buildEnrichedResearchGoal(
 
   return (
     `${schedule.goal}\n\n` +
-    `IMPORTANT — PREVIOUS FINDINGS (do NOT repeat these):\n` +
+    `CONTEXT — WHAT WAS ALREADY COVERED (use as baseline, not as your report):\n` +
     `${previousSummary}\n\n` +
-    `Focus ONLY on what is NEW or CHANGED${sinceClause}. ` +
-    `If nothing meaningful changed, say so in one sentence instead of restating old findings.`
+    `Your job${sinceClause}: find FRESH information the previous report missed. ` +
+    `Look for new developments, updated numbers, different sources, emerging trends, ` +
+    `contrarian takes, or deeper details. There is ALWAYS something new to report — dig harder.`
   );
 }
 
@@ -201,6 +202,19 @@ export class WorkerLoop {
       });
     }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS); // same 24h interval as telemetry
 
+    // --- Belief pruning (remove decayed beliefs, every 24h) ---
+    setInterval(() => {
+      this.runWorkerTask("worker.cleanup", async () => {
+        const { pruneBeliefs } = await import("@personal-ai/core");
+        const pruned = pruneBeliefs(this.ctx.storage);
+        if (pruned.length > 0) {
+          this.ctx.logger.info(`Belief pruning: removed ${pruned.length} decayed belief(s)`);
+        }
+      }).catch((err) => {
+        this.ctx.logger.warn(`Belief pruning failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS);
+
     const telemetryCleanupMs = DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS;
     this.telemetryCleanupTimer = setInterval(() => {
       this.runWorkerTask("worker.cleanup", async () => {
@@ -266,23 +280,7 @@ export class WorkerLoop {
           });
           const findingsContext = getPreviousFindingsContext(this.ctx.storage, schedule.id);
 
-          // Try to pre-fetch RSS feed data for this Watch goal
-          let rssContext = "";
-          try {
-            const rssMatch = resolveRssRoute(schedule.goal);
-            if (rssMatch) {
-              const rsshubUrl = this.ctx.config.rsshubUrl || "https://rsshub.app";
-              const items = await fetchRssFeed(rsshubUrl, rssMatch.route, { filter: rssMatch.filter, limit: 15 });
-              if (items && items.length > 0) {
-                rssContext = formatFeedContext(items, rssMatch.label);
-                this.ctx.logger.info(`RSS feed pre-fetched for Watch`, { watchId: schedule.id, route: rssMatch.route, items: items.length });
-              }
-            }
-          } catch {
-            // RSS pre-fetch failed — continue with web search
-          }
-
-          const fullGoal = enrichedGoal + findingsContext + rssContext;
+          const fullGoal = enrichedGoal + findingsContext;
           const depth = resolveDepthForWatch({ depthLevel: (schedule as { depthLevel?: "quick" | "standard" | "deep" }).depthLevel }, false);
           await this.ctx.backgroundJobs?.enqueueResearch?.({
             goal: fullGoal,
