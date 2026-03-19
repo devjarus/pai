@@ -116,14 +116,60 @@ export class WorkerLoop {
     }
 
     // --- Briefing generator ---
-    this.briefingTimer = setInterval(() => {
-      if (this.ctx.config.workers?.briefing === false || !isLLMConfigured) return;
-      this.runWorkerTask("worker.briefing", async () => {
-        this.ctx.backgroundJobs?.enqueueBriefing?.({ sourceKind: "maintenance", reason: "interval" });
-      }).catch((err) => {
-        this.ctx.logger.warn(`Background briefing queueing failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    }, briefingMs);
+    // If briefingTime is set (e.g. "08:00"), generate once daily at that time.
+    // Otherwise fall back to interval-based generation.
+    const briefingTime = this.ctx.config.workers?.briefingTime;
+
+    if (briefingTime) {
+      // Time-of-day mode: check every 30 min if it's time
+      this.briefingTimer = setInterval(() => {
+        if (this.ctx.config.workers?.briefing === false || !isLLMConfigured) return;
+
+        const now = new Date();
+        const tz = this.ctx.config.timezone;
+        const formatter = new Intl.DateTimeFormat("en-US", {
+          hour: "2-digit", minute: "2-digit", hour12: false,
+          ...(tz ? { timeZone: tz } : {}),
+        });
+        const currentTime = formatter.format(now); // "08:30"
+        const targetParts = briefingTime.split(":").map(Number);
+        const currentParts = currentTime.split(":").map(Number);
+        const targetH = targetParts[0] ?? 0;
+        const targetM = targetParts[1] ?? 0;
+        const currentH = currentParts[0] ?? 0;
+        const currentM = currentParts[1] ?? 0;
+
+        // Within 30-min window of target time
+        const targetMinutes = targetH * 60 + targetM;
+        const currentMinutes = currentH * 60 + currentM;
+        const diff = Math.abs(currentMinutes - targetMinutes);
+        if (diff > 30) return;
+
+        // Check if already generated today
+        const latest = getLatestBriefing(this.ctx.storage);
+        if (latest) {
+          const latestDate = new Date(latest.generatedAt);
+          const today = new Date();
+          if (latestDate.toDateString() === today.toDateString()) return; // already generated today
+        }
+
+        this.runWorkerTask("worker.briefing", async () => {
+          this.ctx.backgroundJobs?.enqueueBriefing?.({ sourceKind: "maintenance", reason: "scheduled" });
+        }).catch((err) => {
+          this.ctx.logger.warn(`Background briefing queueing failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+      }, 30 * 60 * 1000); // check every 30 min
+    } else {
+      // Interval mode (existing behavior)
+      this.briefingTimer = setInterval(() => {
+        if (this.ctx.config.workers?.briefing === false || !isLLMConfigured) return;
+        this.runWorkerTask("worker.briefing", async () => {
+          this.ctx.backgroundJobs?.enqueueBriefing?.({ sourceKind: "maintenance", reason: "interval" });
+        }).catch((err) => {
+          this.ctx.logger.warn(`Background briefing queueing failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+      }, briefingMs);
+    }
 
     if (generateInitial && isLLMConfigured && this.ctx.config.workers?.briefing !== false) {
       const latest = getLatestBriefing(this.ctx.storage);

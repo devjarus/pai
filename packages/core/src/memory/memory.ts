@@ -743,7 +743,33 @@ export function semanticSearch(
     const knownSubjects = storage.query<{ subject: string }>(
       "SELECT DISTINCT subject FROM beliefs WHERE status = 'active' AND subject != 'owner' AND subject != 'general'",
     ).map((r) => r.subject);
-    mentionedSubjects = new Set(knownSubjects.filter((s) => queryLower.includes(s)));
+    // Normalize query: strip possessives and common suffixes
+    const normalizedQuery = queryLower.replace(/'s\b/g, "").replace(/['\u2019]s\b/g, "");
+
+    // Load aliases for reverse lookup
+    const aliases = storage.query<{ alias: string; canonical: string }>(
+      "SELECT alias, canonical FROM subject_aliases",
+    );
+    const canonicalToAliases = new Map<string, string[]>();
+    for (const { alias, canonical } of aliases) {
+      const existing = canonicalToAliases.get(canonical) ?? [];
+      existing.push(alias);
+      canonicalToAliases.set(canonical, existing);
+    }
+
+    mentionedSubjects = new Set<string>();
+    for (const subject of knownSubjects) {
+      // Check direct mention
+      if (normalizedQuery.includes(subject)) {
+        mentionedSubjects.add(subject);
+        continue;
+      }
+      // Check aliases (e.g., query mentions "suraj" which is alias for "owner")
+      const subjectAliases = canonicalToAliases.get(subject) ?? [];
+      if (subjectAliases.some((alias) => normalizedQuery.includes(alias))) {
+        mentionedSubjects.add(subject);
+      }
+    }
   }
 
   const now = Date.now();

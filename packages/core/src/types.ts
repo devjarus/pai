@@ -112,6 +112,7 @@ export interface Config {
     briefing?: boolean;            // default true
     knowledgeCleanup?: boolean;    // default true
     llmTraffic?: LlmTrafficConfig;
+    briefingTime?: string;         // "HH:MM" 24h format for daily digest time
   };
   knowledge?: {
     defaultTtlDays?: number | null;  // null = no default expiry; config default 90

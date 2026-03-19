@@ -11,17 +11,33 @@ describe("extractBeliefs", () => {
   it("should extract fact, factType, importance, and insight from text using LLM", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn().mockResolvedValue({
-        text: '{"fact":"User likes coffee in the morning","factType":"preference","importance":7,"insight":"Morning routines provide consistency"}',
+        text: '[{"fact":"User likes coffee in the morning","factType":"preference","importance":7,"insight":"Morning routines provide consistency","subject":"owner","relatedTo":null,"temporal":null}]',
         usage: { inputTokens: 10, outputTokens: 15 },
       }),
       embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
     const result = await extractBeliefs(mockLLM, "I like coffee in the morning");
-    expect(result.fact).toBe("User likes coffee in the morning");
-    expect(result.factType).toBe("preference");
-    expect(result.importance).toBe(7);
-    expect(result.insight).toBeNull();
+    expect(result).toHaveLength(1);
+    expect(result[0]!.fact).toBe("User likes coffee in the morning");
+    expect(result[0]!.factType).toBe("preference");
+    expect(result[0]!.importance).toBe(7);
+    expect(result[0]!.insight).toBeNull();
+  });
+
+  it("should extract multiple facts from a single observation", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn().mockResolvedValue({
+        text: '[{"fact":"User works at Stripe","factType":"factual","importance":8,"subject":"owner","relatedTo":"Stripe","temporal":null},{"fact":"User prefers TypeScript","factType":"preference","importance":7,"subject":"owner","relatedTo":null,"temporal":null}]',
+        usage: { inputTokens: 10, outputTokens: 25 },
+      }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+    const result = await extractBeliefs(mockLLM, "I work at Stripe and prefer TypeScript");
+    expect(result).toHaveLength(2);
+    expect(result[0]!.fact).toBe("User works at Stripe");
+    expect(result[1]!.fact).toBe("User prefers TypeScript");
   });
 
   it("should handle LLM returning plain text by using it as factual", async () => {
@@ -34,23 +50,51 @@ describe("extractBeliefs", () => {
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
     const result = await extractBeliefs(mockLLM, "I like coffee");
-    expect(result.fact).toBe("User enjoys morning coffee");
-    expect(result.factType).toBe("factual");
-    expect(result.importance).toBe(5);
-    expect(result.insight).toBeNull();
+    expect(result).toHaveLength(1);
+    expect(result[0]!.fact).toBe("User enjoys morning coffee");
+    expect(result[0]!.factType).toBe("factual");
+    expect(result[0]!.importance).toBe(5);
+    expect(result[0]!.insight).toBeNull();
   });
 
-  it("should default to factual for invalid factType", async () => {
+  it("should handle LLM returning a single object (backward compat)", async () => {
     const mockLLM: LLMClient = {
       chat: vi.fn().mockResolvedValue({
-        text: '{"fact":"Some fact","factType":"invalid_type","insight":null}',
+        text: '{"fact":"Some fact","factType":"factual","importance":5,"subject":"owner","relatedTo":null,"temporal":null}',
         usage: { inputTokens: 10, outputTokens: 8 },
       }),
       embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
       health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
     };
     const result = await extractBeliefs(mockLLM, "test");
-    expect(result.factType).toBe("factual");
+    expect(result).toHaveLength(1);
+    expect(result[0]!.fact).toBe("Some fact");
+  });
+
+  it("should default to factual for invalid factType", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn().mockResolvedValue({
+        text: '[{"fact":"Some fact","factType":"invalid_type","insight":null}]',
+        usage: { inputTokens: 10, outputTokens: 8 },
+      }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+    const result = await extractBeliefs(mockLLM, "test");
+    expect(result[0]!.factType).toBe("factual");
+  });
+
+  it("should cap results at 3 items", async () => {
+    const mockLLM: LLMClient = {
+      chat: vi.fn().mockResolvedValue({
+        text: '[{"fact":"Fact 1","factType":"factual","importance":5,"subject":"owner","relatedTo":null,"temporal":null},{"fact":"Fact 2","factType":"factual","importance":5,"subject":"owner","relatedTo":null,"temporal":null},{"fact":"Fact 3","factType":"factual","importance":5,"subject":"owner","relatedTo":null,"temporal":null},{"fact":"Fact 4","factType":"factual","importance":5,"subject":"owner","relatedTo":null,"temporal":null}]',
+        usage: { inputTokens: 10, outputTokens: 30 },
+      }),
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+      health: vi.fn().mockResolvedValue({ ok: true, provider: "mock" }),
+    };
+    const result = await extractBeliefs(mockLLM, "many facts");
+    expect(result).toHaveLength(3);
   });
 });
 

@@ -94,21 +94,20 @@ async function storeEpisodeEmbeddingForAction(
 export async function extractBeliefs(
   llm: LLMClient,
   text: string,
-): Promise<{ fact: string; factType: string; importance: number; insight: string | null; subject: string; relatedTo: string | null; temporal: string | null }> {
+): Promise<Array<{ fact: string; factType: string; importance: number; insight: string | null; subject: string; relatedTo: string | null; temporal: string | null }>> {
   const result = await llm.chat([
     {
       role: "system",
       content:
-        'Extract a personal fact from the observation. ' +
-        'The fact should preserve what the user said/experienced. ' +
-        'Classify the fact type as one of: "factual" (objective truth), "preference" (user likes/dislikes), ' +
-        '"procedural" (how to do something), "architectural" (system design decision). ' +
-        'Rate importance 1-10: 1-3 trivial/transient, 4-6 useful context, 7-9 core preference/decision, 10 critical constraint. ' +
-        'Identify the subject: who is this fact ABOUT? Use their name or "owner" if about the AI owner. ' +
-        'Identify relatedTo: what ENTITY is this fact connected to? (a person, place, project, asset, or topic). Use null if standalone. ' +
-        'Identify temporal: if this fact is time-bound (an event, appointment, deadline), include the ISO date. Use null for timeless facts. ' +
-        'Reply with JSON only: {"fact":"...","factType":"...","importance":N,"subject":"...","relatedTo":"...","temporal":null}. ' +
-        'Keep each under 25 words.',
+        'Extract up to 3 personal facts from the observation. ' +
+        'Each fact should preserve what the user said/experienced. ' +
+        'Classify each fact type as one of: "factual", "preference", "procedural", "architectural". ' +
+        'Rate importance 1-10. ' +
+        'Identify the subject: who is this about? Use their name or "owner". ' +
+        'Identify relatedTo: entity this connects to (person, place, project). null if standalone. ' +
+        'Identify temporal: ISO date if time-bound. null for timeless facts. ' +
+        'Reply with JSON array only: [{"fact":"...","factType":"...","importance":N,"subject":"...","relatedTo":null,"temporal":null}]. ' +
+        'Keep each fact under 25 words. Return [] if nothing worth remembering.',
     },
     { role: "user", content: text },
   ], {
@@ -123,21 +122,34 @@ export async function extractBeliefs(
     if (fenceMatch?.[1]) {
       jsonText = fenceMatch[1].trim();
     } else {
-      // Try extracting first JSON object from the text
-      const braceMatch = jsonText.match(/\{[\s\S]*\}/);
-      if (braceMatch) jsonText = braceMatch[0];
+      // Try extracting first JSON array or object from the text
+      const arrayMatch = jsonText.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        jsonText = arrayMatch[0];
+      } else {
+        const braceMatch = jsonText.match(/\{[\s\S]*\}/);
+        if (braceMatch) jsonText = braceMatch[0];
+      }
     }
     const parsed = JSON.parse(jsonText);
-    const factType = normalizeFactType(parsed.factType);
-    const importance = normalizeImportance(parsed.importance);
-    const subject = normalizeSubject(parsed.subject);
-    return {
-      fact: parsed.fact, factType, importance, insight: null, subject,
-      relatedTo: typeof parsed.relatedTo === "string" ? parsed.relatedTo : null,
-      temporal: typeof parsed.temporal === "string" ? parsed.temporal : null,
-    };
+
+    // Backward compat: if LLM returned a single object, wrap in array
+    const items: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+
+    return items.slice(0, 3).map((item: unknown) => {
+      const obj = item as Record<string, unknown>;
+      return {
+        fact: String(obj.fact ?? ""),
+        factType: normalizeFactType(obj.factType),
+        importance: normalizeImportance(obj.importance),
+        insight: null,
+        subject: normalizeSubject(obj.subject),
+        relatedTo: typeof obj.relatedTo === "string" ? obj.relatedTo : null,
+        temporal: typeof obj.temporal === "string" ? obj.temporal : null,
+      };
+    }).filter((f) => f.fact.length > 0);
   } catch {
-    return { fact: result.text.trim(), factType: "factual", importance: 5, insight: null, subject: "owner", relatedTo: null, temporal: null };
+    return [{ fact: result.text.trim(), factType: "factual", importance: 5, insight: null, subject: "owner", relatedTo: null, temporal: null }];
   }
 }
 
@@ -529,37 +541,34 @@ export async function remember(
   const episode = createEpisode(storage, { action: text });
 
   // Run episode embedding and belief extraction in parallel (independent LLM calls)
-  const [, extracted] = await Promise.all([
+  const [, extractedFacts] = await Promise.all([
     // Store episode embedding for semantic episode search
     storeEpisodeEmbeddingForAction(storage, llm, episode.id, text, logger),
     // Extract beliefs from text
     extractBeliefs(llm, text),
   ]);
-  logger?.debug("Extracted beliefs", { input: text, fact: extracted.fact, factType: extracted.factType, insight: extracted.insight });
+  logger?.debug("Extracted beliefs", { input: text, factCount: extractedFacts.length });
 
-  let enrichedStatement = extracted.fact;
-  if (extracted.relatedTo) {
-    enrichedStatement += ` [related: ${extracted.relatedTo}]`;
-  }
-  if (extracted.temporal) {
-    enrichedStatement += ` [when: ${extracted.temporal}]`;
-  }
+  const allBeliefIds: string[] = [];
+  let anyReinforcement = false;
 
-  const result = await storeStructuredBeliefs(
-    storage,
-    llm,
-    {
+  for (const extracted of extractedFacts.slice(0, 3)) {
+    let enrichedStatement = extracted.fact;
+    if (extracted.relatedTo) enrichedStatement += ` [related: ${extracted.relatedTo}]`;
+    if (extracted.temporal) enrichedStatement += ` [when: ${extracted.temporal}]`;
+
+    const result = await storeStructuredBeliefs(storage, llm, {
       statement: enrichedStatement,
       factType: extracted.factType,
       importance: extracted.importance,
       subject: extracted.subject,
-      insight: extracted.insight,
+      insight: null,
       episodeAction: text,
-    },
-    episode.id,
-    logger,
-    options,
-  );
+    }, episode.id, logger, options);
 
-  return { episodeId: episode.id, ...result };
+    allBeliefIds.push(...result.beliefIds);
+    if (result.isReinforcement) anyReinforcement = true;
+  }
+
+  return { episodeId: episode.id, beliefIds: allBeliefIds, isReinforcement: anyReinforcement };
 }
