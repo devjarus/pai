@@ -5,6 +5,7 @@ import {
   memoryStats,
   listSources,
   learnFromContent,
+  knowledgeSearch,
   formatDateTime,
   getContextBudget,
   getProviderOptions,
@@ -1285,6 +1286,28 @@ export async function generateBriefing(
     recentFindings = [];
   }
 
+  // Search knowledge base for relevant context (previous digests, research reports, learned docs)
+  let knowledgeContext = "";
+  try {
+    const searchTerms = [
+      ...programs.slice(0, 3).map((p) => p.question),
+      ...tasks.slice(0, 3).map((t) => t.title),
+    ].filter(Boolean);
+    if (searchTerms.length > 0) {
+      const query = searchTerms.join(" ").slice(0, 200);
+      const results = await knowledgeSearch(ctx.storage, ctx.llm, query, 5, {
+        freshnessDecayDays: ctx.config.knowledge?.freshnessDecayDays,
+      });
+      if (results.length > 0) {
+        knowledgeContext = results
+          .map((r) => `- [${r.source.title}] ${r.chunk.content.slice(0, 200)}`)
+          .join("\n");
+      }
+    }
+  } catch {
+    knowledgeContext = "";
+  }
+
   const now = new Date();
   let ownerName = "there";
   try {
@@ -1426,6 +1449,7 @@ KNOWLEDGE SOURCES (${sources.length}):
 ${JSON.stringify(rawContext.knowledgeSources, null, 2)}
 
 ${recentFindings.length > 0 ? `RECENT RESEARCH FINDINGS (from background research — incorporate these, don't repeat raw):\n${recentFindings.map((f) => `- [${f.domain}] ${f.summary.slice(0, 200)}`).join("\n")}\n` : ""}
+${knowledgeContext ? `RELEVANT KNOWLEDGE (from docs, research reports, and previous digests — use as context):\n${knowledgeContext}\n` : ""}
 ${previousBriefingSummary ? `PREVIOUS BRIEFINGS (you MUST NOT repeat these — choose DIFFERENT angles):\n${previousBriefingSummary}\n` : ""}${feedbackContext ? `${feedbackContext}\n` : ""}
 Guidelines:
 - Recommendation comes first. The briefing should tell the user what to do, hold, or watch next.
