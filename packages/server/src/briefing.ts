@@ -4,6 +4,7 @@ import {
   listBeliefs,
   memoryStats,
   listSources,
+  learnFromContent,
   formatDateTime,
   getContextBudget,
   getProviderOptions,
@@ -1527,6 +1528,39 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
       linkBriefBeliefs(ctx.storage, id, topBeliefs.map((b) => ({ beliefId: b.id, role: "assumption" })));
     }
     pruneOldBriefings(ctx.storage);
+
+    // Feed digest conclusions back into knowledge so future digests can reference them
+    try {
+      const rec = parsed.recommendation;
+      const summary = typeof rec === "object" && rec?.summary ? rec.summary : "";
+      const changes = Array.isArray(parsed.what_changed)
+        ? parsed.what_changed.map((c: string | { title?: string }) => typeof c === "string" ? c : c.title ?? "").filter(Boolean)
+        : [];
+      const actions = Array.isArray(parsed.next_actions)
+        ? parsed.next_actions.map((a: { title?: string }) => a.title ?? "").filter(Boolean)
+        : [];
+
+      if (summary.length > 20) {
+        const digestKnowledge = [
+          `# Daily Digest — ${rawContext.date}`,
+          "",
+          `## Recommendation`,
+          summary,
+          ...(changes.length > 0 ? ["", "## What Changed", ...changes.map((c: string) => `- ${c}`)] : []),
+          ...(actions.length > 0 ? ["", "## Next Actions", ...actions.map((a: string) => `- ${a}`)] : []),
+        ].join("\n");
+
+        learnFromContent(ctx.storage, ctx.llm, `/digest/${id}`, `Digest: ${summary.slice(0, 80)}`, digestKnowledge, {
+          force: true,
+          maxAgeDays: 14,
+        }).catch((err) => {
+          ctx.logger.warn(`Failed to store digest as knowledge: ${err instanceof Error ? err.message : String(err)}`);
+        });
+      }
+    } catch {
+      // Non-critical — don't block digest delivery
+    }
+
     return {
       id,
       generatedAt: new Date().toISOString(),
