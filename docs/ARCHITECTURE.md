@@ -219,13 +219,14 @@ Input: "Alex prefers Zustand over Redux"
     │
     └── extractBeliefs(llm, text)                       (parallel)
           │
-          Returns: { fact, factType, importance, subject, relatedTo, temporal }
+          Returns: Array<{ fact, factType, importance, subject, relatedTo, temporal }>
+          │  Up to 3 facts per input (handles compound statements)
           │  relatedTo: entity the fact connects to (person, place, project)
           │  temporal: ISO date if time-bound (appointment, deadline)
-          │  → statement enriched with [related: X] [when: Y] tags
+          │  → each statement enriched with [related: X] [when: Y] tags
           │
           ▼
-        processNewBelief:
+        For each extracted fact → processNewBelief:
           │
           ├── llm.embed(statement) → embedding
           ├── findSimilarBeliefs(embedding, top 5) → cosine similarity
@@ -259,7 +260,7 @@ Query: "What does Alex like?"
     │             + 0.2 × (importance / 10)          ← priority weight
     │             + 0.1 × recency                    ← exp decay from last_accessed
     │             + 0.05 × stability                 ← well-established bonus
-    │             + 0.15 × subjectMatch              ← mentioned-person boost
+    │             + 0.15 × subjectMatch              ← mentioned-person boost (strips possessives, resolves aliases)
     │     Filter: cosine ≥ 0.2
     │     Sort by score, take top 8
     │     │
@@ -402,12 +403,20 @@ Background timer (every 6 hours) OR manual refresh (POST /api/inbox/refresh)
 
 Beliefs with `correction_state='corrected'` or `confidence < 0.55` are excluded entirely.
 
+### Knowledge Feedback Loop
+
+After generating a digest, its conclusions are stored as short-lived knowledge:
+- Recommendation, what-changed, and next-actions → `learnFromContent()` with 14-day TTL
+- Capped at 5 digest knowledge entries (oldest deleted before adding new)
+- Next digest runs `knowledgeSearch()` using program/task context → finds previous conclusions
+- Research reports also stored with 7-day TTL, capped at 10 entries
+
 ### Scheduling
 
-- **Background timer:** `setInterval` every 6 hours from server start
+- **Time-of-day mode:** Set `workers.briefingTime: "08:00"` for one digest per day at a specific time (checks every 30min, skips if already generated today)
+- **Interval mode (default):** `setInterval` every 6 hours from server start
 - **First-boot:** Auto-generates if no briefing exists
 - **Manual:** `POST /api/inbox/refresh` (rate limited 5/min)
-- **No cron:** Simple interval, not time-of-day aware
 
 ---
 

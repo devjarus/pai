@@ -21,9 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Entity-aware memory extraction** — `extractBeliefs()` and background learning now extract `relatedTo` (entity connection) and `temporal` (ISO date) context, stored as `[related: X]` and `[when: Y]` tags in belief statements.
 - **Scheduled belief dedup** — 24h automatic merging of near-duplicate beliefs (cosine > 0.85) via `reflect()` + `mergeDuplicates()`.
 - **Active jobs banner** — Home page sidebar shows a compact indicator when research/swarm jobs are running or queued, linking to `/jobs` for details.
+- **Multi-fact extraction** — `extractBeliefs()` now extracts up to 3 facts per input instead of 1. "I work at Stripe and prefer TypeScript" captures both facts.
+- **Better subject matching** — Recall strips possessives ("Alex's" → "alex") and resolves aliases from `subject_aliases` table for boosting.
+- **Time-of-day digest scheduling** — New `workers.briefingTime` config (e.g. "08:00") sends one digest per day at a specific time instead of every-6h interval.
+- **Digest knowledge feedback loop** — Digest conclusions (recommendation, what-changed, next-actions) stored as 14-day TTL knowledge. Next digest searches knowledge base for relevant prior context via `knowledgeSearch()`. Capped at 5 digest + 10 research knowledge entries.
 
 ### Fixed
 - **Research job retry on abort** — "This operation was aborted" from LLM providers is now treated as a transient error, triggering automatic retry (up to 2 times) instead of permanent failure.
+- **Knowledge accumulation cap** — Digest knowledge capped at 5 entries, research at 10. Prevents unbounded growth between TTL cleanup runs.
 
 - **Product language rename:** Program → Watch, Brief → Digest, Belief → Memory, Action → To-Do
 - **Library domain:** Unified `/api/library/*` API combining memories, documents, and research findings

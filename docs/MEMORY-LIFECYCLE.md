@@ -15,14 +15,14 @@ flowchart TD
     C --> D["llm.embed(text) -> storeEpisodeEmbedding()"]
     C --> E["extractBeliefs(llm, text)"]
 
-    E --> E1["LLM chat: extract JSON\n{fact, factType, importance, subject, relatedTo, temporal}"]
+    E --> E1["LLM chat: extract JSON array (up to 3 facts)\n[{fact, factType, importance, subject, relatedTo, temporal}]"]
     E1 --> E2["Strip markdown fences, parse JSON"]
     E2 --> E3["Validate factType in {factual, preference, procedural, architectural}"]
     E3 --> E4["Clamp importance 1-10, normalize subject to lowercase"]
     E4 --> E4a["Enrich statement:\n[related: entity] [when: ISO date]"]
     E4a --> E5["On parse failure: raw text as 'factual', importance=5, subject='owner'"]
 
-    D --> F["processNewBelief(fact, factType, episodeId, importance, subject)"]
+    D --> F["For each extracted fact (up to 3):\nprocessNewBelief(fact, factType, episodeId, importance, subject)"]
     E --> F
 
     F --> F0["resolveSubjectAlias(storage, subject)\ne.g. 'suraj' → 'owner'"]
