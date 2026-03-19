@@ -116,15 +116,15 @@ export function useDeleteKnowledgeSource() {
   return useMutation({
     mutationFn: (id: string) => deleteKnowledgeSource(id),
     onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: knowledgeKeys.all });
-      const prev = queryClient.getQueriesData<KnowledgeSource[]>({ queryKey: knowledgeKeys.all });
-      queryClient.setQueriesData<KnowledgeSource[]>({ queryKey: knowledgeKeys.all }, (old) =>
+      await queryClient.cancelQueries({ queryKey: knowledgeKeys.sources() });
+      const prev = queryClient.getQueryData<KnowledgeSource[]>(knowledgeKeys.sources());
+      queryClient.setQueryData<KnowledgeSource[]>(knowledgeKeys.sources(), (old) =>
         old?.filter((s) => s.id !== id),
       );
       return { prev };
     },
     onError: (_err, _id, context) => {
-      context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      if (context?.prev) queryClient.setQueryData(knowledgeKeys.sources(), context.prev);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: knowledgeKeys.all });
