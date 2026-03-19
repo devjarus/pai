@@ -5,6 +5,7 @@ import { useDigests } from "@/hooks/use-digests";
 import { useWatches } from "@/hooks/use-watches";
 import { useTasks, useCompleteTask } from "@/hooks/use-tasks";
 import { useLibraryStats } from "@/hooks/use-library";
+import { useJobs } from "@/hooks/use-jobs";
 import { timeAgoCompact } from "@/lib/datetime";
 import { stripMarkdown } from "@/lib/utils";
 import {
@@ -15,6 +16,7 @@ import {
   SearchIcon,
   XIcon,
   AlertCircleIcon,
+  LoaderIcon,
 } from "lucide-react";
 import { QueryError } from "@/components/QueryError";
 
@@ -178,6 +180,7 @@ export default function Home() {
               <DigestFeed />
             </div>
             <aside className="flex w-full flex-col lg:w-64 lg:shrink-0 lg:border-l lg:border-border/15 lg:pl-8">
+              <ActiveJobsBanner />
               <div className="flex flex-col gap-10">
                 <WatchesPanel />
                 <TodosPanel />
@@ -334,6 +337,27 @@ function CompactDigest({ digest }: { digest: DigestItem }) {
 // ---------------------------------------------------------------------------
 // Sidebar
 // ---------------------------------------------------------------------------
+
+function ActiveJobsBanner() {
+  const { data } = useJobs();
+  const jobs = data?.jobs ?? [];
+  const active = jobs.filter((j: { status: string }) => j.status === "running" || j.status === "pending");
+  if (active.length === 0) return null;
+
+  const running = active.filter((j: { status: string }) => j.status === "running").length;
+  const pending = active.length - running;
+
+  return (
+    <Link to="/jobs" className="mb-6 flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary transition-colors hover:bg-primary/10">
+      <LoaderIcon className="size-3.5 animate-spin" />
+      <span>
+        {running > 0 && `${running} running`}
+        {running > 0 && pending > 0 && ", "}
+        {pending > 0 && `${pending} queued`}
+      </span>
+    </Link>
+  );
+}
 
 function WatchesPanel() {
   const { data: watches, isLoading } = useWatches();
