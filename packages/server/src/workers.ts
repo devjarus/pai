@@ -215,6 +215,22 @@ export class WorkerLoop {
       });
     }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS);
 
+    // --- Belief dedup (merge near-duplicate beliefs, every 24h) ---
+    setInterval(() => {
+      this.runWorkerTask("worker.cleanup", async () => {
+        const { reflect, mergeDuplicates } = await import("@personal-ai/core");
+        const result = reflect(this.ctx.storage, { similarityThreshold: 0.85, limit: 200 });
+        if (result.duplicates.length > 0) {
+          const { merged } = mergeDuplicates(this.ctx.storage, result.duplicates);
+          if (merged > 0) {
+            this.ctx.logger.info(`Belief dedup: merged ${merged} duplicate belief(s) from ${result.duplicates.length} cluster(s)`);
+          }
+        }
+      }).catch((err) => {
+        this.ctx.logger.warn(`Belief dedup failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS);
+
     const telemetryCleanupMs = DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS;
     this.telemetryCleanupTimer = setInterval(() => {
       this.runWorkerTask("worker.cleanup", async () => {
