@@ -421,8 +421,18 @@ export async function runResearchInBackground(
     }
 
     // Learn the report into the knowledge base so future research builds on it.
-    // Use the inbox URL so the source link in Knowledge page opens the report.
     try {
+      // Cap research knowledge entries — keep only 10 most recent
+      const existingResearchSources = ctx.storage.query<{ id: string }>(
+        "SELECT id FROM knowledge_sources WHERE url LIKE '/inbox/%' ORDER BY fetched_at DESC",
+      );
+      if (existingResearchSources.length > 9) {
+        const { forgetSource } = await import("@personal-ai/core");
+        for (const old of existingResearchSources.slice(9)) {
+          forgetSource(ctx.storage, old.id);
+        }
+      }
+
       const reportUrl = `/inbox/${briefingId}`;
       const reportTitle = `Research Report: ${job.goal.slice(0, 100)}`;
       await learnFromContent(ctx.storage, ctx.llm, reportUrl, reportTitle, presentation.report, {

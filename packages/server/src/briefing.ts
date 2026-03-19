@@ -1565,6 +1565,15 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
         : [];
 
       if (summary.length > 20) {
+        // Cap digest knowledge entries — keep only the 5 most recent
+        const existingDigestSources = ctx.storage.query<{ id: string }>(
+          "SELECT id FROM knowledge_sources WHERE url LIKE '/digest/%' ORDER BY fetched_at DESC",
+        );
+        for (const old of existingDigestSources.slice(4)) {
+          const { forgetSource } = await import("@personal-ai/core");
+          forgetSource(ctx.storage, old.id);
+        }
+
         const digestKnowledge = [
           `# Daily Digest — ${rawContext.date}`,
           "",
