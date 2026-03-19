@@ -292,6 +292,8 @@ export interface ExtractedFact {
   factType: "factual" | "preference" | "procedural" | "architectural";
   importance: number;
   subject: string;
+  relatedTo?: string;
+  temporal?: string;
 }
 
 export function buildLearningPrompt(signals: GatheredSignals): string {
@@ -345,7 +347,11 @@ Guidelines:
 - Keep each fact under 20 words
 
 Respond with ONLY a JSON array (no markdown, no explanation):
-[{"fact":"...","factType":"factual|preference|procedural|architectural","importance":N,"subject":"owner|name"},...]
+[{"fact":"...","factType":"factual|preference|procedural|architectural","importance":N,"subject":"owner|name","relatedTo":"entity or null","temporal":"ISO date or null"},...]
+
+Additional guidelines:
+- Include "relatedTo" when the fact connects to a specific entity (person, place, project, asset)
+- Include "temporal" with ISO date when the fact is time-bound (event, appointment, deadline)
 
 If nothing worth extracting, respond with: []`;
 }
@@ -377,6 +383,8 @@ export function parseLearningResponse(text: string): ExtractedFact[] {
         factType: String(item.factType) as ExtractedFact["factType"],
         importance: Number(item.importance),
         subject: String(item.subject),
+        relatedTo: typeof item.relatedTo === "string" ? item.relatedTo : undefined,
+        temporal: typeof item.temporal === "string" ? item.temporal : undefined,
       }));
   } catch {
     return [];
@@ -546,8 +554,11 @@ export async function runBackgroundLearning(
       continue;
     }
     try {
+      let statement = fact.fact;
+      if (fact.relatedTo) statement += ` [related: ${fact.relatedTo}]`;
+      if (fact.temporal) statement += ` [when: ${fact.temporal}]`;
       const result = await rememberStructured(ctx.storage, ctx.llm, {
-        statement: fact.fact,
+        statement,
         factType: fact.factType,
         importance: fact.importance,
         subject: fact.subject,

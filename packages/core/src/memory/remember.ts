@@ -94,7 +94,7 @@ async function storeEpisodeEmbeddingForAction(
 export async function extractBeliefs(
   llm: LLMClient,
   text: string,
-): Promise<{ fact: string; factType: string; importance: number; insight: string | null; subject: string }> {
+): Promise<{ fact: string; factType: string; importance: number; insight: string | null; subject: string; relatedTo: string | null; temporal: string | null }> {
   const result = await llm.chat([
     {
       role: "system",
@@ -104,9 +104,11 @@ export async function extractBeliefs(
         'Classify the fact type as one of: "factual" (objective truth), "preference" (user likes/dislikes), ' +
         '"procedural" (how to do something), "architectural" (system design decision). ' +
         'Rate importance 1-10: 1-3 trivial/transient, 4-6 useful context, 7-9 core preference/decision, 10 critical constraint. ' +
-        'Identify the subject: who is this fact ABOUT? Use their name (e.g., "Alex", "Bob") or "owner" if about the AI owner. ' +
-        'Reply with JSON only: {"fact":"...","factType":"...","importance":N,"subject":"..."} or {"fact":"...","factType":"...","importance":N,"subject":"owner"}. ' +
-        'Keep each under 20 words.',
+        'Identify the subject: who is this fact ABOUT? Use their name or "owner" if about the AI owner. ' +
+        'Identify relatedTo: what ENTITY is this fact connected to? (a person, place, project, asset, or topic). Use null if standalone. ' +
+        'Identify temporal: if this fact is time-bound (an event, appointment, deadline), include the ISO date. Use null for timeless facts. ' +
+        'Reply with JSON only: {"fact":"...","factType":"...","importance":N,"subject":"...","relatedTo":"...","temporal":null}. ' +
+        'Keep each under 25 words.',
     },
     { role: "user", content: text },
   ], {
@@ -129,9 +131,13 @@ export async function extractBeliefs(
     const factType = normalizeFactType(parsed.factType);
     const importance = normalizeImportance(parsed.importance);
     const subject = normalizeSubject(parsed.subject);
-    return { fact: parsed.fact, factType, importance, insight: null, subject };
+    return {
+      fact: parsed.fact, factType, importance, insight: null, subject,
+      relatedTo: typeof parsed.relatedTo === "string" ? parsed.relatedTo : null,
+      temporal: typeof parsed.temporal === "string" ? parsed.temporal : null,
+    };
   } catch {
-    return { fact: result.text.trim(), factType: "factual", importance: 5, insight: null, subject: "owner" };
+    return { fact: result.text.trim(), factType: "factual", importance: 5, insight: null, subject: "owner", relatedTo: null, temporal: null };
   }
 }
 
@@ -530,11 +536,20 @@ export async function remember(
     extractBeliefs(llm, text),
   ]);
   logger?.debug("Extracted beliefs", { input: text, fact: extracted.fact, factType: extracted.factType, insight: extracted.insight });
+
+  let enrichedStatement = extracted.fact;
+  if (extracted.relatedTo) {
+    enrichedStatement += ` [related: ${extracted.relatedTo}]`;
+  }
+  if (extracted.temporal) {
+    enrichedStatement += ` [when: ${extracted.temporal}]`;
+  }
+
   const result = await storeStructuredBeliefs(
     storage,
     llm,
     {
-      statement: extracted.fact,
+      statement: enrichedStatement,
       factType: extracted.factType,
       importance: extracted.importance,
       subject: extracted.subject,

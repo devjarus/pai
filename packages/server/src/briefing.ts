@@ -13,7 +13,7 @@ import {
 } from "@personal-ai/core";
 import { listPrograms } from "@personal-ai/plugin-schedules";
 import { listGoals, listTasks } from "@personal-ai/plugin-tasks";
-import { getAverageRating, getRecentFeedback } from "./digest-ratings.js";
+import { getAverageRating, getBeliefRatingBonus, getRecentFeedback } from "./digest-ratings.js";
 
 const BRIEFING_LLM_TIMEOUT = {
   totalMs: 2 * 60_000,
@@ -650,6 +650,7 @@ function countBriefingFocusMatches(statement: string, focusKeywords: Set<string>
 function scoreBriefingBelief(
   belief: Belief,
   focus: { text: string; keywords: Set<string> },
+  storage?: PluginContext["storage"],
 ): number | null {
   if (belief.status !== "active") return null;
   if (belief.sensitive) return null;
@@ -695,10 +696,13 @@ function scoreBriefingBelief(
     ? 8
     : focusMatches * 14;
 
+  const ratingBonus = storage ? getBeliefRatingBonus(storage, belief.id) : 0;
+
   return (
     focusBonus
     + freshnessBonus
     + originBonus
+    + ratingBonus
     + belief.importance * 2
     + Math.min(6, belief.access_count)
     + Math.round(belief.confidence * 20)
@@ -714,13 +718,14 @@ export function selectBriefingBeliefs(
     knowledgeSources: Array<{ title: string; url: string }>;
   },
   limit = 8,
+  storage?: PluginContext["storage"],
 ): Belief[] {
   const focus = buildBriefingFocus(input.programs, input.tasks, input.goals, input.knowledgeSources);
 
   return beliefs
     .map((belief) => ({
       belief,
-      score: scoreBriefingBelief(belief, focus),
+      score: scoreBriefingBelief(belief, focus, storage),
     }))
     .filter((entry): entry is { belief: Belief; score: number } => entry.score !== null)
     .sort((left, right) => {
@@ -1329,7 +1334,7 @@ export async function generateBriefing(
     tasks: openTaskContext,
     goals: goals.map((goal) => ({ title: goal.title })),
     knowledgeSources: sources.map((source) => ({ title: source.title ?? source.url, url: source.url })),
-  });
+  }, 8, ctx.storage);
 
   const rawContext: BriefingContextInput = {
     ownerName,

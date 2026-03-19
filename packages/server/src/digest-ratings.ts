@@ -1,5 +1,34 @@
 import type { Storage, Migration } from "@personal-ai/core";
 
+/**
+ * Compute a rating-based score adjustment for a belief based on how
+ * digests that used it were rated. Returns a bonus/penalty:
+ *   high ratings (4-5) → positive bonus (up to +8)
+ *   low ratings (1-2) → negative penalty (down to -10)
+ *   no ratings or average → 0
+ */
+export function getBeliefRatingBonus(storage: Storage, beliefId: string): number {
+  let rows: { rating: number }[];
+  try {
+    rows = storage.query<{ rating: number }>(
+      `SELECT dr.rating
+       FROM digest_ratings dr
+       JOIN brief_beliefs bb ON bb.brief_id = dr.digest_id
+       WHERE bb.belief_id = ?
+       ORDER BY dr.created_at DESC
+       LIMIT 5`,
+      [beliefId],
+    );
+  } catch {
+    return 0; // tables may not exist in test/harness environments
+  }
+  if (rows.length === 0) return 0;
+  const avg = rows.reduce((sum, r) => sum + r.rating, 0) / rows.length;
+  if (avg >= 4) return Math.round((avg - 3) * 4);   // 4→4, 5→8
+  if (avg <= 2) return -Math.round((3 - avg) * 5);   // 2→-5, 1→-10
+  return 0; // 3 = neutral
+}
+
 export interface DigestRating {
   id: string;
   digestId: string;
