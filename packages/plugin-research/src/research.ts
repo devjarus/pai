@@ -159,9 +159,34 @@ export async function runResearchInBackground(
                     { role: "assistant", content: `I've gathered the following research data:\n\n${toolResults}` },
                     { role: "user", content: "Now synthesize all findings into the structured markdown report." },
                   ]
-                  : [
-                    { role: "user", content: `Write a brief research report on: ${job.goal}\n\nNote: web search tools were unavailable. Write what you know from your training data, and clearly note that real-time data was not available.` },
-                  ],
+                  : await (async () => {
+                    // No tool results — use previous findings from Library as context
+                    let previousContext = "";
+                    try {
+                      const { listFindingsForWatch } = await import("@personal-ai/library");
+                      const { knowledgeSearch } = await import("@personal-ai/core");
+                      if (job.sourceScheduleId) {
+                        const prev = listFindingsForWatch(ctx.storage, job.sourceScheduleId);
+                        if (prev.length > 0) {
+                          previousContext = prev.slice(0, 3).map((f) => f.summary).join("\n\n");
+                        }
+                      }
+                      if (!previousContext) {
+                        const goalClean = job.goal.split("\n")[0]?.slice(0, 150) ?? job.goal;
+                        const kResults = await knowledgeSearch(ctx.storage, ctx.llm, goalClean, 3);
+                        if (kResults.length > 0) {
+                          previousContext = kResults.map((r) => r.chunk.content.slice(0, 500)).join("\n\n");
+                        }
+                      }
+                    } catch { /* no previous data available */ }
+
+                    const context = previousContext
+                      ? `\n\nPREVIOUS FINDINGS (use as basis — update with any new information you know):\n${previousContext}`
+                      : "";
+                    return [
+                      { role: "user" as const, content: `Write a research report on: ${job.goal}${context}\n\nNote: web search was unavailable this time. Summarize what is known from previous research and note that fresh data could not be fetched.` },
+                    ];
+                  })(),
                 maxRetries: 1,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
