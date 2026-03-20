@@ -10,6 +10,7 @@ import {
   useClearAllMemory,
   useUpdateBelief,
 } from "@/hooks";
+import { useProfile } from "@/hooks/use-library";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -200,6 +201,8 @@ export default function Memory() {
     setFilterStatus(value);
   };
 
+  const { data: profile } = useProfile();
+
   const isRemembering = rememberMutation.isPending;
   const isClearing = clearAllMutation.isPending;
   const isSavingEdit = updateBeliefMutation.isPending;
@@ -364,6 +367,31 @@ export default function Memory() {
             </div>
           )}
         </header>
+
+        {profile?.summary && (
+          <div className="border-b border-border/20 bg-card/30 px-3 py-3 md:px-6">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">Profile</h3>
+                <div className="space-y-1 text-sm text-foreground/80">
+                  {profile.summary.split("\n").map((line, i) => {
+                    const match = line.match(/^\*\*(.+?):\*\*\s*(.+)$/);
+                    if (!match) return null;
+                    return (
+                      <p key={i}>
+                        <span className="font-medium text-foreground/60">{match[1]}: </span>
+                        <span>{match[2]}</span>
+                      </p>
+                    );
+                  })}
+                </div>
+              </div>
+              <span className="shrink-0 text-xs text-muted-foreground/40">
+                {profile.coreBeliefs} core · {profile.totalBeliefs} total
+              </span>
+            </div>
+          </div>
+        )}
 
         <div className="border-b border-border/40 bg-background px-4 py-3 md:px-6">
           <div className="flex items-center gap-2">

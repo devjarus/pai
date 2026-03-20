@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { librarySearch, getLibraryStats, getFindings } from "../api";
+import { librarySearch, getLibraryStats, getFindings, getProfile } from "../api";
 
 export const libraryKeys = {
   all: ["library"] as const,
@@ -27,5 +27,13 @@ export function useFindings(watchId?: string) {
   return useQuery({
     queryKey: libraryKeys.findings(watchId),
     queryFn: () => getFindings(watchId),
+  });
+}
+
+export function useProfile() {
+  return useQuery({
+    queryKey: ["library", "profile"],
+    queryFn: () => getProfile(),
+    staleTime: 60_000, // profile doesn't change often
   });
 }

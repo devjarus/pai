@@ -482,6 +482,74 @@ export function registerLibraryRoutes(app: FastifyInstance, { ctx }: ServerConte
     return { ok: true };
   });
 
+  // --- Profile summary ---
+  app.get("/api/library/profile", async () => {
+    const allBeliefs = listBeliefs(ctx.storage, "active");
+
+    // Build profile from beliefs, grouped by category
+    const categories = {
+      identity: [] as string[],
+      interests: [] as string[],
+      style: [] as string[],
+      situation: [] as string[],
+      relationships: [] as string[],
+    };
+
+    for (const belief of allBeliefs) {
+      const stmt = belief.statement.toLowerCase();
+      const s = belief.statement;
+
+      // Identity: name, profession, location
+      if (/\b(name|lives? in|works? at|engineer|developer|citizen|from)\b/i.test(stmt)) {
+        categories.identity.push(s);
+      }
+      // Relationships: wife, family, people
+      else if (/\b(wife|husband|married|family|friend|monica|relationship)\b/i.test(stmt)) {
+        categories.relationships.push(s);
+      }
+      // Style: communication preferences
+      else if (/\b(prefer|concise|brief|actionable|format|style|tone|delta|report)\b/i.test(stmt) && belief.type === "preference") {
+        categories.style.push(s);
+      }
+      // Situation: current events, pending items
+      else if (/\b(visa|appointment|waiting|tracking|planning|pending)\b/i.test(stmt)) {
+        categories.situation.push(s);
+      }
+      // Interests: topics they care about
+      else if (/\b(interest|crypto|bitcoin|news|immigration|AI|stock|invest)\b/i.test(stmt)) {
+        categories.interests.push(s);
+      }
+    }
+
+    // Build summary lines — take top 3 per category, join
+    const lines: string[] = [];
+
+    if (categories.identity.length > 0) {
+      lines.push(`**Identity:** ${categories.identity.slice(0, 3).join(". ")}`);
+    }
+    if (categories.relationships.length > 0) {
+      lines.push(`**Relationships:** ${categories.relationships.slice(0, 3).join(". ")}`);
+    }
+    if (categories.interests.length > 0) {
+      lines.push(`**Interests:** ${categories.interests.slice(0, 4).join(". ")}`);
+    }
+    if (categories.style.length > 0) {
+      lines.push(`**Style:** ${categories.style.slice(0, 3).join(". ")}`);
+    }
+    if (categories.situation.length > 0) {
+      lines.push(`**Current:** ${categories.situation.slice(0, 3).join(". ")}`);
+    }
+
+    return {
+      summary: lines.join("\n"),
+      categories: Object.fromEntries(
+        Object.entries(categories).map(([k, v]) => [k, v.length]),
+      ),
+      totalBeliefs: allBeliefs.length,
+      coreBeliefs: Object.values(categories).reduce((sum, arr) => sum + Math.min(arr.length, 3), 0),
+    };
+  });
+
   // --- Stats ---
   app.get("/api/library/stats", async () => {
     const stats = memoryStats(ctx.storage);

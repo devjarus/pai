@@ -1004,6 +1004,17 @@ export function getLibraryStats(): Promise<LibraryStats> {
   return request("/library/stats");
 }
 
+export interface ProfileSummary {
+  summary: string;
+  categories: Record<string, number>;
+  totalBeliefs: number;
+  coreBeliefs: number;
+}
+
+export function getProfile(): Promise<ProfileSummary> {
+  return request<ProfileSummary>("/library/profile");
+}
+
 export function getFindings(watchId?: string): Promise<ResearchFinding[]> {
   const qs = watchId ? `?watchId=${encodeURIComponent(watchId)}` : "";
   return request(`/library/findings${qs}`);

@@ -277,6 +277,20 @@ export class WorkerLoop {
       });
     }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS);
 
+    // --- Profile consolidation (merge scattered preferences into dense beliefs, every 24h) ---
+    setInterval(() => {
+      if (!isLLMConfigured) return;
+      this.runWorkerTask("worker.cleanup", async () => {
+        const { consolidateProfile } = await import("@personal-ai/core");
+        const result = await consolidateProfile(this.ctx.storage, this.ctx.llm, this.ctx.logger);
+        if (result.themesProcessed > 0) {
+          this.ctx.logger.info(`Profile consolidation: merged ${result.beliefsConsolidated} beliefs into ${result.beliefsCreated} dense profile statement(s)`);
+        }
+      }).catch((err) => {
+        this.ctx.logger.warn(`Profile consolidation failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS);
+
     const telemetryCleanupMs = DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS;
     this.telemetryCleanupTimer = setInterval(() => {
       this.runWorkerTask("worker.cleanup", async () => {

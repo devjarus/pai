@@ -337,6 +337,7 @@ export { memoryMigrations, getMemoryContext, retrieveContext, listBeliefs, searc
 export { remember, rememberStructured } from "./remember.js";
 export { generateMemoryFile } from "./memory-file.js";
 export { consolidateConversation } from "./consolidate.js";
+export { consolidateProfile } from "./consolidate-profile.js";
 
 // Types
 export type { Belief, Episode, BeliefChange, BeliefOrigin, BeliefCorrectionState, BeliefProvenance, CorrectBeliefResult, MemoryStats, MemoryExport, MemoryExportV1, MemoryExportV2, SimilarBelief, ReflectionResult, UnifiedRetrievalResult } from "./memory.js";
