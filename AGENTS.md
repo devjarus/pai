@@ -70,7 +70,7 @@ Memory = `Belief` · Document = `KnowledgeSource` · Finding = `ResearchFinding`
 - Tests: `createStorage` needs real dir — use `mkdtempSync`
 - Migration count test: `packages/server/test/migrations.test.ts`
 - Domain packages re-export with user-facing aliases
-- New package → add to `Dockerfile` (both build stage manifests AND runtime stage dist copies)
+- New package → add to `tsconfig.json` references, `Dockerfile` (build + runtime stages), and `pnpm-workspace.yaml`
 - Shared UI utilities: `lib/datetime.ts` (timeAgo, formatDate, formatDateTime, formatInterval)
 - Shared UI components: `ConfirmDialog`, `QueryError`
 
