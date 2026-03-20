@@ -100,9 +100,11 @@ COPY --from=builder /app/packages/plugin-swarm/node_modules packages/plugin-swar
 
 COPY --from=builder /app/packages/library/dist packages/library/dist
 COPY --from=builder /app/packages/library/package.json packages/library/
+COPY --from=builder /app/packages/library/node_modules packages/library/node_modules
 
 COPY --from=builder /app/packages/watches/dist packages/watches/dist
 COPY --from=builder /app/packages/watches/package.json packages/watches/
+COPY --from=builder /app/packages/watches/node_modules packages/watches/node_modules
 
 # Create non-root user for runtime security
 RUN groupadd --gid 1001 pai && useradd --uid 1001 --gid pai --shell /bin/false pai
