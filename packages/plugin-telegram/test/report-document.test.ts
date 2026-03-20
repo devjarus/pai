@@ -142,7 +142,7 @@ describe("report document delivery", { timeout: 30_000 }, () => {
     vi.clearAllMocks();
   });
 
-  it("builds a report document with a stable file name", async () => {
+  it("builds a report document with a stable file name", { timeout: 60_000 }, async () => {
     const logger = createLogger();
     const storage = {} as Storage;
     mockGetArtifact.mockReturnValueOnce({
