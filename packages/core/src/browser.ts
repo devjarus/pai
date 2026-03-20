@@ -277,7 +277,8 @@ export async function browserScreenshot(
 }
 
 /**
- * Close all browser tabs. Call after research/swarm jobs to prevent tab leak.
+ * Close all browser tabs except one. Call after research/swarm jobs to prevent tab leak.
+ * Uses Pinchtab API: GET /tabs to list, POST /tab {action: "close", tabId} to close.
  */
 export async function browserCloseAllTabs(
   logger?: Logger,
@@ -287,22 +288,21 @@ export async function browserCloseAllTabs(
   if (!baseUrl) return;
 
   try {
-    // List all pages
-    const listRes = await fetch(`${baseUrl}/list_pages`, { signal: AbortSignal.timeout(5000) });
+    const listRes = await fetch(`${baseUrl}/tabs`, { signal: AbortSignal.timeout(5000) });
     if (!listRes.ok) return;
-    const pages = await listRes.json() as Array<{ id: string }>;
+    const tabs = await listRes.json() as Array<{ id: string }>;
 
     // Close all except the first (keep one tab alive)
-    for (const page of pages.slice(1)) {
-      await fetch(`${baseUrl}/close_page`, {
+    for (const tab of tabs.slice(1)) {
+      await fetch(`${baseUrl}/tab`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: page.id }),
+        body: JSON.stringify({ action: "close", tabId: tab.id }),
         signal: AbortSignal.timeout(5000),
       }).catch(() => {});
     }
-    if (pages.length > 1) {
-      logger?.debug("Browser cleanup: closed tabs", { closed: pages.length - 1 });
+    if (tabs.length > 1) {
+      logger?.debug("Browser cleanup: closed tabs", { closed: tabs.length - 1 });
     }
   } catch {
     // Non-critical — browser may not be running
