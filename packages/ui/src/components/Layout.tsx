@@ -7,6 +7,7 @@ import { OfflineBanner } from "./OfflineBanner";
 import { MobileTabBar } from "./MobileTabBar";
 import { PaiLogo } from "./PaiLogo";
 import { useInboxAll } from "@/hooks/use-inbox";
+import { useJobs } from "@/hooks/use-jobs";
 
 const navItems = [
   { to: "/", label: "Home", icon: IconHome },
@@ -29,6 +30,10 @@ export default function Layout() {
 
   const latestId = inboxData?.briefings?.[0]?.id ?? null;
   const hasNewBriefing = !!latestId && latestId !== seenId;
+
+  const { data: jobsData } = useJobs();
+  const activeJobs = (jobsData?.jobs ?? []).filter((j: { status: string }) => j.status === "running" || j.status === "pending");
+  const hasActiveJobs = activeJobs.length > 0;
 
   // Mark briefing as seen when user visits Digests
   useEffect(() => {
@@ -81,6 +86,27 @@ export default function Layout() {
             </Tooltip>
           ))}
         </div>
+
+        {/* Global activity indicator — visible when jobs are running */}
+        {hasActiveJobs && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <NavLink
+                to="/jobs"
+                aria-label="Active jobs"
+                className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg text-primary transition-colors hover:bg-primary/10"
+              >
+                <svg className="size-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" opacity="0.3" />
+                  <path d="M12 2v4" />
+                </svg>
+              </NavLink>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              {activeJobs.length} job{activeJobs.length !== 1 ? "s" : ""} running
+            </TooltipContent>
+          </Tooltip>
+        )}
       </nav>
 
       {/* Main content — bottom padding on mobile to clear tab bar */}

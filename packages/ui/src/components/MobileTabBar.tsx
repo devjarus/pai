@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useJobs } from "@/hooks/use-jobs";
 
 interface MobileTabBarProps {
   hasNewBriefing: boolean;
@@ -13,9 +14,24 @@ const primaryTabs = [
 ] as const;
 
 export function MobileTabBar({ hasNewBriefing }: MobileTabBarProps) {
+  const { data: jobsData } = useJobs();
+  const activeJobCount = (jobsData?.jobs ?? []).filter((j: { status: string }) => j.status === "running" || j.status === "pending").length;
+
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border/40 bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
       <div className="flex items-stretch">
+        {activeJobCount > 0 && (
+          <NavLink
+            to="/jobs"
+            className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 text-[10px] font-medium text-primary"
+          >
+            <svg className="size-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" opacity="0.3" />
+              <path d="M12 2v4" />
+            </svg>
+            <span>{activeJobCount}</span>
+          </NavLink>
+        )}
         {primaryTabs.map((tab) => (
           <NavLink
             key={tab.to}
