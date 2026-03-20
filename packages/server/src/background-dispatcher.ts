@@ -48,6 +48,10 @@ export class BackgroundDispatcher {
     if (this.running) return;
     this.running = true;
     this.startedAt = Date.now();
+    // Clean up stale browser tabs from previous runs
+    import("@personal-ai/core").then(({ browserCloseAllTabs }) => {
+      browserCloseAllTabs(this.ctx.logger, this.ctx.config.browserUrl).catch(() => {});
+    }).catch(() => {});
     this.nudge();
   }
 
