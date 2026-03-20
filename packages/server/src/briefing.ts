@@ -1452,8 +1452,8 @@ ${recentFindings.length > 0 ? `RECENT RESEARCH FINDINGS (from background researc
 ${knowledgeContext ? `RELEVANT KNOWLEDGE (from docs, research reports, and previous digests — use as context):\n${knowledgeContext}\n` : ""}
 ${previousBriefingSummary ? `PREVIOUS BRIEFINGS (you MUST NOT repeat these — choose DIFFERENT angles):\n${previousBriefingSummary}\n` : ""}${feedbackContext ? `${feedbackContext}\n` : ""}
 Guidelines:
-- Recommendation comes first. The briefing should tell the user what to do, hold, or watch next.
-- Use active Programs as the primary object when they exist. Avoid talking about raw schedules, jobs, or internal mechanics.
+- Recommendation comes first. Tell the user what to DO based on what was found — a specific action, decision, or insight. NEVER recommend "keep watching" or "continue monitoring" — that's the default and adds no value. If nothing actionable was found, summarize the most interesting finding instead.
+- Use active watches as the primary context when they exist. Avoid talking about raw schedules, jobs, programs, or internal mechanics.
 - Linked actions are existing follow-through attached to Programs or previous Briefs. Treat them as product context, not as anonymous tasks.
 - If a linked action is already complete, use that completion as a change signal and do not repeat it as a next action.
 - If a linked action is still open or stale, make that explicit in the recommendation, evidence, or next actions instead of inventing duplicate follow-through.
