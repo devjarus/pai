@@ -261,15 +261,21 @@ export class WorkerLoop {
       });
     }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS);
 
-    // --- Belief dedup (merge near-duplicate beliefs, every 24h) ---
+    // --- Belief dedup (merge near-duplicate beliefs, every 24h — skips if no new beliefs) ---
+    let lastDedupBeliefCount = 0;
     setInterval(() => {
       this.runWorkerTask("worker.cleanup", async () => {
+        const currentCount = listBeliefs(this.ctx.storage, "active").length;
+        if (currentCount === lastDedupBeliefCount) return; // no new beliefs — skip
+        lastDedupBeliefCount = currentCount;
+
         const { reflect, mergeDuplicates } = await import("@personal-ai/core");
         const result = reflect(this.ctx.storage, { similarityThreshold: 0.85, limit: 200 });
         if (result.duplicates.length > 0) {
           const { merged } = mergeDuplicates(this.ctx.storage, result.duplicates);
           if (merged > 0) {
             this.ctx.logger.info(`Belief dedup: merged ${merged} duplicate belief(s) from ${result.duplicates.length} cluster(s)`);
+            lastDedupBeliefCount = listBeliefs(this.ctx.storage, "active").length;
           }
         }
       }).catch((err) => {
@@ -277,14 +283,20 @@ export class WorkerLoop {
       });
     }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS);
 
-    // --- Profile consolidation (merge scattered preferences into dense beliefs, every 24h) ---
+    // --- Profile consolidation (merge scattered preferences, every 24h — skips if no new beliefs) ---
+    let lastConsolidationBeliefCount = 0;
     setInterval(() => {
       if (!isLLMConfigured) return;
       this.runWorkerTask("worker.cleanup", async () => {
+        const currentCount = listBeliefs(this.ctx.storage, "active").length;
+        if (currentCount === lastConsolidationBeliefCount) return; // no change — skip
+        lastConsolidationBeliefCount = currentCount;
+
         const { consolidateProfile } = await import("@personal-ai/core");
         const result = await consolidateProfile(this.ctx.storage, this.ctx.llm, this.ctx.logger);
         if (result.themesProcessed > 0) {
           this.ctx.logger.info(`Profile consolidation: merged ${result.beliefsConsolidated} beliefs into ${result.beliefsCreated} dense profile statement(s)`);
+          lastConsolidationBeliefCount = listBeliefs(this.ctx.storage, "active").length;
         }
       }).catch((err) => {
         this.ctx.logger.warn(`Profile consolidation failed: ${err instanceof Error ? err.message : String(err)}`);
