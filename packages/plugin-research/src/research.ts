@@ -147,17 +147,21 @@ export async function runResearchInBackground(
             .join("\n\n---\n\n")
             .slice(0, 30_000);
 
-          if (toolResults) {
+          {
             const { result: synthResult } = await instrumentedGenerateText(
               { storage: ctx.storage, logger: ctx.logger },
               {
                 model: ctx.llm.getModel() as LanguageModel,
                 system: systemPrompt,
-                messages: [
-                  { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
-                  { role: "assistant", content: `I've gathered the following research data:\n\n${toolResults}` },
-                  { role: "user", content: "Now synthesize all findings into the structured markdown report." },
-                ],
+                messages: toolResults
+                  ? [
+                    { role: "user", content: `Research this topic thoroughly: ${job.goal}` },
+                    { role: "assistant", content: `I've gathered the following research data:\n\n${toolResults}` },
+                    { role: "user", content: "Now synthesize all findings into the structured markdown report." },
+                  ]
+                  : [
+                    { role: "user", content: `Write a brief research report on: ${job.goal}\n\nNote: web search tools were unavailable. Write what you know from your training data, and clearly note that real-time data was not available.` },
+                  ],
                 maxRetries: 1,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 providerOptions: getProviderOptions(ctx.provider ?? "ollama", budget.contextWindow) as any,
