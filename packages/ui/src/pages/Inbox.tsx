@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { marked } from "marked";
 import { recordProductEventApi } from "@/api";
-import { stripMarkdown } from "@/lib/utils";
+import { stripMarkdown, cleanDigestTitle } from "@/lib/utils";
 import type { Program } from "@/api";
 import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig, useCreateProgram, useCorrectBelief, useCreateTask, usePrograms, useTasks, useRateDigest, useDigestSuggestions, useCorrectDigest } from "@/hooks";
 import type { BriefingRawContextBelief, Task } from "@/types";
@@ -671,7 +671,7 @@ function InboxDetail({ id }: { id: string }) {
             <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
           </div>
           <h1 className="text-xl font-semibold text-foreground">
-            {item.type === "research" ? stripMarkdown(sections.goal ?? "Research Report") : dailyBriefingTitle(item.sections)}
+            {item.type === "research" ? cleanDigestTitle(sections.goal) : dailyBriefingTitle(item.sections)}
           </h1>
         </div>
 
@@ -2204,11 +2204,11 @@ function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; on
               <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
             </div>
             <p className="mt-2 text-sm font-medium text-foreground">
-              {stripMarkdown(sections.goal ?? "Research report")}
+              {cleanDigestTitle(sections.goal)}
             </p>
             {!expanded && sections.report && (
               <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                {stripCodeFences(sections.report).slice(0, 200)}
+                {stripCodeFences(sections.report).replace(/^(Based on|I'll|I will|Let me|Here('s| is)|I can)[^.]*\.\s*/i, "").slice(0, 200)}
               </p>
             )}
           </div>

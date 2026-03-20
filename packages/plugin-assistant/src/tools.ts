@@ -448,7 +448,7 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     program_create: tool({
-      description: "Create a Program for an ongoing decision or commitment. Use this when the user asks you to keep watching something, monitor it, check back regularly, or brief them over time. Use execution_mode='analysis' for deeper multi-agent reports with visuals and execution_mode='research' for lighter recurring research. Keep Program setup lightweight and prefer this over schedule language in user-facing flows.",
+      description: "Create a Watch to follow a topic or monitor something over time. Use this when the user asks to follow, watch, monitor, track, or keep updated on something. Use execution_mode='analysis' for deeper multi-agent reports with visuals and execution_mode='research' for lighter recurring research.",
       inputSchema: z.object({
         title: z.string().describe("Short human-readable title, max 5 words. Examples: 'Crypto Market Watch', 'GPU Price Tracker', 'AI News Daily', 'Flight Deals Tokyo'. NEVER use the full question or goal as the title."),
         question: z.string().describe("The recurring question or commitment this Program should keep watching"),
@@ -497,23 +497,23 @@ export function createAgentTools(ctx: AgentContext) {
                 deliveryMode: result.program.deliveryMode,
               },
             });
-            return `Program created. "${title}" will brief every ${result.program.intervalHours} hours in ${result.program.executionMode} mode. First run at ${formatDateTime(ctx.config.timezone, new Date(result.program.nextRunAt)).full}. Future updates will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
+            return `Watch created. "${title}" will research every ${result.program.intervalHours} hours. First run at ${formatDateTime(ctx.config.timezone, new Date(result.program.nextRunAt)).full}. Updates will be delivered ${chatId ? "to this chat" : "to your Inbox"}.`;
           }
 
-          const duplicateTarget = result.duplicateReason === "thread" ? "this thread is already being watched" : "an equivalent Program is already active";
-          return `Already watching this. "${result.program.title}" is active and will continue briefing every ${result.program.intervalHours} hours in ${result.program.executionMode} mode because ${duplicateTarget}.`;
+          const duplicateTarget = result.duplicateReason === "thread" ? "this is already being watched" : "an equivalent watch is already active";
+          return `Already watching this. "${result.program.title}" is active — ${duplicateTarget}.`;
         } catch (err) {
-          return `Failed to create Program: ${err instanceof Error ? err.message : "unknown error"}`;
+          return `Failed to create watch: ${err instanceof Error ? err.message : "unknown error"}`;
         }
       },
     }),
 
     program_list: tool({
-      description: "List active Programs. Use when the user asks what pai is keeping track of, what recurring decisions are active, or what ongoing watches exist.",
+      description: "List active watches. Use when the user asks what pai is following, tracking, or monitoring.",
       inputSchema: z.object({}),
       execute: async () => {
         const programs = listPrograms(ctx.storage, "active");
-        if (programs.length === 0) return "No active Programs. You can ask me to keep watching something and I'll create one.";
+        if (programs.length === 0) return "No active watches. You can ask me to follow a topic and I'll create one.";
         return programs.map((program) => ({
           id: program.id,
           title: program.title,
@@ -528,13 +528,13 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     program_delete: tool({
-      description: "Delete a Program. Use when the user wants to stop keeping track of something or cancel a recurring Program.",
+      description: "Delete a watch. Use when the user wants to stop following or tracking something.",
       inputSchema: z.object({
-        id: z.string().describe("Program ID to delete"),
+        id: z.string().describe("Watch ID to delete"),
       }),
       execute: async ({ id }) => {
         const ok = deleteProgram(ctx.storage, id);
-        return ok ? "Program deleted." : "Program not found or already deleted.";
+        return ok ? "Watch removed." : "Watch not found or already removed.";
       },
     }),
 

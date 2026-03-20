@@ -187,7 +187,7 @@ describe("createTools", () => {
         constraints: ["docs signoff required"],
       }),
     );
-    expect(result).toContain("Program created");
+    expect(result).toContain("Watch created");
   });
 
   it("program_create forwards thread and chat context from Ask", async () => {
@@ -292,7 +292,7 @@ describe("createTools", () => {
     const result = await tools.program_delete.execute({ id: "prog_123" });
 
     expect(mockDeleteProgram).toHaveBeenCalledWith(ctx.storage, "prog_123");
-    expect(result).toBe("Program deleted.");
+    expect(result).toBe("Watch removed.");
   });
 });
 

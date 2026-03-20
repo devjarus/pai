@@ -1125,7 +1125,7 @@ describe("agent routes", () => {
         fullStream: {
           async *[Symbol.asyncIterator]() {
             const output = await tools?.program_create?.execute?.(args);
-            const responseText = typeof output === "string" ? output : "Program created.";
+            const responseText = typeof output === "string" ? output : "Watch created.";
             onFinish?.({
               text: responseText,
               steps: [
@@ -1170,7 +1170,7 @@ describe("agent routes", () => {
     expect(messages).toHaveLength(2);
     expect(messages[0]?.role).toBe("user");
     expect(messages[1]?.role).toBe("assistant");
-    expect(messages[1]?.content).toContain("Program created.");
+    expect(messages[1]?.content).toContain("Watch created.");
   });
 
   it("POST /api/chat calls createTools on agent", async () => {
