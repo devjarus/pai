@@ -80,5 +80,45 @@ export function createResearchTools(
 
     // Browser tools for JS-rendered pages (no screenshot — research doesn't need artifacts)
     ...createBrowserTools({ logger: ctx.logger, browserUrl: ctx.browserUrl }),
+
+    // Code execution — only available when sandbox is configured
+    ...(ctx.sandboxUrl ? {
+      run_code: tool({
+        description: "Execute Python or Node.js code in a sandboxed environment. Use for data analysis, calculations, scraping dynamic pages, processing API responses, or generating charts. Python has matplotlib, pandas, numpy, requests available. Save output files to OUTPUT_DIR for artifacts.",
+        inputSchema: z.object({
+          language: z.enum(["python", "node"]).describe("Programming language"),
+          code: z.string().describe("Code to execute"),
+        }),
+        execute: async ({ language, code }: { language: "python" | "node"; code: string }) => {
+          try {
+            const { runInSandbox, storeArtifact, guessMimeType } = await import("@personal-ai/core");
+            const result = await runInSandbox({ language, code, timeout: 30 }, ctx.logger, ctx.sandboxUrl);
+
+            let output = "";
+            if (result.stdout) output += result.stdout.slice(0, 5000);
+            if (result.stderr) output += `\nSTDERR: ${result.stderr.slice(0, 1000)}`;
+            if (result.exitCode !== 0) output += `\nExit code: ${result.exitCode}`;
+
+            // Store output files as artifacts
+            if (result.files.length > 0 && ctx.dataDir) {
+              for (const file of result.files) {
+                const mimeType = guessMimeType(file.name);
+                storeArtifact(ctx.storage, ctx.dataDir, {
+                  jobId,
+                  name: file.name,
+                  mimeType,
+                  data: Buffer.from(file.data, "base64"),
+                });
+              }
+              output += `\n${result.files.length} file(s) saved as artifacts.`;
+            }
+
+            return output || "Code executed successfully (no output).";
+          } catch (err) {
+            return `Code execution failed: ${err instanceof Error ? err.message : "unknown error"}`;
+          }
+        },
+      }),
+    } : {}),
   };
 }
