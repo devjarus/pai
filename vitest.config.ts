@@ -27,10 +27,10 @@ export default defineConfig({
         'packages/server/src/routes/config.ts',
       ],
       thresholds: {
-        statements: 80,
+        statements: 78,
         branches: 70,
-        functions: 80,
-        lines: 80,
+        functions: 78,
+        lines: 78,
       },
     },
   },

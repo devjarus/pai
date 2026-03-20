@@ -16,6 +16,7 @@ import {
 import { listPrograms } from "@personal-ai/plugin-schedules";
 import { listGoals, listTasks } from "@personal-ai/plugin-tasks";
 import { getAverageRating, getBeliefRatingBonus, getRecentFeedback } from "./digest-ratings.js";
+import { listInsights, listFindings } from "@personal-ai/library";
 
 const BRIEFING_LLM_TIMEOUT = {
   totalMs: 2 * 60_000,
@@ -1617,4 +1618,243 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
     );
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Weekly Digest
+// ---------------------------------------------------------------------------
+
+export interface WeeklyDigestTopic {
+  name: string;
+  watchId: string | null;
+  insights: string[];
+  trend: "growing" | "stable" | "declining";
+  cycleCount: number;
+}
+
+export interface WeeklyDigestSections {
+  title: string;
+  topics: WeeklyDigestTopic[];
+  summary: string;
+}
+
+export async function generateWeeklyDigest(ctx: PluginContext): Promise<Briefing | null> {
+  let llmHealthy = false;
+  try {
+    const health = await ctx.llm.health();
+    llmHealthy = health.ok;
+  } catch {
+    llmHealthy = false;
+  }
+
+  // 1. Gather topic insights
+  let allInsights: ReturnType<typeof listInsights> = [];
+  try {
+    allInsights = listInsights(ctx.storage);
+  } catch {
+    allInsights = [];
+  }
+
+  // 2. Gather recent findings (last 7 days) grouped by watch
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  let allFindings: ReturnType<typeof listFindings> = [];
+  try {
+    allFindings = listFindings(ctx.storage).filter(
+      (f) => new Date(f.createdAt).getTime() >= sevenDaysAgo,
+    );
+  } catch {
+    allFindings = [];
+  }
+
+  const findingsByWatch = new Map<string, typeof allFindings>();
+  for (const f of allFindings) {
+    const key = f.watchId ?? "__ungrouped__";
+    const list = findingsByWatch.get(key) ?? [];
+    list.push(f);
+    findingsByWatch.set(key, list);
+  }
+
+  // 3. Gather digest ratings from the past week
+  let avgRating: number | null = null;
+  let recentFeedback: string[] = [];
+  try {
+    avgRating = getAverageRating(ctx.storage, 10);
+    recentFeedback = getRecentFeedback(ctx.storage, 5);
+  } catch {
+    // ratings table may not exist
+  }
+
+  // 4. Build programs map for watch titles
+  const programs = listPrograms(ctx.storage, "active");
+  const programMap = new Map(programs.map((p) => [p.id, p]));
+
+  // Build fallback sections in case LLM is unavailable
+  const fallbackTopics: WeeklyDigestTopic[] = [];
+  const watchIds = new Set([
+    ...allInsights.map((i) => i.watchId).filter(Boolean),
+    ...allFindings.map((f) => f.watchId).filter(Boolean),
+  ]);
+
+  for (const wid of watchIds) {
+    if (!wid) continue;
+    const watchInsights = allInsights.filter((i) => i.watchId === wid);
+    const watchFindings = findingsByWatch.get(wid) ?? [];
+    const program = programMap.get(wid);
+    fallbackTopics.push({
+      name: program?.title ?? watchInsights[0]?.topic ?? "Unknown topic",
+      watchId: wid,
+      insights: [
+        ...watchInsights.map((i) => i.insight),
+        ...watchFindings.slice(0, 3).map((f) => f.summary.slice(0, 200)),
+      ].slice(0, 5),
+      trend: "stable",
+      cycleCount: watchInsights.reduce((sum, i) => sum + i.cycleCount, 0) || watchFindings.length,
+    });
+  }
+
+  const fallbackSections: WeeklyDigestSections = {
+    title: "Weekly Intelligence Brief",
+    topics: fallbackTopics,
+    summary: `${watchIds.size} topic(s) tracked this week. ${allFindings.length} research finding(s) collected across ${findingsByWatch.size} watch(es).`,
+  };
+
+  if (!llmHealthy || (allInsights.length === 0 && allFindings.length === 0)) {
+    // Store fallback and return
+    const id = crypto.randomUUID();
+    ctx.storage.run(
+      "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type, source_kind) VALUES (?, datetime('now'), ?, null, 'ready', 'weekly', 'maintenance')",
+      [id, JSON.stringify(fallbackSections)],
+    );
+    return {
+      id,
+      generatedAt: new Date().toISOString(),
+      sections: fallbackSections as unknown as BriefingSection,
+      status: "ready",
+      type: "weekly",
+    };
+  }
+
+  // 5. Ask LLM to produce a weekly summary
+  const insightsContext = allInsights.map((i) => ({
+    topic: i.topic,
+    watchId: i.watchId,
+    insight: i.insight,
+    confidence: i.confidence,
+    cycleCount: i.cycleCount,
+  }));
+
+  const findingsContext = allFindings.slice(0, 20).map((f) => ({
+    watchId: f.watchId,
+    goal: f.goal,
+    summary: f.summary.slice(0, 300),
+    domain: f.domain,
+    createdAt: f.createdAt,
+  }));
+
+  const ratingContext = avgRating !== null
+    ? `Average digest rating: ${avgRating.toFixed(1)}/5.${recentFeedback.length > 0 ? ` Feedback: ${recentFeedback.join("; ")}` : ""}`
+    : "";
+
+  const now = new Date();
+  const prompt = `You are a personal AI assistant generating a WEEKLY intelligence brief.
+Today is ${formatDateTime(ctx.config.timezone, now).date}.
+
+Summarize what was learned this week across all tracked topics. Focus on:
+- What was learned per topic this week
+- Key insights that emerged or strengthened
+- Topics gaining or losing relevance
+
+TOPIC INSIGHTS (${allInsights.length}):
+${JSON.stringify(insightsContext, null, 2)}
+
+RESEARCH FINDINGS THIS WEEK (${allFindings.length}):
+${JSON.stringify(findingsContext, null, 2)}
+
+ACTIVE WATCHES:
+${programs.map((p) => `- ${p.title}: ${p.question}`).join("\n") || "(none)"}
+
+${ratingContext ? `USER SATISFACTION: ${ratingContext}` : ""}
+
+Respond ONLY with a valid JSON object matching this exact shape (no markdown, no explanation):
+{
+  "title": "Weekly Intelligence Brief",
+  "topics": [
+    {
+      "name": "topic name",
+      "watchId": "watch-id or null",
+      "insights": ["insight 1", "insight 2"],
+      "trend": "growing|stable|declining",
+      "cycleCount": 5
+    }
+  ],
+  "summary": "Brief overall summary of the week"
+}`;
+
+  const id = crypto.randomUUID();
+  ctx.storage.run(
+    "INSERT INTO briefings (id, generated_at, sections, raw_context, status, type, source_kind) VALUES (?, datetime('now'), '{}', null, 'generating', 'weekly', 'maintenance')",
+    [id],
+  );
+
+  let parsed: WeeklyDigestSections = fallbackSections;
+  try {
+    const budget = getContextBudget(ctx.config.llm.provider, ctx.config.llm.model, ctx.config.llm.contextWindow);
+    const { result } = await instrumentedGenerateText(
+      { storage: ctx.storage, logger: ctx.logger },
+      {
+        model: ctx.llm.getModel() as LanguageModel,
+        prompt,
+        temperature: 0.4,
+        maxRetries: 1,
+        timeout: { totalMs: 2 * 60_000, stepMs: 60_000 },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        providerOptions: getProviderOptions(ctx.config.llm.provider, budget.contextWindow) as any,
+      },
+      {
+        spanType: "llm",
+        process: "briefing.weekly",
+        surface: "worker",
+        provider: ctx.config.llm.provider,
+        model: ctx.config.llm.model,
+        requestSizeChars: prompt.length,
+      },
+    );
+
+    let jsonText = result.text.trim();
+    const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch?.[1]) jsonText = fenceMatch[1].trim();
+    const raw = JSON.parse(jsonText) as Record<string, unknown>;
+
+    parsed = {
+      title: typeof raw.title === "string" ? raw.title : fallbackSections.title,
+      topics: Array.isArray(raw.topics)
+        ? (raw.topics as Array<Record<string, unknown>>).map((t) => ({
+            name: typeof t.name === "string" ? t.name : "Unknown",
+            watchId: typeof t.watchId === "string" ? t.watchId : null,
+            insights: Array.isArray(t.insights) ? t.insights.filter((i): i is string => typeof i === "string") : [],
+            trend: t.trend === "growing" || t.trend === "stable" || t.trend === "declining" ? t.trend : "stable",
+            cycleCount: typeof t.cycleCount === "number" ? t.cycleCount : 0,
+          }))
+        : fallbackSections.topics,
+      summary: typeof raw.summary === "string" ? raw.summary : fallbackSections.summary,
+    };
+  } catch (error) {
+    ctx.logger.warn("Weekly digest generation fell back to deterministic brief", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    parsed = fallbackSections;
+  }
+
+  ctx.storage.run(
+    "UPDATE briefings SET sections = ?, status = 'ready' WHERE id = ?",
+    [JSON.stringify(parsed), id],
+  );
+
+  return {
+    id,
+    generatedAt: new Date().toISOString(),
+    sections: parsed as unknown as BriefingSection,
+    status: "ready",
+    type: "weekly",
+  };
 }

@@ -227,6 +227,7 @@ function formatRelativeFuture(iso: string | null | undefined): string {
 
 function briefingHeadline(item: InboxItem): string {
   if (item.type === "daily") return dailyBriefingTitle(item.sections);
+  if (item.type === "weekly") return (item.sections as { title?: string }).title ?? "Weekly Intelligence Brief";
   return (item.sections as { goal?: string }).goal ?? "Research report";
 }
 
@@ -665,13 +666,17 @@ function InboxDetail({ id }: { id: string }) {
               <Badge variant="outline" className="text-[10px] border-blue-500/20 bg-blue-500/10 text-blue-400">
                 {sections.execution === "analysis" ? "Analysis Report" : "Research Report"}
               </Badge>
+            ) : item.type === "weekly" ? (
+              <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30">
+                Weekly Brief
+              </Badge>
             ) : (
               <Badge variant="outline" className="text-[10px] border-primary/20 bg-primary/10 text-primary">Daily Digest</Badge>
             )}
             <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
           </div>
           <h1 className="text-xl font-semibold text-foreground">
-            {item.type === "research" ? cleanDigestTitle(sections.goal) : dailyBriefingTitle(item.sections)}
+            {item.type === "research" ? cleanDigestTitle(sections.goal) : item.type === "weekly" ? ((item.sections as { title?: string }).title ?? "Weekly Intelligence Brief") : dailyBriefingTitle(item.sections)}
           </h1>
         </div>
 
@@ -689,6 +694,8 @@ function InboxDetail({ id }: { id: string }) {
             onCorrectBelief={openCorrectionDialog}
             onCreateAction={handleCreateBriefAction}
           />
+        ) : item.type === "weekly" ? (
+          <WeeklyBriefDetail sections={item.sections} />
         ) : (
           <div className="rounded-lg border border-border/20 bg-card/40 p-4 md:p-6">
             <ResultRenderer
@@ -1756,6 +1763,8 @@ function InboxFeed() {
                 <DailyBriefingCard item={item} onCardClick={handleCardClick} isRead={readIds.has(item.id)} />
               ) : item.type === "research" ? (
                 <ResearchReportCard item={item} onCardClick={handleCardClick} isRead={readIds.has(item.id)} />
+              ) : item.type === "weekly" ? (
+                <WeeklyBriefCard item={item} onCardClick={handleCardClick} isRead={readIds.has(item.id)} />
               ) : (
                 <GenericBriefingCard item={item} />
               )}
@@ -2245,6 +2254,120 @@ function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; on
   );
 }
 
+// ---- Weekly Brief ----
+
+interface WeeklyTopic {
+  name: string;
+  watchId: string | null;
+  insights: string[];
+  trend: "growing" | "stable" | "declining";
+  cycleCount: number;
+}
+
+interface WeeklySections {
+  title?: string;
+  topics?: WeeklyTopic[];
+  summary?: string;
+}
+
+const trendStyles: Record<string, { label: string; className: string }> = {
+  growing: { label: "Growing", className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20" },
+  stable: { label: "Stable", className: "bg-muted text-muted-foreground border-border/40" },
+  declining: { label: "Declining", className: "bg-orange-500/15 text-orange-400 border-orange-500/20" },
+};
+
+function WeeklyBriefCard({ item, onCardClick, isRead }: { item: InboxItem; onCardClick: (id: string) => void; isRead: boolean }) {
+  const sections = item.sections as unknown as WeeklySections;
+  const topics = sections.topics ?? [];
+  return (
+    <Card
+      className={`cursor-pointer border-border/30 bg-card/40 transition-colors hover:bg-card/60 ${isRead ? "opacity-80" : ""}`}
+      onClick={() => onCardClick(item.id)}
+    >
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <SparklesIcon className="h-4 w-4 text-emerald-400" />
+          <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30">
+            Weekly Brief
+          </Badge>
+          <span className="text-[10px] text-muted-foreground">{timeAgo(item.generatedAt)}</span>
+        </div>
+        <h3 className="text-sm font-medium text-foreground mb-1">
+          {sections.title ?? "Weekly Intelligence Brief"}
+        </h3>
+        {sections.summary && (
+          <p className="text-xs text-muted-foreground mb-2">{sections.summary}</p>
+        )}
+        {topics.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {topics.slice(0, 5).map((topic, i) => {
+              const trend = trendStyles[topic.trend] ?? trendStyles.stable;
+              return (
+                <Badge key={i} variant="outline" className={`text-[10px] ${trend.className}`}>
+                  {topic.name} · {trend.label}
+                </Badge>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function WeeklyBriefDetail({ sections: raw }: { sections: Record<string, unknown> }) {
+  const sections = raw as unknown as WeeklySections;
+  const topics = sections.topics ?? [];
+
+  return (
+    <div className="space-y-4">
+      {sections.summary && (
+        <div className="rounded-lg border border-border/20 bg-card/40 p-4">
+          <h2 className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">Summary</h2>
+          <p className="text-sm text-foreground/80">{sections.summary}</p>
+        </div>
+      )}
+
+      {topics.length > 0 && (
+        <div className="space-y-3">
+          {topics.map((topic, i) => {
+            const trend = trendStyles[topic.trend] ?? trendStyles.stable;
+            return (
+              <div key={i} className="rounded-lg border border-border/20 bg-card/40 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-sm font-medium text-foreground">{topic.name}</h3>
+                  <Badge variant="outline" className={`text-[10px] ${trend.className}`}>
+                    {trend.label}
+                  </Badge>
+                  <span className="ml-auto text-[10px] text-muted-foreground/40">
+                    {topic.cycleCount} cycle{topic.cycleCount !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                {topic.insights.length > 0 && (
+                  <ul className="space-y-1.5">
+                    {topic.insights.map((insight, j) => (
+                      <li key={j} className="flex items-start gap-2 text-sm text-foreground/80">
+                        <LightbulbIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400/60" />
+                        <span>{insight}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {topics.length === 0 && !sections.summary && (
+        <div className="rounded-lg border border-dashed border-border/30 bg-card/20 p-6 text-center text-sm text-muted-foreground">
+          No weekly insights yet. Keep your watches running to build up weekly intelligence.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GenericBriefingCard({ item }: { item: InboxItem }) {
   return (
     <Card className="border-border/30 bg-card/40">
@@ -2257,6 +2380,8 @@ function GenericBriefingCard({ item }: { item: InboxItem }) {
         <p className="mt-2 text-xs text-muted-foreground">
           {item.type === "daily"
             ? dailyBriefingTitle(item.sections)
+            : item.type === "weekly"
+            ? (item.sections as { title?: string }).title ?? "Weekly Intelligence Brief"
             : (item.sections as { goal?: string }).goal ?? "No preview available"}
         </p>
       </CardContent>

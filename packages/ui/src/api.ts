@@ -1031,6 +1031,23 @@ export function getFindings(watchId?: string): Promise<ResearchFinding[]> {
   return request(`/library/findings${qs}`);
 }
 
+export interface TopicInsight {
+  id: string;
+  watchId: string | null;
+  topic: string;
+  insight: string;
+  confidence: number;
+  cycleCount: number;
+  sources: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function getInsights(watchId?: string): Promise<TopicInsight[]> {
+  const params = watchId ? `?watchId=${encodeURIComponent(watchId)}` : "";
+  return request<TopicInsight[]>(`/library/insights${params}`);
+}
+
 // ---- Digests ----
 
 export async function getDigests(): Promise<{ digests: Array<{ id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string }> }> {

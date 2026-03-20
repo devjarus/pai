@@ -10,7 +10,7 @@ import {
   useClearAllMemory,
   useUpdateBelief,
 } from "@/hooks";
-import { useProfile } from "@/hooks/use-library";
+import { useProfile, useInsights } from "@/hooks/use-library";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -202,6 +202,7 @@ export default function Memory() {
   };
 
   const { data: profile } = useProfile();
+  const { data: insights } = useInsights();
 
   const isRemembering = rememberMutation.isPending;
   const isClearing = clearAllMutation.isPending;
@@ -389,6 +390,29 @@ export default function Memory() {
               <span className="shrink-0 text-xs text-muted-foreground/40">
                 {profile.coreBeliefs} core · {profile.totalBeliefs} total
               </span>
+            </div>
+          </div>
+        )}
+
+        {/* Topic Insights */}
+        {insights && insights.length > 0 && (
+          <div className="border-b border-border/20 bg-card/30 px-3 py-3 md:px-6">
+            <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+              Topic Insights
+              <span className="ml-2 text-[10px] normal-case font-normal">{insights.length} across {new Set(insights.map(i => i.topic)).size} topics</span>
+            </h3>
+            <div className="space-y-2">
+              {insights.slice(0, 8).map((insight) => (
+                <div key={insight.id} className="flex items-start gap-2 text-sm">
+                  <span className="mt-0.5 shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                    {insight.topic}
+                  </span>
+                  <span className="text-foreground/80">{insight.insight}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/40">
+                    {insight.cycleCount} cycles
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}

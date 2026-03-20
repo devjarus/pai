@@ -313,6 +313,15 @@ export class WorkerLoop {
         if (result.watchesProcessed > 0) {
           this.ctx.logger.info(`Weekly compounding: ${result.insightsCreated} created, ${result.insightsUpdated} updated across ${result.watchesProcessed} watch(es)`);
         }
+
+        // Generate weekly digest after compounding
+        try {
+          const { generateWeeklyDigest } = await import("./briefing.js");
+          await generateWeeklyDigest(this.ctx);
+          this.ctx.logger.info("Weekly digest generated");
+        } catch (err) {
+          this.ctx.logger.warn(`Weekly digest generation failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }).catch((err) => {
         this.ctx.logger.warn(`Weekly compounding failed: ${err instanceof Error ? err.message : String(err)}`);
       });
