@@ -25,10 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Better subject matching** — Recall strips possessives ("Alex's" → "alex") and resolves aliases from `subject_aliases` table for boosting.
 - **Time-of-day digest scheduling** — New `workers.briefingTime` config (e.g. "08:00") sends one digest per day at a specific time instead of every-6h interval.
 - **Digest knowledge feedback loop** — Digest conclusions (recommendation, what-changed, next-actions) stored as 14-day TTL knowledge. Next digest searches knowledge base for relevant prior context via `knowledgeSearch()`. Capped at 5 digest + 10 research knowledge entries.
+- **Profile consolidation** — Scheduled 24h worker merges scattered preference beliefs into dense profile statements via LLM. 18 "concise" variants become 1 comprehensive preference. Profile summary card on Memory page.
+- **Quick-follow topics** — One-tap Watch creation: `POST /api/watches/follow` takes a topic, creates a Watch with defaults, triggers first research immediately. Available from Watches page UI and chat.
+- **Global activity indicator** — Spinning icon in sidebar (desktop) and mobile tab bar when jobs are running. Visible from any page, links to /jobs.
+- **Unified Watch terminology** — All user-facing strings say "Watch" instead of "Program". Chat tool responses, system prompt, help text updated.
 
 ### Fixed
 - **Research job retry on abort** — "This operation was aborted" from LLM providers is now treated as a transient error, triggering automatic retry (up to 2 times) instead of permanent failure.
 - **Knowledge accumulation cap** — Digest knowledge capped at 5 entries, research at 10. Prevents unbounded growth between TTL cleanup runs.
+- **Research synthesis fallback** — When web search returns empty results, synthesis pass now uses previous findings from Library instead of producing "no report generated."
+- **Clean digest titles** — Strips LLM preamble ("Based on my research...") and enrichment context from research report titles.
+- **Config save/load** — Fixed post-reinitialize config reset (workers, knowledge, URLs reverted to defaults). Exposed `timezone`, `webSearchEnabled`, `briefingTime` to Settings UI.
+- **Document delete crash** — Fixed `.filter is not a function` error on document removal (wrong query key scope in optimistic update).
+- **Idle worker optimization** — Dedup and profile consolidation skip when no new beliefs exist. Zero LLM calls when idle.
 
 - **Product language rename:** Program → Watch, Brief → Digest, Belief → Memory, Action → To-Do
 - **Library domain:** Unified `/api/library/*` API combining memories, documents, and research findings

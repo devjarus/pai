@@ -314,7 +314,8 @@ COUNT user messages in thread % 5 === 0?
 | `backfillSubjects` | LLM re-tags all "owner" beliefs with correct person names |
 | `export/import` | Full backup/restore with dedup on import |
 | `scheduled pruning` | Automatic pruning every 24h removes beliefs below confidence threshold |
-| `scheduled dedup` | Automatic 24h merge of near-duplicate beliefs (cosine > 0.85) via reflect() + mergeDuplicates() |
+| `scheduled dedup` | Automatic 24h merge of near-duplicate beliefs (cosine > 0.85) via reflect() + mergeDuplicates(). Skips if no new beliefs. |
+| `profile consolidation` | Automatic 24h LLM-driven merge of thematic belief clusters (e.g., 18 "concise" preferences → 1 dense statement). Skips if no new beliefs. |
 
 ---
 
@@ -544,6 +545,8 @@ Fastify on port 3141, host 127.0.0.1 (local) or 0.0.0.0 (cloud/Docker).
 | `POST` | `/api/watches/:id/run` | Trigger immediate research |
 | `GET` | `/api/watches/templates` | List watch templates |
 | `POST` | `/api/watches/from-template` | Create watch from template |
+| `POST` | `/api/watches/follow` | Quick-follow a topic (creates Watch + triggers first research) |
+| `GET` | `/api/library/profile` | Profile summary (categorized beliefs) |
 | `GET` | `/api/digests` | List all digests |
 | `GET` | `/api/digests/latest` | Latest digest |
 | `GET` | `/api/digests/:id` | Digest detail |

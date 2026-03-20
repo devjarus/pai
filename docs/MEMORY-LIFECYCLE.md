@@ -163,6 +163,12 @@ flowchart TD
         AD3 --> AD4["Keep highest-confidence belief\nInvalidate duplicates"]
     end
 
+    subgraph ProfileConsolidation ["Profile Consolidation (24h)"]
+        PC1["Group owner preferences by theme\n(style, crypto, news, immigration, research)"] --> PC2["For themes with 3+ beliefs:\nLLM merges into one dense statement"]
+        PC2 --> PC3["Create consolidated belief\n(high confidence, stability 3.0)"]
+        PC3 --> PC4["Invalidate fragment beliefs"]
+    end
+
     subgraph Decay
         DC1["effectiveConfidence(belief)"] --> DC2["confidence * 0.5^(days / halfLife)"]
         DC2 --> DC3["halfLife = 30 * stability"]
