@@ -538,6 +538,35 @@ export function createAgentTools(ctx: AgentContext) {
       },
     }),
 
+    user_profile: tool({
+      description: "Get a summary of who the user is — identity, relationships, interests, communication style, and current situation. Use when you need broader context about the user beyond what memory_recall returns for a specific query. Do NOT call this on every message — only when the conversation needs user context you don't already have.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const beliefs = listBeliefs(ctx.storage, "active");
+        const identity: string[] = [];
+        const interests: string[] = [];
+        const style: string[] = [];
+        const situation: string[] = [];
+        const relationships: string[] = [];
+        for (const belief of beliefs) {
+          const stmt = belief.statement.toLowerCase();
+          const s = belief.statement;
+          if (/\b(name|lives? in|works? at|engineer|developer|citizen|from)\b/i.test(stmt)) identity.push(s);
+          else if (/\b(wife|husband|married|family|friend|monica|relationship)\b/i.test(stmt)) relationships.push(s);
+          else if (/\b(prefer|concise|brief|actionable|format|style|tone|delta|report)\b/i.test(stmt) && belief.type === "preference") style.push(s);
+          else if (/\b(visa|appointment|waiting|tracking|planning|pending)\b/i.test(stmt)) situation.push(s);
+          else if (/\b(interest|crypto|bitcoin|news|immigration|AI|stock|invest)\b/i.test(stmt)) interests.push(s);
+        }
+        const lines: string[] = [];
+        if (identity.length > 0) lines.push(`Identity: ${identity.slice(0, 3).join(". ")}`);
+        if (relationships.length > 0) lines.push(`Relationships: ${relationships.slice(0, 3).join(". ")}`);
+        if (interests.length > 0) lines.push(`Interests: ${interests.slice(0, 4).join(". ")}`);
+        if (style.length > 0) lines.push(`Style: ${style.slice(0, 3).join(". ")}`);
+        if (situation.length > 0) lines.push(`Current: ${situation.slice(0, 3).join(". ")}`);
+        return lines.length > 0 ? lines.join("\n") : "No profile data available yet.";
+      },
+    }),
+
     job_status: tool({
       description: "Check the status of background jobs (crawl, research, swarm). Use when the user asks about crawl progress, research status, swarm analysis, or background tasks.",
       inputSchema: z.object({}),

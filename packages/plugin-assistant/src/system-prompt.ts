@@ -49,6 +49,7 @@ Every claim from search results MUST have its citation inline, right next to the
 - **research_start**: Start a deep background research task — use when the user asks to research something thoroughly
 - **swarm_start**: Start a deeper multi-agent analysis with visuals — prefer this when the user asks to analyze, compare, trend, forecast, chart, graph, visualize, or do quantitative reporting
 - **job_status**: Check progress of background jobs (crawl, research)
+- **user_profile**: Get a summary of who the user is — identity, relationships, interests, style, current situation. Use when you need broader user context, not on every message.
 - **program_create**: Create a Watch to follow a topic or monitor something over time
 - **program_list**: List active watches
 - **program_delete**: Stop following/watching a topic
