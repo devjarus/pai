@@ -194,11 +194,26 @@ interface KnowledgeSignal {
   firstChunk: string;
 }
 
+interface FindingSignal {
+  goal: string;
+  summary: string;
+  domain: string;
+  createdAt: string;
+}
+
+interface DigestSignal {
+  recommendation: string;
+  whatChanged: string[];
+  generatedAt: string;
+}
+
 export interface GatheredSignals {
   threads: ThreadSignal[];
   research: ResearchSignal[];
   tasks: TaskSignal[];
   knowledge: KnowledgeSignal[];
+  findings: FindingSignal[];
+  digests: DigestSignal[];
   isEmpty: boolean;
 }
 
@@ -283,8 +298,50 @@ export function gatherSignals(storage: Storage): GatheredSignals {
     });
   } catch { /* knowledge tables may not exist */ }
 
-  const isEmpty = threads.length === 0 && research.length === 0 && tasks.length === 0 && knowledge.length === 0;
-  return { threads, research, tasks, knowledge, isEmpty };
+  // 5. Research findings — recently created findings
+  let findings: FindingSignal[] = [];
+  try {
+    const findingsWm = getWatermark(storage, "findings");
+    findings = storage.query<{ goal: string; summary: string; domain: string; created_at: string }>(
+      `SELECT goal, summary, domain, created_at FROM research_findings
+       WHERE created_at > ?
+       ORDER BY created_at DESC LIMIT 10`,
+      [findingsWm],
+    ).map((f) => ({
+      goal: f.goal,
+      summary: f.summary.slice(0, 500),
+      domain: f.domain,
+      createdAt: f.created_at,
+    }));
+  } catch { /* findings table may not exist */ }
+
+  // 6. Digest conclusions — recently generated digests
+  let digests: DigestSignal[] = [];
+  try {
+    const digestsWm = getWatermark(storage, "digests");
+    const digestRows = storage.query<{ sections: string; generated_at: string }>(
+      `SELECT sections, generated_at FROM briefings
+       WHERE status = 'ready' AND generated_at > ?
+       ORDER BY generated_at DESC LIMIT 5`,
+      [digestsWm],
+    );
+    for (const row of digestRows) {
+      try {
+        const sections = JSON.parse(row.sections) as Record<string, unknown>;
+        const rec = sections.recommendation as Record<string, unknown> | undefined;
+        const summary = typeof rec?.summary === "string" ? rec.summary : "";
+        const whatChanged = Array.isArray(sections.what_changed)
+          ? (sections.what_changed as Array<string | { title?: string }>).map((c) => typeof c === "string" ? c : c.title ?? "").filter(Boolean)
+          : [];
+        if (summary.length > 20) {
+          digests.push({ recommendation: summary.slice(0, 300), whatChanged, generatedAt: row.generated_at });
+        }
+      } catch { /* skip unparseable */ }
+    }
+  } catch { /* briefings table may not exist */ }
+
+  const isEmpty = threads.length === 0 && research.length === 0 && tasks.length === 0 && knowledge.length === 0 && findings.length === 0 && digests.length === 0;
+  return { threads, research, tasks, knowledge, findings, digests, isEmpty };
 }
 
 export interface ExtractedFact {
@@ -325,6 +382,21 @@ export function buildLearningPrompt(signals: GatheredSignals): string {
     parts.push(`\nNEW KNOWLEDGE SOURCES (${signals.knowledge.length}):`);
     for (const k of signals.knowledge) {
       parts.push(`- ${k.title} (${k.url}): ${k.firstChunk}`);
+    }
+  }
+
+  if (signals.findings.length > 0) {
+    parts.push(`\nRESEARCH FINDINGS (${signals.findings.length} — extract what the user CARES about, not the findings themselves):`);
+    for (const f of signals.findings) {
+      parts.push(`- [${f.domain}] ${f.goal}: ${f.summary}`);
+    }
+  }
+
+  if (signals.digests.length > 0) {
+    parts.push(`\nDIGEST CONCLUSIONS (${signals.digests.length} — extract decisions or changes the user should remember):`);
+    for (const d of signals.digests) {
+      parts.push(`- Recommendation: ${d.recommendation}`);
+      if (d.whatChanged.length > 0) parts.push(`  Changes: ${d.whatChanged.join("; ")}`);
     }
   }
 
@@ -463,6 +535,8 @@ export async function runBackgroundLearning(
     updateWatermark(ctx.storage, "research", now);
     updateWatermark(ctx.storage, "tasks", now);
     updateWatermark(ctx.storage, "knowledge", now);
+    updateWatermark(ctx.storage, "findings", now);
+    updateWatermark(ctx.storage, "digests", now);
     updateLearningRun(ctx.storage, runId, {
       status: "skipped",
       skipReason: "no_signals",
@@ -482,6 +556,8 @@ export async function runBackgroundLearning(
     updateWatermark(ctx.storage, "research", now);
     updateWatermark(ctx.storage, "tasks", now);
     updateWatermark(ctx.storage, "knowledge", now);
+    updateWatermark(ctx.storage, "findings", now);
+    updateWatermark(ctx.storage, "digests", now);
     updateLearningRun(ctx.storage, runId, {
       status: "skipped",
       skipReason: "shutdown",
@@ -589,6 +665,8 @@ export async function runBackgroundLearning(
   updateWatermark(ctx.storage, "research", now);
   updateWatermark(ctx.storage, "tasks", now);
   updateWatermark(ctx.storage, "knowledge", now);
+  updateWatermark(ctx.storage, "findings", now);
+  updateWatermark(ctx.storage, "digests", now);
 
   const duration = Date.now() - start;
 

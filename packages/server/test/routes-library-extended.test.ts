@@ -724,5 +724,6 @@ describe("library routes — extended", () => {
     expect(body.totalBeliefs).toBe(10);
     expect(body.documentsCount).toBe(2);
     expect(body.findingsCount).toBe(1);
+    expect(typeof body.insightsCount).toBe("number");
   });
 });

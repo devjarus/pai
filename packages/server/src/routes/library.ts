@@ -550,15 +550,34 @@ export function registerLibraryRoutes(app: FastifyInstance, { ctx }: ServerConte
     };
   });
 
+  // --- Topic Insights ---
+  app.get<{ Querystring: { watchId?: string } }>("/api/library/insights", async (request) => {
+    const { listInsights: listInsightsFn } = await import("@personal-ai/library");
+    return listInsightsFn(ctx.storage, request.query.watchId);
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/library/insights/:id", async (request, reply) => {
+    const { deleteInsight: deleteInsightFn } = await import("@personal-ai/library");
+    const ok = deleteInsightFn(ctx.storage, request.params.id);
+    if (!ok) return reply.status(404).send({ error: "Insight not found" });
+    return { ok: true };
+  });
+
   // --- Stats ---
   app.get("/api/library/stats", async () => {
     const stats = memoryStats(ctx.storage);
     const documents = listSources(ctx.storage);
     const findings = listFindings(ctx.storage);
+    let insightsCount = 0;
+    try {
+      const { listInsights: listInsightsFn } = await import("@personal-ai/library");
+      insightsCount = listInsightsFn(ctx.storage).length;
+    } catch { /* table may not exist yet */ }
     return {
       ...stats,
       documentsCount: documents.length,
       findingsCount: findings.length,
+      insightsCount,
     };
   });
 }

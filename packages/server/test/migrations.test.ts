@@ -52,10 +52,11 @@ describe("allMigrations", () => {
     expect(names).toContain("learning");
     expect(names).toContain("findings");
     expect(names).toContain("digest_ratings");
+    expect(names).toContain("topic_insights");
   });
 
-  it("has 17 entries total", () => {
-    expect(allMigrations).toHaveLength(17);
+  it("has 18 entries total", () => {
+    expect(allMigrations).toHaveLength(18);
   });
 });
 

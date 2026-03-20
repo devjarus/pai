@@ -124,6 +124,8 @@ describe("buildLearningPrompt", () => {
       research: [{ id: "r1", goal: "Bitcoin analysis", reportSnippet: "BTC is..." }],
       tasks: [{ title: "Setup CI", priority: "high", completedAt: "2026-01-01" }],
       knowledge: [{ title: "React docs", url: "https://react.dev", firstChunk: "React is..." }],
+      findings: [{ goal: "AI trends", summary: "New frameworks emerging", domain: "general", createdAt: "2026-01-01" }],
+      digests: [{ recommendation: "Hold BTC position", whatChanged: ["Price dropped 5%"], generatedAt: "2026-01-01" }],
       isEmpty: false,
     };
     const prompt = buildLearningPrompt(signals);
@@ -131,6 +133,8 @@ describe("buildLearningPrompt", () => {
     expect(prompt).toContain("COMPLETED RESEARCH");
     expect(prompt).toContain("COMPLETED TASKS");
     expect(prompt).toContain("NEW KNOWLEDGE SOURCES");
+    expect(prompt).toContain("RESEARCH FINDINGS");
+    expect(prompt).toContain("DIGEST CONCLUSIONS");
     expect(prompt).toContain("Maximum 10 facts");
   });
 
@@ -138,6 +142,7 @@ describe("buildLearningPrompt", () => {
     const signals: GatheredSignals = {
       threads: [], research: [], tasks: [],
       knowledge: [{ title: "React docs", url: "https://react.dev", firstChunk: "React is..." }],
+      findings: [], digests: [],
       isEmpty: false,
     };
     const prompt = buildLearningPrompt(signals);

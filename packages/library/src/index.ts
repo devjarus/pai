@@ -18,6 +18,10 @@ export { storeFindingEmbedding, getFindingEmbedding, embedFinding } from "./find
 export { ingestResearchResult, ingestCorrection } from "./ingestion.js";
 export type { CorrectionInput } from "./ingestion.js";
 
+// Topic insights (compounding knowledge)
+export { insightMigrations, createInsight, updateInsight, getInsight, listInsights, deleteInsight, deleteInsightsForWatch } from "./insights.js";
+export type { TopicInsight } from "./insights.js";
+
 // Unified search
 export { unifiedSearch } from "./search.js";
 export type { LibrarySearchResult, LibrarySourceType } from "./search.js";

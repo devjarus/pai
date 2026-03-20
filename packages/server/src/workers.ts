@@ -303,6 +303,21 @@ export class WorkerLoop {
       });
     }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS);
 
+    // --- Weekly compounding (synthesize research findings into topic insights) ---
+    const WEEKLY_MS = 7 * 24 * 60 * 60 * 1000;
+    setInterval(() => {
+      if (!isLLMConfigured) return;
+      this.runWorkerTask("worker.cleanup", async () => {
+        const { runWeeklyCompounding } = await import("./compounding.js");
+        const result = await runWeeklyCompounding(this.ctx);
+        if (result.watchesProcessed > 0) {
+          this.ctx.logger.info(`Weekly compounding: ${result.insightsCreated} created, ${result.insightsUpdated} updated across ${result.watchesProcessed} watch(es)`);
+        }
+      }).catch((err) => {
+        this.ctx.logger.warn(`Weekly compounding failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }, WEEKLY_MS);
+
     const telemetryCleanupMs = DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS;
     this.telemetryCleanupTimer = setInterval(() => {
       this.runWorkerTask("worker.cleanup", async () => {

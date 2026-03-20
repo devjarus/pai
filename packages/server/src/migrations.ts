@@ -7,7 +7,7 @@ import { swarmMigrations } from "@personal-ai/plugin-swarm";
 import { briefingMigrations } from "./briefing.js";
 import { learningMigrations } from "./learning.js";
 import { scheduleMigrations } from "@personal-ai/plugin-schedules";
-import { findingsMigrations } from "@personal-ai/library";
+import { findingsMigrations, insightMigrations } from "@personal-ai/library";
 import { digestRatingsMigrations } from "./digest-ratings.js";
 
 /** All plugin migrations in registration order */
@@ -29,6 +29,7 @@ export const allMigrations: Array<[string, Migration[]]> = [
   ["product_events", productEventMigrations],
   ["findings", findingsMigrations],
   ["digest_ratings", digestRatingsMigrations],
+  ["topic_insights", insightMigrations],
 ];
 
 /** Run all plugin migrations on a storage instance */
