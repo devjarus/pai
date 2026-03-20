@@ -183,8 +183,8 @@ function renderElement(id: string, spec: JsonRenderSpec, opts: SpecToHtmlOptions
       if (labels.length === 0 || values.length === 0 || labels.length !== values.length) {
         return `<div style="padding:16px;border:1px dashed #d1d5db;border-radius:8px;color:#6b7280;font-size:0.9em">Line chart data unavailable.</div>`;
       }
-      const width = 360;
-      const height = 220;
+      const width = 600;
+      const height = 300;
       const padding = 24;
       const chartBottom = height - 34;
       const points = buildLinePoints(values, width, chartBottom, padding, props.minValue as number | null, props.maxValue as number | null);
@@ -203,7 +203,7 @@ function renderElement(id: string, spec: JsonRenderSpec, opts: SpecToHtmlOptions
 
       const pointsSvg = points.map((p, i) =>
         `<circle cx="${p.x}" cy="${p.y}" r="3.5" fill="${stroke}"/>
-         <text x="${p.x}" y="${height - 8}" text-anchor="middle" font-size="10" fill="var(--muted, #6b7280)">${esc(labels[i])}</text>`
+         <text x="${p.x}" y="${height - 8}" text-anchor="middle" font-size="12" fill="var(--muted, #6b7280)">${esc(labels[i])}</text>`
       ).join("");
 
       const title = props.title ? `<div style="font-weight:600;font-size:0.9em;margin-bottom:8px">${esc(props.title)}</div>` : "";
@@ -233,8 +233,8 @@ function renderElement(id: string, spec: JsonRenderSpec, opts: SpecToHtmlOptions
         return `<div style="padding:16px;border:1px dashed #d1d5db;border-radius:8px;color:#6b7280;font-size:0.9em">Bar chart data unavailable.</div>`;
       }
       const maxVal = Number(props.maxValue) || Math.max(...data.map((d) => d.value), 1);
-      const width = 360;
-      const height = 200;
+      const width = 600;
+      const height = 280;
       const padding = 24;
       const barWidth = Math.min(40, (width - padding * 2) / data.length - 8);
       const chartHeight = height - padding * 2 - 20;
@@ -245,8 +245,8 @@ function renderElement(id: string, spec: JsonRenderSpec, opts: SpecToHtmlOptions
         const x = padding + (i * (width - padding * 2)) / data.length + ((width - padding * 2) / data.length - barWidth) / 2;
         const y = padding + chartHeight - barH;
         return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" rx="4" fill="${color}"/>
-          <text x="${x + barWidth / 2}" y="${y - 4}" text-anchor="middle" font-size="10" fill="var(--fg, #374151)" font-weight="500">${formatChartValue(item.value, props.valuePrefix as string | null, props.valueSuffix as string | null)}</text>
-          <text x="${x + barWidth / 2}" y="${height - 8}" text-anchor="middle" font-size="10" fill="var(--muted, #6b7280)">${esc(item.label)}</text>`;
+          <text x="${x + barWidth / 2}" y="${y - 4}" text-anchor="middle" font-size="12" fill="var(--fg, #374151)" font-weight="500">${formatChartValue(item.value, props.valuePrefix as string | null, props.valueSuffix as string | null)}</text>
+          <text x="${x + barWidth / 2}" y="${height - 8}" text-anchor="middle" font-size="12" fill="var(--muted, #6b7280)">${esc(item.label)}</text>`;
       }).join("");
 
       const title = props.title ? `<div style="padding:12px 12px 0;font-weight:600;font-size:0.9em">${esc(props.title)}</div>` : "";
