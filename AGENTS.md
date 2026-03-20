@@ -10,7 +10,7 @@ Self-hosted personal AI — remembers what matters, watches things in the backgr
 
 ```bash
 pnpm install && pnpm build
-pnpm verify                   # typecheck + test — MUST pass before done (62 files, 1029+ tests)
+pnpm verify                   # typecheck + test + coverage — MUST pass before done (62 files, 1032+ tests, 80% coverage)
 pnpm harness:core-loop        # integration test: Watch → Digest → Correction → Improvement
 pnpm dev:ui                   # UI dev server
 pnpm start                    # API at http://127.0.0.1:3141
@@ -36,7 +36,7 @@ pnpm build                               # then everything else
 | Hook | What it does |
 |------|-------------|
 | **pre-commit** | `lint-staged` (eslint --fix on staged .ts files) + `agent-guard.sh` (nudges CHANGELOG/docs updates — bypass with `--no-verify` if not applicable) |
-| **pre-push** | `pnpm ci` (typecheck + test + coverage thresholds) |
+| **pre-push** | `pnpm ci` (same as verify — typecheck + test + coverage) |
 
 ## Domains
 
