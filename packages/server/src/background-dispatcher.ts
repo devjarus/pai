@@ -288,9 +288,14 @@ export class BackgroundDispatcher {
         });
       }
     } finally {
+      // Clean up browser tabs after research/swarm to prevent tab leak
+      if (next.kind === "research" || next.kind === "swarm") {
+        import("@personal-ai/core").then(({ browserCloseAllTabs }) => {
+          browserCloseAllTabs(this.ctx.logger, this.ctx.config.browserUrl).catch(() => {});
+        }).catch(() => {});
+      }
       this.activeWorkId = null;
       this.activeKind = null;
-      // Longer delay after transient failure to give LLM service time to recover
       this.nudge(500);
     }
   }

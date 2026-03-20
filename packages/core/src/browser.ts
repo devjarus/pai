@@ -276,6 +276,39 @@ export async function browserScreenshot(
   return Buffer.from(arrayBuffer);
 }
 
+/**
+ * Close all browser tabs. Call after research/swarm jobs to prevent tab leak.
+ */
+export async function browserCloseAllTabs(
+  logger?: Logger,
+  configUrl?: string,
+): Promise<void> {
+  const baseUrl = resolveBrowserUrl(configUrl);
+  if (!baseUrl) return;
+
+  try {
+    // List all pages
+    const listRes = await fetch(`${baseUrl}/list_pages`, { signal: AbortSignal.timeout(5000) });
+    if (!listRes.ok) return;
+    const pages = await listRes.json() as Array<{ id: string }>;
+
+    // Close all except the first (keep one tab alive)
+    for (const page of pages.slice(1)) {
+      await fetch(`${baseUrl}/close_page`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: page.id }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => {});
+    }
+    if (pages.length > 1) {
+      logger?.debug("Browser cleanup: closed tabs", { closed: pages.length - 1 });
+    }
+  } catch {
+    // Non-critical — browser may not be running
+  }
+}
+
 // ---- Shared Browser Tool Definitions ----
 
 /** Minimal context needed to create browser tools */

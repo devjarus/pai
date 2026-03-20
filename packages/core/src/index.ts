@@ -118,7 +118,7 @@ export { resolveSandboxUrl, sandboxHealth, runInSandbox } from "./sandbox.js";
 export type { SandboxResult, SandboxOptions } from "./sandbox.js";
 
 // Browser automation (Pinchtab)
-export { resolveBrowserUrl, browserHealth, browserNavigate, browserSnapshot, browserAction, browserText, browserScreenshot, createBrowserTools } from "./browser.js";
+export { resolveBrowserUrl, browserHealth, browserNavigate, browserSnapshot, browserAction, browserText, browserScreenshot, browserCloseAllTabs, createBrowserTools } from "./browser.js";
 export type { BrowserNavigateOptions, BrowserNavigateResult, BrowserActionOptions, BrowserActionResult, BrowserToolContext } from "./browser.js";
 
 // Context budget
