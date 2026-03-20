@@ -30,6 +30,7 @@ import {
   useWatches,
   useCreateWatch,
   useCreateWatchFromTemplate,
+  useFollowTopic,
   useUpdateWatch,
   useDeleteWatch,
   usePauseWatch,
@@ -119,6 +120,9 @@ export default function Programs() {
   const deleteProgram = useDeleteProgram();
   const pauseProgram = usePauseProgram();
   const resumeProgram = useResumeProgram();
+
+  const followMutation = useFollowTopic();
+  const [followInput, setFollowInput] = useState("");
 
   const [showDialog, setShowDialog] = useState(searchParams.get("action") === "add");
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
@@ -329,6 +333,45 @@ export default function Programs() {
             New Watch
           </Button>
         </div>
+      </div>
+
+      {/* Quick follow input */}
+      <div className="border-b border-border/20 px-4 py-2.5 sm:px-6">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const topic = followInput.trim();
+            if (!topic) return;
+            followMutation.mutate(topic, {
+              onSuccess: (result) => {
+                setFollowInput("");
+                if (result.created) {
+                  toast.success(`Following "${topic}" — first research starting now`);
+                } else {
+                  toast.info(`Already following "${topic}"`);
+                }
+              },
+              onError: (err) => {
+                toast.error(err instanceof Error ? err.message : "Failed to follow topic");
+              },
+            });
+          }}
+          className="flex gap-2"
+        >
+          <div className="relative flex-1">
+            <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/40" />
+            <input
+              type="text"
+              value={followInput}
+              onChange={(e) => setFollowInput(e.target.value)}
+              placeholder="Follow a topic... (e.g., AI agents, crypto, SpaceX)"
+              className="w-full rounded-lg border border-border/30 bg-muted/20 py-1.5 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none transition-all focus:border-primary/40 focus:bg-background focus:ring-1 focus:ring-primary/20"
+            />
+          </div>
+          <Button type="submit" size="sm" variant="outline" disabled={!followInput.trim() || followMutation.isPending}>
+            {followMutation.isPending ? "Following..." : "Follow"}
+          </Button>
+        </form>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">

@@ -937,6 +937,17 @@ export function createWatchApi(data: {
   });
 }
 
+export function followTopic(topic: string): Promise<{
+  watch: Program;
+  created: boolean;
+  duplicateReason: "thread" | "equivalent" | null;
+}> {
+  return request("/watches/follow", {
+    method: "POST",
+    body: JSON.stringify({ topic }),
+  });
+}
+
 export function createWatchFromTemplateApi(data: {
   templateId: string;
   subject: string;

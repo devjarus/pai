@@ -371,4 +371,49 @@ export function registerWatchesRoutes(app: FastifyInstance, serverCtx: ServerCon
 
     return { ok: true, jobId, depth };
   });
+
+  // --- Quick follow a topic ---
+
+  const followTopicSchema = z.object({
+    topic: z.string().min(1, "topic is required").max(200),
+  });
+
+  app.post("/api/watches/follow", async (request) => {
+    const { topic } = validate(followTopicSchema, request.body);
+
+    // Generate a research question from the topic
+    const question = `Latest developments in ${topic} — new launches, research, industry trends, and notable updates`;
+    const title = topic.length > 30 ? topic.slice(0, 30).trim() : topic;
+
+    const result = ensureWatch(ctx.storage, {
+      title,
+      question,
+      intervalHours: 24,
+      deliveryMode: "interval",
+    });
+
+    if (result.created) {
+      recordProductEvent(ctx.storage, {
+        eventType: "program_created",
+        channel: "web",
+        programId: result.program.id,
+        threadId: result.program.threadId,
+        metadata: { executionMode: "research", family: "general", source: "follow" },
+      });
+
+      // Trigger first research immediately
+      await backgroundDispatcher.enqueueResearch({
+        goal: question,
+        threadId: result.program.threadId ?? null,
+        sourceKind: "manual",
+        sourceScheduleId: result.program.id,
+      });
+    }
+
+    return {
+      watch: enrichWatch(serverCtx, result.program),
+      created: result.created,
+      duplicateReason: result.duplicateReason,
+    };
+  });
 }

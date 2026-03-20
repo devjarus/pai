@@ -12,6 +12,7 @@ import {
   pauseWatchApi,
   resumeWatchApi,
   triggerWatchRunApi,
+  followTopic,
 } from "../api";
 import type { Program } from "../api";
 
@@ -82,6 +83,16 @@ export function useCreateWatchFromTemplate() {
   return useMutation({
     mutationFn: (data: { templateId: string; subject: string }) =>
       createWatchFromTemplateApi(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: watchKeys.all });
+    },
+  });
+}
+
+export function useFollowTopic() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (topic: string) => followTopic(topic),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: watchKeys.all });
     },
