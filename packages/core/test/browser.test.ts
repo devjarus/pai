@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { resolveBrowserUrl, browserHealth, browserNavigate, browserSnapshot, browserAction, browserText, browserScreenshot } from "../src/browser.js";
+import { resolveBrowserUrl, browserHealth, browserNavigate, browserSnapshot, browserAction, browserText, browserScreenshot, browserCloseAllTabs } from "../src/browser.js";
 
 describe("browser", () => {
   const origEnv = process.env.PAI_BROWSER_URL;
@@ -156,6 +156,55 @@ describe("browser", () => {
       );
       await browserScreenshot(50, undefined, "http://browser:9867");
       expect(fetchSpy.mock.calls[0]![0]).toContain("?quality=50");
+    });
+  });
+
+  describe("browserCloseAllTabs", () => {
+    it("does nothing when browser is not configured", async () => {
+      delete process.env.PAI_BROWSER_URL;
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      await browserCloseAllTabs();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("closes all tabs except the first", async () => {
+      const calls: string[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = typeof input === "string" ? input : (input as Request).url;
+        calls.push(url);
+        if (url.includes("/tabs")) {
+          return new Response(JSON.stringify([
+            { id: "tab-1" },
+            { id: "tab-2" },
+            { id: "tab-3" },
+          ]), { status: 200 });
+        }
+        return new Response('{"ok":true}', { status: 200 });
+      });
+
+      await browserCloseAllTabs(undefined, "http://browser:9867");
+
+      // Should list tabs then close tab-2 and tab-3 (not tab-1)
+      expect(calls[0]).toContain("/tabs");
+      expect(calls).toHaveLength(3); // 1 list + 2 closes
+    });
+
+    it("does nothing when only one tab is open", async () => {
+      const calls: string[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = typeof input === "string" ? input : (input as Request).url;
+        calls.push(url);
+        return new Response(JSON.stringify([{ id: "tab-1" }]), { status: 200 });
+      });
+
+      await browserCloseAllTabs(undefined, "http://browser:9867");
+      expect(calls).toHaveLength(1); // only list, no closes
+    });
+
+    it("silently ignores errors", async () => {
+      vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("connection refused"));
+      await browserCloseAllTabs(undefined, "http://browser:9867");
+      // Should not throw
     });
   });
 });
