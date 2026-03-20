@@ -22,6 +22,8 @@ COPY packages/plugin-telegram/package.json packages/plugin-telegram/tsconfig.jso
 COPY packages/plugin-research/package.json packages/plugin-research/tsconfig.json packages/plugin-research/
 COPY packages/plugin-schedules/package.json packages/plugin-schedules/tsconfig.json packages/plugin-schedules/
 COPY packages/plugin-swarm/package.json packages/plugin-swarm/tsconfig.json packages/plugin-swarm/
+COPY packages/library/package.json packages/library/tsconfig.json packages/library/
+COPY packages/watches/package.json packages/watches/tsconfig.json packages/watches/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
@@ -95,6 +97,12 @@ COPY --from=builder /app/packages/plugin-schedules/package.json packages/plugin-
 COPY --from=builder /app/packages/plugin-swarm/dist packages/plugin-swarm/dist
 COPY --from=builder /app/packages/plugin-swarm/package.json packages/plugin-swarm/
 COPY --from=builder /app/packages/plugin-swarm/node_modules packages/plugin-swarm/node_modules
+
+COPY --from=builder /app/packages/library/dist packages/library/dist
+COPY --from=builder /app/packages/library/package.json packages/library/
+
+COPY --from=builder /app/packages/watches/dist packages/watches/dist
+COPY --from=builder /app/packages/watches/package.json packages/watches/
 
 # Create non-root user for runtime security
 RUN groupadd --gid 1001 pai && useradd --uid 1001 --gid pai --shell /bin/false pai
