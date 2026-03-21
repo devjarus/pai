@@ -556,6 +556,13 @@ export function registerLibraryRoutes(app: FastifyInstance, { ctx }: ServerConte
     return listInsightsFn(ctx.storage, request.query.watchId);
   });
 
+  // Manually trigger compounding (generates insights from existing findings)
+  app.post("/api/library/insights/refresh", async () => {
+    const { runWeeklyCompounding } = await import("../compounding.js");
+    const result = await runWeeklyCompounding(ctx as never);
+    return result;
+  });
+
   app.delete<{ Params: { id: string } }>("/api/library/insights/:id", async (request, reply) => {
     const { deleteInsight: deleteInsightFn } = await import("@personal-ai/library");
     const ok = deleteInsightFn(ctx.storage, request.params.id);
