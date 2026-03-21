@@ -370,51 +370,56 @@ export default function Memory() {
         </header>
 
         {profile?.summary && (
-          <div className="border-b border-border/20 bg-card/30 px-3 py-3 md:px-6">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">Profile</h3>
-                <div className="space-y-1 text-sm text-foreground/80">
-                  {profile.summary.split("\n").map((line, i) => {
-                    const match = line.match(/^\*\*(.+?):\*\*\s*(.+)$/);
-                    if (!match) return null;
-                    return (
-                      <p key={i}>
-                        <span className="font-medium text-foreground/60">{match[1]}: </span>
-                        <span>{match[2]}</span>
-                      </p>
-                    );
-                  })}
-                </div>
-              </div>
-              <span className="shrink-0 text-xs text-muted-foreground/40">
+          <details open className="border-b border-border/20 bg-card/30 px-3 py-3 md:px-6 group">
+            <summary className="cursor-pointer select-none list-none flex items-center justify-between gap-3">
+              <span className="flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+                <span className="text-[10px] transition-transform group-open:rotate-90">▶</span>
+                Profile
+              </span>
+              <span className="text-[10px] text-muted-foreground/40">
                 {profile.coreBeliefs} core · {profile.totalBeliefs} total
               </span>
+            </summary>
+            <div className="mt-1.5 space-y-0.5 text-xs text-foreground/80">
+              {profile.summary.split("\n").map((line, i) => {
+                const match = line.match(/^\*\*(.+?):\*\*\s*(.+)$/);
+                if (!match) return null;
+                return (
+                  <p key={i} className="line-clamp-2">
+                    <span className="font-medium text-foreground/60">{match[1]}: </span>
+                    <span>{match[2]}</span>
+                  </p>
+                );
+              })}
             </div>
-          </div>
+          </details>
         )}
 
-        {/* Topic Insights */}
+        {/* Topic Insights — compact, collapsible */}
         {insights && insights.length > 0 && (
-          <div className="border-b border-border/20 bg-card/30 px-3 py-3 md:px-6">
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+          <details className="border-b border-border/20 bg-card/30 px-3 py-3 md:px-6 group">
+            <summary className="cursor-pointer text-xs font-medium uppercase tracking-wider text-muted-foreground/60 select-none list-none flex items-center gap-1">
+              <span className="text-[10px] transition-transform group-open:rotate-90">▶</span>
               Topic Insights
-              <span className="ml-2 text-[10px] normal-case font-normal">{insights.length} across {new Set(insights.map(i => i.topic)).size} topics</span>
-            </h3>
-            <div className="space-y-2">
-              {insights.slice(0, 8).map((insight) => (
-                <div key={insight.id} className="flex items-start gap-2 text-sm">
-                  <span className="mt-0.5 shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              <span className="ml-1 text-[10px] normal-case font-normal">{insights.length} across {new Set(insights.map(i => i.topic)).size} topics</span>
+            </summary>
+            <div className="mt-2 space-y-1.5">
+              {insights.slice(0, 5).map((insight) => (
+                <div key={insight.id} className="flex items-start gap-2 text-xs">
+                  <span className="mt-0.5 shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary truncate max-w-[120px]">
                     {insight.topic}
                   </span>
-                  <span className="text-foreground/80">{insight.insight}</span>
+                  <span className="text-foreground/70 line-clamp-1">{insight.insight}</span>
                   <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/40">
-                    {insight.cycleCount} cycles
+                    {insight.cycleCount}×
                   </span>
                 </div>
               ))}
+              {insights.length > 5 && (
+                <p className="text-[10px] text-muted-foreground/40">+{insights.length - 5} more</p>
+              )}
             </div>
-          </div>
+          </details>
         )}
 
         <div className="border-b border-border/40 bg-background px-4 py-3 md:px-6">
