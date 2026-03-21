@@ -44,7 +44,10 @@ export async function runWeeklyCompounding(
           role: "system",
           content:
             "You synthesize accumulated research findings into durable topic insights. " +
-            "Each insight should capture a TREND, PATTERN, or KEY FACT that emerged across multiple research cycles — not a single data point. " +
+            "Each insight should capture a TREND, PATTERN, or KEY FACT about the TOPIC ITSELF — not about the research process. " +
+            "NEVER produce insights about search failures, tool limitations, data gaps, or research methodology. " +
+            "Only produce insights about what was actually LEARNED about the topic. " +
+            "If the research found nothing substantive, return an empty array []. " +
             "If existing insights are provided, update them with new information or replace if outdated. " +
             "Return a JSON array of 2-5 insights. Each insight should be under 40 words. " +
             "Reply with ONLY a JSON array: [{\"insight\":\"...\",\"confidence\":0.7-0.95,\"isUpdate\":false}]",
@@ -74,6 +77,10 @@ export async function runWeeklyCompounding(
 
       for (const item of insights.slice(0, 5)) {
         if (!item.insight || item.insight.length < 10) continue;
+
+        // Filter out meta/self-referential insights about the research process
+        const isMeta = /\b(search.*(fail|return|cycle|attempt)|tool.*(fail|limit|unavail)|data.*(retriev|limit|gap)|research.*(encounter|fail|cycle|tool)|web.search|fetch_rss|browse_navigate|no results)\b/i.test(item.insight);
+        if (isMeta) continue;
 
         // Try to find an existing insight to update
         const match = existingInsights.find((existing) => {
