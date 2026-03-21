@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { librarySearch, getLibraryStats, getFindings, getProfile, getInsights } from "../api";
+import { librarySearch, getLibraryStats, getFindings, getProfile, getInsights, getQualityScore } from "../api";
 
 export const libraryKeys = {
   all: ["library"] as const,
@@ -35,6 +35,14 @@ export function useProfile() {
     queryKey: ["library", "profile"],
     queryFn: () => getProfile(),
     staleTime: 60_000, // profile doesn't change often
+  });
+}
+
+export function useQualityScore() {
+  return useQuery({
+    queryKey: ["library", "quality"],
+    queryFn: () => getQualityScore(),
+    staleTime: 5 * 60_000,
   });
 }
 

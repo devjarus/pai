@@ -570,6 +570,72 @@ export function registerLibraryRoutes(app: FastifyInstance, { ctx }: ServerConte
     return { ok: true };
   });
 
+  // --- Quality Score ---
+  app.get("/api/library/quality", async () => {
+    const allBeliefs = listBeliefs(ctx.storage, "active");
+    const neverAccessed = allBeliefs.filter((b) => b.access_count === 0).length;
+    const reinforced = allBeliefs.filter((b) => b.confidence > 0.6).length;
+    const forgotten = listBeliefs(ctx.storage, "forgotten").length;
+    const invalidated = listBeliefs(ctx.storage, "invalidated").length;
+
+    let avgRating: number | null = null;
+    let digetsRated = 0;
+    try {
+      const { getAverageRating: getAvg } = await import("../digest-ratings.js");
+      avgRating = getAvg(ctx.storage, 20);
+      digetsRated = ctx.storage.query<{ cnt: number }>("SELECT COUNT(*) as cnt FROM digest_ratings")[0]?.cnt ?? 0;
+    } catch { /* table may not exist */ }
+
+    let corrections = 0;
+    try {
+      corrections = ctx.storage.query<{ cnt: number }>("SELECT COUNT(*) as cnt FROM belief_changes WHERE change_type = 'invalidated'")[0]?.cnt ?? 0;
+    } catch { /* table may not exist */ }
+
+    let insightsCount = 0;
+    try {
+      const { listInsights: li } = await import("@personal-ai/library");
+      insightsCount = li(ctx.storage).length;
+    } catch { /* table may not exist */ }
+
+    let findingsCount = 0;
+    try { findingsCount = listFindings(ctx.storage).length; } catch { /* */ }
+
+    const programs = ctx.storage.query<{ status: string }>("SELECT status FROM scheduled_jobs WHERE status != 'deleted'");
+    const watchesActive = programs.filter((p) => p.status === "active").length;
+
+    // Compute quality scores (0-100)
+    const memoryUtilization = allBeliefs.length > 0 ? Math.round(((allBeliefs.length - neverAccessed) / allBeliefs.length) * 100) : 0;
+    const reinforcementRate = allBeliefs.length > 0 ? Math.round((reinforced / allBeliefs.length) * 100) : 0;
+    const feedbackActivity = Math.min(100, digetsRated * 10 + corrections * 20);
+    const knowledgeGrowth = Math.min(100, insightsCount * 5 + findingsCount);
+    const overallScore = Math.round((memoryUtilization + reinforcementRate + feedbackActivity + knowledgeGrowth) / 4);
+
+    return {
+      score: overallScore,
+      memory: {
+        total: allBeliefs.length,
+        neverAccessed,
+        reinforced,
+        forgotten,
+        invalidated,
+        utilization: memoryUtilization,
+        reinforcementRate,
+      },
+      feedback: {
+        digestsRated: digetsRated,
+        avgRating,
+        corrections,
+        activity: feedbackActivity,
+      },
+      knowledge: {
+        insights: insightsCount,
+        findings: findingsCount,
+        watchesActive,
+        growth: knowledgeGrowth,
+      },
+    };
+  });
+
   // --- Stats ---
   app.get("/api/library/stats", async () => {
     const stats = memoryStats(ctx.storage);

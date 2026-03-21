@@ -1026,6 +1026,17 @@ export function getProfile(): Promise<ProfileSummary> {
   return request<ProfileSummary>("/library/profile");
 }
 
+export interface QualityScore {
+  score: number;
+  memory: { total: number; neverAccessed: number; reinforced: number; utilization: number; reinforcementRate: number };
+  feedback: { digestsRated: number; avgRating: number | null; corrections: number; activity: number };
+  knowledge: { insights: number; findings: number; watchesActive: number; growth: number };
+}
+
+export function getQualityScore(): Promise<QualityScore> {
+  return request<QualityScore>("/library/quality");
+}
+
 export function getFindings(watchId?: string): Promise<ResearchFinding[]> {
   const qs = watchId ? `?watchId=${encodeURIComponent(watchId)}` : "";
   return request(`/library/findings${qs}`);

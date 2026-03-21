@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDigests } from "@/hooks/use-digests";
 import { useWatches } from "@/hooks/use-watches";
 import { useTasks, useCompleteTask } from "@/hooks/use-tasks";
-import { useLibraryStats } from "@/hooks/use-library";
+import { useLibraryStats, useQualityScore } from "@/hooks/use-library";
 import { useJobs } from "@/hooks/use-jobs";
 import { timeAgoCompact } from "@/lib/datetime";
 import { stripMarkdown } from "@/lib/utils";
@@ -14,7 +14,6 @@ import {
   FileTextIcon,
   FlaskConicalIcon,
   SearchIcon,
-  XIcon,
   AlertCircleIcon,
   LoaderIcon,
 } from "lucide-react";
@@ -188,8 +187,8 @@ export default function Home() {
               <div className="pt-2 mt-8">
                 <LibraryPanel />
               </div>
-              <div className="mt-auto pt-4">
-                <TipBanner />
+              <div className="mt-6">
+                <QualityPanel />
               </div>
             </aside>
           </div>
@@ -459,33 +458,33 @@ function SidebarSkeleton({ rows }: { rows: number }) {
 // Tip
 // ---------------------------------------------------------------------------
 
-const TIPS = [
-  "Say \"Keep me updated on GitHub trending AI repos\" to set up a Watch.",
-  "Rate digests with stars — low ratings improve future ones.",
-  "Click the pencil on any memory to correct it.",
-  "Create Watches from templates: Price, News, Competitor.",
-  "Digests suggest to-dos at the bottom.",
-  "Use pai as an MCP server with Claude Code or Cursor.",
-];
+function QualityPanel() {
+  const { data: quality } = useQualityScore();
+  if (!quality) return null;
 
-function TipBanner() {
-  const [dismissed, setDismissed] = useState<Set<number>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem("pai-tips-d") ?? "[]") as number[]); } catch { return new Set(); }
-  });
-  const visible = TIPS.map((t, i) => ({ t, i })).filter(x => !dismissed.has(x.i));
-  const tip = visible.length > 0 ? visible[Math.floor(Date.now() / 86400000) % visible.length] : null;
-  if (!tip) return null;
+  const barColor = quality.score >= 60 ? "bg-emerald-500" : quality.score >= 40 ? "bg-amber-500" : "bg-red-500";
 
   return (
-    <div className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground/70">
-      <span className="shrink-0 mt-px">💡</span>
-      <p className="flex-1">{tip.t}</p>
-      <button type="button" onClick={() => {
-        const next = new Set(dismissed);
-        next.add(tip.i);
-        setDismissed(next);
-        localStorage.setItem("pai-tips-d", JSON.stringify([...next]));
-      }} className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"><XIcon className="size-3" /></button>
+    <div className="space-y-2">
+      <SidebarTitle label="Quality" to="/settings" count={quality.score} />
+      <div className="h-1.5 rounded-full bg-muted/30 overflow-hidden">
+        <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${quality.score}%` }} />
+      </div>
+      <div className="grid grid-cols-3 gap-1 text-[10px] text-muted-foreground/60">
+        <div className="text-center">
+          <p className={quality.memory.utilization >= 50 ? "text-foreground/70" : "text-amber-400"}>{quality.memory.utilization}%</p>
+          <p>Memory</p>
+        </div>
+        <div className="text-center">
+          <p className={quality.feedback.activity >= 20 ? "text-foreground/70" : "text-amber-400"}>{quality.feedback.activity}%</p>
+          <p>Feedback</p>
+        </div>
+        <div className="text-center">
+          <p className={quality.knowledge.growth >= 30 ? "text-foreground/70" : "text-amber-400"}>{quality.knowledge.growth}%</p>
+          <p>Knowledge</p>
+        </div>
+      </div>
     </div>
   );
 }
+
