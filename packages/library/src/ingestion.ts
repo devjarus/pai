@@ -1,6 +1,6 @@
 import type { Storage, LLMClient } from "@personal-ai/core";
 import { correctBelief } from "@personal-ai/core";
-import { createFinding } from "./findings.js";
+import { createFinding, getFinding, computeFindingDelta } from "./findings.js";
 import type { CreateFindingInput, ResearchFinding } from "./findings.js";
 
 /**
@@ -11,7 +11,18 @@ export function ingestResearchResult(
   storage: Storage,
   input: CreateFindingInput,
 ): { finding: ResearchFinding } {
-  const finding = createFinding(storage, input);
+  let enrichedInput = input;
+
+  // Auto-compute delta when a previous finding is linked but no delta provided
+  if (input.previousFindingId && !input.delta) {
+    const previous = getFinding(storage, input.previousFindingId);
+    if (previous) {
+      const delta = computeFindingDelta(previous.summary, input.summary);
+      enrichedInput = { ...input, delta };
+    }
+  }
+
+  const finding = createFinding(storage, enrichedInput);
   return { finding };
 }
 

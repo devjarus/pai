@@ -8,7 +8,7 @@ export { listSources, getSourceChunks, learnFromContent, knowledgeSearch, forget
 export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult } from "@personal-ai/core";
 
 // Findings
-export { findingsMigrations, createFinding, getFinding, listFindings, listFindingsForWatch, deleteFinding, cleanupFindings } from "./findings.js";
+export { findingsMigrations, createFinding, getFinding, listFindings, listFindingsForWatch, deleteFinding, cleanupFindings, computeFindingDelta } from "./findings.js";
 export type { ResearchFinding, CreateFindingInput, ResearchFindingSource } from "./findings.js";
 
 // Finding embeddings

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **State-first recurring reports** — Digests now compute structured state deltas (new findings with diffs, changed insights, new/corrected beliefs, completed actions) instead of prompt-stuffing raw JSON. Each cycle compounds on the last through computed diffs.
+- **Finding delta computation** — `ingestResearchResult()` auto-computes a deterministic sentence-level delta when a previous finding is linked, populating the existing `delta` column.
+- **Signal hash for daily briefs** — Daily digests now compute and store `signal_hash` (SHA-256) like research briefs, enabling change detection across cycles.
+
 ### Fixed
 - **Watch research for GitHub/HN/Reddit** — Research agent now uses `web_search` + `read_page` directly for trending sources instead of depending on a broken RSSHub instance. Removed all RSS/RSSHub code.
 - **Raw JSON report rendering** — News and research reports that the LLM returned as raw JSON (without code fences) now render as formatted markdown instead of dumping raw JSON to the screen.

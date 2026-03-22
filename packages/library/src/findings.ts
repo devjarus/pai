@@ -139,6 +139,48 @@ function rowToFinding(row: FindingRow): ResearchFinding {
   return finding;
 }
 
+// ---- Delta computation ----
+
+/**
+ * Compute a deterministic delta between the previous finding summary and the
+ * current one.  Returns the list of changed sentences and a 0-1 significance
+ * score based on the fraction of material that changed.
+ */
+export function computeFindingDelta(
+  previousSummary: string,
+  currentSummary: string,
+): { changed: string[]; significance: number } {
+  const prevSentences = splitSentences(previousSummary);
+  const currSentences = splitSentences(currentSummary);
+
+  const prevSet = new Set(prevSentences.map(normalize));
+  const currSet = new Set(currSentences.map(normalize));
+
+  const added = currSentences.filter((s) => !prevSet.has(normalize(s)));
+  const removed = prevSentences.filter((s) => !currSet.has(normalize(s)));
+
+  const changed = [
+    ...added.map((s) => `+ ${s}`),
+    ...removed.map((s) => `- ${s}`),
+  ];
+
+  const total = Math.max(prevSentences.length, currSentences.length, 1);
+  const significance = Math.min(1, changed.length / total);
+
+  return { changed, significance: Math.round(significance * 100) / 100 };
+}
+
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
 // ---- CRUD ----
 
 export function createFinding(storage: Storage, input: CreateFindingInput): ResearchFinding {
