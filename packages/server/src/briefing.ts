@@ -175,12 +175,13 @@ export function buildBriefingDelta(
   };
 }
 
-function formatDeltaForPrompt(delta: BriefingDelta): string {
+function formatDeltaForPrompt(delta: BriefingDelta, programTitles: Map<string, string>): string {
   const sections: string[] = [];
 
   if (delta.newFindings.length > 0) {
     const findingLines = delta.newFindings.map((f) => {
-      const base = `- [${f.domain}] ${f.summary.slice(0, 200)}`;
+      const watchLabel = f.watchId ? (programTitles.get(f.watchId) ?? f.watchId) : "ad-hoc";
+      const base = `- [finding:${f.id}] [watch:${watchLabel}] [${f.domain}] ${f.summary.slice(0, 200)}`;
       if (f.delta && f.delta.changed.length > 0) {
         return `${base}\n  Delta (significance ${f.delta.significance}): ${f.delta.changed.slice(0, 3).join("; ")}`;
       }
@@ -191,17 +192,17 @@ function formatDeltaForPrompt(delta: BriefingDelta): string {
 
   if (delta.changedInsights.length > 0) {
     const insightLines = delta.changedInsights.map((i) =>
-      `- ${i.topic}: ${i.insight} (confidence: ${i.confidence}, cycles: ${i.cycleCount})`,
+      `- [insight:${i.topic}] ${i.insight} (confidence: ${i.confidence}, cycles: ${i.cycleCount})`,
     );
     sections.push(`UPDATED INSIGHTS (${delta.changedInsights.length}):\n${insightLines.join("\n")}`);
   }
 
   if (delta.newBeliefs.length > 0) {
-    sections.push(`NEW BELIEFS (${delta.newBeliefs.length}):\n${delta.newBeliefs.map((b) => `- [${b.type}] ${b.statement} (${b.confidence})`).join("\n")}`);
+    sections.push(`NEW BELIEFS (${delta.newBeliefs.length}):\n${delta.newBeliefs.map((b) => `- [belief:${b.type}] ${b.statement} (${b.confidence})`).join("\n")}`);
   }
 
   if (delta.correctedBeliefs.length > 0) {
-    sections.push(`CORRECTED BELIEFS (${delta.correctedBeliefs.length}):\n${delta.correctedBeliefs.map((b) => `- [${b.type}] ${b.statement}`).join("\n")}`);
+    sections.push(`CORRECTED BELIEFS (${delta.correctedBeliefs.length}):\n${delta.correctedBeliefs.map((b) => `- [belief:${b.type}] ${b.statement}`).join("\n")}`);
   }
 
   if (delta.completedActions.length > 0) {
@@ -1420,7 +1421,8 @@ export async function generateBriefing(
   // Build structured state delta since the last digest
   const sinceTimestamp = lastDigestTimestamp || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const stateDelta = buildBriefingDelta(ctx.storage, sinceTimestamp);
-  const deltaPromptSection = formatDeltaForPrompt(stateDelta);
+  const programTitles = new Map(programs.map((p) => [p.id, p.title]));
+  const deltaPromptSection = formatDeltaForPrompt(stateDelta, programTitles);
 
   // Fetch recent research findings from Library — this makes digests aware of accumulated research
   let recentFindings: Array<{ goal: string; summary: string; domain: string; createdAt: string; watchId?: string }> = [];
@@ -1609,8 +1611,8 @@ Guidelines:
 - If a linked action is already complete, use that completion as a change signal and do not repeat it as a next action.
 - If a linked action is still open or stale, make that explicit in the recommendation, evidence, or next actions instead of inventing duplicate follow-through.
 - what_changed should be concise and specific. Prefer 2-4 bullets.
-- evidence should cite either an external source or an observed product artifact (Program definition, memory belief, recent activity, task state).
-- memory_assumptions should name the assumptions that materially influenced the recommendation and explain where they came from.
+- evidence sourceLabel MUST reference a specific provenance tag from the data above (e.g. "finding:abc123", "watch:GPU Price Tracker", "insight:local-first architecture", "belief:factual"). Do NOT invent vague labels like "State Delta" or "Previous Brief" — cite the actual source.
+- memory_assumptions MUST NOT be empty when beliefs are provided above. Name the specific beliefs that influenced the recommendation, with provenance showing where each came from (e.g. "owner preference", "factual belief from ingestion").
 - next_actions should be specific and concrete. Keep them short.
 - correction_hook should invite the user to correct assumptions or priorities for the next brief.
 - Keep everything concise. Each field should be useful without exposing backend internals.
@@ -1692,6 +1694,18 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
     ctx.logger.info("Briefing generation used deterministic fallback", {
       reason: "llm-unhealthy",
     });
+  }
+
+  // Back-fill empty memory_assumptions from linked beliefs
+  if (
+    (!parsed.memory_assumptions || parsed.memory_assumptions.length === 0) &&
+    topBeliefs.length > 0
+  ) {
+    parsed.memory_assumptions = topBeliefs.slice(0, 3).map((b) => ({
+      statement: b.statement,
+      confidence: b.confidence >= 0.7 ? "high" as const : b.confidence >= 0.4 ? "medium" as const : "low" as const,
+      provenance: `${b.type} belief (auto-linked)`,
+    }));
   }
 
   try {
