@@ -1611,8 +1611,8 @@ Guidelines:
 - If a linked action is already complete, use that completion as a change signal and do not repeat it as a next action.
 - If a linked action is still open or stale, make that explicit in the recommendation, evidence, or next actions instead of inventing duplicate follow-through.
 - what_changed should be concise and specific. Prefer 2-4 bullets.
-- evidence sourceLabel MUST reference a specific provenance tag from the data above (e.g. "finding:abc123", "watch:GPU Price Tracker", "insight:local-first architecture", "belief:factual"). Do NOT invent vague labels like "State Delta" or "Previous Brief" — cite the actual source.
-- memory_assumptions MUST NOT be empty when beliefs are provided above. Name the specific beliefs that influenced the recommendation, with provenance showing where each came from (e.g. "owner preference", "factual belief from ingestion").
+- evidence sourceLabel MUST be human-readable — use the watch title, finding goal, or topic name (e.g. "AI Agents Tracker", "H4 Visa research", "GitHub trending"). NEVER expose internal IDs, provenance tags, or system labels to the user. The bracketed tags in the data (e.g. [finding:abc123]) are for YOUR reference only — translate them into plain language for sourceLabel.
+- memory_assumptions MUST NOT be empty when beliefs are provided above. Name the specific beliefs that influenced the recommendation. provenance should be human-readable (e.g. "User preference", "Observed from research", "Inferred from activity") — never raw belief IDs.
 - next_actions should be specific and concrete. Keep them short.
 - correction_hook should invite the user to correct assumptions or priorities for the next brief.
 - Keep everything concise. Each field should be useful without exposing backend internals.
@@ -1701,10 +1701,15 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
     (!parsed.memory_assumptions || parsed.memory_assumptions.length === 0) &&
     topBeliefs.length > 0
   ) {
+    const provenanceLabel = (b: Belief) =>
+      b.origin === "user-said" ? "User stated"
+        : b.origin === "document" || b.origin === "web" ? "Observed from research"
+          : b.origin === "synthesized" ? "Inferred from patterns"
+            : "Memory";
     parsed.memory_assumptions = topBeliefs.slice(0, 3).map((b) => ({
       statement: b.statement,
       confidence: b.confidence >= 0.7 ? "high" as const : b.confidence >= 0.4 ? "medium" as const : "low" as const,
-      provenance: `${b.type} belief (auto-linked)`,
+      provenance: provenanceLabel(b),
     }));
   }
 
