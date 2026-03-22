@@ -82,6 +82,10 @@ export async function runWeeklyCompounding(
         const isMeta = /\b(search.*(fail|return|cycle|attempt)|tool.*(fail|limit|unavail)|data.*(retriev|limit|gap)|research.*(encounter|fail|cycle|tool)|web.search|fetch_rss|browse_navigate|no results)\b/i.test(item.insight);
         if (isMeta) continue;
 
+        // Quality gate: skip low-confidence insights that are too vague
+        if ((item.confidence ?? 0.7) < 0.5) continue;
+        if (item.insight.split(/\s+/).length < 5) continue; // too short to be useful
+
         // Try to find an existing insight to update
         const match = existingInsights.find((existing) => {
           const overlap = existing.insight.split(/\s+/).filter((w) =>
