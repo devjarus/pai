@@ -1159,6 +1159,8 @@ function LearningRunCard({
   if (run.researchCount > 0) signalParts.push(`${run.researchCount} research`);
   if (run.tasksCount > 0) signalParts.push(`${run.tasksCount} task${run.tasksCount !== 1 ? "s" : ""}`);
   if (run.knowledgeCount > 0) signalParts.push(`${run.knowledgeCount} knowledge`);
+  if (run.findingsCount > 0) signalParts.push(`${run.findingsCount} finding${run.findingsCount !== 1 ? "s" : ""}`);
+  if (run.digestsCount > 0) signalParts.push(`${run.digestsCount} digest${run.digestsCount !== 1 ? "s" : ""}`);
 
   const outcomeParts: string[] = [];
   if (run.beliefsCreated > 0) outcomeParts.push(`${run.beliefsCreated} created`);

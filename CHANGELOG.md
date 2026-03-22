@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Watch research for GitHub/HN/Reddit** — Research agent now uses `web_search` + `read_page` directly for trending sources instead of depending on a broken RSSHub instance. Removed all RSS/RSSHub code.
 - **Raw JSON report rendering** — News and research reports that the LLM returned as raw JSON (without code fences) now render as formatted markdown instead of dumping raw JSON to the screen.
+- **Background learning watermark safety** — Learning runs now advance source watermarks to the latest processed row timestamp instead of wall-clock `now`, preventing mid-run thread/research/task/finding rows from being skipped permanently.
+- **Digest correction lineage** — Corrections triggered from a Digest now preserve the originating Digest link and add provenance on the replacement belief, so future compounding and audits can trace exactly which Digest prompted the correction.
+- **Research evidence calibration** — Research finding ingestion now extracts external sources from structured output and markdown reports, and finding confidence is calibrated from real source coverage plus actual search/page activity instead of stale budget heuristics.
+- **Research novelty calibration** — Follow-up research runs now penalize repeated-source, low-delta findings, persist explicit delta data to the finding chain, and prevent low-confidence repeated cycles from compounding into durable insights.
+- **Research source-authority calibration** — Finding sources now carry authority tiers, research confidence rewards authoritative and primary evidence over forum/aggregator repetition, and the general research prompt explicitly prefers official sources when available.
+- **Learning cursor safety** — Background learning now batches source rows oldest-first with stable rowid cursors, preventing high-volume backlogs and same-timestamp rows from being skipped across runs.
+- **Quality metric alignment** — Learning quality now counts finding/digest-driven runs, compounding coverage only measures active watches with credible findings, and sparse datasets no longer receive free high-confidence quality credit.
 
 ### Changed
 - **Research plugin split** — `research.ts` (1700 lines) split into 6 focused modules: types, repository, prompts, tools, charts, and orchestration. Extracted shared `mapRow` helper to eliminate 4x duplicated row mapping.
@@ -34,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Quick-follow topics** — One-tap Watch creation: `POST /api/watches/follow` takes a topic, creates a Watch with defaults, triggers first research immediately. Available from Watches page UI and chat.
 - **Global activity indicator** — Spinning icon in sidebar (desktop) and mobile tab bar when jobs are running. Visible from any page, links to /jobs.
 - **Unified Watch terminology** — All user-facing strings say "Watch" instead of "Program". Chat tool responses, system prompt, help text updated.
+- **Quality scoring upgraded** — `/api/library/quality` now reports recent loop health using ratio-based metrics for learning reliability, memory utilization/provenance, feedback activity, and evidence-backed compounding coverage instead of simple lifetime counts.
+- **Finding evidence quality metrics** — `/api/library/quality` now tracks finding source coverage and whether high-confidence findings are actually backed by multiple sources, and memory reinforcement no longer treats repeated reads as reinforcement.
+- **Finding novelty metrics** — `/api/library/quality` now reports chained-finding novelty coverage and how many high-confidence findings are actually novel enough to justify their score.
+- **Finding authority metrics** — `/api/library/quality` now reports authoritative and primary source coverage, plus how many high-confidence findings are backed by authoritative sources instead of only raw URL diversity.
+- **Compounding evidence gate** — Weekly compounding now requires each persisted topic insight to cite at least two supporting findings and uses similarity-based matching to update existing insights instead of accumulating near-duplicates.
+- **Learning noise filter** — Background learning now drops duplicate and low-signal “activity” facts before writing beliefs, while still keeping extracted-fact counts in run history for diagnostics.
 
 ### Fixed
 - **Research job retry on abort** — "This operation was aborted" from LLM providers is now treated as a transient error, triggering automatic retry (up to 2 times) instead of permanent failure.

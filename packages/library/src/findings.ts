@@ -1,5 +1,7 @@
 import type { Storage, Migration } from "@personal-ai/core";
 import { nanoid } from "nanoid";
+import { enrichResearchSource } from "./source-quality.js";
+import type { ResearchSourceQuality } from "./source-quality.js";
 
 // ---- Types ----
 
@@ -8,6 +10,8 @@ export interface ResearchFindingSource {
   title: string;
   fetchedAt: string;
   relevance: number;
+  quality?: ResearchSourceQuality;
+  authorityScore?: number;
 }
 
 export interface ResearchFinding {
@@ -124,7 +128,7 @@ function rowToFinding(row: FindingRow): ResearchFinding {
     goal: row.goal,
     domain: row.domain,
     summary: row.summary,
-    sources: JSON.parse(row.sources) as ResearchFindingSource[],
+    sources: (JSON.parse(row.sources) as ResearchFindingSource[]).map((source) => enrichResearchSource(source)),
     confidence: row.confidence,
     agentName: row.agent_name,
     depthLevel: row.depth_level as ResearchFinding["depthLevel"],
@@ -186,6 +190,7 @@ function normalize(s: string): string {
 export function createFinding(storage: Storage, input: CreateFindingInput): ResearchFinding {
   const id = nanoid();
   const now = new Date().toISOString();
+  const sources = input.sources.map((source) => enrichResearchSource(source));
 
   storage.run(
     `INSERT INTO research_findings (id, watch_id, digest_id, goal, domain, summary, structured_data, sources, confidence, agent_name, depth_level, previous_finding_id, delta, created_at, updated_at)
@@ -198,7 +203,7 @@ export function createFinding(storage: Storage, input: CreateFindingInput): Rese
       input.domain,
       input.summary,
       input.structuredData ? JSON.stringify(input.structuredData) : null,
-      JSON.stringify(input.sources),
+      JSON.stringify(sources),
       input.confidence,
       input.agentName,
       input.depthLevel,

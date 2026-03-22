@@ -11,6 +11,7 @@ import {
 } from "../briefing.js";
 import { rateDigest } from "../digest-ratings.js";
 import { ingestCorrection } from "@personal-ai/library";
+import { recordProductEvent } from "@personal-ai/core";
 
 const correctSchema = z.object({
   beliefId: z.string().min(1, "beliefId is required"),
@@ -71,7 +72,27 @@ export function registerDigestRoutes(app: FastifyInstance, { ctx, backgroundDisp
       digestId: request.params.id,
       note: body.note,
     });
-    return result;
+    if (!result.corrected) {
+      const message = result.error ?? "Failed to correct belief";
+      const normalized = message.toLowerCase();
+      const status = normalized.includes("not found") || normalized.includes("no match found")
+        ? 404
+        : normalized.includes("ambiguous") || normalized.includes("must change")
+          ? 400
+          : 500;
+      return reply.status(status).send({ error: message });
+    }
+
+    recordProductEvent(ctx.storage, {
+      eventType: "belief_corrected",
+      channel: "web",
+      programId: typeof briefing.programId === "string" ? briefing.programId : null,
+      briefId: request.params.id,
+      beliefId: result.replacementBeliefId ?? body.beliefId,
+      threadId: typeof briefing.threadId === "string" ? briefing.threadId : null,
+    });
+
+    return { ok: true };
   });
 
   // Rate a digest

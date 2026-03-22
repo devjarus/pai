@@ -746,6 +746,44 @@ describe("memory routes", () => {
     );
   });
 
+  it("POST /api/library/memories/:id/correct passes briefId through to memory correction", async () => {
+    vi.mocked(correctBelief).mockResolvedValue({
+      invalidatedBelief: {
+        ...MOCK_BELIEF,
+        status: "invalidated",
+        superseded_by: "belief_new789",
+      },
+      replacementBelief: {
+        ...MOCK_BELIEF,
+        id: "belief_new789",
+        statement: "User prefers brief blocker-only updates",
+        supersedes: MOCK_BELIEF.id,
+      },
+      correctionEpisode: {
+        id: "ep_124",
+        timestamp: "2026-03-11T12:05:00Z",
+        context: "User corrected belief",
+        action: "Corrected belief: User prefers Vitest over Jest",
+        outcome: "User prefers brief blocker-only updates",
+        tags_json: "[\"belief-correction\",\"memory\"]",
+      },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/library/memories/${MOCK_BELIEF.id}/correct`,
+      payload: { statement: "User prefers brief blocker-only updates", briefId: "brief-123" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(correctBelief).toHaveBeenCalledWith(
+      serverCtx.ctx.storage,
+      serverCtx.ctx.llm,
+      MOCK_BELIEF.id,
+      { statement: "User prefers brief blocker-only updates", note: undefined, briefId: "brief-123" },
+    );
+  });
+
   it("POST /api/library/memories/:id/correct returns 400 for unchanged statements", async () => {
     vi.mocked(correctBelief).mockRejectedValue(new Error("Correction must change the belief statement"));
 
@@ -758,6 +796,20 @@ describe("memory routes", () => {
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.payload);
     expect(body.error).toContain("must change");
+  });
+
+  it("POST /api/library/memories/:id/correct returns 404 when the target belief is missing", async () => {
+    vi.mocked(correctBelief).mockRejectedValue(new Error(`No match found for "${MOCK_BELIEF.id}" in beliefs.`));
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/library/memories/${MOCK_BELIEF.id}/correct`,
+      payload: { statement: "User prefers brief blocker-only updates" },
+    });
+
+    expect(res.statusCode).toBe(404);
+    const body = JSON.parse(res.payload);
+    expect(body.error).toContain("No match found");
   });
 
   // -- GET /api/library/memories/search ------------------------------------

@@ -675,6 +675,8 @@ export interface LearningRun {
   researchCount: number;
   tasksCount: number;
   knowledgeCount: number;
+  findingsCount: number;
+  digestsCount: number;
   factsExtracted: number;
   beliefsCreated: number;
   beliefsReinforced: number;
@@ -1028,9 +1030,47 @@ export function getProfile(): Promise<ProfileSummary> {
 
 export interface QualityScore {
   score: number;
-  memory: { total: number; neverAccessed: number; reinforced: number; utilization: number; reinforcementRate: number };
-  feedback: { digestsRated: number; avgRating: number | null; corrections: number; activity: number };
-  knowledge: { insights: number; findings: number; watchesActive: number; growth: number };
+  learning: { score: number; recentRuns: number; signalBearingRuns: number; successRate: number; acceptanceRate: number; yieldRate: number };
+  memory: {
+    score: number;
+    total: number;
+    neverAccessed: number;
+    reinforced: number;
+    invalidated: number;
+    utilization: number;
+    reinforcementRate: number;
+    provenanceCoverage: number;
+    invalidationRate: number;
+  };
+  feedback: {
+    score: number;
+    totalDigests: number;
+    digestsRated: number;
+    avgRating: number | null;
+    corrections: number;
+    activity: number;
+  };
+  knowledge: {
+    score: number;
+    insights: number;
+    findings: number;
+    chainedFindings: number;
+    findingsWithSources: number;
+    findingSourceCoverage: number;
+    authoritativeFindingCoverage: number;
+    primaryFindingCoverage: number;
+    noveltyCoverage: number;
+    highConfidenceFindings: number;
+    highConfidenceNovelFindings: number;
+    highConfidenceAuthoritativeFindings: number;
+    supportedHighConfidenceFindings: number;
+    watchesActive: number;
+    eligibleWatches: number;
+    coveredWatches: number;
+    coverage: number;
+    evidenceCoverage: number;
+    growth: number;
+  };
 }
 
 export function getQualityScore(): Promise<QualityScore> {

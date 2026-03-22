@@ -5,6 +5,15 @@ import { registerDigestRoutes } from "../src/routes/digests.js";
 import type { ServerContext } from "../src/index.js";
 
 // ---------------------------------------------------------------------------
+// Mock @personal-ai/core
+// ---------------------------------------------------------------------------
+const mockRecordProductEvent = vi.fn();
+
+vi.mock("@personal-ai/core", () => ({
+  recordProductEvent: (...args: unknown[]) => mockRecordProductEvent(...args),
+}));
+
+// ---------------------------------------------------------------------------
 // Mock ../src/briefing.js
 // ---------------------------------------------------------------------------
 const mockGetLatestBriefing = vi.fn();
@@ -235,7 +244,7 @@ describe("digest routes", () => {
 
   it("POST /api/digests/:id/correct corrects a belief", async () => {
     mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
-    mockIngestCorrection.mockResolvedValue({ ok: true, beliefId: "b1" });
+    mockIngestCorrection.mockResolvedValue({ corrected: true, replacementBeliefId: "belief-new-1" });
 
     const res = await app.inject({
       method: "POST",
@@ -247,6 +256,61 @@ describe("digest routes", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
+    expect(mockIngestCorrection).toHaveBeenCalledWith(
+      serverCtx.ctx.storage,
+      serverCtx.ctx.llm,
+      {
+        beliefId: "b1",
+        correctedStatement: "Node 22 is actually already supported",
+        digestId: "briefing-1",
+        note: undefined,
+      },
+    );
+    expect(mockRecordProductEvent).toHaveBeenCalledWith(
+      serverCtx.ctx.storage,
+      expect.objectContaining({
+        eventType: "belief_corrected",
+        briefId: "briefing-1",
+        beliefId: "belief-new-1",
+        channel: "web",
+      }),
+    );
+  });
+
+  it("POST /api/digests/:id/correct returns 400 when correction is invalid", async () => {
+    mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
+    mockIngestCorrection.mockResolvedValue({ corrected: false, error: "Correction must change the belief statement" });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/digests/briefing-1/correct",
+      payload: {
+        beliefId: "b1",
+        correctedStatement: "Node 22 is actually already supported",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("must change");
+    expect(mockRecordProductEvent).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/digests/:id/correct returns 404 when the target belief is missing", async () => {
+    mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
+    mockIngestCorrection.mockResolvedValue({ corrected: false, error: "Belief not found" });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/digests/briefing-1/correct",
+      payload: {
+        beliefId: "missing-belief",
+        correctedStatement: "Node 22 is actually already supported",
+      },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Belief not found");
+    expect(mockRecordProductEvent).not.toHaveBeenCalled();
   });
 
   it("POST /api/digests/:id/correct returns 404 for unknown digest", async () => {

@@ -10,6 +10,8 @@ export type { KnowledgeSource, KnowledgeChunk, KnowledgeSearchResult } from "@pe
 // Findings
 export { findingsMigrations, createFinding, getFinding, listFindings, listFindingsForWatch, deleteFinding, cleanupFindings, computeFindingDelta } from "./findings.js";
 export type { ResearchFinding, CreateFindingInput, ResearchFindingSource } from "./findings.js";
+export { assessResearchSource, enrichResearchSource, normalizeResearchSourceUrl, summarizeResearchSources } from "./source-quality.js";
+export type { ResearchSourceQuality, ResearchSourceAssessment, ResearchSourceSummary } from "./source-quality.js";
 
 // Finding embeddings
 export { storeFindingEmbedding, getFindingEmbedding, embedFinding } from "./findings-embed.js";

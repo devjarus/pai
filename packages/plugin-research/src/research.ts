@@ -15,7 +15,9 @@ import {
 } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, appendMessages, learnFromContent } from "@personal-ai/core";
 import { getProgramById, recordProgramEvaluation } from "@personal-ai/plugin-schedules";
-import { ingestResearchResult } from "@personal-ai/library";
+import { ingestResearchResult, computeFindingDelta } from "@personal-ai/library";
+import type { ResearchFinding, ResearchFindingSource } from "@personal-ai/library";
+import { enrichResearchSource, normalizeResearchSourceUrl, summarizeResearchSources } from "@personal-ai/library";
 
 import type { ResearchContext } from "./types.js";
 import { RESEARCH_LLM_TIMEOUT } from "./types.js";
@@ -36,6 +38,270 @@ export {
   cancelAllRunningResearchJobs,
   clearCompletedJobs,
 } from "./repository.js";
+
+function clampConfidence(value: number): number {
+  if (!Number.isFinite(value)) return 0.35;
+  return Math.max(0.2, Math.min(0.95, Math.round(value * 100) / 100));
+}
+
+function normalizedSourceSet(sources: ResearchFindingSource[]): Set<string> {
+  return new Set(
+    sources
+      .map((source) => normalizeResearchSourceUrl(source.url))
+      .filter((url): url is string => !!url),
+  );
+}
+
+function calculateNoveltySignals(
+  previousFinding: ResearchFinding | undefined,
+  summary: string,
+  sources: ResearchFindingSource[],
+): {
+  delta?: { changed: string[]; significance: number };
+  sourceNovelty: number;
+  deltaSignificance: number;
+  noveltyScore: number;
+} {
+  if (!previousFinding) {
+    return {
+      sourceNovelty: 1,
+      deltaSignificance: 1,
+      noveltyScore: 1,
+    };
+  }
+
+  const delta = computeFindingDelta(previousFinding.summary, summary);
+  const currentSources = normalizedSourceSet(sources);
+  const previousSources = normalizedSourceSet(previousFinding.sources);
+  const newSources = [...currentSources].filter((source) => !previousSources.has(source)).length;
+  const sourceNovelty = currentSources.size > 0 ? newSources / currentSources.size : 0;
+  const deltaSignificance = Math.max(0, Math.min(1, delta.significance));
+  const noveltyScore = currentSources.size > 0
+    ? deltaSignificance * 0.65 + sourceNovelty * 0.35
+    : deltaSignificance;
+
+  return {
+    delta,
+    sourceNovelty,
+    deltaSignificance,
+    noveltyScore,
+  };
+}
+
+function pushSource(
+  sources: Map<string, ResearchFindingSource>,
+  url: string,
+  title: string | undefined,
+  fetchedAt: string,
+  relevance = 0.8,
+): void {
+  const normalizedUrl = normalizeResearchSourceUrl(url);
+  if (!normalizedUrl) return;
+  if (sources.has(normalizedUrl)) return;
+  sources.set(normalizedUrl, enrichResearchSource({
+    url: normalizedUrl,
+    title: title?.trim() || new URL(normalizedUrl).hostname,
+    fetchedAt,
+    relevance,
+  }));
+}
+
+function extractStructuredSources(
+  structuredResult: string | undefined,
+  fetchedAt: string,
+): ResearchFindingSource[] {
+  if (!structuredResult) return [];
+
+  const sources = new Map<string, ResearchFindingSource>();
+
+  try {
+    const parsed = JSON.parse(structuredResult) as Record<string, unknown>;
+    const collections = [
+      parsed.sources,
+      parsed.articles,
+      parsed.findings,
+      parsed.results,
+    ];
+
+    for (const collection of collections) {
+      if (!Array.isArray(collection)) continue;
+      for (const item of collection) {
+        if (typeof item === "string") {
+          pushSource(sources, item, undefined, fetchedAt, 0.75);
+          continue;
+        }
+        if (!item || typeof item !== "object") continue;
+        const candidate = item as Record<string, unknown>;
+        const url = typeof candidate.url === "string"
+          ? candidate.url
+          : typeof candidate.link === "string"
+            ? candidate.link
+            : null;
+        if (!url) continue;
+        const title = typeof candidate.title === "string"
+          ? candidate.title
+          : typeof candidate.name === "string"
+            ? candidate.name
+            : typeof candidate.source === "string"
+              ? candidate.source
+              : undefined;
+        pushSource(sources, url, title, fetchedAt, 0.85);
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  return [...sources.values()];
+}
+
+function extractMarkdownSources(
+  report: string,
+  fetchedAt: string,
+): ResearchFindingSource[] {
+  const sources = new Map<string, ResearchFindingSource>();
+
+  for (const match of report.matchAll(/\[([^\]]{1,160})\]\((https?:\/\/[^)\s]+)\)/g)) {
+    const url = match[2];
+    if (!url) continue;
+    pushSource(sources, url, match[1], fetchedAt, 0.75);
+  }
+
+  for (const match of report.matchAll(/\bhttps?:\/\/[^\s)<>"']+/g)) {
+    pushSource(sources, match[0], undefined, fetchedAt, 0.65);
+  }
+
+  return [...sources.values()];
+}
+
+function extractEvidenceSources(
+  evidence: Array<{ sourceUrl?: string; sourceLabel?: string; title?: string }>,
+  report: string,
+  structuredResult: string | undefined,
+): ResearchFindingSource[] {
+  const fetchedAt = new Date().toISOString();
+  const sources = new Map<string, ResearchFindingSource>();
+
+  for (const item of evidence) {
+    if (item.sourceUrl) {
+      pushSource(sources, item.sourceUrl, item.title ?? item.sourceLabel, fetchedAt, 0.85);
+      continue;
+    }
+    if (item.sourceLabel?.startsWith("http")) {
+      pushSource(sources, item.sourceLabel, item.title, fetchedAt, 0.8);
+    }
+  }
+
+  for (const source of extractStructuredSources(structuredResult, fetchedAt)) {
+    pushSource(sources, source.url, source.title, source.fetchedAt, source.relevance);
+  }
+  for (const source of extractMarkdownSources(report, fetchedAt)) {
+    pushSource(sources, source.url, source.title, source.fetchedAt, source.relevance);
+  }
+
+  return [...sources.values()].slice(0, 8);
+}
+
+function extractStructuredConfidence(structuredResult: string | undefined): number | undefined {
+  if (!structuredResult) return undefined;
+  try {
+    const parsed = JSON.parse(structuredResult) as Record<string, unknown>;
+    const raw = typeof parsed.confidence === "number" ? parsed.confidence : null;
+    if (raw == null || Number.isNaN(raw)) return undefined;
+    return clampConfidence(raw > 1 ? raw / 100 : raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function confidenceFromLabel(label: "low" | "medium" | "high" | undefined): number {
+  switch (label) {
+    case "high":
+      return 0.8;
+    case "medium":
+      return 0.65;
+    case "low":
+      return 0.45;
+    default:
+      return 0.55;
+  }
+}
+
+function calculateResearchConfidence(input: {
+  summary: string;
+  sources: ResearchFindingSource[];
+  searchesUsed: number;
+  pagesLearned: number;
+  budgetMaxSearches: number;
+  budgetMaxPages: number;
+  structuredResult: string | undefined;
+  recommendationConfidence: "low" | "medium" | "high" | undefined;
+  previousFinding?: ResearchFinding;
+}): number {
+  const sourceSummary = summarizeResearchSources(input.sources);
+  const distinctSources = sourceSummary.distinctUrls;
+  const searchRatio = input.budgetMaxSearches > 0 ? Math.min(1, input.searchesUsed / input.budgetMaxSearches) : 0;
+  const pageRatio = input.budgetMaxPages > 0 ? Math.min(1, input.pagesLearned / input.budgetMaxPages) : 0;
+  const toolCoverage = searchRatio * 0.55 + pageRatio * 0.45;
+  const structuredConfidence = extractStructuredConfidence(input.structuredResult)
+    ?? confidenceFromLabel(input.recommendationConfidence);
+  const novelty = calculateNoveltySignals(input.previousFinding, input.summary, input.sources);
+  const diversityScore = sourceSummary.distinctDomains >= 4
+    ? 0.95
+    : sourceSummary.distinctDomains === 3
+      ? 0.85
+      : sourceSummary.distinctDomains === 2
+        ? 0.72
+        : sourceSummary.distinctDomains === 1
+          ? 0.55
+          : 0.2;
+  const authoritativeCoverage = sourceSummary.totalSources > 0
+    ? sourceSummary.authoritativeSources / sourceSummary.totalSources
+    : 0;
+  const sourceScore = Math.min(
+    0.98,
+    diversityScore * 0.35
+      + sourceSummary.averageAuthority * 0.55
+      + authoritativeCoverage * 0.1
+      + (sourceSummary.primarySources > 0 ? 0.05 : 0),
+  );
+  const summaryScore = input.summary.length >= 140 ? 0.75 : input.summary.length >= 80 ? 0.6 : 0.45;
+  const blended = 0.08
+    + sourceScore * 0.37
+    + toolCoverage * 0.22
+    + structuredConfidence * 0.13
+    + novelty.noveltyScore * 0.2
+    + summaryScore * 0.05;
+
+  let cap = sourceSummary.distinctDomains >= 4
+    ? 0.95
+    : sourceSummary.distinctDomains === 3
+      ? 0.9
+      : sourceSummary.distinctDomains === 2
+        ? 0.78
+        : sourceSummary.distinctDomains === 1
+          ? 0.62
+          : 0.45;
+
+  if (input.searchesUsed === 0 && input.pagesLearned === 0) cap = Math.min(cap, 0.4);
+  if (input.summary.length < 60) cap = Math.min(cap, 0.55);
+  if (sourceSummary.authoritativeSources === 0) cap = Math.min(cap, 0.58);
+  if (sourceSummary.lowQualitySources > 0 && sourceSummary.lowQualitySources >= sourceSummary.totalSources / 2 && sourceSummary.authoritativeSources === 0) {
+    cap = Math.min(cap, 0.5);
+  }
+  if (sourceSummary.primarySources === 0 && sourceSummary.averageAuthority < 0.75 && sourceSummary.distinctDomains <= 2) {
+    cap = Math.min(cap, 0.68);
+  }
+  if (input.previousFinding) {
+    if (novelty.noveltyScore < 0.12) cap = Math.min(cap, 0.48);
+    else if (novelty.noveltyScore < 0.25) cap = Math.min(cap, 0.58);
+    else if (novelty.noveltyScore < 0.4) cap = Math.min(cap, 0.68);
+    if (distinctSources === 0 && novelty.deltaSignificance < 0.15) cap = Math.min(cap, 0.42);
+    if (novelty.sourceNovelty === 0 && novelty.deltaSignificance < 0.1) cap = Math.min(cap, 0.45);
+  }
+
+  return clampConfidence(Math.min(blended, cap));
+}
 
 // ---- Background Execution ----
 
@@ -362,25 +628,6 @@ export async function runResearchInBackground(
       }
       // Ingest findings into Library so future runs can build on them
       try {
-        // Extract actual sources from the brief's evidence section
-        // Extract sources from evidence — try sourceUrl first, fall back to sourceLabel if it looks like a URL
-        const evidenceSources = (briefSection.evidence || [])
-          .filter((e: { sourceUrl?: string; sourceLabel?: string }) => e.sourceUrl || (e.sourceLabel && e.sourceLabel.startsWith("http")))
-          .map((e: { sourceUrl?: string; title?: string; sourceLabel?: string }) => ({
-            url: e.sourceUrl || e.sourceLabel || "",
-            title: e.title || e.sourceLabel || "Source",
-            fetchedAt: new Date().toISOString(),
-            relevance: 0.8,
-          }))
-          .filter((s: { url: string }) => s.url.length > 0);
-
-        // Derive confidence from research completeness
-        const budgetUsed = (job.searchesUsed || 0) + (job.pagesLearned || 0);
-        const budgetTotal = (job.budgetMaxSearches || 5) + (job.budgetMaxPages || 8);
-        const researchConfidence = budgetTotal > 0
-          ? Math.min(0.95, 0.5 + 0.45 * (budgetUsed / budgetTotal))
-          : 0.6;
-
         // Extract clean summary — handle JSON objects, strip LLM preamble
         let summary = "";
         const rec = briefSection.recommendation;
@@ -407,18 +654,37 @@ export async function runResearchInBackground(
         // Truncate to reasonable length
         if (summary.length > 500) summary = summary.slice(0, 500);
 
-        // Determine actual depth from budget
-        const actualDepth = (job.budgetMaxSearches || 5) <= 2 ? "quick"
-          : (job.budgetMaxSearches || 5) >= 10 ? "deep"
-          : "standard";
-
-        // Find previous finding for this watch to link delta chain
+        const completedJob = getResearchJob(ctx.storage, jobId) ?? job;
+        const evidenceSources = extractEvidenceSources(
+          briefSection.evidence ?? [],
+          presentation.report,
+          presentation.structuredResult,
+        );
+        let previousFinding: ResearchFinding | undefined;
         let previousFindingId: string | undefined;
         if (job.sourceScheduleId) {
           const { listFindingsForWatch } = await import("@personal-ai/library");
           const prev = listFindingsForWatch(ctx.storage, job.sourceScheduleId);
-          if (prev.length > 0 && prev[0]) previousFindingId = prev[0].id;
+          previousFinding = prev[0];
+          previousFindingId = previousFinding?.id;
         }
+        const novelty = calculateNoveltySignals(previousFinding, summary, evidenceSources);
+        const researchConfidence = calculateResearchConfidence({
+          summary,
+          sources: evidenceSources,
+          searchesUsed: completedJob.searchesUsed || 0,
+          pagesLearned: completedJob.pagesLearned || 0,
+          budgetMaxSearches: completedJob.budgetMaxSearches || 0,
+          budgetMaxPages: completedJob.budgetMaxPages || 0,
+          structuredResult: presentation.structuredResult,
+          recommendationConfidence: briefSection.recommendation?.confidence,
+          previousFinding,
+        });
+
+        // Determine actual depth from budget
+        const actualDepth = (job.budgetMaxSearches || 5) <= 2 ? "quick"
+          : (job.budgetMaxSearches || 5) >= 10 ? "deep"
+          : "standard";
 
         ingestResearchResult(ctx.storage, {
           goal: stripEnrichmentFromGoal(job.goal),
@@ -431,7 +697,15 @@ export async function runResearchInBackground(
           watchId: job.sourceScheduleId ?? undefined,
           digestId: briefingId ?? undefined,
           previousFindingId,
+          delta: novelty.delta,
         });
+
+        const updatedJob = getResearchJob(ctx.storage, jobId);
+        const currentSteps: string[] = updatedJob?.stepsLog ?? [];
+        currentSteps.push(
+          `Evidence calibration: sources=${evidenceSources.length}, searches=${completedJob.searchesUsed}/${completedJob.budgetMaxSearches}, pages=${completedJob.pagesLearned}/${completedJob.budgetMaxPages}, novelty=${novelty.noveltyScore.toFixed(2)}, delta=${novelty.deltaSignificance.toFixed(2)}, confidence=${researchConfidence.toFixed(2)}`,
+        );
+        updateResearchJob(ctx.storage, jobId, { steps_log: JSON.stringify(currentSteps) });
       } catch (ingestErr) {
         ctx.logger.warn(`Failed to ingest research finding: ${ingestErr instanceof Error ? ingestErr.message : String(ingestErr)}`);
       }

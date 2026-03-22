@@ -70,6 +70,8 @@ describe("ingestion", () => {
     });
 
     expect(result.corrected).toBe(true);
+    expect(result.replacementBeliefId).toBeTruthy();
+    expect(result.invalidatedBeliefId).toBe(beliefId);
 
     // Verify the old belief was invalidated
     const rows = storage.query<{ status: string }>(
@@ -79,6 +81,61 @@ describe("ingestion", () => {
     expect(rows[0].status).toBe("invalidated");
   });
 
+  it("ingestCorrection preserves digest lineage when digestId is provided", async () => {
+    storage.run(`
+      CREATE TABLE IF NOT EXISTS brief_beliefs (
+        id TEXT PRIMARY KEY,
+        brief_id TEXT NOT NULL,
+        belief_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'assumption',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(brief_id, belief_id)
+      );
+    `);
+
+    const beliefId = "test-belief-002";
+    storage.run(
+      `INSERT INTO beliefs (id, statement, confidence, status, type, importance, stability, origin, correction_state, sensitive)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [beliefId, "User wants long narrative updates", 0.7, "active", "preference", 6, 1.0, "inferred", "active", 0],
+    );
+
+    const result = await ingestCorrection(storage, stubLLMClient(), {
+      beliefId,
+      correctedStatement: "User wants concise blocker-focused updates",
+      digestId: "brief-42",
+    });
+
+    expect(result.corrected).toBe(true);
+    expect(result.replacementBeliefId).toBeTruthy();
+
+    const briefLinks = storage.query<{ brief_id: string; belief_id: string; role: string }>(
+      "SELECT brief_id, belief_id, role FROM brief_beliefs WHERE brief_id = ?",
+      ["brief-42"],
+    );
+    expect(briefLinks).toEqual([
+      {
+        brief_id: "brief-42",
+        belief_id: result.replacementBeliefId as string,
+        role: "correction-input",
+      },
+    ]);
+
+    const provenance = storage.query<{ source_kind: string; source_id: string | null; relation: string }>(
+      "SELECT source_kind, source_id, relation FROM belief_provenance WHERE belief_id = ?",
+      [result.replacementBeliefId],
+    );
+    expect(provenance).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_kind: "briefing",
+          source_id: "brief-42",
+          relation: "prompted-correction",
+        }),
+      ]),
+    );
+  });
+
   it("ingestCorrection returns corrected:false when belief does not exist", async () => {
     const result = await ingestCorrection(storage, stubLLMClient(), {
       beliefId: "nonexistent",
@@ -86,5 +143,6 @@ describe("ingestion", () => {
     });
 
     expect(result.corrected).toBe(false);
+    expect(result.error).toContain("not found");
   });
 });
