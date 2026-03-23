@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createStorage, memoryMigrations, productEventMigrations, recordProductEvent } from "@personal-ai/core";
 import { scheduleMigrations } from "@personal-ai/plugin-schedules";
+import { taskMigrations } from "@personal-ai/plugin-tasks";
 import { createFinding, createInsight, findingsMigrations, insightMigrations } from "@personal-ai/library";
 import { digestRatingsMigrations, rateDigest } from "../src/digest-ratings.js";
 import { briefingMigrations } from "../src/briefing.js";
@@ -21,6 +22,7 @@ describe("getSystemQualityScore", () => {
     storage.migrate("product_events", productEventMigrations);
     storage.migrate("learning", learningMigrations);
     storage.migrate("schedules", scheduleMigrations);
+    storage.migrate("tasks", taskMigrations);
     storage.migrate("findings", findingsMigrations);
     storage.migrate("topic_insights", insightMigrations);
     storage.migrate("briefings", briefingMigrations);
@@ -58,12 +60,23 @@ describe("getSystemQualityScore", () => {
       ["b4", "Old assumption", 0.4, "invalidated", "factual", 5, "owner", "inferred", "2026-03-01T00:00:00Z", "invalidated", 0, 0],
     );
     storage.run(
+      `INSERT INTO beliefs (
+        id, statement, confidence, status, type, importance, subject, origin, freshness_at, correction_state, sensitive, access_count, supersedes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ["b5", "Updated assumption", 0.86, "active", "factual", 5, "owner", "user-said", "2026-03-21T09:30:00Z", "confirmed", 0, 1, "b4"],
+    );
+    storage.run("UPDATE beliefs SET superseded_by = ? WHERE id = ?", ["b5", "b4"]);
+    storage.run(
       "INSERT INTO belief_provenance (id, belief_id, source_kind, source_id, source_label, relation) VALUES (?, ?, ?, ?, ?, ?)",
       ["bp1", "b1", "episode", "ep1", "Episode 1", "observed"],
     );
     storage.run(
       "INSERT INTO belief_provenance (id, belief_id, source_kind, source_id, source_label, relation) VALUES (?, ?, ?, ?, ?, ?)",
       ["bp2", "b2", "episode", "ep2", "Episode 2", "observed"],
+    );
+    storage.run(
+      "INSERT INTO belief_provenance (id, belief_id, source_kind, source_id, source_label, relation) VALUES (?, ?, ?, ?, ?, ?)",
+      ["bp3", "b5", "briefing", "brief-2", "Digest correction", "prompted-correction"],
     );
 
     const successRun = insertLearningRun(storage, "2026-03-20T10:00:00Z");
@@ -99,11 +112,45 @@ describe("getSystemQualityScore", () => {
       "INSERT INTO briefings (id, generated_at, sections, status, type, source_kind) VALUES (?, ?, ?, ?, ?, ?)",
       ["brief-3", "2026-03-22T09:00:00Z", "{}", "ready", "daily", "maintenance"],
     );
+    recordProductEvent(storage, {
+      eventType: "brief_opened",
+      occurredAt: "2026-03-20T09:05:00Z",
+      briefId: "brief-1",
+    });
+    recordProductEvent(storage, {
+      eventType: "brief_opened",
+      occurredAt: "2026-03-21T09:05:00Z",
+      briefId: "brief-2",
+    });
+    recordProductEvent(storage, {
+      eventType: "recommendation_accepted",
+      occurredAt: "2026-03-20T09:10:00Z",
+      briefId: "brief-1",
+    });
     rateDigest(storage, "brief-1", 4, "Useful");
     recordProductEvent(storage, {
       eventType: "belief_corrected",
+      occurredAt: "2026-03-21T10:00:00Z",
       briefId: "brief-2",
-      beliefId: "b4",
+      beliefId: "b5",
+    });
+    storage.run(
+      "INSERT INTO brief_beliefs (id, brief_id, belief_id, role) VALUES (?, ?, ?, ?)",
+      ["bb-1", "brief-3", "b5", "assumption"],
+    );
+    storage.run(
+      "INSERT INTO tasks (id, title, description, status, priority, created_at, completed_at, source_type, source_id, source_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ["task-1", "Follow updated assumption", null, "done", "medium", "2026-03-20T09:15:00Z", "2026-03-20T12:00:00Z", "briefing", "brief-1", "Brief 1"],
+    );
+    storage.run(
+      "INSERT INTO tasks (id, title, description, status, priority, created_at, completed_at, source_type, source_id, source_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ["task-2", "Re-check platform choice", null, "open", "high", "2026-03-21T09:15:00Z", null, "briefing", "brief-2", "Brief 2"],
+    );
+    recordProductEvent(storage, {
+      eventType: "brief_action_completed",
+      occurredAt: "2026-03-20T12:00:00Z",
+      briefId: "brief-1",
+      actionId: "task-1",
     });
 
     storage.run(
@@ -157,8 +204,8 @@ describe("getSystemQualityScore", () => {
     const quality = getSystemQualityScore(storage);
 
     expect(quality.memory.utilization).toBe(100);
-    expect(quality.memory.reinforcementRate).toBe(67);
-    expect(quality.memory.provenanceCoverage).toBe(67);
+    expect(quality.memory.reinforcementRate).toBe(75);
+    expect(quality.memory.provenanceCoverage).toBe(75);
     expect(quality.learning.successRate).toBe(50);
     expect(quality.learning.acceptanceRate).toBe(75);
     expect(quality.feedback.activity).toBe(67);
@@ -174,6 +221,16 @@ describe("getSystemQualityScore", () => {
     expect(quality.knowledge.highConfidenceNovelFindings).toBe(2);
     expect(quality.knowledge.highConfidenceAuthoritativeFindings).toBe(2);
     expect(quality.knowledge.supportedHighConfidenceFindings).toBe(2);
+    expect(quality.domains.trust.metrics.find((metric) => metric.key === "provenanceCoverage")?.value).toBe(75);
+    expect(quality.domains.loopEfficacy.metrics.find((metric) => metric.key === "eligibleWatchCoverage")?.value).toBe(100);
+    expect(quality.domains.reliability.metrics.find((metric) => metric.key === "failedSignalRunRate")?.value).toBe(50);
+    expect(quality.domains.userValue.metrics.find((metric) => metric.key === "averageDigestRating")?.value).toBe(80);
+    expect(quality.domains.userValue.metrics.find((metric) => metric.key === "recommendationAcceptanceRate")?.value).toBe(50);
+    expect(quality.domains.userValue.metrics.find((metric) => metric.key === "briefActionCompletionRate")?.value).toBe(50);
+    expect(quality.domains.userValue.metrics.find((metric) => metric.key === "correctionCarryForwardRate")?.value).toBe(100);
+    expect(quality.domains.userValue.metrics.find((metric) => metric.key === "trustedDecisionLoopRate")?.value).toBe(100);
+    expect(quality.blockingDomains).toEqual([]);
+    expect(quality.status).toBe("insufficient_data");
     expect(quality.score).toBeGreaterThan(0);
   });
 
@@ -249,6 +306,56 @@ describe("getSystemQualityScore", () => {
     expect(quality.knowledge.coverage).toBe(100);
   });
 
+  it("caps the overall score when a sufficiently sampled domain is failing", () => {
+    for (let i = 0; i < 5; i++) {
+      storage.run(
+        `INSERT INTO beliefs (
+          id, statement, confidence, status, type, importance, subject, origin, freshness_at, correction_state, sensitive, access_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [`active-${i}`, `Active belief ${i + 1}`, 0.82, "active", "factual", 7, "owner", "inferred", "2026-03-01T00:00:00Z", "active", 0, 3],
+      );
+      storage.run(
+        `INSERT INTO beliefs (
+          id, statement, confidence, status, type, importance, subject, origin, freshness_at, correction_state, sensitive, access_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [`invalid-${i}`, `Invalidated belief ${i + 1}`, 0.3, "invalidated", "factual", 5, "owner", "inferred", "2026-03-01T00:00:00Z", "invalidated", 0, 0],
+      );
+    }
+
+    for (let i = 0; i < 3; i++) {
+      const runId = insertLearningRun(storage, `2026-03-2${i}T10:00:00Z`);
+      updateLearningRun(storage, runId, {
+        status: i === 0 ? "done" : "error",
+        completedAt: `2026-03-2${i}T10:01:00Z`,
+        threadsCount: 1,
+        messagesCount: 2,
+        factsExtracted: i === 0 ? 2 : 0,
+        beliefsCreated: i === 0 ? 1 : 0,
+        error: i === 0 ? undefined : "provider timeout",
+        durationMs: 1_000,
+      });
+    }
+
+    for (let i = 0; i < 3; i++) {
+      createFinding(storage, {
+        goal: "Reliability checks",
+        domain: "general",
+        summary: `Finding ${i + 1}`,
+        confidence: 0.6,
+        agentName: "test",
+        depthLevel: "standard",
+        sources: [{ url: `https://example.com/source-${i}`, title: "Source", fetchedAt: "2026-03-20T09:00:00Z", relevance: 0.8 }],
+      });
+    }
+
+    const quality = getSystemQualityScore(storage);
+
+    expect(quality.domains.reliability.status).toBe("bad");
+    expect(quality.blockingDomains).toEqual(["reliability"]);
+    expect(quality.status).toBe("bad");
+    expect(quality.score).toBeLessThanOrEqual(60);
+  });
+
   it("does not give sparse low-confidence datasets free high-confidence quality credit", () => {
     storage.run(
       "INSERT INTO scheduled_jobs (id, label, type, goal, interval_hours, next_run_at, status) VALUES (?, ?, ?, ?, ?, datetime('now'), 'active')",
@@ -271,7 +378,10 @@ describe("getSystemQualityScore", () => {
     const quality = getSystemQualityScore(storage);
 
     expect(quality.knowledge.highConfidenceFindings).toBe(0);
+    expect(quality.blockingDomains).toEqual([]);
+    expect(quality.status).toBe("insufficient_data");
     expect(quality.knowledge.score).toBeLessThan(40);
+    expect(quality.score).toBe(0);
   });
 
   it("gracefully handles missing optional quality tables", () => {
@@ -288,6 +398,9 @@ describe("getSystemQualityScore", () => {
       expect(quality.knowledge.watchesActive).toBe(0);
       expect(quality.knowledge.findings).toBe(0);
       expect(quality.feedback.totalDigests).toBe(0);
+      expect(quality.blockingDomains).toEqual([]);
+      expect(quality.status).toBe("insufficient_data");
+      expect(quality.domains.userValue.status).toBe("insufficient_data");
     } finally {
       minimalStorage.close();
       rmSync(minimalDir, { recursive: true, force: true });

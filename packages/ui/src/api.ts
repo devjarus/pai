@@ -1028,8 +1028,42 @@ export function getProfile(): Promise<ProfileSummary> {
   return request<ProfileSummary>("/library/profile");
 }
 
+export type QualityStatus = "good" | "warning" | "bad" | "insufficient_data";
+
+export interface QualityMetricScore {
+  key: string;
+  label: string;
+  value: number;
+  score: number;
+  sampleSize: number;
+  minSample: number;
+  weight: number;
+  status: QualityStatus;
+  direction: "higher" | "lower";
+  target?: number;
+  maxAllowed?: number;
+}
+
+export interface QualityDomainScore {
+  label: string;
+  score: number;
+  status: QualityStatus;
+  metricCount: number;
+  sufficientMetricCount: number;
+  minSufficientMetrics: number;
+  metrics: QualityMetricScore[];
+}
+
 export interface QualityScore {
   score: number;
+  status: QualityStatus;
+  blockingDomains: string[];
+  domains: {
+    trust: QualityDomainScore;
+    loopEfficacy: QualityDomainScore;
+    reliability: QualityDomainScore;
+    userValue: QualityDomainScore;
+  };
   learning: { score: number; recentRuns: number; signalBearingRuns: number; successRate: number; acceptanceRate: number; yieldRate: number };
   memory: {
     score: number;
@@ -1130,6 +1164,13 @@ export function rateDigest(id: string, input: { rating: number; feedback?: strin
   return request(`/digests/${id}/rate`, {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function acceptDigestRecommendation(id: string): Promise<{ ok: boolean; alreadyAccepted: boolean }> {
+  return request(`/digests/${id}/accept`, {
+    method: "POST",
+    body: "{}",
   });
 }
 

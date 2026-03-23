@@ -162,6 +162,28 @@ describe("Research jobs", () => {
       expect(tracked!.status).toBe("done");
       expect(tracked!.type).toBe("research");
     });
+
+    it("records agent harness block and usage metadata in steps log", async () => {
+      const { generateText } = await import("ai");
+      (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+        text: "# Report\nDone.",
+        steps: [],
+        usage: { totalTokens: 42 },
+      });
+
+      const ctx = makeCtx();
+      const id = createResearchJob(storage, {
+        goal: "Harness metadata research",
+        threadId: null,
+      });
+
+      await runResearchInBackground(ctx, id);
+
+      const job = getResearchJob(storage, id);
+      expect(job!.stepsLog.some((step) => step.includes("Agent harness: blocks=[knowledge,telemetry]"))).toBe(true);
+      expect(job!.stepsLog.some((step) => step.includes("usage tokens=42"))).toBe(true);
+      expect(job!.stepsLog.some((step) => step.includes("summary confidence="))).toBe(true);
+    });
   });
 
   describe("report delivery", () => {

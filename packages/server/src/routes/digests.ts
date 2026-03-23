@@ -49,6 +49,14 @@ export function registerDigestRoutes(app: FastifyInstance, { ctx, backgroundDisp
   app.get<{ Params: { id: string } }>("/api/digests/:id", async (request, reply) => {
     const briefing = getBriefingById(ctx.storage, request.params.id);
     if (!briefing) return reply.status(404).send({ error: "Digest not found" });
+    recordProductEvent(ctx.storage, {
+      eventType: "brief_opened",
+      briefId: briefing.id,
+      programId: typeof briefing.programId === "string" ? briefing.programId : null,
+      threadId: typeof briefing.threadId === "string" ? briefing.threadId : null,
+      channel: "web",
+      metadata: { type: briefing.type },
+    });
     return { briefing };
   });
 
@@ -103,6 +111,31 @@ export function registerDigestRoutes(app: FastifyInstance, { ctx, backgroundDisp
     const body = validate(rateSchema, request.body);
     const rating = rateDigest(ctx.storage, request.params.id, body.rating, body.feedback);
     return rating;
+  });
+
+  // Explicit recommendation-accept action for web digest UX
+  app.post<{ Params: { id: string } }>("/api/digests/:id/accept", async (request, reply) => {
+    const briefing = getBriefingById(ctx.storage, request.params.id);
+    if (!briefing) return reply.status(404).send({ error: "Digest not found" });
+
+    const existing = ctx.storage.query<{ id: string }>(
+      "SELECT id FROM product_events WHERE event_type = 'recommendation_accepted' AND brief_id = ? LIMIT 1",
+      [request.params.id],
+    )[0];
+    if (existing) {
+      return { ok: true, alreadyAccepted: true };
+    }
+
+    recordProductEvent(ctx.storage, {
+      eventType: "recommendation_accepted",
+      channel: "web",
+      programId: typeof briefing.programId === "string" ? briefing.programId : null,
+      briefId: request.params.id,
+      threadId: typeof briefing.threadId === "string" ? briefing.threadId : null,
+      metadata: { type: briefing.type },
+    });
+
+    return { ok: true, alreadyAccepted: false };
   });
 
   // Rerun a digest (wraps POST /api/inbox/:id/rerun)

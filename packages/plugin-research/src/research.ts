@@ -1,11 +1,12 @@
 import { stepCountIs } from "ai";
 import type { LanguageModel } from "ai";
-import type { BackgroundJob } from "@personal-ai/core";
+import type { BackgroundJob, AgentPlatformServices } from "@personal-ai/core";
 import {
   buildBriefSignalHash,
   buildReportBriefSection,
   getContextBudget,
   getProviderOptions,
+  knowledgeSearch,
   buildReportPresentation,
   deriveReportVisuals,
   extractPresentationBlocks,
@@ -15,7 +16,7 @@ import {
 } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, appendMessages, learnFromContent } from "@personal-ai/core";
 import { getProgramById, recordProgramEvaluation } from "@personal-ai/plugin-schedules";
-import { ingestResearchResult, computeFindingDelta } from "@personal-ai/library";
+import { ingestResearchResult, computeFindingDelta, listFindingsForWatch } from "@personal-ai/library";
 import type { ResearchFinding, ResearchFindingSource } from "@personal-ai/library";
 import { enrichResearchSource, normalizeResearchSourceUrl, summarizeResearchSources } from "@personal-ai/library";
 
@@ -86,6 +87,14 @@ function calculateNoveltySignals(
     deltaSignificance,
     noveltyScore,
   };
+}
+
+function buildPreviousFindingsContext(watchId: string, storage: ResearchContext["storage"], limit = 3): string {
+  const previousFindings = listFindingsForWatch(storage, watchId).slice(0, limit);
+  if (previousFindings.length === 0) return "";
+  return previousFindings
+    .map((finding, index) => `${index + 1}. ${finding.summary}`)
+    .join("\n");
 }
 
 function pushSource(
@@ -352,19 +361,102 @@ export async function runResearchInBackground(
     const systemPrompt = getPromptForResultType(job.resultType, ctx.timezone);
 
     const budget = getContextBudget(ctx.provider ?? "ollama", ctx.model ?? "", ctx.contextWindow);
+    const harnessEvents: string[] = [];
+    const platformServices: AgentPlatformServices = {
+      knowledge: {
+        listPreviousFindings: (watchId, limit = 3) =>
+          listFindingsForWatch(ctx.storage, watchId)
+            .slice(0, limit)
+            .map((finding) => ({
+              id: finding.id,
+              summary: finding.summary,
+              createdAt: finding.createdAt,
+              confidence: finding.confidence,
+            })),
+        searchContext: async (query, limit = 3) => {
+          const results = await knowledgeSearch(ctx.storage, ctx.llm, query, limit);
+          return results.map((result) => ({
+            id: result.chunk.id,
+            snippet: result.chunk.content.slice(0, 500),
+            sourceType: "knowledge",
+          }));
+        },
+      },
+      telemetry: {
+        recordPlan: ({ agent, plan, platformBlocks }) => {
+          harnessEvents.push(`agent=${agent.id}`);
+          harnessEvents.push(`blocks=[${platformBlocks.join(",")}]`);
+          harnessEvents.push(`plan=[${plan.join("; ")}]`);
+        },
+        recordStep: (detail) => {
+          harnessEvents.push(detail);
+        },
+        recordUsage: (usage) => {
+          harnessEvents.push(`usage tokens=${usage.tokensUsed}, toolCalls=${usage.toolCallsUsed}, duration=${usage.durationMs}ms`);
+        },
+        recordReflection: (reflection) => {
+          harnessEvents.push(
+            `reflection confidence=${reflection.confidence}, secondPass=${reflection.suggestSecondPass}, ${reflection.completeness}`,
+          );
+        },
+      },
+    };
+    if (job.sourceScheduleId) {
+      platformServices.watches = {
+        getDeltaContext: (watchId, limit = 3) => buildPreviousFindingsContext(watchId, ctx.storage, limit),
+      };
+      platformServices.tasks = {
+        summarizeLinkedActions: (watchId) => {
+          const summary = getProgramActionSummary(ctx.storage, watchId);
+          if (!summary) return null;
+          return `Program actions: ${summary.openCount} open, ${summary.completedCount} completed, ${summary.staleOpenCount} stale open.`;
+        },
+      };
+    }
+
+    const previousFindings = job.sourceScheduleId
+      ? (await platformServices.knowledge?.listPreviousFindings?.(job.sourceScheduleId, 3)) ?? []
+      : [];
+    const preloadedContext: Array<{ id: string; snippet: string; sourceType: string }> = [];
+    if (job.sourceScheduleId) {
+      const deltaContext = await platformServices.watches?.getDeltaContext?.(job.sourceScheduleId, 3);
+      if (deltaContext) {
+        preloadedContext.push({
+          id: `watch:${job.sourceScheduleId}:delta`,
+          snippet: deltaContext,
+          sourceType: "watch-delta",
+        });
+      }
+      const actionSummary = await platformServices.tasks?.summarizeLinkedActions?.(job.sourceScheduleId);
+      if (actionSummary) {
+        preloadedContext.push({
+          id: `watch:${job.sourceScheduleId}:actions`,
+          snippet: actionSummary,
+          sourceType: "watch-actions",
+        });
+      }
+    }
 
     // Wrap research execution with agent harness for plan/reflect tracking
     let rawReport = "";
     const harnessResult = await runAgentHarness({
+      agent: {
+        id: `research:${jobId}`,
+        label: "Research Agent",
+        block: "research",
+      },
       goal: job.goal,
-      context: [],
+      context: preloadedContext,
+      previousFindings,
       budget: {
         maxTokens: 50000,
         maxToolCalls: (job.budgetMaxSearches || 5) + (job.budgetMaxPages || 8),
         maxDurationMs: 300000,
       },
       depth: "standard",
-      execute: async (harnessCtx) => {
+      services: platformServices,
+      execute: async (agentCtx) => {
+        await agentCtx.services.telemetry?.recordStep?.("starting primary research pass");
         const { result } = await instrumentedGenerateText(
           { storage: ctx.storage, logger: ctx.logger },
           {
@@ -398,7 +490,8 @@ export async function runResearchInBackground(
           (sum, s) => sum + (s.toolCalls?.length ?? 0),
           0,
         );
-        harnessCtx.toolCallsUsed = toolCallCount;
+        agentCtx.noteToolCalls(toolCallCount);
+        agentCtx.noteTokens(result.usage?.totalTokens ?? 0);
 
         let reportText = result.text;
 
@@ -406,6 +499,7 @@ export async function runResearchInBackground(
         // do a follow-up call to synthesize findings from the tool results.
         if (!reportText) {
           ctx.logger.warn(`Research job ${jobId}: no report text, running synthesis pass`);
+          await agentCtx.services.telemetry?.recordStep?.("primary pass produced no report text; running synthesis pass");
           const toolResults = result.steps
             .flatMap((s) => s.toolResults ?? [])
             .map((r) => String((r as Record<string, unknown>).result ?? ""))
@@ -428,23 +522,16 @@ export async function runResearchInBackground(
                   : await (async () => {
                     // No tool results — use previous findings from Library as context
                     let previousContext = "";
-                    try {
-                      const { listFindingsForWatch } = await import("@personal-ai/library");
-                      const { knowledgeSearch } = await import("@personal-ai/core");
-                      if (job.sourceScheduleId) {
-                        const prev = listFindingsForWatch(ctx.storage, job.sourceScheduleId);
-                        if (prev.length > 0) {
-                          previousContext = prev.slice(0, 3).map((f) => f.summary).join("\n\n");
-                        }
+                    if (agentCtx.previousFindings.length > 0) {
+                      previousContext = agentCtx.previousFindings.map((finding) => finding.summary).join("\n\n");
+                    }
+                    if (!previousContext) {
+                      const goalClean = job.goal.split("\n")[0]?.slice(0, 150) ?? job.goal;
+                      const searchContext = await agentCtx.services.knowledge?.searchContext?.(goalClean, 3) ?? [];
+                      if (searchContext.length > 0) {
+                        previousContext = searchContext.map((item) => item.snippet).join("\n\n");
                       }
-                      if (!previousContext) {
-                        const goalClean = job.goal.split("\n")[0]?.slice(0, 150) ?? job.goal;
-                        const kResults = await knowledgeSearch(ctx.storage, ctx.llm, goalClean, 3);
-                        if (kResults.length > 0) {
-                          previousContext = kResults.map((r) => r.chunk.content.slice(0, 500)).join("\n\n");
-                        }
-                      }
-                    } catch { /* no previous data available */ }
+                    }
 
                     const context = previousContext
                       ? `\n\nPREVIOUS FINDINGS (use as basis — update with any new information you know):\n${previousContext}`
@@ -468,11 +555,13 @@ export async function runResearchInBackground(
                 requestSizeChars: toolResults.length,
               },
             );
+            agentCtx.noteTokens(synthResult.usage?.totalTokens ?? 0);
             reportText = synthResult.text || "";
           }
         }
 
         if (!reportText) reportText = "Research completed but no report was generated.";
+        await agentCtx.services.telemetry?.recordStep?.(`captured report (${reportText.length} chars)`);
 
         // Capture full report via closure for use after harness completes
         rawReport = reportText;
@@ -485,6 +574,7 @@ export async function runResearchInBackground(
             sources: [],
           }],
           rawOutput: reportText,
+          completeness: `Generated ${reportText.length}-character research report`,
         };
       },
     });
@@ -493,9 +583,17 @@ export async function runResearchInBackground(
     {
       const updatedJob = getResearchJob(ctx.storage, jobId);
       const currentSteps: string[] = updatedJob?.stepsLog ?? [];
-      currentSteps.push(`Agent harness: confidence=${harnessResult.reflection.confidence}, ${harnessResult.reflection.completeness}`);
-      currentSteps.push(`Agent harness: plan=[${harnessResult.plan.join("; ")}]`);
-      currentSteps.push(`Agent harness: toolCalls=${harnessResult.usage.toolCallsUsed}, duration=${harnessResult.usage.durationMs}ms`);
+      currentSteps.push(`Agent harness: agent=${harnessResult.agent.id}`);
+      currentSteps.push(`Agent harness: blocks=[${harnessResult.platformBlocks.join(",")}]`);
+      for (const event of harnessEvents) {
+        currentSteps.push(`Agent harness: ${event}`);
+      }
+      currentSteps.push(
+        `Agent harness: summary confidence=${harnessResult.reflection.confidence}, toolCalls=${harnessResult.usage.toolCallsUsed}, tokens=${harnessResult.usage.tokensUsed}, duration=${harnessResult.usage.durationMs}ms`,
+      );
+      if (harnessResult.budget.exceeded) {
+        currentSteps.push(`Agent harness: budget warnings=[${harnessResult.budget.warnings.join("; ")}]`);
+      }
       if (harnessResult.reflection.suggestSecondPass) {
         currentSteps.push("Agent harness: suggests deeper research on next run");
       }
@@ -663,7 +761,6 @@ export async function runResearchInBackground(
         let previousFinding: ResearchFinding | undefined;
         let previousFindingId: string | undefined;
         if (job.sourceScheduleId) {
-          const { listFindingsForWatch } = await import("@personal-ai/library");
           const prev = listFindingsForWatch(ctx.storage, job.sourceScheduleId);
           previousFinding = prev[0];
           previousFindingId = previousFinding?.id;

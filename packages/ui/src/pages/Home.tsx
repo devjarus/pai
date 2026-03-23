@@ -7,7 +7,7 @@ import { useTasks, useCompleteTask } from "@/hooks/use-tasks";
 import { useLibraryStats, useQualityScore } from "@/hooks/use-library";
 import { useJobs } from "@/hooks/use-jobs";
 import { timeAgoCompact } from "@/lib/datetime";
-import { stripMarkdown } from "@/lib/utils";
+import { cn, stripMarkdown } from "@/lib/utils";
 import {
   CheckCircle2Icon,
   BrainIcon,
@@ -462,29 +462,63 @@ function QualityPanel() {
   const { data: quality } = useQualityScore();
   if (!quality) return null;
 
-  const barColor = quality.score >= 60 ? "bg-emerald-500" : quality.score >= 40 ? "bg-amber-500" : "bg-red-500";
+  const statusTone: Record<string, string> = {
+    good: "text-emerald-400",
+    warning: "text-amber-400",
+    bad: "text-red-400",
+    insufficient_data: "text-muted-foreground",
+  };
+  const domainEntries = [
+    { key: "trust", domain: quality.domains.trust },
+    { key: "loop-efficacy", domain: quality.domains.loopEfficacy },
+    { key: "reliability", domain: quality.domains.reliability },
+    { key: "user-value", domain: quality.domains.userValue },
+  ] as const;
+  const scoredDomainCount = domainEntries.filter(({ domain }) => domain.status !== "insufficient_data").length;
+  const barColor = quality.status === "insufficient_data"
+    ? "bg-muted-foreground/40"
+    : quality.status === "good"
+      ? "bg-emerald-500"
+      : quality.status === "warning"
+        ? "bg-amber-500"
+        : "bg-red-500";
+
+  function formatStatus(status: string): string {
+    if (status === "insufficient_data") return "Insufficient data";
+    return status.replace("_", " ");
+  }
 
   return (
     <div className="space-y-2">
-      <SidebarTitle label="Quality" to="/settings" count={quality.score} />
+      <SidebarTitle
+        label="Quality"
+        to="/settings"
+        count={quality.status === "insufficient_data" ? undefined : quality.score}
+      />
       <div className="h-1.5 rounded-full bg-muted/30 overflow-hidden">
         <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${quality.score}%` }} />
       </div>
-      <div className="grid grid-cols-3 gap-1 text-[10px] text-muted-foreground/60">
-        <div className="text-center">
-          <p className={quality.memory.utilization >= 50 ? "text-foreground/70" : "text-amber-400"}>{quality.memory.utilization}%</p>
-          <p>Memory</p>
-        </div>
-        <div className="text-center">
-          <p className={quality.feedback.activity >= 20 ? "text-foreground/70" : "text-amber-400"}>{quality.feedback.activity}%</p>
-          <p>Feedback</p>
-        </div>
-        <div className="text-center">
-          <p className={quality.knowledge.growth >= 30 ? "text-foreground/70" : "text-amber-400"}>{quality.knowledge.growth}%</p>
-          <p>Knowledge</p>
-        </div>
+      <p className={cn("text-[10px]", statusTone[quality.status])}>
+        {quality.status === "insufficient_data"
+          ? `Insufficient data: ${scoredDomainCount}/${domainEntries.length} domains scored`
+          : quality.blockingDomains.length > 0
+            ? `Blocked by ${quality.blockingDomains.join(", ")}`
+            : formatStatus(quality.status)}
+      </p>
+      <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+        {domainEntries.map(({ key, domain }) => (
+          <div key={key} className="rounded-md border border-border/30 bg-muted/10 px-2 py-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-medium text-foreground/80">{domain.label}</p>
+              <p className={cn("font-semibold", statusTone[domain.status])}>{domain.score}%</p>
+            </div>
+            <p className={cn("mt-0.5 text-[9px]", statusTone[domain.status])}>
+              {formatStatus(domain.status)}
+              {domain.status === "insufficient_data" ? ` ${domain.sufficientMetricCount}/${domain.metricCount}` : ""}
+            </p>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
-

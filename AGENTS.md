@@ -12,6 +12,7 @@ Self-hosted personal AI — remembers what matters, watches things in the backgr
 pnpm install && pnpm build
 pnpm verify                   # typecheck + test + coverage — MUST pass before done (62 files, 1032+ tests, 80% coverage)
 pnpm harness:core-loop        # integration test: Watch → Digest → Correction → Improvement
+pnpm harness:regressions      # coding-agent harness: architecture docs, checklists, templates, script wiring
 pnpm dev:ui                   # UI dev server
 pnpm start                    # API at http://127.0.0.1:3141
 pnpm e2e                      # Playwright browser tests
@@ -30,6 +31,7 @@ pnpm build                               # then everything else
 2. Don't break existing tests — update migration count if adding migrations
 3. Update CHANGELOG.md for user-facing changes
 4. Stay in scope — no drive-by refactors
+5. Non-trivial tasks should use the harness workflow in `harness/README.md`: pick the owning block, choose matching checklist(s), and capture a task contract plus evidence pack
 
 ## Hooks
 
@@ -49,19 +51,29 @@ pnpm build                               # then everything else
 
 Foundation: `packages/core` (LLM, storage, telemetry, auth, memory engine)
 
+## Architecture Blocks
+
+- **Core Platform**: API, runtime/config/auth/storage, memory, knowledge, watches, digests, tasks/actions, background orchestration, quality/observability, channel adapters
+- **Agent Plane**: assistant, curator, research, swarm
+
+Use the block owner first when deciding where code belongs. Package names are still transitional.
+
 ## Naming (user-facing → code)
 
 Memory = `Belief` · Document = `KnowledgeSource` · Finding = `ResearchFinding` · Watch = `ScheduledJob` · Digest = `Briefing` · To-Do = `Task` · Activity = `Job`
 
 ## Where Things Go
 
-- Data entity → `packages/library` or relevant domain
+- Core platform state/rules → owning domain block first, then the current package that implements it
+- Agent behavior / planning / synthesis → agent-plane package and, when possible, through `packages/core/src/agent-harness/`
+- Data entity → `packages/library` or relevant core-platform domain
 - API route → `packages/server/src/routes/library.ts` (unified) or domain-specific route file
 - UI page → `packages/ui/src/pages/`, wire in `App.tsx` — read [PRODUCT.md](docs/PRODUCT.md) for look and feel
 - Background job → `packages/server/src/workers.ts`
 - Memory change → `packages/core/src/memory/` — read [MEMORY-LIFECYCLE.md](docs/MEMORY-LIFECYCLE.md)
 - Research module → `packages/plugin-research/src/` (6 modules: types, repository, prompts, tools, charts, research)
-- Architecture reference → [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Architecture reference → [ARCHITECTURE.md](docs/ARCHITECTURE.md) and `docs/architecture/*`
+- Coding-agent harness → `harness/README.md`, `harness/checklists/*`, `harness/templates/*`
 
 ## Patterns
 

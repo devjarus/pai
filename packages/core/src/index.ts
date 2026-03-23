@@ -143,4 +143,20 @@ export { parseBinaryDocument, isBinaryDocument, parsePdf, parseExcel } from "./d
 
 // Agent harness
 export { runAgentHarness } from "./agent-harness/index.js";
-export type { AgentHarnessOptions, AgentResult, AgentBudget, AgentHarnessContext, AgentExecutionResult } from "./agent-harness/index.js";
+export type {
+  AgentHarnessOptions,
+  AgentResult,
+  AgentBudget,
+  AgentDepth,
+  AgentPlaneBlock,
+  CorePlatformBlock,
+  AgentIdentity,
+  AgentContextItem,
+  AgentPreviousFinding,
+  AgentUsage,
+  AgentReflection,
+  AgentBudgetStatus,
+  AgentPlatformServices,
+  AgentHarnessContext,
+  AgentExecutionResult,
+} from "./agent-harness/index.js";

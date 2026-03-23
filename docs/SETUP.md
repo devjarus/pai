@@ -240,6 +240,24 @@ pnpm start                # start server → http://127.0.0.1:3141
 pnpm stop                 # stop server
 ```
 
+### Developer validation and contributor workflow
+
+If you are changing code instead of just running the app, use the repo harness:
+
+```bash
+pnpm verify
+pnpm harness:regressions
+pnpm harness:core-loop
+```
+
+Use these docs when deciding where changes belong:
+
+- [docs/ARCHITECTURE.md](ARCHITECTURE.md)
+- [docs/architecture/overview.md](architecture/overview.md)
+- [docs/architecture/core-platform.md](architecture/core-platform.md)
+- [docs/architecture/agent-plane.md](architecture/agent-plane.md)
+- [harness/README.md](../harness/README.md)
+
 ### Development mode
 
 ```bash

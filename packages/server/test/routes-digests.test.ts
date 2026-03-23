@@ -212,6 +212,14 @@ describe("digest routes", () => {
     const res = await app.inject({ method: "GET", url: "/api/digests/briefing-1" });
     expect(res.statusCode).toBe(200);
     expect(res.json().briefing.id).toBe("briefing-1");
+    expect(mockRecordProductEvent).toHaveBeenCalledWith(serverCtx.ctx.storage, {
+      eventType: "brief_opened",
+      briefId: "briefing-1",
+      programId: null,
+      threadId: null,
+      channel: "web",
+      metadata: { type: "daily" },
+    });
   });
 
   it("GET /api/digests/:id returns 404 for unknown digest", async () => {
@@ -359,6 +367,45 @@ describe("digest routes", () => {
       payload: { rating: 10 },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  // --- POST /api/digests/:id/accept ---
+
+  it("POST /api/digests/:id/accept records recommendation acceptance once", async () => {
+    mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
+
+    const res = await app.inject({ method: "POST", url: "/api/digests/briefing-1/accept" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, alreadyAccepted: false });
+    expect(mockRecordProductEvent).toHaveBeenCalledWith(serverCtx.ctx.storage, {
+      eventType: "recommendation_accepted",
+      channel: "web",
+      programId: null,
+      briefId: "briefing-1",
+      threadId: null,
+      metadata: { type: "daily" },
+    });
+  });
+
+  it("POST /api/digests/:id/accept is idempotent for an already accepted digest", async () => {
+    mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
+    (serverCtx.ctx.storage.query as ReturnType<typeof vi.fn>).mockReturnValueOnce([{ id: "event-1" }]);
+
+    const res = await app.inject({ method: "POST", url: "/api/digests/briefing-1/accept" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, alreadyAccepted: true });
+    expect(mockRecordProductEvent).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/digests/:id/accept returns 404 for unknown digest", async () => {
+    mockGetBriefingById.mockReturnValue(null);
+
+    const res = await app.inject({ method: "POST", url: "/api/digests/nonexistent/accept" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Digest not found");
   });
 
   // --- POST /api/digests/:id/rerun ---

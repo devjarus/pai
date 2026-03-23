@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Quality metric alignment** — Learning quality now counts finding/digest-driven runs, compounding coverage only measures active watches with credible findings, and sparse datasets no longer receive free high-confidence quality credit.
 
 ### Changed
+- **Coding-agent harness scaffold** — Added `harness/README.md`, block-specific checklists, task/evidence templates, and a new `pnpm harness:regressions` validator so contributors and coding agents can follow the architecture-block workflow consistently.
+- **Agent-plane harness boundary** — The core agent harness now carries explicit agent identity, declared core-platform block access, preloaded context/previous findings, budget status, and telemetry hooks. The research agent now uses that contract with knowledge/watch/task context instead of treating the harness as a thin wrapper.
+- **Architecture block docs** — Added `docs/architecture/*` pages to document the Core Platform vs Agent Plane split and the dependency rules for future refactors.
 - **Research plugin split** — `research.ts` (1700 lines) split into 6 focused modules: types, repository, prompts, tools, charts, and orchestration. Extracted shared `mapRow` helper to eliminate 4x duplicated row mapping.
 - **Assistant plugin split** — `index.ts` (347 lines) split into system prompt, auto-memory extraction, and plugin wiring.
 - **Shared datetime utilities** — Consolidated 14 duplicate `timeAgo`/`formatDate`/`formatInterval` functions across 11 UI files into `lib/datetime.ts`.
@@ -45,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Finding evidence quality metrics** — `/api/library/quality` now tracks finding source coverage and whether high-confidence findings are actually backed by multiple sources, and memory reinforcement no longer treats repeated reads as reinforcement.
 - **Finding novelty metrics** — `/api/library/quality` now reports chained-finding novelty coverage and how many high-confidence findings are actually novel enough to justify their score.
 - **Finding authority metrics** — `/api/library/quality` now reports authoritative and primary source coverage, plus how many high-confidence findings are backed by authoritative sources instead of only raw URL diversity.
+- **Quality scorecard v2** — `/api/library/quality` now exposes sample-aware domain scores for Trust, Loop Efficacy, Reliability, and User Value. User Value now scores real outcomes including digest-linked action completion, correction carry-forward into the next digest, trusted decision loops from opened digests, and explicit recommendation acceptance on daily digests. Web digest opens now count on the main `/api/digests/:id` path instead of only the legacy inbox route, and daily recommendations can be marked accepted directly from the digest UI through an idempotent `/api/digests/:id/accept` action. The Home sidebar surfaces those domains directly instead of collapsing everything into a single opaque bar.
 - **Compounding evidence gate** — Weekly compounding now requires each persisted topic insight to cite at least two supporting findings and uses similarity-based matching to update existing insights instead of accumulating near-duplicates.
 - **Learning noise filter** — Background learning now drops duplicate and low-signal “activity” facts before writing beliefs, while still keeping extracted-fact counts in run history for diagnostics.
 

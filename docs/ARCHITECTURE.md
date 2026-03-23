@@ -41,6 +41,24 @@
 
 **Design principles:** KISS. SOLID. TDD. Plugin architecture. Unified retrieval (beliefs + knowledge with one embedding call).
 
+## Architecture Blocks
+
+The backend is organized into two planes:
+
+- **Core Platform** — owns state, business rules, orchestration, and quality.
+- **Agent Plane** — assistant, curator, research, and swarm agents operating through explicit platform interfaces.
+
+Working docs for this split live here:
+
+- [Architecture Overview](architecture/overview.md)
+- [Core Platform](architecture/core-platform.md)
+- [Agent Plane](architecture/agent-plane.md)
+- [Dependency Rules](architecture/dependency-rules.md)
+
+The contributor workflow that goes with these blocks lives in:
+
+- [Harness README](../harness/README.md)
+
 ---
 
 ## Container Diagram (C4 Level 2)

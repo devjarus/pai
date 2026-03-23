@@ -1,19 +1,42 @@
 import { describe, it, expect } from "vitest";
-import type { AgentHarnessOptions, AgentResult } from "../src/agent-harness/types.js";
 import { runAgentHarness } from "../src/agent-harness/harness.js";
 
 describe("agent harness", () => {
+  const baseAgent = {
+    id: "research-agent",
+    label: "Research Agent",
+    block: "research",
+  } as const;
+
   it("exports types and runner", () => {
     expect(runAgentHarness).toBeTypeOf("function");
   });
 
-  it("enforces budget limits", async () => {
+  it("tracks platform blocks and telemetry callbacks", async () => {
+    const events: string[] = [];
+
     const result = await runAgentHarness({
+      agent: baseAgent,
       goal: "test goal",
-      context: [],
-      budget: { maxTokens: 100, maxToolCalls: 1, maxDurationMs: 5000 },
+      context: [{ id: "ctx-1", snippet: "previous digest baseline", sourceType: "digest" }],
+      previousFindings: [{ summary: "Earlier research", createdAt: "2026-03-20T00:00:00Z" }],
+      services: {
+        knowledge: {
+          listPreviousFindings: () => [],
+        },
+        telemetry: {
+          recordPlan: ({ platformBlocks }) => events.push(`plan:${platformBlocks.join(",")}`),
+          recordStep: (detail) => events.push(`step:${detail}`),
+          recordUsage: (usage) => events.push(`usage:${usage.toolCallsUsed}/${usage.tokensUsed}`),
+          recordReflection: (reflection) => events.push(`reflection:${reflection.confidence}`),
+        },
+      },
+      budget: { maxTokens: 100, maxToolCalls: 2, maxDurationMs: 5000 },
       depth: "quick",
       execute: async (ctx) => {
+        ctx.noteToolCalls(2);
+        ctx.noteTokens(24);
+        await ctx.services.telemetry?.recordStep?.("queried knowledge");
         return {
           findings: [],
           rawOutput: "test output",
@@ -21,6 +44,36 @@ describe("agent harness", () => {
       },
     });
 
+    expect(result.agent).toEqual(baseAgent);
+    expect(result.platformBlocks).toEqual(["knowledge", "telemetry"]);
+    expect(result.plan).toContain("Core blocks: knowledge, telemetry");
+    expect(events).toContain("plan:knowledge,telemetry");
+    expect(events).toContain("step:queried knowledge");
+    expect(events).toContain("usage:2/24");
+    expect(events).toContain("reflection:0");
+  });
+
+  it("flags budget overruns", async () => {
+    const result = await runAgentHarness({
+      agent: baseAgent,
+      goal: "test goal",
+      context: [],
+      budget: { maxTokens: 100, maxToolCalls: 1, maxDurationMs: 5000 },
+      depth: "quick",
+      execute: async (ctx) => {
+        ctx.noteToolCalls(3);
+        ctx.noteTokens(150);
+        return {
+          findings: [],
+          rawOutput: "test output",
+        };
+      },
+    });
+
+    expect(result.budget.exceeded).toBe(true);
+    expect(result.budget.toolCallsExceeded).toBe(true);
+    expect(result.budget.tokensExceeded).toBe(true);
+    expect(result.reflection.completeness).toContain("Budget warnings");
     expect(result.reflection).toBeDefined();
     expect(result.plan).toBeDefined();
     expect(result.usage).toBeDefined();
@@ -29,6 +82,7 @@ describe("agent harness", () => {
 
   it("calculates reflection confidence from findings", async () => {
     const result = await runAgentHarness({
+      agent: baseAgent,
       goal: "find GPU prices",
       context: [],
       budget: { maxTokens: 1000, maxToolCalls: 5, maxDurationMs: 10000 },
@@ -49,6 +103,7 @@ describe("agent harness", () => {
 
   it("suggests second pass when confidence is low", async () => {
     const result = await runAgentHarness({
+      agent: baseAgent,
       goal: "obscure topic",
       context: [],
       budget: { maxTokens: 100, maxToolCalls: 1, maxDurationMs: 5000 },
@@ -65,6 +120,7 @@ describe("agent harness", () => {
 
   it("does not suggest second pass at deep depth", async () => {
     const result = await runAgentHarness({
+      agent: baseAgent,
       goal: "test",
       context: [],
       budget: { maxTokens: 100, maxToolCalls: 1, maxDurationMs: 5000 },
