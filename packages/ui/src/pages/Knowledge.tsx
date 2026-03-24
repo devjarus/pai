@@ -674,7 +674,7 @@ export default function Knowledge() {
               <input
                 type="file"
                 className="hidden"
-                accept=".txt,.md,.markdown,.csv,.json,.xml,.html,.pdf,.xlsx,.xls,.xlsm,.xlsb"
+                accept=".txt,.md,.markdown,.csv,.json,.xml,.html,.pdf,.xlsx,.xls,.xlsm,.xlsb,.jpg,.jpeg,.png,.gif,.webp"
                 onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
                 disabled={isUploading}
               />

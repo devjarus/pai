@@ -38,9 +38,9 @@ import { validate } from "../validate.js";
 export { threadMigrations };
 
 const MAX_MESSAGES_PER_THREAD = 500;
-const TITLE_GENERATE_AT = 5;    // Use heuristic titles first; ask the LLM only for longer threads
-const TITLE_REFRESH_EVERY = 10; // Re-check title every N user turns after that
-const TITLE_CONTEXT_MESSAGES = 6;
+const TITLE_GENERATE_AT = 3;    // Generate LLM title after 3 user turns (up from 5)
+const TITLE_REFRESH_EVERY = 5;  // Re-check title every 5 user turns to catch topic shifts (down from 10)
+const TITLE_CONTEXT_MESSAGES = 10;
 const TITLE_MESSAGE_PREVIEW_CHARS = 120;
 const TITLE_MAX_OUTPUT_TOKENS = 12;
 const STREAM_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -169,7 +169,7 @@ async function generateThreadTitle(
     const result = await ctx.llm.chat([
       {
         role: "system",
-        content: "Write a concise thread title for this conversation in 2 to 6 words. Max 50 characters. Return only the title. No quotes or punctuation decoration.",
+        content: "Write a concise thread title reflecting the current topic of this conversation in 2 to 6 words. Focus on what the conversation is about NOW, not just the first message. Max 50 characters. Return only the title. No quotes or punctuation decoration.",
       },
       { role: "user", content: conversation },
     ], {
@@ -391,6 +391,7 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
     // Process file attachments — decode, store in knowledge, and inject into message context
     const documentSections: string[] = [];
     const uploadedDocNames: string[] = [];
+    const imageParts: Array<{ type: "image"; image: Buffer; mimeType: string }> = [];
     for (const fp of fileParts) {
       try {
         const rawData = fp.data ?? fp.url ?? "";
@@ -405,6 +406,14 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
         } else if (rawData.length > 0) {
           rawBuffer = Buffer.from(rawData, "base64");
         } else {
+          continue;
+        }
+
+        // Handle image attachments — pass directly to the LLM as image parts
+        if (mime.startsWith("image/")) {
+          imageParts.push({ type: "image", image: rawBuffer, mimeType: mime });
+          uploadedDocNames.push(fileName);
+          ctx.logger.info("Image attachment added for LLM", { fileName, mime, bytes: rawBuffer.length });
           continue;
         }
 
@@ -599,9 +608,18 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
             }
           }
 
+          // Build user message — multimodal when images are attached
+          const userContent: string | Array<{ type: string; text?: string; image?: Buffer; mimeType?: string }> =
+            imageParts.length > 0
+              ? [
+                  { type: "text" as const, text: message },
+                  ...imageParts,
+                ]
+              : message;
+
           const messages: ChatMessage[] = [
             ...history,
-            { role: "user", content: message },
+            { role: "user", content: userContent as string },
           ];
 
           let finishLock: () => void;

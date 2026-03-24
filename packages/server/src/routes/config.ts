@@ -206,11 +206,13 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
     if (body.apiKey !== undefined) llmUpdate.apiKey = body.apiKey;
     if (body.contextWindow !== undefined) llmUpdate.contextWindow = body.contextWindow;
 
-    // Preserve existing secrets from disk when not explicitly changed.
+    // Preserve existing secrets when not explicitly changed.
     // The UI sends apiKey/telegramToken only when the user enters a new value;
     // omitting them means "keep existing", not "clear".
-    if (body.apiKey === undefined && existing.llm?.apiKey) {
-      llmUpdate.apiKey = existing.llm.apiKey;
+    // Check both the config file and in-memory config (which includes env vars).
+    if (body.apiKey === undefined) {
+      const preservedKey = existing.llm?.apiKey ?? ctx.config.llm.apiKey;
+      if (preservedKey) llmUpdate.apiKey = preservedKey;
     }
 
     if (Object.keys(llmUpdate).length > 0) {
@@ -290,9 +292,10 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       const telegramUpdate: Record<string, unknown> = { ...existingTelegram };
       if (body.telegramToken !== undefined) telegramUpdate.token = body.telegramToken || undefined;
       if (body.telegramEnabled !== undefined) telegramUpdate.enabled = body.telegramEnabled;
-      // Preserve existing token from disk if not explicitly changed
-      if (body.telegramToken === undefined && (existing.telegram as Record<string, unknown>)?.token) {
-        telegramUpdate.token = (existing.telegram as Record<string, unknown>).token;
+      // Preserve existing token if not explicitly changed (file or env var)
+      if (body.telegramToken === undefined) {
+        const preservedToken = (existing.telegram as Record<string, unknown>)?.token ?? ctx.config.telegram?.token;
+        if (preservedToken) telegramUpdate.token = preservedToken;
       }
       update.telegram = telegramUpdate;
     }
@@ -313,8 +316,10 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       if (body.linearAutoCreateRecurringIssues !== undefined) {
         linearUpdate.autoCreateRecurringIssues = body.linearAutoCreateRecurringIssues;
       }
-      if (body.linearApiKey === undefined && (existing.linear as Record<string, unknown>)?.apiKey) {
-        linearUpdate.apiKey = (existing.linear as Record<string, unknown>).apiKey;
+      // Preserve existing key if not explicitly changed (file or env var)
+      if (body.linearApiKey === undefined) {
+        const preservedKey = (existing.linear as Record<string, unknown>)?.apiKey ?? ctx.config.linear?.apiKey;
+        if (preservedKey) linearUpdate.apiKey = preservedKey;
       }
       update.linear = linearUpdate;
     }

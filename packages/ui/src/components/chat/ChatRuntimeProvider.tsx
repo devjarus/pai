@@ -18,13 +18,13 @@ import { inboxKeys } from "@/hooks/use-inbox";
 import { beliefKeys } from "@/hooks/use-beliefs";
 
 /**
- * Attachment adapter for binary documents (PDF, Excel).
+ * Attachment adapter for binary documents (PDF, Excel) and images (JPG, PNG, etc.).
  * Reads the file as a base64 data URL and sends it as a file part,
- * which the server decodes and parses via document-parser.
+ * which the server decodes and parses via document-parser or passes to the LLM as image parts.
  */
 class BinaryDocumentAttachmentAdapter implements AttachmentAdapter {
   accept =
-    "application/pdf,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,application/vnd.ms-excel,.xls";
+    "application/pdf,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,application/vnd.ms-excel,.xls,image/jpeg,.jpg,.jpeg,image/png,.png,image/gif,.gif,image/webp,.webp";
 
   async add(state: { file: File }) {
     return {

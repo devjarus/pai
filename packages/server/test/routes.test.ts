@@ -1408,7 +1408,7 @@ describe("agent routes", () => {
     });
     const thread = JSON.parse(createRes.payload);
 
-    for (const message of ["hi", "can you browse", "take a screenshot", "summarize that"]) {
+    for (const message of ["hi", "can you browse"]) {
       await app.inject({
         method: "POST",
         url: "/api/chat",

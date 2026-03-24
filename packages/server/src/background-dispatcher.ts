@@ -40,6 +40,7 @@ export class BackgroundDispatcher {
   private running = false;
   private activeWorkId: string | null = null;
   private activeKind: PendingKind | null = null;
+  private retryDelayMs: number | undefined;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly ctx: PluginContext) {}
@@ -257,6 +258,7 @@ export class BackgroundDispatcher {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       const isTransient = /fetch failed|econnrefused|enotfound|econnreset|etimedout|cannot reach|rate limit|too many requests|aborted|abort|429|503/i.test(errorMsg);
+      const isRateLimit = /rate limit|too many requests|429/i.test(errorMsg);
 
       // Check attempt count before retrying
       const attempts = this.ctx.storage.query<{ attempt_count: number }>(
@@ -264,31 +266,40 @@ export class BackgroundDispatcher {
         [next.id],
       );
       const attemptCount = attempts[0]?.attempt_count ?? 0;
+      const maxRetries = isRateLimit ? 3 : 2;
 
-      if (isTransient && next.kind === "research" && attemptCount < 2) {
-        // Re-queue the job after a delay instead of permanently failing (max 2 retries)
-        this.ctx.logger.warn("Research job failed with transient error, will retry on next drain", {
+      if (isTransient && (next.kind === "research" || next.kind === "swarm") && attemptCount < maxRetries) {
+        // Exponential backoff: 30s, 60s, 120s
+        const backoffMs = Math.min(30_000 * Math.pow(2, attemptCount), 120_000);
+        this.ctx.logger.warn("Background job failed with transient error, will retry", {
+          kind: next.kind,
           id: next.id,
           error: errorMsg,
           attempt: attemptCount + 1,
+          retryInMs: backoffMs,
         });
         try {
+          if (next.kind === "research") {
+            this.ctx.storage.run(
+              "UPDATE research_jobs SET status = 'pending' WHERE id = ? AND status = 'failed'",
+              [next.id],
+            );
+          }
           this.ctx.storage.run(
-            "UPDATE research_jobs SET status = 'pending' WHERE id = ? AND status = 'failed'",
-            [next.id],
+            "UPDATE background_jobs SET status = 'pending', progress = ?, error = ? WHERE id = ?",
+            [`retry ${attemptCount + 1}/${maxRetries} in ${backoffMs / 1000}s (${isRateLimit ? "rate limited" : "transient error"})`, errorMsg, next.id],
           );
-          this.ctx.storage.run(
-            "UPDATE background_jobs SET status = 'pending', progress = 'retry after transient error', error = ? WHERE id = ? AND status = 'error'",
-            [errorMsg, next.id],
-          );
+          // Schedule retry with backoff delay instead of immediate nudge
+          this.retryDelayMs = backoffMs;
         } catch {
           // If re-queue fails, the job stays failed — that's fine
         }
       } else {
-        this.ctx.logger.error("Background dispatch failed", {
+        this.ctx.logger.error("Background dispatch permanently failed", {
           kind: next.kind,
           id: next.id,
           error: errorMsg,
+          attempts: attemptCount,
         });
       }
     } finally {
@@ -300,7 +311,9 @@ export class BackgroundDispatcher {
       }
       this.activeWorkId = null;
       this.activeKind = null;
-      this.nudge(500);
+      const delay = this.retryDelayMs ?? 500;
+      this.retryDelayMs = undefined;
+      this.nudge(delay);
     }
   }
 
