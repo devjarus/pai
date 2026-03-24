@@ -13,10 +13,12 @@ Your second brain that watches things for you. Start with Ask, set up Watches fo
 - **Digests** — recommendation-first updates with what changed, evidence, memory assumptions, and suggested to-dos. Rate them, correct them, and the next one improves
 - **Library** — unified knowledge layer combining memories, documents, and research findings with cross-source search
 - **Persistent memory** — beliefs with lifecycle (reinforce, contradict, decay, synthesize), semantic search, and correction-aware context reuse
-- **Home dashboard** — latest digest, active watches, open to-dos, and library stats at a glance
+- **Image understanding** — upload JPG, PNG, GIF, or WebP images in chat for multimodal analysis
+- **Activity dashboard** — monitor background research, swarm, and crawl jobs with real-time progress and failure notifications
+- **Home dashboard** — latest digest, active watches, open to-dos, quality scorecard, and library stats at a glance
 - **Companion surfaces** — web UI, Telegram, CLI, and MCP for Claude Code / Cursor integration
-- **Conversational issue intake** — connect Linear once in Settings, then ask pai to log a feature or bug after only a few follow-up questions
-- **Automatic recurring-error intake** — optionally auto-log repeated failures into one deduplicated Linear issue when the same problem keeps happening
+- **Linear integration** — conversational issue intake and automatic recurring-error deduplication
+- **Resilient background jobs** — rate-limited research retries with exponential backoff, failure notifications posted to threads
 
 ## Quick Start
 
@@ -78,13 +80,14 @@ Open `http://127.0.0.1:3141` after starting the server:
 
 | Page | Description |
 |------|-------------|
-| **Home** (`/`) | Dashboard with latest digest, active watches, open to-dos, library stats, and quick ask. |
-| **Digests** (`/digests`) | Feed of daily and research digests with ratings, inline corrections, and suggested to-dos. |
+| **Home** (`/`) | Dashboard with latest digest, active watches, open to-dos, quality scorecard, and library stats. |
 | **Watches** (`/watches`) | Recurring monitors with templates, depth levels, linked findings and digests. |
-| **Chat** (`/ask`) | Chat for questions, follow-ups, and creating watches. |
+| **Chat** (`/ask`) | Chat with image uploads, follow-ups, watch creation, and Linear issue intake. |
+| **Activity** (`/jobs`) | Background job dashboard — research, swarm, and crawl status with real-time progress. |
 | **Library** (`/library`) | Unified view of memories, documents, and research findings with cross-source search. |
+| **Digests** (`/digests`) | Feed of daily and research digests with ratings, inline corrections, and suggested to-dos. |
 | **Tasks** (`/tasks`) | To-dos linked to watches and digests. |
-| **Settings** | LLM provider, model, API key, Telegram config, Linear intake, and diagnostics. |
+| **Settings** (`/settings`) | LLM provider, model, API key, Telegram, Linear, worker config, and diagnostics. |
 
 ## Telegram Bot
 
@@ -192,7 +195,7 @@ packages/
   library/            Library domain: unified search, research findings, ingestion pipelines
   watches/            Watches domain: templates, depth levels, delta research
   server/             Fastify API (REST + SSE + digest ratings + background workers)
-  ui/                 React + Vite + Tailwind + shadcn/ui (Home, Library, Watches, Digests, Tasks)
+  ui/                 React + Vite + Tailwind + shadcn/ui (Home, Watches, Chat, Activity, Library, Digests, Tasks, Settings)
   cli/                Commander.js CLI + MCP server
   plugin-assistant/   Chat agent with tools and memory recall
   plugin-research/    Background research with agent harness
@@ -235,11 +238,15 @@ Environment variables or `~/.personal-ai/config.json` (editable via Settings UI)
 | `PAI_SANDBOX_URL` | | Code execution sandbox URL (opt-in) |
 | `PAI_TIMEZONE` | | IANA timezone (e.g., `Asia/Kolkata`) |
 | `PAI_CONTEXT_WINDOW` | | Override context window size for unrecognized models |
+| `PAI_LINEAR_API_KEY` | | Linear API key for issue intake |
+| `PAI_LINEAR_TEAM` | | Default Linear team name |
+| `PAI_LINEAR_PROJECT` | | Default Linear project name |
+| `PAI_BROWSER_URL` | | Browser automation service URL (opt-in) |
 
 ## Development
 
 ```bash
-pnpm test                # 1028+ tests (vitest)
+pnpm test                # 1214+ tests (vitest)
 pnpm test:watch          # watch mode
 pnpm test:coverage       # v8 coverage with thresholds
 pnpm typecheck           # type-check all packages

@@ -77,7 +77,7 @@ packages/
   server/             Fastify API — REST + SSE + static UI + auth (JWT) + WorkerLoop + artifacts serving + server hardening
   library/            Unified knowledge layer: memories, documents, research findings, unified search, ingestion pipelines
   watches/            Watch domain: templates, depth levels, delta research, re-exports from plugin-schedules
-  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Home, Chat, Library, Watches, Digests, Tasks, Settings) + ToolFlightResults + ToolStockReport
+  ui/                 React + Vite + Tailwind + shadcn/ui SPA (Home, Watches, Chat, Activity, Library, Digests, Tasks, Settings) + ToolFlightResults + ToolStockReport
 
 sandbox/              Docker sidecar — Python 3.12 + Node.js 20 for isolated code execution (matplotlib, pandas, plotly, yfinance). Opt-in via `docker compose --profile sandbox`.
 ```
@@ -88,11 +88,13 @@ sandbox/              Docker sidecar — Python 3.12 + Node.js 20 for isolated c
 
 The user-facing shell is intentionally organized around the recurring decision loop, not around storage primitives or raw backlog history.
 
-- `Home` leads with active Watches, open To-Dos, and the latest Digest. Historical digests remain available below as archive.
-- `Ask` is the main creation surface for new Watches and follow-up questions.
+- `Home` leads with active Watches, open To-Dos, quality scorecard, and the latest Digest.
 - `Watches` is the durable watch list over `scheduled_jobs`.
+- `Ask` is the main creation surface for new Watches, follow-up questions, and image uploads.
+- `Activity` (`/jobs`) shows all background jobs (research, swarm, crawl) with real-time progress, status, and failure details.
+- `Library` is the unified knowledge layer: memories, documents, and research findings with cross-source search.
 - `Digests` surfaces daily and research briefings with recommendation, what changed, sources, memory assumptions, recommended moves, and correction.
-- `To-Dos` remain stored in `tasks`, but user-facing product behavior treats them as optional To-Dos linked to a Digest or explicit user intent. The standalone list is secondary to inline recommended moves inside Digests.
+- `To-Dos` remain stored in `tasks`, but user-facing product behavior treats them as optional To-Dos linked to a Digest or explicit user intent.
 
 This is important architecturally because the system may store much more than it should immediately surface. The shell should reflect the current loop state, not dump every internal artifact with equal weight.
 
