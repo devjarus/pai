@@ -1,49 +1,14 @@
-id: example-quality-improvement
-title: Improve a weak but sufficiently sampled quality metric
-objective: >
-  Raise the target metric through a scoped code change without regressing trust or reliability.
-why_now: >
-  The current weakest sufficiently sampled metric is limiting product quality and should drive the next change.
-work_mode: planned
-trigger_signal: >
-  A quality score, failing harness path, or user-visible regression indicates the owning block is underperforming.
-restore_condition: >
-  The target metric or behavior improves and required verification passes without unacceptable regressions.
-prevention_followup: >
-  Add or update tests, harness artifacts, and docs so future changes follow the same boundary and proof model.
-in_scope:
-  - change the owning block only
-  - add or update targeted tests
-  - update docs or checklists if workflow guidance changes
-out_of_scope:
-  - drive-by refactors in unrelated blocks
-  - broad package moves without an explicit architecture follow-up
-affected_systems:
-  - core-platform block owner
-  - any adjacent block touched through a declared interface
-success_criteria:
-  - target behavior or metric improves
-  - required tests and harness commands pass
-  - no unintended contract regression is introduced
-validations_required:
+id: example-digest-fix
+title: Improve a scoped behavior without widening risk
+owner_block: digests
+problem: >
+  Describe the concrete failure, confusion, or weak metric.
+target_change: >
+  Describe the smallest useful improvement.
+guardrails:
+  - trust does not regress
+  - reliability does not regress
+validation:
   - pnpm verify
-  - pnpm harness:regressions
-evidence_pack:
-  artifact: harness/templates/evidence-pack.md
-  required_sections:
-    - Problem
-    - Change
-    - Validation
-    - Metrics
-    - Risks
-risks:
-  - metric gaming instead of product improvement
-  - boundary drift across architecture blocks
-  - insufficient sample leading to false confidence
-escalation_conditions:
-  - ownership of the change is unclear
-  - the change weakens trust or reliability
-  - the required metric is insufficiently sampled
-checklists_required:
-  - harness/checklists/core-platform.md
-  - harness/checklists/quality.md
+notes: >
+  Use this only for larger, riskier, or multi-step tasks. Skip it for small obvious changes.

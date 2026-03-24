@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Coding-agent harness scaffold** — Added `harness/README.md`, block-specific checklists, task/evidence templates, and a new `pnpm harness:regressions` validator so contributors and coding agents can follow the architecture-block workflow consistently.
+- **Harness workflow simplified** — AGENTS and harness guidance now center on owner block, guardrails, minimal change, and correct validation. Task/evidence templates are now optional for larger or riskier work instead of implied paperwork for every scoped fix.
+- **Repo hygiene regression guard** — `pnpm harness:regressions` now also scans tracked files for committed secret-like credentials, tracked config/env files, and hardcoded Linear default team/project literals in runtime source.
 - **Agent-plane harness boundary** — The core agent harness now carries explicit agent identity, declared core-platform block access, preloaded context/previous findings, budget status, and telemetry hooks. The research agent now uses that contract with knowledge/watch/task context instead of treating the harness as a thin wrapper.
 - **Architecture block docs** — Added `docs/architecture/*` pages to document the Core Platform vs Agent Plane split and the dependency rules for future refactors.
 - **Research plugin split** — `research.ts` (1700 lines) split into 6 focused modules: types, repository, prompts, tools, charts, and orchestration. Extracted shared `mapRow` helper to eliminate 4x duplicated row mapping.

@@ -12,9 +12,9 @@ Summarize the code and doc changes that were made.
 
 Record the commands run, with pass/fail status and the highest-signal result.
 
-## Metrics
+## Outcome
 
-Record before/after quality or behavior evidence, including sample size when relevant.
+Record the behavior change or metric movement that shows the change helped.
 
 ## Risks
 

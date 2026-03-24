@@ -1,6 +1,8 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 
 import {
+  ROOT_DIR,
   ValidationCheck,
   ValidationReport,
   flattenIssues,
@@ -13,6 +15,22 @@ import {
   validateTaskContractTemplate,
   writeReport,
 } from "./_shared";
+
+const SECRET_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+  { label: "OpenAI-style key", pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g },
+  { label: "GitHub personal access token", pattern: /\bghp_[A-Za-z0-9]{20,}\b/g },
+  { label: "GitHub fine-grained token", pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g },
+  { label: "Slack token", pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g },
+  { label: "AWS access key", pattern: /\bAKIA[0-9A-Z]{16}\b/g },
+  { label: "Google API key", pattern: /\bAIza[0-9A-Za-z\-_]{20,}\b/g },
+  { label: "Linear API key", pattern: /\blin_api_[A-Za-z0-9]{12,}\b/g },
+];
+
+const FORBIDDEN_TRACKED_FILES = [
+  /(^|\/)\.env($|\.)/,
+  /(^|\/)config\.json$/,
+  /(^|\/)[^/]+\.(pem|p12|pfx|key)$/i,
+];
 
 function validatePackageScripts(): ValidationCheck {
   const packageJson = JSON.parse(fs.readFileSync(rootPath("package.json"), "utf8")) as {
@@ -59,11 +77,80 @@ function validateHarnessDocsReference(): ValidationCheck {
   );
 }
 
+function listTrackedFiles(): string[] {
+  const output = execFileSync("git", ["ls-files", "-z"], { cwd: ROOT_DIR });
+  return output.toString("utf8").split("\0").filter(Boolean);
+}
+
+function isLikelyTextFile(content: Buffer): boolean {
+  return !content.includes(0);
+}
+
+function isRuntimeSourceFile(filePath: string): boolean {
+  return filePath.startsWith("packages/")
+    && filePath.includes("/src/")
+    && !filePath.includes("/test/")
+    && !filePath.includes("/dist/");
+}
+
+function validateRepoHygiene(): ValidationCheck {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+
+  const trackedFiles = listTrackedFiles();
+  for (const relativePath of trackedFiles) {
+    const normalized = relativePath.replaceAll("\\", "/");
+    if (
+      FORBIDDEN_TRACKED_FILES.some((pattern) => pattern.test(normalized))
+      && !normalized.endsWith(".env.example")
+    ) {
+      blockers.push(`${normalized}: should not be committed to git`);
+      continue;
+    }
+
+    const absolutePath = rootPath(normalized);
+    if (!fs.existsSync(absolutePath)) {
+      continue;
+    }
+
+    const raw = fs.readFileSync(absolutePath);
+    if (raw.length > 1024 * 1024 || !isLikelyTextFile(raw)) {
+      continue;
+    }
+
+    const content = raw.toString("utf8");
+    for (const { label, pattern } of SECRET_PATTERNS) {
+      if (pattern.test(content)) {
+        blockers.push(`${normalized}: contains ${label}`);
+      }
+      pattern.lastIndex = 0;
+    }
+
+    if (isRuntimeSourceFile(normalized)) {
+      for (const match of content.matchAll(/\b(defaultTeam|defaultProject)\s*:\s*["'`]([^"'`]+)["'`]/g)) {
+        const field = match[1];
+        const value = match[2]?.trim();
+        if (field && value) {
+          blockers.push(`${normalized}: hardcodes ${field}="${value}" in runtime source`);
+        }
+      }
+    }
+  }
+
+  return makeCheck(
+    "repo-hygiene",
+    "Checked tracked files for committed secrets, secret-bearing config files, and hardcoded Linear defaults in runtime source.",
+    blockers,
+    warnings,
+  );
+}
+
 async function run(): Promise<ValidationReport> {
   const checks: ValidationCheck[] = [];
 
   checks.push(validatePackageScripts());
   checks.push(validateHarnessDocsReference());
+  checks.push(validateRepoHygiene());
 
   checks.push(
     validateMarkdownSections("harness/README.md", [
@@ -89,10 +176,9 @@ async function run(): Promise<ValidationReport> {
       "# Core Platform Checklist",
       "## Use This Checklist When",
       "## Before Coding",
-      "## Boundaries",
-      "## Required Validation",
-      "## Evidence To Capture",
-      "## Escalate When",
+      "## Keep True",
+      "## Validation",
+      "## Stop And Reassess",
     ]),
   );
 
@@ -101,10 +187,9 @@ async function run(): Promise<ValidationReport> {
       "# Agent Plane Checklist",
       "## Use This Checklist When",
       "## Before Coding",
-      "## Boundaries",
-      "## Required Validation",
-      "## Evidence To Capture",
-      "## Escalate When",
+      "## Keep True",
+      "## Validation",
+      "## Stop And Reassess",
     ]),
   );
 
@@ -113,10 +198,9 @@ async function run(): Promise<ValidationReport> {
       "# Digests Checklist",
       "## Use This Checklist When",
       "## Before Coding",
-      "## Boundaries",
-      "## Required Validation",
-      "## Evidence To Capture",
-      "## Escalate When",
+      "## Keep True",
+      "## Validation",
+      "## Stop And Reassess",
     ]),
   );
 
@@ -125,10 +209,9 @@ async function run(): Promise<ValidationReport> {
       "# Quality Checklist",
       "## Use This Checklist When",
       "## Before Coding",
-      "## Boundaries",
-      "## Required Validation",
-      "## Evidence To Capture",
-      "## Escalate When",
+      "## Keep True",
+      "## Validation",
+      "## Stop And Reassess",
     ]),
   );
 
@@ -139,7 +222,7 @@ async function run(): Promise<ValidationReport> {
       "## Problem",
       "## Change",
       "## Validation",
-      "## Metrics",
+      "## Outcome",
       "## Risks",
     ]),
   );
@@ -152,7 +235,7 @@ async function run(): Promise<ValidationReport> {
     generated_at: new Date().toISOString(),
     status: reportStatus(checks),
     summary:
-      "Regression harness run. This validates the coding-agent workflow assets: architecture block docs, harness checklists, task/evidence templates, and root harness script wiring.",
+      "Regression harness run. This validates the coding-agent workflow assets: architecture block docs, lean checklists, lightweight task/evidence templates, repo hygiene, and root harness script wiring.",
     checks,
     blockers,
     warnings,
