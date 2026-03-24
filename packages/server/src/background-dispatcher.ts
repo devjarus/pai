@@ -1,5 +1,5 @@
 import type { BackgroundJobSourceKind, BackgroundWaitingReason, PluginContext } from "@personal-ai/core";
-import { getLlmTrafficConfig, getLlmTrafficSnapshot, upsertJob } from "@personal-ai/core";
+import { appendMessages, getLlmTrafficConfig, getLlmTrafficSnapshot, upsertJob } from "@personal-ai/core";
 import { createResearchJob, listPendingResearchJobs, runResearchInBackground } from "@personal-ai/plugin-research";
 import { createSwarmJob, listPendingSwarmJobs, runSwarmInBackground } from "@personal-ai/plugin-swarm";
 import { formatSearchResults, webSearch } from "@personal-ai/plugin-assistant/web-search";
@@ -301,6 +301,9 @@ export class BackgroundDispatcher {
           error: errorMsg,
           attempts: attemptCount,
         });
+
+        // Notify user about permanent failure via thread message
+        this.notifyFailure(next.id, next.kind, errorMsg, attemptCount);
       }
     } finally {
       // Clean up browser tabs after research/swarm to prevent tab leak
@@ -314,6 +317,50 @@ export class BackgroundDispatcher {
       const delay = this.retryDelayMs ?? 500;
       this.retryDelayMs = undefined;
       this.nudge(delay);
+    }
+  }
+
+  /** Post a failure notification to the job's thread so the user knows it failed. */
+  private notifyFailure(jobId: string, kind: PendingKind, errorMsg: string, attempts: number): void {
+    try {
+      // Look up the job's thread and label
+      const job = this.ctx.storage.query<{ label: string; source_schedule_id: string | null }>(
+        "SELECT label, source_schedule_id FROM background_jobs WHERE id = ?",
+        [jobId],
+      )[0];
+      if (!job) return;
+
+      // Find the thread: for research jobs check research_jobs table, otherwise use schedule's thread
+      let threadId: string | null = null;
+      if (kind === "research") {
+        const rj = this.ctx.storage.query<{ thread_id: string | null }>(
+          "SELECT thread_id FROM research_jobs WHERE id = ?",
+          [jobId],
+        )[0];
+        threadId = rj?.thread_id ?? null;
+      }
+      if (!threadId && job.source_schedule_id) {
+        const sched = this.ctx.storage.query<{ thread_id: string | null }>(
+          "SELECT thread_id FROM scheduled_jobs WHERE id = ?",
+          [job.source_schedule_id],
+        )[0];
+        threadId = sched?.thread_id ?? null;
+      }
+
+      if (threadId) {
+        const label = job.label || kind;
+        appendMessages(this.ctx.storage, threadId, [
+          {
+            role: "assistant",
+            content: `**${kind.charAt(0).toUpperCase() + kind.slice(1)} task failed** after ${attempts} attempt${attempts !== 1 ? "s" : ""}.\n\n**Task:** ${label}\n**Error:** ${errorMsg}\n\nThe next scheduled run will retry automatically. You can also re-run this manually.`,
+          },
+        ]);
+      }
+    } catch (notifyErr) {
+      this.ctx.logger.warn("Failed to post failure notification to thread", {
+        jobId,
+        error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+      });
     }
   }
 

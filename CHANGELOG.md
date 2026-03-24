@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scheduled research retries with exponential backoff** — Rate-limited research and swarm jobs now retry up to 3 times with exponential backoff (30s → 60s → 120s) instead of silently failing after 2 immediate retries. Swarm jobs now also retry on transient errors.
 - **Thread titles update when topic changes** — Thread titles now regenerate via LLM every 5 user turns (down from 10), starting at turn 3 (down from 5), using the last 10 messages with a prompt that focuses on the current topic rather than the original message.
 - **Telemetry captures HTTP error messages** — API error responses now include the actual error message in telemetry spans instead of "Unknown error". Auth refresh 401s (expected token expiry) are no longer recorded as errors.
+- **Failed background jobs notify users** — When research or swarm jobs permanently fail (after retries exhausted), a failure message is posted to the job's thread with the task name, error, and attempt count. No more silent failures.
 
 ### Added
 - **State-first recurring reports** — Digests now compute structured state deltas (new findings with diffs, changed insights, new/corrected beliefs, completed actions) instead of prompt-stuffing raw JSON. Each cycle compounds on the last through computed diffs.
