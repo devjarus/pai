@@ -15,6 +15,7 @@ Complete instructions for installing, configuring, and using Personal AI.
   - [Anthropic](#anthropic)
   - [Google AI (Gemini)](#google-ai-gemini)
 - [Telegram Bot Setup](#telegram-bot-setup)
+- [Linear Issue Intake](#linear-issue-intake)
 - [Using Personal AI](#using-personal-ai)
   - [Chat](#chat)
   - [Memory](#memory)
@@ -138,6 +139,24 @@ In the Railway service settings, add these variables:
 |----------|-------|----------|
 | `PAI_LLM_PROVIDER` | `openai`, `anthropic`, `google`, or `cerebras` | Yes |
 | `PAI_LLM_API_KEY` | Your provider API key | Yes |
+
+---
+
+## Linear Issue Intake
+
+pai can file feature requests and bugs into Linear directly from chat after only a few follow-up questions.
+
+Configure it from **Settings**:
+
+1. Enable **Linear Intake**
+2. Add a Linear personal API key
+3. Set a default team key, name, or UUID
+4. Optionally set a default project slugId, name, or UUID
+
+Or configure via environment variables:
+
+| Variable | Purpose |
+|----------|---------|
 | `PAI_LLM_MODEL` | e.g. `gpt-4o`, `claude-sonnet-4-20250514` | Recommended |
 | `PAI_DATA_DIR` | `/data` | Yes |
 | `PAI_CORS_ORIGIN` | Your custom domain (e.g. `https://pai.example.com`) | If using custom domain |
@@ -177,6 +196,40 @@ On first visit, pai shows a **Setup Wizard** — enter your name, email, and pas
 - The server adds security headers (helmet): CSP, HSTS, X-Frame-Options, etc.
 - Rate limiting is enforced: 100 req/min global, 20 req/min for chat, 5 req/min for login
 - The Docker container runs as a non-root user (`pai`, UID 1001)
+
+---
+
+## Linear Issue Intake
+
+pai can file feature requests and bugs into Linear directly from chat after only a few follow-up questions.
+
+Configure it from **Settings**:
+
+1. Enable **Linear Intake**
+2. Add a Linear personal API key
+3. Set a default team key, name, or UUID
+4. Optionally set a default project slugId, name, or UUID
+5. Optionally enable **Auto-log recurring failures** if you want pai to open a deduplicated Linear issue when the same telemetry error keeps happening
+
+Or configure via environment variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `PAI_LINEAR_ENABLED` | Enable Linear intake (`true` / `false`) |
+| `PAI_LINEAR_API_KEY` | Linear personal API key |
+| `PAI_LINEAR_TEAM` | Default team reference (key, name, or UUID) |
+| `PAI_LINEAR_PROJECT` | Optional default project reference (slugId, name, or UUID) |
+| `PAI_LINEAR_AUTO_ERRORS` | Automatically create one Linear issue per recurring telemetry failure fingerprint |
+
+Once configured, you can say things like:
+
+- `Log this as a feature request`
+- `Create a bug for this`
+- `Put this in Linear`
+
+The assistant will ask only for the missing essentials, then create the issue directly in Linear.
+
+If automatic logging is enabled, pai also scans recent telemetry failures in the background and creates a single deduplicated issue when the same normalized failure crosses the recurring-error threshold. Worker failures trigger faster than chat/runtime errors, and repeat sweeps update the local registry instead of creating duplicate Linear issues.
 
 ---
 

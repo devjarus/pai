@@ -15,6 +15,8 @@ Your second brain that watches things for you. Start with Ask, set up Watches fo
 - **Persistent memory** — beliefs with lifecycle (reinforce, contradict, decay, synthesize), semantic search, and correction-aware context reuse
 - **Home dashboard** — latest digest, active watches, open to-dos, and library stats at a glance
 - **Companion surfaces** — web UI, Telegram, CLI, and MCP for Claude Code / Cursor integration
+- **Conversational issue intake** — connect Linear once in Settings, then ask pai to log a feature or bug after only a few follow-up questions
+- **Automatic recurring-error intake** — optionally auto-log repeated failures into one deduplicated Linear issue when the same problem keeps happening
 
 ## Quick Start
 
@@ -81,7 +83,7 @@ Open `http://127.0.0.1:3141` after starting the server:
 | **Chat** (`/ask`) | Chat for questions, follow-ups, and creating watches. |
 | **Library** (`/library`) | Unified view of memories, documents, and research findings with cross-source search. |
 | **Tasks** (`/tasks`) | To-dos linked to watches and digests. |
-| **Settings** | LLM provider, model, API key, Telegram config, and diagnostics. |
+| **Settings** | LLM provider, model, API key, Telegram config, Linear intake, and diagnostics. |
 
 ## Telegram Bot
 

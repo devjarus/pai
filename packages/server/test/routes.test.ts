@@ -70,6 +70,8 @@ vi.mock("@personal-ai/core", async (importOriginal) => {
     listArtifacts: (...args: unknown[]) => mockListArtifacts(...args),
     deriveReportVisuals: (...args: unknown[]) => mockDeriveReportVisuals(...args),
     createLLMClient: (...args: unknown[]) => mockCreateLLMClient(...args),
+    createLinearIssue: (...args: unknown[]) => mockCreateLinearIssue(...args),
+    isLinearIssueIntakeConfigured: (...args: unknown[]) => mockIsLinearIssueIntakeConfigured(...args),
     recordProductEvent: (...args: unknown[]) => mockRecordProductEvent(...args),
     getProductMetricsOverview: (...args: unknown[]) => mockGetProductMetricsOverview(...args),
     getObservabilityOverview: (...args: unknown[]) => mockGetObservabilityOverview(...args),
@@ -107,6 +109,8 @@ const mockGetTraceSpans = vi.fn();
 const mockListRecentErrors = vi.fn();
 const mockRecordProductEvent = vi.fn();
 const mockGetProductMetricsOverview = vi.fn();
+const mockCreateLinearIssue = vi.fn();
+const mockIsLinearIssueIntakeConfigured = vi.fn().mockReturnValue(false);
 
 // ---------------------------------------------------------------------------
 // Background jobs mock functions
@@ -1665,6 +1669,7 @@ describe("config routes", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockLoadConfigFile.mockReturnValue({});
     app = Fastify();
     serverCtx = createMockServerCtx();
     registerConfigRoutes(app, serverCtx);
@@ -1714,6 +1719,33 @@ describe("config routes", () => {
     const body = JSON.parse(res.payload);
     expect(body.llm.apiKey).toBeUndefined();
     expect(body.llm.provider).toBe("ollama"); // other fields still present
+  });
+
+  it("GET /api/config sanitizes Linear secrets and exposes defaults", async () => {
+    serverCtx.ctx.config.linear = {
+      enabled: true,
+      apiKey: "lin_api_key",
+      defaultTeam: "ENG",
+      defaultProject: "Inbox polish",
+      autoCreateRecurringIssues: true,
+    };
+
+    await app.close();
+    app = Fastify();
+    registerConfigRoutes(app, serverCtx);
+    await app.ready();
+
+    const res = await app.inject({ method: "GET", url: "/api/config" });
+
+    const body = JSON.parse(res.payload);
+    expect(body.linear).toEqual({
+      enabled: true,
+      hasApiKey: true,
+      defaultTeam: "ENG",
+      defaultProject: "Inbox polish",
+      autoCreateRecurringIssues: true,
+    });
+    expect(body.linear.apiKey).toBeUndefined();
   });
 
   it("GET /api/config includes logLevel", async () => {
@@ -2852,6 +2884,37 @@ describe("Config routes", () => {
     const writtenLlm = writtenConfig.llm as Record<string, unknown>;
     expect(writtenLlm.apiKey).toBe("sk-existing-key");
     expect(writtenLlm.model).toBe("gpt-4o-mini");
+  });
+
+  it("PUT /api/config preserves existing Linear key when only defaults change", async () => {
+    serverCtx.ctx.config.linear = {
+      enabled: true,
+      apiKey: "lin-existing-key",
+      defaultTeam: "ENG",
+      autoCreateRecurringIssues: false,
+    };
+    mockLoadConfigFile.mockReturnValue({
+      linear: {
+        apiKey: "lin-existing-key",
+        enabled: true,
+        defaultTeam: "ENG",
+        autoCreateRecurringIssues: false,
+      },
+    });
+
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { linearDefaultProject: "Inbox polish", linearAutoCreateRecurringIssues: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const writeCall = mockWriteConfig.mock.calls[0];
+    const writtenConfig = writeCall[1] as Record<string, unknown>;
+    const writtenLinear = writtenConfig.linear as Record<string, unknown>;
+    expect(writtenLinear.apiKey).toBe("lin-existing-key");
+    expect(writtenLinear.defaultProject).toBe("Inbox polish");
+    expect(writtenLinear.autoCreateRecurringIssues).toBe(true);
   });
 
   it("PUT /api/config rejects invalid provider", async () => {

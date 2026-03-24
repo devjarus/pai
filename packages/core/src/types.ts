@@ -126,6 +126,16 @@ export interface Config {
     reactionCooldownMin?: number;
     proactiveCooldownMin?: number;
   };
+  linear?: {
+    apiKey?: string;
+    enabled?: boolean;
+    /** Default team reference used for issue creation. Accepts key, name, or UUID. */
+    defaultTeam?: string;
+    /** Optional default project reference used for issue creation. Accepts slugId, name, or UUID. */
+    defaultProject?: string;
+    /** Automatically create Linear issues when recurring failures cross thresholds. */
+    autoCreateRecurringIssues?: boolean;
+  };
   /** Show debug info (render spec, raw data) on research results */
   debugResearch?: boolean;
   /** Sandbox code execution URL (e.g. http://localhost:8888). Auto-detected in Docker/Railway if unset. */

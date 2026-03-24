@@ -163,6 +163,25 @@ describe("writeConfig", () => {
     const parsed = JSON.parse(raw);
     expect(parsed).toEqual(config);
   });
+
+  it("encrypts Linear and Telegram secrets on disk and decrypts them when loaded", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pai-test-"));
+    dirs.push(dir);
+    writeConfig(dir, {
+      llm: { provider: "openai" as const, model: "gpt-4.1", apiKey: "sk-test" },
+      telegram: { token: "123:ABC" },
+      linear: { apiKey: "lin_api_key", enabled: true, autoCreateRecurringIssues: true },
+    });
+
+    const raw = readFileSync(join(dir, "config.json"), "utf-8");
+    expect(raw).not.toContain("lin_api_key");
+    expect(raw).not.toContain("123:ABC");
+
+    const loaded = loadConfigFile(dir);
+    expect(loaded.linear?.apiKey).toBe("lin_api_key");
+    expect(loaded.linear?.autoCreateRecurringIssues).toBe(true);
+    expect(loaded.telegram?.token).toBe("123:ABC");
+  });
 });
 
 describe("loadConfig with config file merging", () => {
@@ -249,5 +268,25 @@ describe("loadConfig with config file merging", () => {
     dirs.push(dir);
     const config = loadConfig({ PAI_HOME: dir });
     expect(config.telegram).toBeUndefined();
+  });
+
+  it("should include Linear config from env vars", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pai-test-"));
+    dirs.push(dir);
+    const config = loadConfig({
+      PAI_HOME: dir,
+      PAI_LINEAR_ENABLED: "true",
+      PAI_LINEAR_API_KEY: "lin_api_key",
+      PAI_LINEAR_TEAM: "ENG",
+      PAI_LINEAR_PROJECT: "Inbox polish",
+      PAI_LINEAR_AUTO_ERRORS: "true",
+    });
+    expect(config.linear).toEqual({
+      enabled: true,
+      apiKey: "lin_api_key",
+      defaultTeam: "ENG",
+      defaultProject: "Inbox polish",
+      autoCreateRecurringIssues: true,
+    });
   });
 });

@@ -24,8 +24,8 @@ function getWorkerLastRun(storage: Storage): Record<string, string | null> {
 /** Config file location: data dir (persistent volume) on Docker/PaaS, ~/.personal-ai/ locally */
 const configDir = process.env.PAI_DATA_DIR ?? join(homedir(), ".personal-ai");
 
-function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Record<string, unknown>; workers?: Record<string, unknown>; timezone?: string; [key: string]: unknown }) {
-  const { llm, telegram, workers, ...rest } = config;
+function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Record<string, unknown>; linear?: Record<string, unknown>; workers?: Record<string, unknown>; timezone?: string; [key: string]: unknown }) {
+  const { llm, telegram, linear, workers, ...rest } = config;
   return {
     ...rest,
     llm: {
@@ -40,6 +40,13 @@ function sanitizeConfig(config: { llm: Record<string, unknown>; telegram?: Recor
     telegram: {
       enabled: telegram?.enabled ?? false,
       hasToken: !!telegram?.token,
+    },
+    linear: {
+      enabled: linear?.enabled ?? false,
+      hasApiKey: !!linear?.apiKey,
+      defaultTeam: typeof linear?.defaultTeam === "string" ? linear.defaultTeam : "",
+      defaultProject: typeof linear?.defaultProject === "string" ? linear.defaultProject : "",
+      autoCreateRecurringIssues: linear?.autoCreateRecurringIssues === true,
     },
     timezone: config.timezone ?? null,
     webSearchEnabled: config.webSearchEnabled ?? true,
@@ -72,6 +79,11 @@ const ENV_OVERRIDE_MAP: Record<string, string> = {
   PAI_LLM_EMBED_MODEL: "embedModel",
   PAI_LLM_EMBED_PROVIDER: "embedProvider",
   PAI_DATA_DIR: "dataDir",
+  PAI_LINEAR_ENABLED: "linearEnabled",
+  PAI_LINEAR_API_KEY: "linearApiKey",
+  PAI_LINEAR_TEAM: "linearDefaultTeam",
+  PAI_LINEAR_PROJECT: "linearDefaultProject",
+  PAI_LINEAR_AUTO_ERRORS: "linearAutoCreateRecurringIssues",
 };
 
 function getEnvOverrides(): string[] {
@@ -104,6 +116,11 @@ const updateConfigSchema = z.object({
   dataDir: z.string().optional(),
   telegramToken: z.string().optional(),
   telegramEnabled: z.boolean().optional(),
+  linearApiKey: z.string().optional(),
+  linearEnabled: z.boolean().optional(),
+  linearDefaultTeam: z.string().optional(),
+  linearDefaultProject: z.string().optional(),
+  linearAutoCreateRecurringIssues: z.boolean().optional(),
   timezone: z.string().optional(),
   backgroundLearning: z.boolean().optional(),
   briefingEnabled: z.boolean().optional(),
@@ -280,6 +297,28 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
       update.telegram = telegramUpdate;
     }
 
+    if (
+      body.linearApiKey !== undefined ||
+      body.linearEnabled !== undefined ||
+      body.linearDefaultTeam !== undefined ||
+      body.linearDefaultProject !== undefined ||
+      body.linearAutoCreateRecurringIssues !== undefined
+    ) {
+      const existingLinear = ctx.config.linear ?? {};
+      const linearUpdate: Record<string, unknown> = { ...existingLinear };
+      if (body.linearApiKey !== undefined) linearUpdate.apiKey = body.linearApiKey || undefined;
+      if (body.linearEnabled !== undefined) linearUpdate.enabled = body.linearEnabled;
+      if (body.linearDefaultTeam !== undefined) linearUpdate.defaultTeam = body.linearDefaultTeam || undefined;
+      if (body.linearDefaultProject !== undefined) linearUpdate.defaultProject = body.linearDefaultProject || undefined;
+      if (body.linearAutoCreateRecurringIssues !== undefined) {
+        linearUpdate.autoCreateRecurringIssues = body.linearAutoCreateRecurringIssues;
+      }
+      if (body.linearApiKey === undefined && (existing.linear as Record<string, unknown>)?.apiKey) {
+        linearUpdate.apiKey = (existing.linear as Record<string, unknown>).apiKey;
+      }
+      update.linear = linearUpdate;
+    }
+
     // Write config to persistent location
     const merged = { ...existing, ...update };
     writeConfig(configDir, merged as never);
@@ -315,6 +354,8 @@ export function registerConfigRoutes(app: FastifyInstance, serverCtx: ServerCont
         (reloaded as unknown as Record<string, unknown>).knowledge = { ...reloaded.knowledge, ...value as Record<string, unknown> };
       } else if (key === "telegram" && typeof value === "object") {
         (reloaded as unknown as Record<string, unknown>).telegram = { ...reloaded.telegram, ...value as Record<string, unknown> };
+      } else if (key === "linear" && typeof value === "object") {
+        (reloaded as unknown as Record<string, unknown>).linear = { ...reloaded.linear, ...value as Record<string, unknown> };
       } else {
         (reloaded as unknown as Record<string, unknown>)[key] = value;
       }

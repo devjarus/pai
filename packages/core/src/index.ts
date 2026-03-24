@@ -12,6 +12,14 @@ export { loadConfig, loadConfigFile, writeConfig, findGitRoot, resolveConfigHome
 export { createStorage, backupDatabase, resolveIdPrefix } from "./storage.js";
 export { createLLMClient } from "./llm.js";
 export { createLogger } from "./logger.js";
+export { createLinearIssue, isLinearIssueIntakeConfigured } from "./linear.js";
+export type { LinearIssueInput, LinearIssueResult } from "./linear.js";
+export {
+  linearIssueRegistryMigrations,
+  collectRecurringTelemetryFailures,
+  syncAutomaticLinearIssues,
+} from "./linear-auto-issues.js";
+export type { AutomaticLinearIssueSummary } from "./linear-auto-issues.js";
 export {
   acquireLlmTrafficPermit,
   configureLlmTraffic,

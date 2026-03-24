@@ -431,6 +431,11 @@ export function updateConfig(updates: {
   briefingEnabled?: boolean;
   telegramToken?: string;
   telegramEnabled?: boolean;
+  linearApiKey?: string;
+  linearEnabled?: boolean;
+  linearDefaultTeam?: string;
+  linearDefaultProject?: string;
+  linearAutoCreateRecurringIssues?: boolean;
   knowledgeCleanup?: boolean;
   llmTrafficMaxConcurrent?: number;
   llmTrafficStartGapMs?: number;

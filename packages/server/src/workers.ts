@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PluginContext } from "@personal-ai/core";
-import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads, cleanupOldTelemetrySpans, startSpan, finishSpan } from "@personal-ai/core";
+import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads, cleanupOldTelemetrySpans, startSpan, finishSpan, syncAutomaticLinearIssues } from "@personal-ai/core";
 import { cleanupFindings } from "@personal-ai/library";
 import { getDueSchedules, markScheduleRun } from "@personal-ai/plugin-schedules";
 import { resolveDepthForWatch, getPreviousFindingsContext } from "@personal-ai/watches";
@@ -24,6 +24,7 @@ const DEFAULT_LEARNING_INITIAL_DELAY_MS = 5 * 60 * 1000;
 const DEFAULT_KNOWLEDGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ARTIFACT_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_AUTO_LINEAR_ISSUE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const DEFAULT_ARTIFACT_MAX_AGE_DAYS = 7;
 
 /**
@@ -87,6 +88,7 @@ export class WorkerLoop {
   private knowledgeCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private artifactCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private telemetryCleanupTimer: ReturnType<typeof setInterval> | null = null;
+  private autoLinearIssueTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private abortController = new AbortController();
 
@@ -338,6 +340,23 @@ export class WorkerLoop {
         this.ctx.logger.warn(`Telemetry cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     }, telemetryCleanupMs);
+
+    this.autoLinearIssueTimer = setInterval(() => {
+      this.runWorkerTask("worker.cleanup", async () => {
+        const result = await syncAutomaticLinearIssues(this.ctx.storage, this.ctx.config, this.ctx.logger);
+        if (result.reason === "disabled" || result.reason === "not_configured") return;
+        if (result.created > 0 || result.updated > 0) {
+          this.ctx.logger.info("Automatic Linear issue sweep completed", {
+            created: result.created,
+            updated: result.updated,
+            candidates: result.candidates,
+            skipped: result.skipped,
+          });
+        }
+      }).catch((err) => {
+        this.ctx.logger.warn(`Automatic Linear issue sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }, DEFAULT_AUTO_LINEAR_ISSUE_CHECK_INTERVAL_MS);
   }
 
   stop(): void {
@@ -352,6 +371,7 @@ export class WorkerLoop {
     if (this.knowledgeCleanupTimer) { clearInterval(this.knowledgeCleanupTimer); this.knowledgeCleanupTimer = null; }
     if (this.artifactCleanupTimer) { clearInterval(this.artifactCleanupTimer); this.artifactCleanupTimer = null; }
     if (this.telemetryCleanupTimer) { clearInterval(this.telemetryCleanupTimer); this.telemetryCleanupTimer = null; }
+    if (this.autoLinearIssueTimer) { clearInterval(this.autoLinearIssueTimer); this.autoLinearIssueTimer = null; }
   }
 
   updateContext(newCtx: Partial<PluginContext>): void {

@@ -104,6 +104,13 @@ export interface ConfigInfo {
     username?: string;
     error?: string;
   };
+  linear?: {
+    enabled?: boolean;
+    hasApiKey?: boolean;
+    defaultTeam?: string;
+    defaultProject?: string;
+    autoCreateRecurringIssues?: boolean;
+  };
   workers?: {
     backgroundLearning?: boolean;
     briefing?: boolean;
