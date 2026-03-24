@@ -1,5 +1,5 @@
 # Stage 1: Build Pinchtab from source with --no-sandbox patch
-FROM golang:1.25 AS pinchtab-builder
+FROM golang:1.26 AS pinchtab-builder
 WORKDIR /src
 RUN git clone --depth 1 https://github.com/pinchtab/pinchtab.git .
 # Add --no-sandbox to Chrome launch options (required in containers that drop capabilities)
