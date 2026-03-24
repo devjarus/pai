@@ -551,14 +551,30 @@ export async function createServer(options?: { port?: number; host?: string }) {
     }
   });
 
+  // --- Capture error messages from response bodies for telemetry ---
+  app.addHook("onSend", async (request, reply, payload) => {
+    if (!request.url.startsWith("/api/") || reply.statusCode < 400) return payload;
+    try {
+      const body = typeof payload === "string" ? JSON.parse(payload) as { error?: string } : null;
+      if (body?.error) {
+        (request as typeof request & { _errorMessage?: string })._errorMessage = body.error;
+      }
+    } catch { /* not JSON — ignore */ }
+    return payload;
+  });
+
   // --- Request logging for API calls ---
   app.addHook("onResponse", async (request, reply) => {
     if (!request.url.startsWith("/api/")) return;
-    const requestWithTelemetry = request as typeof request & TelemetryRequest;
+    const requestWithTelemetry = request as typeof request & TelemetryRequest & { _errorMessage?: string };
     const telemetrySpan = requestWithTelemetry.telemetrySpan;
     if (telemetrySpan) {
+      // Auth refresh 401s are expected (expired tokens) — don't record as errors
+      const isExpectedAuthFailure = reply.statusCode === 401
+        && request.url.startsWith("/api/auth/");
       finishSpan({ storage: ctx.storage, logger: ctx.logger }, telemetrySpan, {
-        status: reply.statusCode >= 400 ? "error" : "ok",
+        status: !isExpectedAuthFailure && reply.statusCode >= 400 ? "error" : "ok",
+        errorMessage: !isExpectedAuthFailure ? (requestWithTelemetry._errorMessage ?? null) : null,
         responseSizeChars: Number(reply.getHeader("content-length") ?? 0) || null,
         metadata: {
           httpStatus: reply.statusCode,
