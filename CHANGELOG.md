@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Telemetry captures HTTP error messages** — API error responses now include the actual error message in telemetry spans instead of "Unknown error". Auth refresh 401s (expected token expiry) are no longer recorded as errors.
 - **Failed background jobs notify users** — When research or swarm jobs permanently fail (after retries exhausted), a failure message is posted to the job's thread with the task name, error, and attempt count. No more silent failures.
 - **Research briefs no longer pad with stale news** — Research prompts now explicitly require publication date checking, penalize old articles, and allow "no significant updates" instead of forcing content. The "always something new — dig harder" instruction that caused stale padding has been replaced with honest freshness guidance.
+- **Activity page in main navigation** — The Jobs/Activity page is now always accessible from the sidebar and mobile tab bar (previously hidden behind a spinner that only appeared when jobs were active). Shows a blue pulse indicator when background jobs are running.
 
 ### Added
 - **State-first recurring reports** — Digests now compute structured state deltas (new findings with diffs, changed insights, new/corrected beliefs, completed actions) instead of prompt-stuffing raw JSON. Each cycle compounds on the last through computed diffs.

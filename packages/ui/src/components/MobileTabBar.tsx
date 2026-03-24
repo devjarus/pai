@@ -10,6 +10,7 @@ const primaryTabs = [
   { to: "/", label: "Home", icon: TabIconHome },
   { to: "/watches", label: "Watches", icon: TabIconPrograms },
   { to: "/ask", label: "Chat", icon: TabIconChat },
+  { to: "/jobs", label: "Activity", icon: TabIconActivity },
   { to: "/library", label: "Library", icon: TabIconMemory },
 ] as const;
 
@@ -20,18 +21,6 @@ export function MobileTabBar({ hasNewBriefing }: MobileTabBarProps) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border/40 bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
       <div className="flex items-stretch">
-        {activeJobCount > 0 && (
-          <NavLink
-            to="/jobs"
-            className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 text-[10px] font-medium text-primary"
-          >
-            <svg className="size-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" opacity="0.3" />
-              <path d="M12 2v4" />
-            </svg>
-            <span>{activeJobCount}</span>
-          </NavLink>
-        )}
         {primaryTabs.map((tab) => (
           <NavLink
             key={tab.to}
@@ -50,6 +39,9 @@ export function MobileTabBar({ hasNewBriefing }: MobileTabBarProps) {
             <span>{tab.label}</span>
             {tab.to === "/" && hasNewBriefing && (
               <span className="absolute right-1/4 top-1.5 h-1.5 w-1.5 rounded-full bg-primary pointer-events-none" />
+            )}
+            {tab.to === "/jobs" && activeJobCount > 0 && (
+              <span className="absolute right-1/4 top-1.5 h-1.5 w-1.5 rounded-full bg-blue-500 pointer-events-none animate-pulse" />
             )}
           </NavLink>
         ))}
@@ -100,3 +92,10 @@ function TabIconPrograms() {
   );
 }
 
+function TabIconActivity() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  );
+}

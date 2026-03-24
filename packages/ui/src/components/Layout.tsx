@@ -13,6 +13,7 @@ const navItems = [
   { to: "/", label: "Home", icon: IconHome },
   { to: "/watches", label: "Watches", icon: IconPrograms },
   { to: "/ask", label: "Chat", icon: IconChat },
+  { to: "/jobs", label: "Activity", icon: IconActivity },
   { to: "/library", label: "Library", icon: IconMemory },
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
@@ -78,6 +79,9 @@ export default function Layout() {
                   {item.to === "/" && hasNewBriefing && (
                     <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-background pointer-events-none" />
                   )}
+                  {item.to === "/jobs" && hasActiveJobs && (
+                    <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-500 ring-2 ring-background pointer-events-none animate-pulse" />
+                  )}
                 </div>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={8}>
@@ -87,26 +91,6 @@ export default function Layout() {
           ))}
         </div>
 
-        {/* Global activity indicator — visible when jobs are running */}
-        {hasActiveJobs && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <NavLink
-                to="/jobs"
-                aria-label="Active jobs"
-                className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg text-primary transition-colors hover:bg-primary/10"
-              >
-                <svg className="size-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" opacity="0.3" />
-                  <path d="M12 2v4" />
-                </svg>
-              </NavLink>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8}>
-              {activeJobs.length} job{activeJobs.length !== 1 ? "s" : ""} running
-            </TooltipContent>
-          </Tooltip>
-        )}
       </nav>
 
       {/* Main content — bottom padding on mobile to clear tab bar */}
@@ -161,6 +145,14 @@ function IconPrograms() {
       <path d="M16 14h.01" />
       <path d="M8 18h.01" />
       <path d="M12 18h.01" />
+    </svg>
+  );
+}
+
+function IconActivity() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
     </svg>
   );
 }
