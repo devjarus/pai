@@ -13,5 +13,5 @@ export function getPreviousFindingsContext(storage: Storage, watchId: string, li
   const recent = findings.slice(0, limit);
   const summaries = recent.map((f, i) => `${i + 1}. [${f.createdAt}] ${f.summary}`).join("\n");
 
-  return `\n\nPREVIOUS RESEARCH (baseline — go beyond this):\n${summaries}\n\nUse different search queries than before. Seek new sources, updated data, fresh perspectives, or developments the previous research didn't cover.`;
+  return `\n\nPREVIOUS RESEARCH (baseline — go beyond this):\n${summaries}\n\nSeek genuinely NEW developments published since the most recent finding above. Do not resurface old articles just to be different — only report information that was published or updated after the previous research date. If nothing new has happened, say "No significant updates since [date]" instead of padding with stale content.`;
 }

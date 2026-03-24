@@ -74,9 +74,9 @@ export function buildEnrichedResearchGoal(
     `${schedule.goal}\n\n` +
     `CONTEXT — WHAT WAS ALREADY COVERED (use as baseline, not as your report):\n` +
     `${previousSummary}\n\n` +
-    `Your job${sinceClause}: find FRESH information the previous report missed. ` +
-    `Look for new developments, updated numbers, different sources, emerging trends, ` +
-    `contrarian takes, or deeper details. There is ALWAYS something new to report — dig harder.`
+    `Your job${sinceClause}: find genuinely FRESH information published after the previous report. ` +
+    `Look for new developments, updated numbers, emerging trends, or breaking changes. ` +
+    `If nothing significant has changed, say so honestly — a brief "no major updates" is better than recycling old articles.`
   );
 }
 

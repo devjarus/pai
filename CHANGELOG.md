@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Thread titles update when topic changes** — Thread titles now regenerate via LLM every 5 user turns (down from 10), starting at turn 3 (down from 5), using the last 10 messages with a prompt that focuses on the current topic rather than the original message.
 - **Telemetry captures HTTP error messages** — API error responses now include the actual error message in telemetry spans instead of "Unknown error". Auth refresh 401s (expected token expiry) are no longer recorded as errors.
 - **Failed background jobs notify users** — When research or swarm jobs permanently fail (after retries exhausted), a failure message is posted to the job's thread with the task name, error, and attempt count. No more silent failures.
+- **Research briefs no longer pad with stale news** — Research prompts now explicitly require publication date checking, penalize old articles, and allow "no significant updates" instead of forcing content. The "always something new — dig harder" instruction that caused stale padding has been replaced with honest freshness guidance.
 
 ### Added
 - **State-first recurring reports** — Digests now compute structured state deltas (new findings with diffs, changed insights, new/corrected beliefs, completed actions) instead of prompt-stuffing raw JSON. Each cycle compounds on the last through computed diffs.
