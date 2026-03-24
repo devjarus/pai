@@ -16,8 +16,10 @@ import {
   selectBriefingBeliefs,
   linkBriefBeliefs,
   getBriefBeliefs,
+  buildBriefingDelta,
 } from "../src/briefing.js";
-import type { BriefingSection } from "../src/briefing.js";
+import type { BriefingSection, BriefingDelta } from "../src/briefing.js";
+import { findingsMigrations, createFinding } from "@personal-ai/library";
 import type { Belief } from "@personal-ai/core";
 
 // ---------------------------------------------------------------------------
@@ -905,5 +907,155 @@ describe("selectBriefingBeliefs", () => {
     });
 
     expect(selected.map((belief) => belief.id)).toContain("monica-h4");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildBriefingDelta tests
+// ---------------------------------------------------------------------------
+describe("buildBriefingDelta", () => {
+  let dir: string;
+  let storage: Storage;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-delta-test-"));
+    storage = createStorage(dir);
+    storage.migrate("briefing", briefingMigrations);
+    storage.migrate("findings", findingsMigrations);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("returns empty delta when no data exists", () => {
+    const delta = buildBriefingDelta(storage, new Date().toISOString());
+    expect(delta.newFindings).toHaveLength(0);
+    expect(delta.changedInsights).toHaveLength(0);
+    expect(delta.newBeliefs).toHaveLength(0);
+    expect(delta.correctedBeliefs).toHaveLength(0);
+    expect(delta.completedActions).toHaveLength(0);
+  });
+
+  it("picks up new findings created after sinceTimestamp", () => {
+    const oldTimestamp = "2025-01-01T00:00:00.000Z";
+    createFinding(storage, {
+      goal: "GPU prices",
+      domain: "general",
+      summary: "RTX 4090 dropped to $1499.",
+      confidence: 0.85,
+      agentName: "Researcher",
+      depthLevel: "standard",
+      sources: [],
+      watchId: "watch-1",
+    });
+
+    const delta = buildBriefingDelta(storage, oldTimestamp);
+    expect(delta.newFindings.length).toBeGreaterThan(0);
+    expect(delta.newFindings[0].summary).toContain("RTX 4090");
+  });
+
+  it("excludes findings older than sinceTimestamp", () => {
+    createFinding(storage, {
+      goal: "Old finding",
+      domain: "general",
+      summary: "Old data.",
+      confidence: 0.5,
+      agentName: "test",
+      depthLevel: "quick",
+      sources: [],
+    });
+
+    // Use a future timestamp
+    const futureTimestamp = new Date(Date.now() + 60_000).toISOString();
+    const delta = buildBriefingDelta(storage, futureTimestamp);
+    expect(delta.newFindings).toHaveLength(0);
+  });
+
+  it("includes finding deltas when present", () => {
+    createFinding(storage, {
+      goal: "GPU prices",
+      domain: "general",
+      summary: "RTX 4090 is $1599.",
+      confidence: 0.85,
+      agentName: "Researcher",
+      depthLevel: "standard",
+      sources: [],
+      delta: { changed: ["+ Price dropped $100."], significance: 0.5 },
+    });
+
+    const delta = buildBriefingDelta(storage, "2025-01-01T00:00:00.000Z");
+    expect(delta.newFindings[0].delta).toBeDefined();
+    expect(delta.newFindings[0].delta!.changed).toContain("+ Price dropped $100.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// signal_hash on daily briefs
+// ---------------------------------------------------------------------------
+describe("signal_hash on daily briefs", () => {
+  let dir: string;
+  let storage: Storage;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-hash-test-"));
+    storage = createStorage(dir);
+    storage.migrate("briefing", briefingMigrations);
+    storage.migrate("schedules", scheduleMigrations);
+    vi.clearAllMocks();
+    mockListTasks.mockImplementation((_storage: Storage, status = "open") => (status === "done" ? [] : []));
+    mockListGoals.mockReturnValue([]);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function makeCtx(healthOk = true) {
+    return {
+      config: { timezone: "America/Los_Angeles", llm: { provider: "ollama", model: "test-model" } } as never,
+      storage,
+      llm: {
+        health: vi.fn().mockResolvedValue({ ok: healthOk }),
+        getModel: vi.fn().mockReturnValue("mock-model"),
+      },
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      },
+    } as never;
+  }
+
+  it("populates signal_hash on generated daily briefing", async () => {
+    const ctx = makeCtx(false); // deterministic fallback
+    const result = await generateBriefing(ctx);
+
+    expect(result).not.toBeNull();
+    expect(result!.signalHash).toBeDefined();
+    expect(typeof result!.signalHash).toBe("string");
+    expect(result!.signalHash!.length).toBe(64); // SHA-256 hex
+
+    // Verify it's persisted in DB
+    const row = storage.query<{ signal_hash: string | null }>(
+      "SELECT signal_hash FROM briefings WHERE id = ?",
+      [result!.id],
+    );
+    expect(row[0]?.signal_hash).toBe(result!.signalHash);
+  });
+
+  it("produces the same hash for identical content", async () => {
+    const ctx = makeCtx(false);
+    const result1 = await generateBriefing(ctx);
+
+    // Clear the briefing so we can generate again
+    storage.run("DELETE FROM briefings");
+
+    const result2 = await generateBriefing(ctx);
+
+    expect(result1!.signalHash).toBe(result2!.signalHash);
   });
 });

@@ -6,6 +6,7 @@ import {
   refreshDigests,
   correctDigest,
   rateDigest,
+  acceptDigestRecommendation,
   rerunDigestResearch,
   getDigestSuggestions,
 } from "../api";
@@ -70,6 +71,17 @@ export function useRateDigest() {
       rateDigest(input.id, { rating: input.rating, feedback: input.feedback }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: digestKeys.detail(variables.id) });
+    },
+  });
+}
+
+export function useAcceptDigestRecommendation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => acceptDigestRecommendation(id),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: digestKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: ["inbox"] });
     },
   });
 }

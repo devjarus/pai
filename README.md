@@ -15,6 +15,8 @@ Your second brain that watches things for you. Start with Ask, set up Watches fo
 - **Persistent memory** — beliefs with lifecycle (reinforce, contradict, decay, synthesize), semantic search, and correction-aware context reuse
 - **Home dashboard** — latest digest, active watches, open to-dos, and library stats at a glance
 - **Companion surfaces** — web UI, Telegram, CLI, and MCP for Claude Code / Cursor integration
+- **Conversational issue intake** — connect Linear once in Settings, then ask pai to log a feature or bug after only a few follow-up questions
+- **Automatic recurring-error intake** — optionally auto-log repeated failures into one deduplicated Linear issue when the same problem keeps happening
 
 ## Quick Start
 
@@ -61,6 +63,14 @@ pnpm start                # start server → http://127.0.0.1:3141
 pnpm stop                 # stop server
 ```
 
+For development or contributor workflows:
+
+```bash
+pnpm verify               # repo-wide typecheck + tests + coverage
+pnpm harness:regressions  # validate coding-agent harness docs, checklists, templates, script wiring
+pnpm harness:core-loop    # validate Ask → Watch → Digest → Correction behavior
+```
+
 ## Web UI
 
 Open `http://127.0.0.1:3141` after starting the server:
@@ -73,7 +83,7 @@ Open `http://127.0.0.1:3141` after starting the server:
 | **Chat** (`/ask`) | Chat for questions, follow-ups, and creating watches. |
 | **Library** (`/library`) | Unified view of memories, documents, and research findings with cross-source search. |
 | **Tasks** (`/tasks`) | To-dos linked to watches and digests. |
-| **Settings** | LLM provider, model, API key, Telegram config, and diagnostics. |
+| **Settings** | LLM provider, model, API key, Telegram config, Linear intake, and diagnostics. |
 
 ## Telegram Bot
 
@@ -196,6 +206,14 @@ Data stored at `~/.personal-ai/data/`. SQLite with WAL mode for the default stor
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for C4 diagrams, dataflows, and full data model.
 
+For the architecture-block split and contributor workflow:
+
+- [docs/architecture/overview.md](docs/architecture/overview.md)
+- [docs/architecture/core-platform.md](docs/architecture/core-platform.md)
+- [docs/architecture/agent-plane.md](docs/architecture/agent-plane.md)
+- [docs/architecture/dependency-rules.md](docs/architecture/dependency-rules.md)
+- [harness/README.md](harness/README.md)
+
 ## Configuration
 
 Environment variables or `~/.personal-ai/config.json` (editable via Settings UI).
@@ -225,10 +243,14 @@ pnpm test:watch          # watch mode
 pnpm test:coverage       # v8 coverage with thresholds
 pnpm typecheck           # type-check all packages
 pnpm lint                # eslint
+pnpm harness:regressions # coding-agent harness assets
+pnpm harness:core-loop   # executable product-loop harness
 pnpm run ci              # typecheck + tests + coverage
 ```
 
 **Git hooks** (Husky): pre-commit runs lint-staged, pre-push runs full CI.
+
+Non-trivial changes should follow the harness workflow in [harness/README.md](harness/README.md): identify the owning architecture block, pick the matching checklist, and capture a task contract plus evidence pack.
 
 ## Tech Stack
 

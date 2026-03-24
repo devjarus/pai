@@ -61,6 +61,11 @@ export default function Settings() {
   // Telegram settings
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [linearApiKey, setLinearApiKey] = useState("");
+  const [linearEnabled, setLinearEnabled] = useState(false);
+  const [linearDefaultTeam, setLinearDefaultTeam] = useState("");
+  const [linearDefaultProject, setLinearDefaultProject] = useState("");
+  const [linearAutoCreateRecurringIssues, setLinearAutoCreateRecurringIssues] = useState(false);
 
   // Timezone
   const [timezone, setTimezone] = useState("");
@@ -117,6 +122,10 @@ export default function Settings() {
       setEmbedProvider(config.llm.embedProvider ?? "auto");
       setDataDir(config.dataDir);
       setTelegramEnabled(config.telegram?.enabled ?? false);
+      setLinearEnabled(config.linear?.enabled ?? false);
+      setLinearDefaultTeam(config.linear?.defaultTeam ?? "");
+      setLinearDefaultProject(config.linear?.defaultProject ?? "");
+      setLinearAutoCreateRecurringIssues(config.linear?.autoCreateRecurringIssues ?? false);
       setBgLearningEnabled(config.workers?.backgroundLearning !== false);
       setBriefingEnabled(config.workers?.briefing !== false);
       setKnowledgeCleanupEnabled(config.workers?.knowledgeCleanup !== false);
@@ -144,6 +153,13 @@ export default function Settings() {
       if (dataDir !== config.dataDir) updates.dataDir = dataDir;
       if (telegramToken) updates.telegramToken = telegramToken;
       if (telegramEnabled !== (config.telegram?.enabled ?? false)) updates.telegramEnabled = telegramEnabled;
+      if (linearApiKey) updates.linearApiKey = linearApiKey;
+      if (linearEnabled !== (config.linear?.enabled ?? false)) updates.linearEnabled = linearEnabled;
+      if (linearDefaultTeam !== (config.linear?.defaultTeam ?? "")) updates.linearDefaultTeam = linearDefaultTeam;
+      if (linearDefaultProject !== (config.linear?.defaultProject ?? "")) updates.linearDefaultProject = linearDefaultProject;
+      if (linearAutoCreateRecurringIssues !== (config.linear?.autoCreateRecurringIssues ?? false)) {
+        updates.linearAutoCreateRecurringIssues = linearAutoCreateRecurringIssues;
+      }
       if (timezone !== (config.timezone ?? "")) updates.timezone = timezone;
       if (bgLearningEnabled !== (config.workers?.backgroundLearning !== false)) updates.backgroundLearning = bgLearningEnabled;
       if (briefingEnabled !== (config.workers?.briefing !== false)) updates.briefingEnabled = briefingEnabled;
@@ -175,12 +191,13 @@ export default function Settings() {
       await updateConfigMut.mutateAsync(updates);
       setApiKey("");
       setTelegramToken("");
+      setLinearApiKey("");
       setEditing(false);
       toast.success("Configuration saved");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save configuration");
     }
-  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, bgLearningEnabled, briefingEnabled, knowledgeCleanupEnabled, llmTrafficMaxConcurrent, llmTrafficStartGapMs, llmTrafficStartupDelayMs, llmTrafficSwarmAgentConcurrency, llmTrafficReservedInteractiveSlots, sandboxUrl, searchUrl, browserUrl, config, updateConfigMut]);
+  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, linearApiKey, linearEnabled, linearDefaultTeam, linearDefaultProject, linearAutoCreateRecurringIssues, bgLearningEnabled, briefingEnabled, knowledgeCleanupEnabled, llmTrafficMaxConcurrent, llmTrafficStartGapMs, llmTrafficStartupDelayMs, llmTrafficSwarmAgentConcurrency, llmTrafficReservedInteractiveSlots, sandboxUrl, searchUrl, browserUrl, config, updateConfigMut]);
 
   const handleCancel = useCallback(() => {
     if (config) {
@@ -195,6 +212,11 @@ export default function Settings() {
     setTimezone(config?.timezone ?? "");
     setTelegramToken("");
     setTelegramEnabled(config?.telegram?.enabled ?? false);
+    setLinearApiKey("");
+    setLinearEnabled(config?.linear?.enabled ?? false);
+    setLinearDefaultTeam(config?.linear?.defaultTeam ?? "");
+    setLinearDefaultProject(config?.linear?.defaultProject ?? "");
+    setLinearAutoCreateRecurringIssues(config?.linear?.autoCreateRecurringIssues ?? false);
     setBgLearningEnabled(config?.workers?.backgroundLearning !== false);
     setBriefingEnabled(config?.workers?.briefing !== false);
     setKnowledgeCleanupEnabled(config?.workers?.knowledgeCleanup !== false);
@@ -346,7 +368,15 @@ export default function Settings() {
                   {embedProvider !== "local" && (
                     <EditableRow label="Embed Model" value={embedModel} onChange={setEmbedModel} placeholder="e.g. nomic-embed-text" envLabel={envOverrides.includes("embedModel")} />
                   )}
-                  <EditableRow label="API Key" value={apiKey} onChange={setApiKey} placeholder={config?.llm.hasApiKey ? "Key saved — enter new to replace" : "Enter API key"} type="password" envLabel={envOverrides.includes("apiKey")} />
+                  <EditableRow
+                    label="API Key"
+                    inputLabel="LLM API Key"
+                    value={apiKey}
+                    onChange={setApiKey}
+                    placeholder={config?.llm.hasApiKey ? "Key saved — enter new to replace" : "Enter API key"}
+                    type="password"
+                    envLabel={envOverrides.includes("apiKey")}
+                  />
 
                   <Separator className="opacity-30" />
 
@@ -556,6 +586,7 @@ export default function Settings() {
                   </div>
                   <EditableRow
                     label="Bot Token"
+                    inputLabel="Telegram Bot Token"
                     value={telegramToken}
                     onChange={setTelegramToken}
                     placeholder={config.telegram?.hasToken ? "Token saved (enter new to replace)" : "Paste token from @BotFather"}
@@ -599,6 +630,116 @@ export default function Settings() {
                   <ConfigRow
                     label="Bot Token"
                     value={config.telegram?.hasToken ? "Configured" : "Not set"}
+                  />
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Linear */}
+        {config && (
+          <Card className="gap-0 overflow-hidden border-border/50 bg-card/50 py-0">
+            <CardHeader className="px-5 py-4">
+              <CardTitle className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <FolderOpenIcon className="size-3.5" />
+                Linear Intake
+                <InfoBubble text="Lets the assistant turn a short feature or bug conversation into a Linear issue. Set a personal API key and a default team once, then the assistant can ask only a few questions before filing the issue." side="right" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-0 px-0 py-0">
+              {editing ? (
+                <>
+                  <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
+                    <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                      Enabled
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setLinearEnabled(!linearEnabled)}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                        linearEnabled ? "bg-primary" : "bg-muted",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none block size-4 rounded-full bg-background shadow-lg transition-transform",
+                          linearEnabled ? "translate-x-4" : "translate-x-0",
+                        )}
+                      />
+                    </button>
+                  </div>
+                  <EditableRow
+                    label="API Key"
+                    inputLabel="Linear API Key"
+                    value={linearApiKey}
+                    onChange={setLinearApiKey}
+                    placeholder={config.linear?.hasApiKey ? "Key saved — enter new to replace" : "Paste Linear API key"}
+                    type="password"
+                    envLabel={envOverrides.includes("linearApiKey")}
+                  />
+                  <EditableRow
+                    label="Default Team"
+                    value={linearDefaultTeam}
+                    onChange={setLinearDefaultTeam}
+                    placeholder="Team key, name, or UUID (e.g. ENG)"
+                    envLabel={envOverrides.includes("linearDefaultTeam")}
+                  />
+                  <EditableRow
+                    label="Default Project"
+                    value={linearDefaultProject}
+                    onChange={setLinearDefaultProject}
+                    placeholder="Optional project slugId, name, or UUID"
+                    envLabel={envOverrides.includes("linearDefaultProject")}
+                  />
+                  <div className="flex items-center justify-between gap-4 border-t border-border/30 px-5 py-2.5">
+                    <div className="flex flex-col gap-0.5">
+                      <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                        Auto-log recurring failures
+                      </label>
+                      <span className="text-[10px] text-muted-foreground">
+                        Automatically create one Linear issue per recurring failure fingerprint when thresholds are crossed.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setLinearAutoCreateRecurringIssues(!linearAutoCreateRecurringIssues)}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                        linearAutoCreateRecurringIssues ? "bg-primary" : "bg-muted",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none block size-4 rounded-full bg-background shadow-lg transition-transform",
+                          linearAutoCreateRecurringIssues ? "translate-x-4" : "translate-x-0",
+                        )}
+                      />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between border-t border-border/30 px-5 py-3">
+                    <span className="text-xs text-muted-foreground">Status</span>
+                    <span className="font-mono text-sm">
+                      {config.linear?.enabled ? (
+                        <span className={config.linear?.hasApiKey ? "text-green-500" : "text-yellow-500"}>
+                          {config.linear?.hasApiKey ? "Ready" : "Missing key"}
+                        </span>
+                      ) : (
+                        <span className="text-foreground">Disabled</span>
+                      )}
+                    </span>
+                  </div>
+                  <ConfigRow label="API Key" value={config.linear?.hasApiKey ? "Configured" : "Not set"} />
+                  <ConfigRow label="Default Team" value={config.linear?.defaultTeam || "Not set"} highlight={Boolean(config.linear?.defaultTeam)} />
+                  <ConfigRow label="Default Project" value={config.linear?.defaultProject || "Not set"} highlight={Boolean(config.linear?.defaultProject)} />
+                  <ConfigRow
+                    label="Auto-log recurring failures"
+                    value={config.linear?.autoCreateRecurringIssues ? "On" : "Off"}
+                    highlight={config.linear?.autoCreateRecurringIssues}
                   />
                 </>
               )}
@@ -1069,6 +1210,7 @@ function ConfigRow({ label, value, highlight }: { label: string; value: string; 
 
 function EditableRow({
   label,
+  inputLabel,
   value,
   onChange,
   placeholder,
@@ -1076,6 +1218,7 @@ function EditableRow({
   envLabel,
 }: {
   label: string;
+  inputLabel?: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
@@ -1090,6 +1233,7 @@ function EditableRow({
       </label>
       <input
         type={type}
+        aria-label={inputLabel ?? label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -1159,6 +1303,8 @@ function LearningRunCard({
   if (run.researchCount > 0) signalParts.push(`${run.researchCount} research`);
   if (run.tasksCount > 0) signalParts.push(`${run.tasksCount} task${run.tasksCount !== 1 ? "s" : ""}`);
   if (run.knowledgeCount > 0) signalParts.push(`${run.knowledgeCount} knowledge`);
+  if (run.findingsCount > 0) signalParts.push(`${run.findingsCount} finding${run.findingsCount !== 1 ? "s" : ""}`);
+  if (run.digestsCount > 0) signalParts.push(`${run.digestsCount} digest${run.digestsCount !== 1 ? "s" : ""}`);
 
   const outcomeParts: string[] = [];
   if (run.beliefsCreated > 0) outcomeParts.push(`${run.beliefsCreated} created`);

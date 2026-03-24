@@ -264,6 +264,57 @@ describe("Memory", () => {
     });
   });
 
+  it("should link digest-originated corrections back to the brief and replacement belief provenance", async () => {
+    storage.run(`
+      CREATE TABLE IF NOT EXISTS brief_beliefs (
+        id TEXT PRIMARY KEY,
+        brief_id TEXT NOT NULL,
+        belief_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'assumption',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(brief_id, belief_id)
+      );
+    `);
+
+    const belief = createBelief(storage, {
+      statement: "User prefers broad status updates",
+      confidence: 0.72,
+      type: "preference",
+      importance: 7,
+      subject: "owner",
+    });
+    const llm = {
+      embed: vi.fn().mockResolvedValue({ embedding: [0.2, 0.3, 0.4] }),
+    } as unknown as LLMClient;
+
+    const result = await correctBelief(storage, llm, belief.id, {
+      statement: "User prefers concise blocker-focused updates",
+      briefId: "brief-123",
+    });
+
+    const briefLinks = storage.query<{ brief_id: string; belief_id: string; role: string }>(
+      "SELECT brief_id, belief_id, role FROM brief_beliefs WHERE brief_id = ?",
+      ["brief-123"],
+    );
+    expect(briefLinks).toEqual([
+      { brief_id: "brief-123", belief_id: result.replacementBelief.id, role: "correction-input" },
+    ]);
+
+    const provenance = storage.query<{ source_kind: string; source_id: string | null; relation: string }>(
+      "SELECT source_kind, source_id, relation FROM belief_provenance WHERE belief_id = ? ORDER BY rowid DESC",
+      [result.replacementBelief.id],
+    );
+    expect(provenance).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_kind: "briefing",
+          source_id: "brief-123",
+          relation: "prompted-correction",
+        }),
+      ]),
+    );
+  });
+
   it("should prune beliefs below threshold", () => {
     // Create a belief with very old updated_at so decay makes it near zero
     const b = createBelief(storage, { statement: "Ancient belief", confidence: 0.1 });

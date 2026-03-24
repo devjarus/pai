@@ -5,6 +5,15 @@ import { registerDigestRoutes } from "../src/routes/digests.js";
 import type { ServerContext } from "../src/index.js";
 
 // ---------------------------------------------------------------------------
+// Mock @personal-ai/core
+// ---------------------------------------------------------------------------
+const mockRecordProductEvent = vi.fn();
+
+vi.mock("@personal-ai/core", () => ({
+  recordProductEvent: (...args: unknown[]) => mockRecordProductEvent(...args),
+}));
+
+// ---------------------------------------------------------------------------
 // Mock ../src/briefing.js
 // ---------------------------------------------------------------------------
 const mockGetLatestBriefing = vi.fn();
@@ -203,6 +212,14 @@ describe("digest routes", () => {
     const res = await app.inject({ method: "GET", url: "/api/digests/briefing-1" });
     expect(res.statusCode).toBe(200);
     expect(res.json().briefing.id).toBe("briefing-1");
+    expect(mockRecordProductEvent).toHaveBeenCalledWith(serverCtx.ctx.storage, {
+      eventType: "brief_opened",
+      briefId: "briefing-1",
+      programId: null,
+      threadId: null,
+      channel: "web",
+      metadata: { type: "daily" },
+    });
   });
 
   it("GET /api/digests/:id returns 404 for unknown digest", async () => {
@@ -235,7 +252,7 @@ describe("digest routes", () => {
 
   it("POST /api/digests/:id/correct corrects a belief", async () => {
     mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
-    mockIngestCorrection.mockResolvedValue({ ok: true, beliefId: "b1" });
+    mockIngestCorrection.mockResolvedValue({ corrected: true, replacementBeliefId: "belief-new-1" });
 
     const res = await app.inject({
       method: "POST",
@@ -247,6 +264,61 @@ describe("digest routes", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
+    expect(mockIngestCorrection).toHaveBeenCalledWith(
+      serverCtx.ctx.storage,
+      serverCtx.ctx.llm,
+      {
+        beliefId: "b1",
+        correctedStatement: "Node 22 is actually already supported",
+        digestId: "briefing-1",
+        note: undefined,
+      },
+    );
+    expect(mockRecordProductEvent).toHaveBeenCalledWith(
+      serverCtx.ctx.storage,
+      expect.objectContaining({
+        eventType: "belief_corrected",
+        briefId: "briefing-1",
+        beliefId: "belief-new-1",
+        channel: "web",
+      }),
+    );
+  });
+
+  it("POST /api/digests/:id/correct returns 400 when correction is invalid", async () => {
+    mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
+    mockIngestCorrection.mockResolvedValue({ corrected: false, error: "Correction must change the belief statement" });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/digests/briefing-1/correct",
+      payload: {
+        beliefId: "b1",
+        correctedStatement: "Node 22 is actually already supported",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("must change");
+    expect(mockRecordProductEvent).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/digests/:id/correct returns 404 when the target belief is missing", async () => {
+    mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
+    mockIngestCorrection.mockResolvedValue({ corrected: false, error: "Belief not found" });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/digests/briefing-1/correct",
+      payload: {
+        beliefId: "missing-belief",
+        correctedStatement: "Node 22 is actually already supported",
+      },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Belief not found");
+    expect(mockRecordProductEvent).not.toHaveBeenCalled();
   });
 
   it("POST /api/digests/:id/correct returns 404 for unknown digest", async () => {
@@ -295,6 +367,45 @@ describe("digest routes", () => {
       payload: { rating: 10 },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  // --- POST /api/digests/:id/accept ---
+
+  it("POST /api/digests/:id/accept records recommendation acceptance once", async () => {
+    mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
+
+    const res = await app.inject({ method: "POST", url: "/api/digests/briefing-1/accept" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, alreadyAccepted: false });
+    expect(mockRecordProductEvent).toHaveBeenCalledWith(serverCtx.ctx.storage, {
+      eventType: "recommendation_accepted",
+      channel: "web",
+      programId: null,
+      briefId: "briefing-1",
+      threadId: null,
+      metadata: { type: "daily" },
+    });
+  });
+
+  it("POST /api/digests/:id/accept is idempotent for an already accepted digest", async () => {
+    mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
+    (serverCtx.ctx.storage.query as ReturnType<typeof vi.fn>).mockReturnValueOnce([{ id: "event-1" }]);
+
+    const res = await app.inject({ method: "POST", url: "/api/digests/briefing-1/accept" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, alreadyAccepted: true });
+    expect(mockRecordProductEvent).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/digests/:id/accept returns 404 for unknown digest", async () => {
+    mockGetBriefingById.mockReturnValue(null);
+
+    const res = await app.inject({ method: "POST", url: "/api/digests/nonexistent/accept" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Digest not found");
   });
 
   // --- POST /api/digests/:id/rerun ---

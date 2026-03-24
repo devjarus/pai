@@ -6,7 +6,7 @@ import { marked } from "marked";
 import { recordProductEventApi } from "@/api";
 import { stripMarkdown, cleanDigestTitle } from "@/lib/utils";
 import type { Program } from "@/api";
-import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig, useCreateProgram, useCorrectBelief, useCreateTask, usePrograms, useTasks, useRateDigest, useDigestSuggestions, useCorrectDigest } from "@/hooks";
+import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig, useCreateProgram, useCorrectBelief, useCreateTask, usePrograms, useTasks, useRateDigest, useDigestSuggestions, useCorrectDigest, useAcceptDigestRecommendation } from "@/hooks";
 import type { BriefingRawContextBelief, Task } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -828,6 +828,19 @@ function DailyBriefingV2Detail({
   onCorrectBelief: (belief: BriefingRawContextBelief) => void;
   onCreateAction: (action: { title?: string; detail?: string; timing?: string }) => void;
 }) {
+  const [acceptedRecommendation, setAcceptedRecommendation] = useState(false);
+  const acceptRecommendationMut = useAcceptDigestRecommendation();
+
+  const handleAcceptRecommendation = async () => {
+    try {
+      const result = await acceptRecommendationMut.mutateAsync(briefId);
+      setAcceptedRecommendation(true);
+      toast.success(result.alreadyAccepted ? "Recommendation already marked as accepted." : "Recommendation marked as accepted.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save recommendation feedback");
+    }
+  };
+
   return (
     <div className="space-y-4 md:space-y-6">
       <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
@@ -845,6 +858,23 @@ function DailyBriefingV2Detail({
         </p>
         {sections.recommendation?.rationale && (
           <p className="mt-2 text-sm text-muted-foreground">{stripMarkdown(sections.recommendation.rationale)}</p>
+        )}
+        {sections.recommendation?.summary && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              onClick={handleAcceptRecommendation}
+              disabled={acceptedRecommendation || acceptRecommendationMut.isPending}
+              className="gap-2"
+            >
+              <CheckCircle2Icon className="h-4 w-4" />
+              {acceptedRecommendation
+                ? "Accepted"
+                : acceptRecommendationMut.isPending
+                  ? "Saving..."
+                  : "I'm doing this"}
+            </Button>
+          </div>
         )}
       </div>
 

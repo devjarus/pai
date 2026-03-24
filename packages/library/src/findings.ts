@@ -1,5 +1,7 @@
 import type { Storage, Migration } from "@personal-ai/core";
 import { nanoid } from "nanoid";
+import { enrichResearchSource } from "./source-quality.js";
+import type { ResearchSourceQuality } from "./source-quality.js";
 
 // ---- Types ----
 
@@ -8,6 +10,8 @@ export interface ResearchFindingSource {
   title: string;
   fetchedAt: string;
   relevance: number;
+  quality?: ResearchSourceQuality;
+  authorityScore?: number;
 }
 
 export interface ResearchFinding {
@@ -124,7 +128,7 @@ function rowToFinding(row: FindingRow): ResearchFinding {
     goal: row.goal,
     domain: row.domain,
     summary: row.summary,
-    sources: JSON.parse(row.sources) as ResearchFindingSource[],
+    sources: (JSON.parse(row.sources) as ResearchFindingSource[]).map((source) => enrichResearchSource(source)),
     confidence: row.confidence,
     agentName: row.agent_name,
     depthLevel: row.depth_level as ResearchFinding["depthLevel"],
@@ -139,11 +143,54 @@ function rowToFinding(row: FindingRow): ResearchFinding {
   return finding;
 }
 
+// ---- Delta computation ----
+
+/**
+ * Compute a deterministic delta between the previous finding summary and the
+ * current one.  Returns the list of changed sentences and a 0-1 significance
+ * score based on the fraction of material that changed.
+ */
+export function computeFindingDelta(
+  previousSummary: string,
+  currentSummary: string,
+): { changed: string[]; significance: number } {
+  const prevSentences = splitSentences(previousSummary);
+  const currSentences = splitSentences(currentSummary);
+
+  const prevSet = new Set(prevSentences.map(normalize));
+  const currSet = new Set(currSentences.map(normalize));
+
+  const added = currSentences.filter((s) => !prevSet.has(normalize(s)));
+  const removed = prevSentences.filter((s) => !currSet.has(normalize(s)));
+
+  const changed = [
+    ...added.map((s) => `+ ${s}`),
+    ...removed.map((s) => `- ${s}`),
+  ];
+
+  const total = Math.max(prevSentences.length, currSentences.length, 1);
+  const significance = Math.min(1, changed.length / total);
+
+  return { changed, significance: Math.round(significance * 100) / 100 };
+}
+
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
 // ---- CRUD ----
 
 export function createFinding(storage: Storage, input: CreateFindingInput): ResearchFinding {
   const id = nanoid();
   const now = new Date().toISOString();
+  const sources = input.sources.map((source) => enrichResearchSource(source));
 
   storage.run(
     `INSERT INTO research_findings (id, watch_id, digest_id, goal, domain, summary, structured_data, sources, confidence, agent_name, depth_level, previous_finding_id, delta, created_at, updated_at)
@@ -156,7 +203,7 @@ export function createFinding(storage: Storage, input: CreateFindingInput): Rese
       input.domain,
       input.summary,
       input.structuredData ? JSON.stringify(input.structuredData) : null,
-      JSON.stringify(input.sources),
+      JSON.stringify(sources),
       input.confidence,
       input.agentName,
       input.depthLevel,

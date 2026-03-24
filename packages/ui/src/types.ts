@@ -104,6 +104,13 @@ export interface ConfigInfo {
     username?: string;
     error?: string;
   };
+  linear?: {
+    enabled?: boolean;
+    hasApiKey?: boolean;
+    defaultTeam?: string;
+    defaultProject?: string;
+    autoCreateRecurringIssues?: boolean;
+  };
   workers?: {
     backgroundLearning?: boolean;
     briefing?: boolean;
@@ -573,7 +580,14 @@ export interface ResearchFinding {
   domain: string;
   summary: string;
   structuredData?: Record<string, unknown>;
-  sources: Array<{ url: string; title: string; fetchedAt: string; relevance: number }>;
+  sources: Array<{
+    url: string;
+    title: string;
+    fetchedAt: string;
+    relevance: number;
+    quality?: "primary" | "high" | "medium" | "low";
+    authorityScore?: number;
+  }>;
   confidence: number;
   agentName: string;
   depthLevel: "quick" | "standard" | "deep";

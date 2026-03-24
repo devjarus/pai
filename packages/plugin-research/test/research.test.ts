@@ -5,9 +5,12 @@ import { tmpdir } from "node:os";
 import { createStorage, threadMigrations, backgroundJobMigrations, artifactMigrations, createThread, listMessages, getJob } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
 import type { Migration } from "@personal-ai/core";
+import { scheduleMigrations } from "@personal-ai/plugin-schedules";
+import { createFinding, findingsMigrations, listFindings } from "@personal-ai/library";
 import { researchMigrations } from "../src/index.js";
 import { runResearchInBackground, getResearchJob, createResearchJob } from "../src/research.js";
 import type { ResearchContext } from "../src/research.js";
+import { taskMigrations } from "../../plugin-tasks/src/tasks.js";
 
 // Mock the AI SDK
 vi.mock("ai", () => ({
@@ -26,6 +29,9 @@ describe("Research jobs", () => {
     storage.migrate("research", researchMigrations);
     storage.migrate("background_jobs", backgroundJobMigrations);
     storage.migrate("artifacts", artifactMigrations);
+    storage.migrate("findings", findingsMigrations);
+    storage.migrate("schedules", scheduleMigrations);
+    storage.migrate("tasks", taskMigrations);
     vi.clearAllMocks();
   });
 
@@ -156,6 +162,28 @@ describe("Research jobs", () => {
       expect(tracked!.status).toBe("done");
       expect(tracked!.type).toBe("research");
     });
+
+    it("records agent harness block and usage metadata in steps log", async () => {
+      const { generateText } = await import("ai");
+      (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+        text: "# Report\nDone.",
+        steps: [],
+        usage: { totalTokens: 42 },
+      });
+
+      const ctx = makeCtx();
+      const id = createResearchJob(storage, {
+        goal: "Harness metadata research",
+        threadId: null,
+      });
+
+      await runResearchInBackground(ctx, id);
+
+      const job = getResearchJob(storage, id);
+      expect(job!.stepsLog.some((step) => step.includes("Agent harness: blocks=[knowledge,telemetry]"))).toBe(true);
+      expect(job!.stepsLog.some((step) => step.includes("usage tokens=42"))).toBe(true);
+      expect(job!.stepsLog.some((step) => step.includes("summary confidence="))).toBe(true);
+    });
   });
 
   describe("report delivery", () => {
@@ -228,6 +256,164 @@ describe("Research jobs", () => {
       const sections = JSON.parse(briefings[0]!.sections) as { report: string; goal: string };
       expect(sections.report).toContain("Research findings");
       expect(sections.goal).toBe("Test Inbox delivery");
+    });
+
+    it("stores low-confidence findings when no external sources were captured", async () => {
+      const { generateText } = await import("ai");
+      (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+        text: "# Report\n\nA short summary without linked sources.",
+        steps: [],
+      });
+
+      const ctx = makeCtx();
+      const id = createResearchJob(storage, {
+        goal: "Weakly sourced research",
+        threadId: null,
+      });
+
+      await runResearchInBackground(ctx, id);
+
+      const findings = listFindings(storage);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.sources).toEqual([]);
+      expect(findings[0]?.confidence).toBeLessThanOrEqual(0.4);
+    });
+
+    it("persists extracted report sources and calibrates confidence from evidence quality", async () => {
+      const { generateText } = await import("ai");
+      (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+        text: [
+          "```json",
+          JSON.stringify({
+            recommendation: "Vendor consolidation is accelerating across inference stacks.",
+            confidence: 78,
+            sources: [
+              { title: "Reuters", url: "https://www.reuters.com/technology/example" },
+              { title: "The Verge", url: "https://www.theverge.com/ai/example" },
+              { title: "Company blog", url: "https://example.com/blog/update" },
+            ],
+          }),
+          "```",
+        ].join("\n"),
+        steps: [],
+      });
+
+      const ctx = makeCtx();
+      const id = createResearchJob(storage, {
+        goal: "Evidence-backed research",
+        threadId: null,
+      });
+      storage.run(
+        "UPDATE research_jobs SET searches_used = ?, pages_learned = ? WHERE id = ?",
+        [4, 3, id],
+      );
+
+      await runResearchInBackground(ctx, id);
+
+      const findings = listFindings(storage);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.sources).toHaveLength(3);
+      expect(findings[0]?.sources.some((source) => source.quality === "high" || source.quality === "primary")).toBe(true);
+      expect(findings[0]?.confidence).toBeGreaterThanOrEqual(0.8);
+
+      const job = getResearchJob(storage, id);
+      expect(job?.stepsLog.some((line) => line.includes("Evidence calibration: sources=3"))).toBe(true);
+    });
+
+    it("does not let low-authority multi-source reports earn high confidence", async () => {
+      const { generateText } = await import("ai");
+      (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+        text: [
+          "```json",
+          JSON.stringify({
+            recommendation: "Community chatter suggests this project is taking off.",
+            confidence: 86,
+            sources: [
+              { title: "Reddit thread", url: "https://www.reddit.com/r/LocalLLaMA/comments/example" },
+              { title: "Show HN discussion", url: "https://news.ycombinator.com/item?id=1" },
+              { title: "Product Hunt launch", url: "https://www.producthunt.com/posts/example" },
+            ],
+          }),
+          "```",
+        ].join("\n"),
+        steps: [],
+      });
+
+      const ctx = makeCtx();
+      const id = createResearchJob(storage, {
+        goal: "Low-authority source mix",
+        threadId: null,
+      });
+      storage.run(
+        "UPDATE research_jobs SET searches_used = ?, pages_learned = ? WHERE id = ?",
+        [5, 3, id],
+      );
+
+      await runResearchInBackground(ctx, id);
+
+      const findings = listFindings(storage);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.sources.every((source) => source.quality === "low" || source.quality === "medium")).toBe(true);
+      expect(findings[0]?.confidence).toBeLessThanOrEqual(0.58);
+    });
+
+    it("penalizes repeated follow-up findings when sources and summary barely change", async () => {
+      const { generateText } = await import("ai");
+      (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+        text: [
+          "```json",
+          JSON.stringify({
+            recommendation: "Vendor consolidation is accelerating across inference stacks.",
+            confidence: 82,
+            sources: [
+              { title: "Reuters", url: "https://www.reuters.com/technology/example" },
+              { title: "The Verge", url: "https://www.theverge.com/ai/example" },
+            ],
+          }),
+          "```",
+        ].join("\n"),
+        steps: [],
+      });
+
+      storage.run(
+        "INSERT INTO scheduled_jobs (id, label, type, goal, interval_hours, next_run_at, status) VALUES (?, ?, ?, ?, ?, datetime('now'), 'active')",
+        ["watch-1", "Infra Watch", "research", "Track inference infra", 24],
+      );
+      const previousFinding = createFinding(storage, {
+        watchId: "watch-1",
+        goal: "Track inference infra",
+        domain: "general",
+        summary: "Vendor consolidation is accelerating across inference stacks.",
+        confidence: 0.81,
+        agentName: "Researcher",
+        depthLevel: "standard",
+        sources: [
+          { title: "Reuters", url: "https://www.reuters.com/technology/example", fetchedAt: "2026-03-20T09:00:00Z", relevance: 0.9 },
+          { title: "The Verge", url: "https://www.theverge.com/ai/example", fetchedAt: "2026-03-20T09:00:00Z", relevance: 0.85 },
+        ],
+      });
+
+      const ctx = makeCtx();
+      const id = createResearchJob(storage, {
+        goal: "Follow-up infra research",
+        threadId: null,
+        sourceScheduleId: "watch-1",
+      });
+      storage.run(
+        "UPDATE research_jobs SET searches_used = ?, pages_learned = ? WHERE id = ?",
+        [4, 3, id],
+      );
+
+      await runResearchInBackground(ctx, id);
+
+      const findings = listFindings(storage);
+      expect(findings).toHaveLength(2);
+      expect(findings[0]?.previousFindingId).toBe(previousFinding.id);
+      expect(findings[0]?.delta?.significance).toBe(0);
+      expect(findings[0]?.confidence).toBeLessThanOrEqual(0.45);
+
+      const job = getResearchJob(storage, id);
+      expect(job?.stepsLog.some((line) => line.includes("novelty=0.00"))).toBe(true);
     });
 
     it("appends summary to originating thread on completion", async () => {

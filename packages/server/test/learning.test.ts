@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createStorage, threadMigrations } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
-import { learningMigrations, getWatermark, updateWatermark, gatherSignals, buildLearningPrompt, parseLearningResponse, runBackgroundLearning, insertLearningRun, updateLearningRun, listLearningRuns, recoverStaleLearningRuns } from "../src/learning.js";
+import { learningMigrations, getWatermark, getWatermarkCursor, updateWatermark, updateWatermarkCursor, gatherSignals, buildLearningPrompt, parseLearningResponse, filterLearningFacts, runBackgroundLearning, insertLearningRun, updateLearningRun, listLearningRuns, recoverStaleLearningRuns } from "../src/learning.js";
 import type { GatheredSignals } from "../src/learning.js";
 import type { PluginContext } from "@personal-ai/core";
 
@@ -62,6 +62,29 @@ describe("learning watermarks", () => {
     expect(getWatermark(storage, "threads")).toBe(t1);
     expect(getWatermark(storage, "research")).toBe(t2);
   });
+
+  it("falls back to legacy watermark rows without rowid cursor state", () => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+
+    dir = mkdtempSync(join(tmpdir(), "pai-learning-legacy-test-"));
+    storage = createStorage(dir);
+    storage.run(`
+      CREATE TABLE learning_watermarks (
+        source TEXT PRIMARY KEY,
+        last_processed_at TEXT NOT NULL
+      )
+    `);
+    storage.run(
+      "INSERT INTO learning_watermarks (source, last_processed_at) VALUES (?, ?)",
+      ["threads", "2026-03-22T10:00:00.000Z"],
+    );
+
+    expect(getWatermarkCursor(storage, "threads")).toEqual({
+      timestamp: "2026-03-22T10:00:00.000Z",
+      rowId: 0,
+    });
+  });
 });
 
 describe("gatherSignals", () => {
@@ -98,13 +121,13 @@ describe("gatherSignals", () => {
     expect(signals.isEmpty).toBe(false);
   });
 
-  it("limits to 3 threads", () => {
+  it("retains all threads present in the fetched batch", () => {
     for (let t = 0; t < 5; t++) {
       storage.run(`INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t${t}', 'Thread ${t}', datetime('now'), datetime('now'), 1)`);
       storage.run(`INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m${t}', 't${t}', 'user', 'msg', datetime('now'), 1)`);
     }
     const signals = gatherSignals(storage);
-    expect(signals.threads.length).toBeLessThanOrEqual(3);
+    expect(signals.threads).toHaveLength(5);
   });
 
   it("only gathers user messages, not assistant messages", () => {
@@ -114,6 +137,38 @@ describe("gatherSignals", () => {
     const signals = gatherSignals(storage);
     expect(signals.threads[0].messages).toHaveLength(1);
     expect(signals.threads[0].messages[0].role).toBe("user");
+  });
+
+  it("walks same-timestamp thread backlog without skipping rows", () => {
+    const timestamp = "2026-03-22T10:00:00.000Z";
+    storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t-backlog', 'Backlog', ?, ?, 65)", [timestamp, timestamp]);
+    updateWatermarkCursor(storage, "threads", { timestamp: "2026-03-22T09:59:00.000Z", rowId: 0 });
+
+    for (let i = 0; i < 65; i++) {
+      storage.run(
+        "INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES (?, 't-backlog', 'user', ?, ?, ?)",
+        [`m-backlog-${i}`, `msg ${i}`, timestamp, i + 1],
+      );
+    }
+
+    const firstBatch = gatherSignals(storage);
+    expect(firstBatch.threads).toHaveLength(1);
+    expect(firstBatch.threads[0]?.messages).toHaveLength(60);
+    expect(firstBatch.watermarks.threads?.timestamp).toBe(timestamp);
+    expect(firstBatch.watermarks.threads?.rowId).toBeGreaterThan(0);
+
+    updateWatermarkCursor(storage, "threads", firstBatch.watermarks.threads!);
+
+    const secondBatch = gatherSignals(storage);
+    expect(secondBatch.threads).toHaveLength(1);
+    expect(secondBatch.threads[0]?.messages).toHaveLength(5);
+    expect(secondBatch.threads[0]?.messages.map((message) => message.content)).toEqual([
+      "msg 60",
+      "msg 61",
+      "msg 62",
+      "msg 63",
+      "msg 64",
+    ]);
   });
 });
 
@@ -126,6 +181,8 @@ describe("buildLearningPrompt", () => {
       knowledge: [{ title: "React docs", url: "https://react.dev", firstChunk: "React is..." }],
       findings: [{ goal: "AI trends", summary: "New frameworks emerging", domain: "general", createdAt: "2026-01-01" }],
       digests: [{ recommendation: "Hold BTC position", whatChanged: ["Price dropped 5%"], generatedAt: "2026-01-01" }],
+      snapshotAt: "2026-01-01T00:00:00Z",
+      watermarks: { threads: null, research: null, tasks: null, knowledge: null, findings: null, digests: null },
       isEmpty: false,
     };
     const prompt = buildLearningPrompt(signals);
@@ -143,6 +200,8 @@ describe("buildLearningPrompt", () => {
       threads: [], research: [], tasks: [],
       knowledge: [{ title: "React docs", url: "https://react.dev", firstChunk: "React is..." }],
       findings: [], digests: [],
+      snapshotAt: "2026-01-01T00:00:00Z",
+      watermarks: { threads: null, research: null, tasks: null, knowledge: null, findings: null, digests: null },
       isEmpty: false,
     };
     const prompt = buildLearningPrompt(signals);
@@ -183,6 +242,21 @@ describe("parseLearningResponse", () => {
   it("filters out items with missing fields", () => {
     const input = '[{"fact":"good","factType":"factual","importance":5,"subject":"owner"},{"bad":true}]';
     expect(parseLearningResponse(input)).toHaveLength(1);
+  });
+});
+
+describe("filterLearningFacts", () => {
+  it("removes low-signal activity facts and duplicate statements", () => {
+    const filtered = filterLearningFacts([
+      { fact: "User prefers TypeScript over JavaScript", factType: "preference", importance: 7, subject: "owner" },
+      { fact: "user prefers typescript over javascript", factType: "preference", importance: 7, subject: "owner" },
+      { fact: "User asked about AI agent orchestration", factType: "factual", importance: 5, subject: "owner" },
+      { fact: "This conversation covered background learning metrics", factType: "factual", importance: 5, subject: "owner" },
+    ]);
+
+    expect(filtered).toEqual([
+      { fact: "User prefers TypeScript over JavaScript", factType: "preference", importance: 7, subject: "owner" },
+    ]);
   });
 });
 
@@ -374,6 +448,154 @@ describe("runBackgroundLearning", () => {
       beliefsCreated: 1,
       beliefsReinforced: 1,
     });
+  });
+
+  it("filters duplicate and activity facts before storing beliefs", async () => {
+    storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t-filter', 'Filter test', datetime('now'), datetime('now'), 1)");
+    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m-filter', 't-filter', 'user', 'I prefer TypeScript for backend work', datetime('now'), 1)");
+
+    mockGenerateText.mockResolvedValue({
+      text: JSON.stringify([
+        { fact: "User prefers TypeScript for backend work", factType: "preference", importance: 7, subject: "owner" },
+        { fact: "user prefers typescript for backend work", factType: "preference", importance: 7, subject: "owner" },
+        { fact: "User asked about AI agent orchestration", factType: "factual", importance: 5, subject: "owner" },
+      ]),
+    });
+    mockRememberStructured.mockResolvedValue({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false });
+
+    const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
+      storage,
+      llm: {
+        health: async () => ({ ok: true }),
+        getModel: () => ({}),
+        embed: async () => [],
+      },
+      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    expect(mockRememberStructured).toHaveBeenCalledTimes(1);
+    expect(mockRememberStructured).toHaveBeenCalledWith(
+      storage,
+      expect.anything(),
+      expect.objectContaining({
+        statement: "User prefers TypeScript for backend work",
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+
+    const latest = listLearningRuns(storage)[0];
+    expect(latest?.factsExtracted).toBe(3);
+    expect(latest?.beliefsCreated).toBe(1);
+  });
+
+  it("advances the thread watermark to the latest processed timestamp, not wall clock time", async () => {
+    const before = new Date(Date.now() - 120_000).toISOString();
+    const processedAt = new Date(Date.now() - 60_000).toISOString();
+    updateWatermark(storage, "threads", before);
+    storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t-watermark', 'Watermark test', ?, ?, 1)", [processedAt, processedAt]);
+    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m-watermark', 't-watermark', 'user', 'I prefer reproducible builds', ?, 1)", [processedAt]);
+
+    mockGenerateText.mockResolvedValue({
+      text: JSON.stringify([
+        { fact: "User prefers reproducible builds", factType: "preference", importance: 6, subject: "owner" },
+      ]),
+    });
+    mockRememberStructured.mockResolvedValue({ episodeId: "ep1", beliefIds: ["b1"], isReinforcement: false });
+
+    const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
+      storage,
+      llm: {
+        health: async () => ({ ok: true }),
+        getModel: () => ({}),
+        embed: async () => [],
+      },
+      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    expect(getWatermark(storage, "threads")).toBe(processedAt);
+  });
+
+  it("does not advance watermarks when shutdown happens during fact storage", async () => {
+    storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t-abort', 'Abort test', datetime('now'), datetime('now'), 1)");
+    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m-abort', 't-abort', 'user', 'I prefer durable queues', datetime('now'), 1)");
+
+    mockGenerateText.mockResolvedValue({
+      text: JSON.stringify([
+        { fact: "User prefers durable queues", factType: "preference", importance: 7, subject: "owner" },
+        { fact: "User cares about retry safety", factType: "preference", importance: 6, subject: "owner" },
+      ]),
+    });
+
+    const controller = new AbortController();
+    mockRememberStructured.mockImplementationOnce(async () => {
+      controller.abort();
+      return { episodeId: "ep-abort", beliefIds: ["b-abort"], isReinforcement: false };
+    });
+
+    const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
+      storage,
+      llm: {
+        health: async () => ({ ok: true }),
+        getModel: () => ({}),
+        embed: async () => [],
+      },
+      logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx, controller.signal);
+
+    const wm = getWatermarkCursor(storage, "threads");
+    const age = Date.now() - new Date(wm.timestamp).getTime();
+    expect(age).toBeGreaterThan(23 * 60 * 60 * 1000);
+
+    const latest = listLearningRuns(storage)[0];
+    expect(latest?.status).toBe("skipped");
+    expect(latest?.skipReason).toBe("shutdown");
+  });
+
+  it("tracks low-importance skips and tolerated store failures", async () => {
+    storage.run("INSERT INTO threads (id, title, created_at, updated_at, message_count) VALUES ('t-skip', 'Skip test', datetime('now'), datetime('now'), 1)");
+    storage.run("INSERT INTO thread_messages (id, thread_id, role, content, created_at, sequence) VALUES ('m-skip', 't-skip', 'user', 'I care about resilient infra', datetime('now'), 1)");
+
+    mockGenerateText.mockResolvedValue({
+      text: JSON.stringify([
+        { fact: "User mentioned a one-off detail", factType: "factual", importance: 3, subject: "owner" },
+        { fact: "User cares about resilient infra", factType: "preference", importance: 6, subject: "owner" },
+      ]),
+    });
+    mockRememberStructured.mockRejectedValueOnce(new Error("write failed"));
+
+    const debugLog = vi.fn();
+    const mockCtx = {
+      config: { llm: { provider: "ollama", model: "test-model" } },
+      storage,
+      llm: {
+        health: async () => ({ ok: true }),
+        getModel: () => ({}),
+        embed: async () => [],
+      },
+      logger: { info: () => {}, debug: debugLog, warn: () => {}, error: () => {} },
+    } as unknown as PluginContext;
+
+    await runBackgroundLearning(mockCtx);
+
+    const latest = listLearningRuns(storage)[0];
+    expect(latest?.status).toBe("done");
+    expect(latest?.lowImportanceSkipped).toBe(1);
+    expect(latest?.beliefsCreated).toBe(0);
+    expect(latest?.beliefsReinforced).toBe(0);
+    expect(debugLog).toHaveBeenCalledWith(
+      "Background learning: failed to store a fact",
+      expect.objectContaining({ error: "write failed" }),
+    );
   });
 
   it("persists a run record with correct counts on success", async () => {

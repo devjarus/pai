@@ -24,11 +24,7 @@ test.describe("Settings", () => {
     await modelInput.fill("new-test-model");
 
     // Enter API key
-    const apiKeyRow = page
-      .locator("div")
-      .filter({ hasText: /^API Key/ })
-      .last();
-    const apiKeyInput = apiKeyRow.locator('input[type="password"]');
+    const apiKeyInput = page.getByLabel("LLM API Key");
     await expect(apiKeyInput).toBeVisible({ timeout: 5_000 });
     await apiKeyInput.fill("sk-test-key-12345");
 
@@ -62,11 +58,7 @@ test.describe("Settings", () => {
 
     // Enter edit mode to check API key placeholder
     await page.getByRole("button", { name: "Edit" }).click();
-    const updatedRow = page
-      .locator("div")
-      .filter({ hasText: /^API Key/ })
-      .last();
-    const updatedInput = updatedRow.locator("input");
+    const updatedInput = page.getByLabel("LLM API Key");
     await expect(updatedInput).toHaveAttribute("placeholder", /Key saved/i, {
       timeout: 5_000,
     });
@@ -94,11 +86,7 @@ test.describe("Settings", () => {
 
     // Second save immediately — change API key (triggers reinitialize #2)
     await page.getByRole("button", { name: "Edit" }).click();
-    const apiKeyRow = page
-      .locator("div")
-      .filter({ hasText: /^API Key/ })
-      .last();
-    const apiKeyInput = apiKeyRow.locator('input[type="password"]');
+    const apiKeyInput = page.getByLabel("LLM API Key");
     await apiKeyInput.fill("sk-consecutive-test");
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByText(/Configuration saved/i).first()).toBeVisible({

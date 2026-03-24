@@ -424,7 +424,7 @@ export async function correctBelief(
   storage: Storage,
   llmClient: LLMClient,
   beliefId: string,
-  input: { statement: string; note?: string },
+  input: { statement: string; note?: string; briefId?: string },
 ): Promise<CorrectBeliefResult> {
   const resolvedId = resolveIdPrefix(storage, "beliefs", beliefId, "AND status = 'active'");
   const oldBelief = storage.query<Belief>("SELECT * FROM beliefs WHERE id = ?", [resolvedId])[0];
@@ -473,6 +473,24 @@ export async function correctBelief(
     sourceLabel: "Belief correction",
     relation: "corrected-from",
   });
+  const briefId = input.briefId?.trim();
+  if (briefId) {
+    addBeliefProvenance(storage, {
+      beliefId: replacementBelief.id,
+      sourceKind: "briefing",
+      sourceId: briefId,
+      sourceLabel: "Digest correction",
+      relation: "prompted-correction",
+    });
+    try {
+      storage.run(
+        "INSERT OR IGNORE INTO brief_beliefs (id, brief_id, belief_id, role) VALUES (?, ?, ?, ?)",
+        [nanoid(), briefId, replacementBelief.id, "correction-input"],
+      );
+    } catch {
+      // brief_beliefs lives in the server domain; skip linkage when unavailable
+    }
+  }
   linkSupersession(storage, oldBelief.id, replacementBelief.id);
 
   logBeliefChange(storage, {

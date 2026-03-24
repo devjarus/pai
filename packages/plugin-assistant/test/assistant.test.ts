@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AgentContext } from "@personal-ai/core";
 import { assistantPlugin } from "../src/index.js";
 
-const { mockEnsureProgram, mockListPrograms, mockDeleteProgram } = vi.hoisted(() => ({
+const { mockEnsureProgram, mockListPrograms, mockDeleteProgram, mockCreateLinearIssue, mockIsLinearIssueIntakeConfigured } = vi.hoisted(() => ({
   mockEnsureProgram: vi.fn(),
   mockListPrograms: vi.fn().mockReturnValue([]),
   mockDeleteProgram: vi.fn(),
+  mockCreateLinearIssue: vi.fn(),
+  mockIsLinearIssueIntakeConfigured: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("@personal-ai/core", () => ({
@@ -18,6 +20,8 @@ vi.mock("@personal-ai/core", () => ({
   resolveSandboxUrl: vi.fn().mockReturnValue(null),
   resolveBrowserUrl: vi.fn().mockReturnValue(null),
   createBrowserTools: vi.fn().mockReturnValue({}),
+  createLinearIssue: mockCreateLinearIssue,
+  isLinearIssueIntakeConfigured: mockIsLinearIssueIntakeConfigured,
 }));
 
 vi.mock("@personal-ai/plugin-schedules", () => ({
@@ -61,6 +65,8 @@ beforeEach(() => {
       deliveryMode: "interval",
     },
   });
+  mockIsLinearIssueIntakeConfigured.mockReturnValue(false);
+  mockCreateLinearIssue.mockReset();
 });
 
 describe("assistantPlugin structure", () => {
@@ -116,15 +122,16 @@ describe("createTools", () => {
     expect(toolNames).toContain("program_create");
     expect(toolNames).toContain("program_list");
     expect(toolNames).toContain("program_delete");
+    expect(toolNames).toContain("linear_issue_create");
     expect(toolNames).not.toContain("schedule_create");
     expect(toolNames).not.toContain("schedule_list");
     expect(toolNames).not.toContain("schedule_delete");
   });
 
-  it("returns 21 tools total", () => {
+  it("returns 22 tools total", () => {
     const ctx = createMockCtx();
     const tools = assistantPlugin.agent!.createTools!(ctx);
-    expect(Object.keys(tools)).toHaveLength(21);
+    expect(Object.keys(tools)).toHaveLength(22);
   });
 
   it("each tool has description and execute function", () => {
@@ -293,6 +300,73 @@ describe("createTools", () => {
 
     expect(mockDeleteProgram).toHaveBeenCalledWith(ctx.storage, "prog_123");
     expect(result).toBe("Watch removed.");
+  });
+
+  it("linear_issue_create returns a setup error when Linear is not configured", async () => {
+    const ctx = createMockCtx();
+    const tools = assistantPlugin.agent!.createTools!(ctx) as Record<string, any>;
+
+    const result = await tools.linear_issue_create.execute({
+      title: "Add issue intake",
+      kind: "feature",
+      problem: "Users need a faster way to request work",
+      impact: "Important requests get lost",
+      desiredOutcome: "The assistant should file the issue after a few questions",
+      urgency: "medium",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("not configured");
+    expect(mockCreateLinearIssue).not.toHaveBeenCalled();
+  });
+
+  it("linear_issue_create sends structured issue content to Linear", async () => {
+    mockIsLinearIssueIntakeConfigured.mockReturnValue(true);
+    mockCreateLinearIssue.mockResolvedValue({
+      id: "issue-1",
+      identifier: "ENG-123",
+      title: "Add issue intake",
+      url: "https://linear.app/acme/issue/ENG-123/add-issue-intake",
+      team: { id: "team-1", key: "ENG", name: "Engineering" },
+      project: null,
+    });
+
+    const ctx = createMockCtx({
+      config: {
+        linear: {
+          enabled: true,
+          apiKey: "lin_api_key",
+          defaultTeam: "ENG",
+        },
+      } as any,
+      sender: { displayName: "Suraj" },
+      conversationHistory: [
+        { role: "assistant", content: "What should happen instead?" },
+        { role: "user", content: "It should create the issue after a few questions." },
+      ],
+    });
+    const tools = assistantPlugin.agent!.createTools!(ctx) as Record<string, any>;
+
+    const result = await tools.linear_issue_create.execute({
+      title: "Add issue intake",
+      kind: "feature",
+      problem: "Users need a faster way to request work",
+      impact: "Important requests get lost",
+      desiredOutcome: "The assistant should file the issue after a few questions",
+      urgency: "high",
+      acceptanceCriteria: ["User answers only a few questions", "Assistant files the issue in Linear"],
+    });
+
+    expect(mockCreateLinearIssue).toHaveBeenCalledWith(
+      ctx.config.linear,
+      expect.objectContaining({
+        title: "Add issue intake",
+        priority: 2,
+        description: expect.stringContaining("## Acceptance criteria"),
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.identifier).toBe("ENG-123");
   });
 });
 

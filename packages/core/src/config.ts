@@ -74,6 +74,10 @@ export function loadConfigFile(homeDir?: string): Partial<Config> {
     if (telegram?.token && typeof telegram.token === "string") {
       (telegram as Record<string, unknown>).token = decryptSecret(telegram.token as string);
     }
+    const linear = parsed.linear as Record<string, unknown> | undefined;
+    if (linear?.apiKey && typeof linear.apiKey === "string") {
+      (linear as Record<string, unknown>).apiKey = decryptSecret(linear.apiKey as string);
+    }
     return parsed;
   } catch (err) {
     console.warn(`[pai] Failed to parse config.json at ${configPath}: ${err instanceof Error ? err.message : String(err)}`);
@@ -96,6 +100,10 @@ export function writeConfig(homeDir: string, config: Partial<Config>): void {
   const telegram = toWrite.telegram as Record<string, unknown> | undefined;
   if (telegram?.token && typeof telegram.token === "string" && !telegram.token.startsWith(ENC_PREFIX)) {
     telegram.token = encryptSecret(telegram.token);
+  }
+  const linear = toWrite.linear as Record<string, unknown> | undefined;
+  if (linear?.apiKey && typeof linear.apiKey === "string" && !linear.apiKey.startsWith(ENC_PREFIX)) {
+    linear.apiKey = encryptSecret(linear.apiKey);
   }
   // Atomic write: write to temp file first, then rename.
   // This prevents corruption if the process is killed mid-write (e.g., Railway deploy).
@@ -132,6 +140,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const fileConfig = loadConfigFile(env["PAI_HOME"]);
   const fileLlm: Partial<Config["llm"]> = fileConfig.llm ?? {};
   const fileTelegram: Partial<NonNullable<Config["telegram"]>> = fileConfig.telegram ?? {};
+  const fileLinear: Partial<NonNullable<Config["linear"]>> = fileConfig.linear ?? {};
 
   // On Docker/PaaS: if config.json exists in the data dir (saved via Settings UI),
   // those values take priority over env vars (user explicitly chose them).
@@ -142,6 +151,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     : null;
   const savedLlm: Partial<Config["llm"]> = dataDirConfig?.llm ?? {};
   const savedTelegram: Partial<NonNullable<Config["telegram"]>> = dataDirConfig?.telegram ?? {};
+  const savedLinear: Partial<NonNullable<Config["linear"]>> = dataDirConfig?.linear ?? {};
 
   // Telegram config: data dir config (Settings UI) > env vars > home config file
   const telegramToken = savedTelegram.token ?? env["PAI_TELEGRAM_TOKEN"] ?? fileTelegram.token;
@@ -149,6 +159,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     : env["PAI_TELEGRAM_ENABLED"] === "true" ? true
     : env["PAI_TELEGRAM_ENABLED"] === "false" ? false
     : fileTelegram.enabled;
+  const linearApiKey = savedLinear.apiKey ?? env["PAI_LINEAR_API_KEY"] ?? fileLinear.apiKey;
+  const linearEnabled = savedLinear.enabled !== undefined ? savedLinear.enabled
+    : env["PAI_LINEAR_ENABLED"] === "true" ? true
+    : env["PAI_LINEAR_ENABLED"] === "false" ? false
+    : fileLinear.enabled;
+  const linearDefaultTeam = savedLinear.defaultTeam ?? env["PAI_LINEAR_TEAM"] ?? fileLinear.defaultTeam;
+  const linearDefaultProject = savedLinear.defaultProject ?? env["PAI_LINEAR_PROJECT"] ?? fileLinear.defaultProject;
+  const linearAutoCreateRecurringIssues = savedLinear.autoCreateRecurringIssues !== undefined ? savedLinear.autoCreateRecurringIssues
+    : env["PAI_LINEAR_AUTO_ERRORS"] === "true" ? true
+    : env["PAI_LINEAR_AUTO_ERRORS"] === "false" ? false
+    : fileLinear.autoCreateRecurringIssues;
 
   const config: Config = {
     dataDir: resolveDataDir(env, fileConfig),
@@ -196,6 +217,23 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (telegramEnabled !== undefined) config.telegram.enabled = telegramEnabled;
     const ownerUsername = savedTelegram.ownerUsername ?? fileTelegram.ownerUsername;
     if (ownerUsername) config.telegram.ownerUsername = ownerUsername;
+  }
+
+  if (
+    linearApiKey !== undefined ||
+    linearEnabled !== undefined ||
+    linearDefaultTeam !== undefined ||
+    linearDefaultProject !== undefined ||
+    linearAutoCreateRecurringIssues !== undefined
+  ) {
+    config.linear = {};
+    if (linearApiKey) config.linear.apiKey = linearApiKey;
+    if (linearEnabled !== undefined) config.linear.enabled = linearEnabled;
+    if (linearDefaultTeam) config.linear.defaultTeam = linearDefaultTeam;
+    if (linearDefaultProject) config.linear.defaultProject = linearDefaultProject;
+    if (linearAutoCreateRecurringIssues !== undefined) {
+      config.linear.autoCreateRecurringIssues = linearAutoCreateRecurringIssues;
+    }
   }
 
   return config;

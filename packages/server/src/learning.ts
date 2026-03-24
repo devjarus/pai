@@ -32,28 +32,72 @@ export const learningMigrations: Migration[] = [
       error TEXT
     );`,
   },
+  {
+    version: 3,
+    up: `
+      ALTER TABLE learning_watermarks ADD COLUMN last_processed_rowid INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE learning_runs ADD COLUMN findings_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE learning_runs ADD COLUMN digests_count INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
-export function getWatermark(storage: Storage, source: string): string {
-  const rows = storage.query<{ last_processed_at: string }>(
-    "SELECT last_processed_at FROM learning_watermarks WHERE source = ?",
-    [source],
-  );
-  if (rows[0]) return rows[0].last_processed_at;
+export interface LearningWatermarkCursor {
+  timestamp: string;
+  rowId: number;
+}
+
+export function getWatermarkCursor(storage: Storage, source: string): LearningWatermarkCursor {
+  try {
+    const rows = storage.query<{ last_processed_at: string; last_processed_rowid: number }>(
+      "SELECT last_processed_at, last_processed_rowid FROM learning_watermarks WHERE source = ?",
+      [source],
+    );
+    if (rows[0]) {
+      return {
+        timestamp: rows[0].last_processed_at,
+        rowId: rows[0].last_processed_rowid ?? 0,
+      };
+    }
+  } catch {
+    const legacyRows = storage.query<{ last_processed_at: string }>(
+      "SELECT last_processed_at FROM learning_watermarks WHERE source = ?",
+      [source],
+    );
+    if (legacyRows[0]) {
+      return {
+        timestamp: legacyRows[0].last_processed_at,
+        rowId: 0,
+      };
+    }
+  }
+
   // First run: default to 24 hours ago
   const defaultTime = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  storage.run(
-    "INSERT INTO learning_watermarks (source, last_processed_at) VALUES (?, ?)",
-    [source, defaultTime],
-  );
-  return defaultTime;
+  updateWatermarkCursor(storage, source, { timestamp: defaultTime, rowId: 0 });
+  return { timestamp: defaultTime, rowId: 0 };
+}
+
+export function getWatermark(storage: Storage, source: string): string {
+  return getWatermarkCursor(storage, source).timestamp;
+}
+
+export function updateWatermarkCursor(storage: Storage, source: string, cursor: LearningWatermarkCursor): void {
+  try {
+    storage.run(
+      "INSERT OR REPLACE INTO learning_watermarks (source, last_processed_at, last_processed_rowid) VALUES (?, ?, ?)",
+      [source, cursor.timestamp, cursor.rowId],
+    );
+  } catch {
+    storage.run(
+      "INSERT OR REPLACE INTO learning_watermarks (source, last_processed_at) VALUES (?, ?)",
+      [source, cursor.timestamp],
+    );
+  }
 }
 
 export function updateWatermark(storage: Storage, source: string, timestamp: string): void {
-  storage.run(
-    "INSERT OR REPLACE INTO learning_watermarks (source, last_processed_at) VALUES (?, ?)",
-    [source, timestamp],
-  );
+  updateWatermarkCursor(storage, source, { timestamp, rowId: 0 });
 }
 
 export interface LearningRun {
@@ -67,6 +111,8 @@ export interface LearningRun {
   researchCount: number;
   tasksCount: number;
   knowledgeCount: number;
+  findingsCount: number;
+  digestsCount: number;
   factsExtracted: number;
   beliefsCreated: number;
   beliefsReinforced: number;
@@ -101,6 +147,8 @@ export function updateLearningRun(
     researchCount: "research_count",
     tasksCount: "tasks_count",
     knowledgeCount: "knowledge_count",
+    findingsCount: "findings_count",
+    digestsCount: "digests_count",
     factsExtracted: "facts_extracted",
     beliefsCreated: "beliefs_created",
     beliefsReinforced: "beliefs_reinforced",
@@ -132,6 +180,8 @@ export function listLearningRuns(storage: Storage, limit = 20): LearningRun[] {
     research_count: number;
     tasks_count: number;
     knowledge_count: number;
+    findings_count: number;
+    digests_count: number;
     facts_extracted: number;
     beliefs_created: number;
     beliefs_reinforced: number;
@@ -153,6 +203,8 @@ export function listLearningRuns(storage: Storage, limit = 20): LearningRun[] {
     researchCount: r.research_count,
     tasksCount: r.tasks_count,
     knowledgeCount: r.knowledge_count,
+    findingsCount: r.findings_count,
+    digestsCount: r.digests_count,
     factsExtracted: r.facts_extracted,
     beliefsCreated: r.beliefs_created,
     beliefsReinforced: r.beliefs_reinforced,
@@ -214,76 +266,142 @@ export interface GatheredSignals {
   knowledge: KnowledgeSignal[];
   findings: FindingSignal[];
   digests: DigestSignal[];
+  snapshotAt: string;
+  watermarks: Record<"threads" | "research" | "tasks" | "knowledge" | "findings" | "digests", LearningWatermarkCursor | null>;
   isEmpty: boolean;
 }
 
-export function gatherSignals(storage: Storage): GatheredSignals {
-  const threadsWm = getWatermark(storage, "threads");
-  const researchWm = getWatermark(storage, "research");
-  const tasksWm = getWatermark(storage, "tasks");
-  const knowledgeWm = getWatermark(storage, "knowledge");
+function latestCursor(
+  current: LearningWatermarkCursor | null,
+  candidateTimestamp: string | null | undefined,
+  candidateRowId: number | null | undefined,
+): LearningWatermarkCursor | null {
+  if (!candidateTimestamp) return current;
+  const next: LearningWatermarkCursor = {
+    timestamp: candidateTimestamp,
+    rowId: candidateRowId ?? 0,
+  };
+  if (!current) return next;
 
-  // 1. Chat threads — recent user messages, grouped by thread, max 3 threads
+  const currentTime = Date.parse(current.timestamp);
+  const candidateTime = Date.parse(next.timestamp);
+  if (!Number.isFinite(currentTime) || !Number.isFinite(candidateTime)) {
+    if (next.timestamp > current.timestamp) return next;
+    if (next.timestamp < current.timestamp) return current;
+    return next.rowId > current.rowId ? next : current;
+  }
+  if (candidateTime > currentTime) return next;
+  if (candidateTime < currentTime) return current;
+  return next.rowId > current.rowId ? next : current;
+}
+
+function advanceProcessedWatermarks(
+  storage: Storage,
+  watermarks: GatheredSignals["watermarks"],
+  fallbackTimestamp?: string,
+): void {
+  for (const [source, cursor] of Object.entries(watermarks) as Array<[keyof GatheredSignals["watermarks"], LearningWatermarkCursor | null]>) {
+    if (cursor) {
+      updateWatermarkCursor(storage, source, cursor);
+      continue;
+    }
+    if (fallbackTimestamp) {
+      updateWatermarkCursor(storage, source, { timestamp: fallbackTimestamp, rowId: 0 });
+    }
+  }
+}
+
+export function gatherSignals(storage: Storage): GatheredSignals {
+  const snapshotAt = new Date().toISOString();
+  const threadsWm = getWatermarkCursor(storage, "threads");
+  const researchWm = getWatermarkCursor(storage, "research");
+  const tasksWm = getWatermarkCursor(storage, "tasks");
+  const knowledgeWm = getWatermarkCursor(storage, "knowledge");
+  const findingsWm = getWatermarkCursor(storage, "findings");
+  const digestsWm = getWatermarkCursor(storage, "digests");
+  const watermarks: GatheredSignals["watermarks"] = {
+    threads: null,
+    research: null,
+    tasks: null,
+    knowledge: null,
+    findings: null,
+    digests: null,
+  };
+
+  // 1. Chat threads — recent user messages, grouped by thread
   const recentMessages = storage.query<{
-    thread_id: string; role: string; content: string; created_at: string;
+    cursor_rowid: number; thread_id: string; role: string; content: string; created_at: string;
   }>(
-    `SELECT thread_id, role, content, created_at FROM thread_messages
-     WHERE created_at > ? AND role = 'user'
-     ORDER BY created_at DESC LIMIT 60`,
-    [threadsWm],
+    `SELECT rowid as cursor_rowid, thread_id, role, content, created_at FROM thread_messages
+     WHERE role = 'user'
+       AND (created_at > ? OR (created_at = ? AND rowid > ?))
+       AND created_at <= ?
+     ORDER BY created_at ASC, rowid ASC LIMIT 60`,
+    [threadsWm.timestamp, threadsWm.timestamp, threadsWm.rowId, snapshotAt],
   );
   const threadMap = new Map<string, ThreadSignal>();
   for (const msg of recentMessages) {
-    if (threadMap.size >= 3 && !threadMap.has(msg.thread_id)) continue;
     let thread = threadMap.get(msg.thread_id);
     if (!thread) {
       thread = { threadId: msg.thread_id, messages: [] };
       threadMap.set(msg.thread_id, thread);
     }
-    if (thread.messages.length < 20) {
-      thread.messages.push({ role: msg.role, content: msg.content, createdAt: msg.created_at });
-    }
+    thread.messages.push({ role: msg.role, content: msg.content, createdAt: msg.created_at });
+    watermarks.threads = latestCursor(watermarks.threads, msg.created_at, msg.cursor_rowid);
   }
   const threads = [...threadMap.values()];
 
   // 2. Research reports — completed since last watermark
   let research: ResearchSignal[] = [];
   try {
-    research = storage.query<{ id: string; goal: string; report: string | null }>(
-      `SELECT id, goal, report FROM research_jobs
-       WHERE status = 'done' AND completed_at > ?
-       ORDER BY completed_at DESC LIMIT 5`,
-      [researchWm],
-    ).map((r) => ({
+    const rows = storage.query<{ cursor_rowid: number; id: string; goal: string; report: string | null; completed_at: string }>(
+      `SELECT rowid as cursor_rowid, id, goal, report, completed_at FROM research_jobs
+       WHERE status = 'done'
+         AND (completed_at > ? OR (completed_at = ? AND rowid > ?))
+         AND completed_at <= ?
+       ORDER BY completed_at ASC, rowid ASC LIMIT 5`,
+      [researchWm.timestamp, researchWm.timestamp, researchWm.rowId, snapshotAt],
+    );
+    research = rows.map((r) => ({
       id: r.id,
       goal: r.goal,
       reportSnippet: (r.report ?? "").slice(0, 2000),
     }));
+    for (const row of rows) {
+      watermarks.research = latestCursor(watermarks.research, row.completed_at, row.cursor_rowid);
+    }
   } catch { /* research_jobs table may not exist */ }
 
   // 3. Completed tasks
   let tasks: TaskSignal[] = [];
   try {
-    tasks = storage.query<{ title: string; priority: string; completed_at: string }>(
-      `SELECT title, priority, completed_at FROM tasks
-       WHERE status = 'done' AND completed_at > ?
-       ORDER BY completed_at DESC LIMIT 10`,
-      [tasksWm],
-    ).map((t) => ({
+    const rows = storage.query<{ cursor_rowid: number; title: string; priority: string; completed_at: string }>(
+      `SELECT rowid as cursor_rowid, title, priority, completed_at FROM tasks
+       WHERE status = 'done'
+         AND (completed_at > ? OR (completed_at = ? AND rowid > ?))
+         AND completed_at <= ?
+       ORDER BY completed_at ASC, rowid ASC LIMIT 10`,
+      [tasksWm.timestamp, tasksWm.timestamp, tasksWm.rowId, snapshotAt],
+    );
+    tasks = rows.map((t) => ({
       title: t.title,
       priority: t.priority,
       completedAt: t.completed_at,
     }));
+    for (const task of rows) {
+      watermarks.tasks = latestCursor(watermarks.tasks, task.completed_at, task.cursor_rowid);
+    }
   } catch { /* tasks table may not exist */ }
 
   // 4. New knowledge sources
   let knowledge: KnowledgeSignal[] = [];
   try {
-    const sources = storage.query<{ id: string; title: string | null; url: string }>(
-      `SELECT id, title, url FROM knowledge_sources
-       WHERE fetched_at > ?
-       ORDER BY fetched_at DESC LIMIT 10`,
-      [knowledgeWm],
+    const sources = storage.query<{ cursor_rowid: number; id: string; title: string | null; url: string; fetched_at: string }>(
+      `SELECT rowid as cursor_rowid, id, title, url, fetched_at FROM knowledge_sources
+       WHERE (fetched_at > ? OR (fetched_at = ? AND rowid > ?))
+         AND fetched_at <= ?
+       ORDER BY fetched_at ASC, rowid ASC LIMIT 10`,
+      [knowledgeWm.timestamp, knowledgeWm.timestamp, knowledgeWm.rowId, snapshotAt],
     );
     knowledge = sources.map((s) => {
       const chunk = storage.query<{ content: string }>(
@@ -296,35 +414,47 @@ export function gatherSignals(storage: Storage): GatheredSignals {
         firstChunk: (chunk[0]?.content ?? "").slice(0, 200),
       };
     });
+    for (const source of sources) {
+      watermarks.knowledge = latestCursor(watermarks.knowledge, source.fetched_at, source.cursor_rowid);
+    }
   } catch { /* knowledge tables may not exist */ }
 
   // 5. Research findings — recently created findings
   let findings: FindingSignal[] = [];
   try {
-    const findingsWm = getWatermark(storage, "findings");
-    findings = storage.query<{ goal: string; summary: string; domain: string; created_at: string }>(
-      `SELECT goal, summary, domain, created_at FROM research_findings
-       WHERE created_at > ?
-       ORDER BY created_at DESC LIMIT 10`,
-      [findingsWm],
-    ).map((f) => ({
+    const rows = storage.query<{ cursor_rowid: number; goal: string; summary: string; domain: string; created_at: string }>(
+      `SELECT rowid as cursor_rowid, goal, summary, domain, created_at FROM research_findings
+       WHERE (created_at > ? OR (created_at = ? AND rowid > ?))
+         AND created_at <= ?
+       ORDER BY created_at ASC, rowid ASC LIMIT 10`,
+      [findingsWm.timestamp, findingsWm.timestamp, findingsWm.rowId, snapshotAt],
+    );
+    findings = rows.map((f) => ({
       goal: f.goal,
       summary: f.summary.slice(0, 500),
       domain: f.domain,
       createdAt: f.created_at,
     }));
+    for (const finding of rows) {
+      watermarks.findings = latestCursor(watermarks.findings, finding.created_at, finding.cursor_rowid);
+    }
   } catch { /* findings table may not exist */ }
 
   // 6. Digest conclusions — recently generated digests
   let digests: DigestSignal[] = [];
   try {
-    const digestsWm = getWatermark(storage, "digests");
-    const digestRows = storage.query<{ sections: string; generated_at: string }>(
-      `SELECT sections, generated_at FROM briefings
-       WHERE status = 'ready' AND generated_at > ?
-       ORDER BY generated_at DESC LIMIT 5`,
-      [digestsWm],
-    );
+    const digestRows = storage.query<{ cursor_rowid: number; sections: string; generated_at: string }>(
+      `SELECT rowid as cursor_rowid, sections, generated_at FROM briefings
+       WHERE status = 'ready'
+         AND (generated_at > ? OR (generated_at = ? AND rowid > ?))
+         AND generated_at <= ?
+       ORDER BY generated_at ASC, rowid ASC LIMIT 5`,
+      [digestsWm.timestamp, digestsWm.timestamp, digestsWm.rowId, snapshotAt],
+    ).map((r) => ({
+      cursor_rowid: r.cursor_rowid,
+      sections: r.sections,
+      generated_at: r.generated_at,
+    }));
     for (const row of digestRows) {
       try {
         const sections = JSON.parse(row.sections) as Record<string, unknown>;
@@ -336,12 +466,13 @@ export function gatherSignals(storage: Storage): GatheredSignals {
         if (summary.length > 20) {
           digests.push({ recommendation: summary.slice(0, 300), whatChanged, generatedAt: row.generated_at });
         }
+        watermarks.digests = latestCursor(watermarks.digests, row.generated_at, row.cursor_rowid);
       } catch { /* skip unparseable */ }
     }
   } catch { /* briefings table may not exist */ }
 
   const isEmpty = threads.length === 0 && research.length === 0 && tasks.length === 0 && knowledge.length === 0 && findings.length === 0 && digests.length === 0;
-  return { threads, research, tasks, knowledge, findings, digests, isEmpty };
+  return { threads, research, tasks, knowledge, findings, digests, snapshotAt, watermarks, isEmpty };
 }
 
 export interface ExtractedFact {
@@ -351,6 +482,54 @@ export interface ExtractedFact {
   subject: string;
   relatedTo?: string;
   temporal?: string;
+}
+
+const LOW_SIGNAL_LEARNING_PATTERNS = [
+  /\b(user|owner)\s+(asked|search(?:ed|ing)?|looked up|requested|wanted to know|needs help|is monitoring|is tracking|is watching|is researching)\b/i,
+  /\b(this conversation|assistant response|background learning|memory system|digest|brief(?:ing)?|watch(?:es)?|research report|research finding|knowledge source)\b/i,
+  /\b(in general|generally speaking|as a rule|typically)\b/i,
+];
+
+function normalizeLearningFactSignature(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\[[^\]]+\]/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function isLowQualityLearningFact(fact: ExtractedFact): boolean {
+  const statement = fact.fact.trim();
+  if (!statement) return true;
+
+  const wordCount = statement.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 3 || wordCount > 20) return true;
+
+  if (LOW_SIGNAL_LEARNING_PATTERNS.some((pattern) => pattern.test(statement))) {
+    return true;
+  }
+
+  if (/^(user|owner)\s+(asked|wanted|needs|searched|looked|researched|tracked|watched|followed)\b/i.test(statement)) {
+    return true;
+  }
+
+  return false;
+}
+
+export function filterLearningFacts(facts: ExtractedFact[]): ExtractedFact[] {
+  const seen = new Set<string>();
+  const filtered: ExtractedFact[] = [];
+
+  for (const fact of facts) {
+    if (isLowQualityLearningFact(fact)) continue;
+    const signature = normalizeLearningFactSignature(fact.fact);
+    if (!signature || seen.has(signature)) continue;
+    seen.add(signature);
+    filtered.push(fact);
+  }
+
+  return filtered;
 }
 
 export function buildLearningPrompt(signals: GatheredSignals): string {
@@ -518,6 +697,8 @@ export async function runBackgroundLearning(
     researchCount: signals.research.length,
     taskCount: signals.tasks.length,
     knowledgeCount: signals.knowledge.length,
+    findingsCount: signals.findings.length,
+    digestsCount: signals.digests.length,
   });
 
   // Update run with signal counts
@@ -527,16 +708,13 @@ export async function runBackgroundLearning(
     researchCount: signals.research.length,
     tasksCount: signals.tasks.length,
     knowledgeCount: signals.knowledge.length,
+    findingsCount: signals.findings.length,
+    digestsCount: signals.digests.length,
   });
 
   if (signals.isEmpty) {
     const now = new Date().toISOString();
-    updateWatermark(ctx.storage, "threads", now);
-    updateWatermark(ctx.storage, "research", now);
-    updateWatermark(ctx.storage, "tasks", now);
-    updateWatermark(ctx.storage, "knowledge", now);
-    updateWatermark(ctx.storage, "findings", now);
-    updateWatermark(ctx.storage, "digests", now);
+    advanceProcessedWatermarks(ctx.storage, signals.watermarks, signals.snapshotAt);
     updateLearningRun(ctx.storage, runId, {
       status: "skipped",
       skipReason: "no_signals",
@@ -551,17 +729,10 @@ export async function runBackgroundLearning(
 
   // Check abort before LLM call
   if (signal?.aborted) {
-    const now = new Date().toISOString();
-    updateWatermark(ctx.storage, "threads", now);
-    updateWatermark(ctx.storage, "research", now);
-    updateWatermark(ctx.storage, "tasks", now);
-    updateWatermark(ctx.storage, "knowledge", now);
-    updateWatermark(ctx.storage, "findings", now);
-    updateWatermark(ctx.storage, "digests", now);
     updateLearningRun(ctx.storage, runId, {
       status: "skipped",
       skipReason: "shutdown",
-      completedAt: now,
+      completedAt: new Date().toISOString(),
       durationMs: Date.now() - start,
     });
     ctx.logger.info("Background learning: aborted before LLM call");
@@ -570,6 +741,7 @@ export async function runBackgroundLearning(
 
   // Phase 2: LLM extraction
   const prompt = buildLearningPrompt(signals);
+  let extractedFacts: ExtractedFact[] = [];
   let facts: ExtractedFact[] = [];
 
   try {
@@ -599,7 +771,8 @@ export async function runBackgroundLearning(
     ctx.logger.debug("Background learning: LLM call complete", {
       durationMs: Date.now() - llmStart,
     });
-    facts = parseLearningResponse(result.text);
+    extractedFacts = parseLearningResponse(result.text);
+    facts = filterLearningFacts(extractedFacts);
   } catch (err) {
     ctx.logger.error("Background learning: LLM extraction failed", {
       error: err instanceof Error ? err.message : String(err),
@@ -661,12 +834,28 @@ export async function runBackgroundLearning(
 
   // Phase 4: Update watermarks
   const now = new Date().toISOString();
-  updateWatermark(ctx.storage, "threads", now);
-  updateWatermark(ctx.storage, "research", now);
-  updateWatermark(ctx.storage, "tasks", now);
-  updateWatermark(ctx.storage, "knowledge", now);
-  updateWatermark(ctx.storage, "findings", now);
-  updateWatermark(ctx.storage, "digests", now);
+  if (signal?.aborted) {
+    updateLearningRun(ctx.storage, runId, {
+      status: "skipped",
+      skipReason: "shutdown",
+      completedAt: now,
+      factsExtracted: extractedFacts.length,
+      beliefsCreated: created,
+      beliefsReinforced: reinforced,
+      lowImportanceSkipped: skipped,
+      factsJson: extractedFacts.length > 0 ? JSON.stringify(extractedFacts) : null,
+      durationMs: Date.now() - start,
+    });
+    ctx.logger.info("Background learning: aborted during fact storage", {
+      factsExtracted: extractedFacts.length,
+      beliefsCreated: created,
+      beliefsReinforced: reinforced,
+      lowImportanceSkipped: skipped,
+      durationMs: Date.now() - start,
+    });
+    return;
+  }
+  advanceProcessedWatermarks(ctx.storage, signals.watermarks);
 
   const duration = Date.now() - start;
 
@@ -675,16 +864,17 @@ export async function runBackgroundLearning(
     status: signal?.aborted ? "skipped" : "done",
     skipReason: signal?.aborted ? "shutdown" : undefined,
     completedAt: now,
-    factsExtracted: facts.length,
+    factsExtracted: extractedFacts.length,
     beliefsCreated: created,
     beliefsReinforced: reinforced,
     lowImportanceSkipped: skipped,
-    factsJson: facts.length > 0 ? JSON.stringify(facts) : null,
+    factsJson: extractedFacts.length > 0 ? JSON.stringify(extractedFacts) : null,
     durationMs: duration,
   });
 
   ctx.logger.info("Background learning: complete", {
-    factsExtracted: facts.length,
+    factsExtracted: extractedFacts.length,
+    factsAccepted: facts.length,
     beliefsCreated: created,
     beliefsReinforced: reinforced,
     lowImportanceSkipped: skipped,

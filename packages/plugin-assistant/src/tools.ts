@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
-import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, correctBelief, recordProductEvent, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType, createBrowserTools } from "@personal-ai/core";
+import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, correctBelief, recordProductEvent, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType, createBrowserTools, createLinearIssue, isLinearIssueIntakeConfigured } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
@@ -11,6 +11,79 @@ import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
 import { ensureProgram, listPrograms, deleteProgram } from "@personal-ai/plugin-schedules";
 import { webSearch, formatSearchResults, type SearchCategory, type TimeRange } from "./web-search.js";
 import { fetchPageAsMarkdown, discoverSubPages } from "./page-fetch.js";
+
+type LinearUrgency = "low" | "medium" | "high" | "urgent";
+
+function mapLinearPriority(urgency: LinearUrgency): number {
+  switch (urgency) {
+    case "urgent":
+      return 1;
+    case "high":
+      return 2;
+    case "medium":
+      return 3;
+    case "low":
+    default:
+      return 4;
+  }
+}
+
+function formatConversationExcerpt(ctx: AgentContext): string {
+  const history = [...ctx.conversationHistory];
+  if (ctx.userMessage.trim()) {
+    history.push({ role: "user", content: ctx.userMessage });
+  }
+  const excerpt = history
+    .slice(-6)
+    .map((message) => `- ${message.role}: ${message.content.trim().replace(/\s+/g, " ").slice(0, 220)}`)
+    .join("\n");
+  return excerpt || "- No recent conversation excerpt available.";
+}
+
+function buildLinearDescription(
+  ctx: AgentContext,
+  input: {
+    kind: "feature" | "bug" | "improvement";
+    problem: string;
+    impact: string;
+    desiredOutcome: string;
+    urgency: LinearUrgency;
+    affectedArea?: string;
+    acceptanceCriteria?: string[];
+    reproduction?: string[];
+  },
+): string {
+  const requester = ctx.sender?.displayName || ctx.sender?.username || "Web user";
+  const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
+  const sections = [
+    `## Intake`,
+    `- Type: ${input.kind}`,
+    `- Requested by: ${requester}`,
+    `- Urgency: ${input.urgency}`,
+    ...(input.affectedArea ? [`- Affected area: ${input.affectedArea}`] : []),
+    ...(threadId ? [`- Thread: ${threadId}`] : []),
+    ``,
+    `## Problem`,
+    input.problem.trim(),
+    ``,
+    `## Why this matters`,
+    input.impact.trim(),
+    ``,
+    `## Desired outcome`,
+    input.desiredOutcome.trim(),
+  ];
+
+  if (input.acceptanceCriteria && input.acceptanceCriteria.length > 0) {
+    sections.push("", "## Acceptance criteria", ...input.acceptanceCriteria.map((item) => `- ${item}`));
+  }
+
+  if (input.reproduction && input.reproduction.length > 0) {
+    sections.push("", "## Reproduction", ...input.reproduction.map((item) => `- ${item}`));
+  }
+
+  sections.push("", "## Conversation excerpt", formatConversationExcerpt(ctx));
+  return sections.join("\n");
+}
 
 export async function runCrawlInBackground(storage: Storage, llm: LLMClient, rootUrl: string, subPages: string[]): Promise<void> {
   const maxPages = Math.min(subPages.length, 30);
@@ -243,6 +316,64 @@ export function createAgentTools(ctx: AgentContext) {
           return { ok: true, message: "Task completed." };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Failed to complete task" };
+        }
+      },
+    }),
+
+    linear_issue_create: tool({
+      description: "Create a Linear issue from a user request or recurring problem. Use this after you have the essentials: what is wrong or missing, why it matters, what should happen instead, and urgency. Ask only the missing questions before calling it.",
+      inputSchema: z.object({
+        title: z.string().describe("Short issue title for Linear"),
+        kind: z.enum(["feature", "bug", "improvement"]).default("feature").describe("Issue type"),
+        problem: z.string().describe("What is wrong or what capability is missing"),
+        impact: z.string().describe("Why this matters or who is affected"),
+        desiredOutcome: z.string().describe("What should happen instead"),
+        urgency: z.enum(["low", "medium", "high", "urgent"]).default("medium").describe("Urgency from the user's perspective"),
+        affectedArea: z.string().optional().describe("Optional product area or surface affected"),
+        acceptanceCriteria: z.array(z.string()).optional().describe("Optional acceptance criteria"),
+        reproduction: z.array(z.string()).optional().describe("Optional repro steps for bugs"),
+        team: z.string().optional().describe("Optional Linear team override. Omit to use the configured default team."),
+        project: z.string().optional().describe("Optional Linear project override. Omit to use the configured default project."),
+      }),
+      execute: async ({ title, kind, problem, impact, desiredOutcome, urgency, affectedArea, acceptanceCriteria, reproduction, team, project }) => {
+        if (!isLinearIssueIntakeConfigured(ctx.config.linear)) {
+          return {
+            ok: false,
+            error: "Linear issue intake is not configured yet. Add a Linear API key and default team in Settings first.",
+          };
+        }
+
+        try {
+          const issue = await createLinearIssue(ctx.config.linear, {
+            title,
+            description: buildLinearDescription(ctx, {
+              kind,
+              problem,
+              impact,
+              desiredOutcome,
+              urgency,
+              affectedArea,
+              acceptanceCriteria,
+              reproduction,
+            }),
+            priority: mapLinearPriority(urgency),
+            team,
+            project,
+          });
+          return {
+            ok: true,
+            id: issue.id,
+            identifier: issue.identifier,
+            url: issue.url,
+            team: issue.team.name,
+            title: issue.title,
+            message: `Linear issue ${issue.identifier} created: ${issue.url}`,
+          };
+        } catch (err) {
+          return {
+            ok: false,
+            error: err instanceof Error ? err.message : "Failed to create Linear issue",
+          };
         }
       },
     }),

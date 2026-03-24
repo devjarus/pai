@@ -37,6 +37,11 @@ export function useUpdateConfig() {
       timezone?: string;
       telegramToken?: string;
       telegramEnabled?: boolean;
+      linearApiKey?: string;
+      linearEnabled?: boolean;
+      linearDefaultTeam?: string;
+      linearDefaultProject?: string;
+      linearAutoCreateRecurringIssues?: boolean;
       backgroundLearning?: boolean;
       briefingEnabled?: boolean;
       knowledgeCleanup?: boolean;

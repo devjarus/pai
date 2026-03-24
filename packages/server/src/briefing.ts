@@ -17,6 +17,8 @@ import { listPrograms } from "@personal-ai/plugin-schedules";
 import { listGoals, listTasks } from "@personal-ai/plugin-tasks";
 import { getAverageRating, getBeliefRatingBonus, getRecentFeedback } from "./digest-ratings.js";
 import { listInsights, listFindings } from "@personal-ai/library";
+import type { ResearchFinding, TopicInsight } from "@personal-ai/library";
+import { buildBriefSignalHash } from "@personal-ai/core";
 
 const BRIEFING_LLM_TIMEOUT = {
   totalMs: 2 * 60_000,
@@ -70,6 +72,146 @@ export interface BriefingActionSignal {
   highestPriorityOpen: "low" | "medium" | "high" | null;
   openTitles: string[];
   recentlyCompletedTitles: string[];
+}
+
+// ---------------------------------------------------------------------------
+// State delta — structured diff between digest cycles
+// ---------------------------------------------------------------------------
+
+export interface BriefingDeltaFinding {
+  id: string;
+  goal: string;
+  summary: string;
+  domain: string;
+  watchId?: string;
+  delta?: { changed: string[]; significance: number };
+}
+
+export interface BriefingDelta {
+  newFindings: BriefingDeltaFinding[];
+  changedInsights: Array<{ topic: string; insight: string; confidence: number; cycleCount: number }>;
+  newBeliefs: Array<{ statement: string; type: string; confidence: number }>;
+  correctedBeliefs: Array<{ statement: string; type: string; confidence: number }>;
+  completedActions: Array<{ title: string; completedAt: string | null }>;
+  sinceTimestamp: string;
+}
+
+export function buildBriefingDelta(
+  storage: PluginContext["storage"],
+  sinceTimestamp: string,
+): BriefingDelta {
+  // 1. New findings with deltas since last digest
+  let newFindings: BriefingDeltaFinding[] = [];
+  try {
+    const allFindings = listFindings(storage);
+    newFindings = allFindings
+      .filter((f: ResearchFinding) => f.createdAt >= sinceTimestamp)
+      .slice(0, 15)
+      .map((f: ResearchFinding) => ({
+        id: f.id,
+        goal: f.goal,
+        summary: f.summary,
+        domain: f.domain,
+        watchId: f.watchId,
+        delta: f.delta,
+      }));
+  } catch {
+    newFindings = [];
+  }
+
+  // 2. Insights updated since last digest
+  let changedInsights: BriefingDelta["changedInsights"] = [];
+  try {
+    const allInsights = listInsights(storage);
+    changedInsights = allInsights
+      .filter((i: TopicInsight) => i.updatedAt >= sinceTimestamp)
+      .slice(0, 10)
+      .map((i: TopicInsight) => ({
+        topic: i.topic,
+        insight: i.insight,
+        confidence: i.confidence,
+        cycleCount: i.cycleCount,
+      }));
+  } catch {
+    changedInsights = [];
+  }
+
+  // 3. New or corrected beliefs since last digest
+  let newBeliefs: BriefingDelta["newBeliefs"] = [];
+  let correctedBeliefs: BriefingDelta["correctedBeliefs"] = [];
+  try {
+    const allBeliefs = listBeliefs(storage, "all");
+    newBeliefs = allBeliefs
+      .filter((b) => b.status === "active" && b.created_at >= sinceTimestamp)
+      .slice(0, 10)
+      .map((b) => ({ statement: b.statement, type: b.type, confidence: b.confidence }));
+    correctedBeliefs = allBeliefs
+      .filter((b) => b.correction_state === "corrected" && b.updated_at >= sinceTimestamp)
+      .slice(0, 5)
+      .map((b) => ({ statement: b.statement, type: b.type, confidence: b.confidence }));
+  } catch {
+    newBeliefs = [];
+    correctedBeliefs = [];
+  }
+
+  // 4. Completed actions since last digest
+  let completedActions: BriefingDelta["completedActions"] = [];
+  try {
+    completedActions = listTasks(storage, "done")
+      .filter((t) => t.completed_at && t.completed_at >= sinceTimestamp)
+      .slice(0, 10)
+      .map((t) => ({ title: t.title, completedAt: t.completed_at }));
+  } catch {
+    completedActions = [];
+  }
+
+  return {
+    newFindings,
+    changedInsights,
+    newBeliefs,
+    correctedBeliefs,
+    completedActions,
+    sinceTimestamp,
+  };
+}
+
+function formatDeltaForPrompt(delta: BriefingDelta, programTitles: Map<string, string>): string {
+  const sections: string[] = [];
+
+  if (delta.newFindings.length > 0) {
+    const findingLines = delta.newFindings.map((f) => {
+      const watchLabel = f.watchId ? (programTitles.get(f.watchId) ?? f.watchId) : "ad-hoc";
+      const base = `- [finding:${f.id}] [watch:${watchLabel}] [${f.domain}] ${f.summary.slice(0, 200)}`;
+      if (f.delta && f.delta.changed.length > 0) {
+        return `${base}\n  Delta (significance ${f.delta.significance}): ${f.delta.changed.slice(0, 3).join("; ")}`;
+      }
+      return base;
+    });
+    sections.push(`NEW RESEARCH FINDINGS SINCE LAST DIGEST (${delta.newFindings.length}):\n${findingLines.join("\n")}`);
+  }
+
+  if (delta.changedInsights.length > 0) {
+    const insightLines = delta.changedInsights.map((i) =>
+      `- [insight:${i.topic}] ${i.insight} (confidence: ${i.confidence}, cycles: ${i.cycleCount})`,
+    );
+    sections.push(`UPDATED INSIGHTS (${delta.changedInsights.length}):\n${insightLines.join("\n")}`);
+  }
+
+  if (delta.newBeliefs.length > 0) {
+    sections.push(`NEW BELIEFS (${delta.newBeliefs.length}):\n${delta.newBeliefs.map((b) => `- [belief:${b.type}] ${b.statement} (${b.confidence})`).join("\n")}`);
+  }
+
+  if (delta.correctedBeliefs.length > 0) {
+    sections.push(`CORRECTED BELIEFS (${delta.correctedBeliefs.length}):\n${delta.correctedBeliefs.map((b) => `- [belief:${b.type}] ${b.statement}`).join("\n")}`);
+  }
+
+  if (delta.completedActions.length > 0) {
+    sections.push(`COMPLETED ACTIONS SINCE LAST DIGEST (${delta.completedActions.length}):\n${delta.completedActions.map((a) => `- ${a.title}`).join("\n")}`);
+  }
+
+  return sections.length > 0
+    ? `\n--- STATE DELTA (changes since ${delta.sinceTimestamp}) ---\n${sections.join("\n\n")}\n--- END STATE DELTA ---\n`
+    : "";
 }
 
 export interface BriefingContextInput {
@@ -1260,10 +1402,14 @@ export async function generateBriefing(
   }
 
   let previousBriefingSummary = "";
+  let lastDigestTimestamp = "";
   try {
-    const prevRows = ctx.storage.query<{ sections: string }>(
-      "SELECT sections FROM briefings WHERE status = 'ready' AND type = 'daily' ORDER BY generated_at DESC LIMIT 2",
+    const prevRows = ctx.storage.query<{ sections: string; generated_at: string }>(
+      "SELECT sections, generated_at FROM briefings WHERE status = 'ready' AND type = 'daily' ORDER BY generated_at DESC LIMIT 2",
     );
+    if (prevRows[0]) {
+      lastDigestTimestamp = prevRows[0].generated_at;
+    }
     previousBriefingSummary = prevRows
       .map((row) => summarizePreviousBriefing(JSON.parse(row.sections) as Record<string, unknown>))
       .filter((summary) => summary.length > 0)
@@ -1271,6 +1417,12 @@ export async function generateBriefing(
   } catch {
     previousBriefingSummary = "";
   }
+
+  // Build structured state delta since the last digest
+  const sinceTimestamp = lastDigestTimestamp || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const stateDelta = buildBriefingDelta(ctx.storage, sinceTimestamp);
+  const programTitles = new Map(programs.map((p) => [p.id, p.title]));
+  const deltaPromptSection = formatDeltaForPrompt(stateDelta, programTitles);
 
   // Fetch recent research findings from Library — this makes digests aware of accumulated research
   let recentFindings: Array<{ goal: string; summary: string; domain: string; createdAt: string; watchId?: string }> = [];
@@ -1449,7 +1601,7 @@ ${rawContext.recentActivity.length > 0 ? rawContext.recentActivity.join("\n") : 
 KNOWLEDGE SOURCES (${sources.length}):
 ${JSON.stringify(rawContext.knowledgeSources, null, 2)}
 
-${recentFindings.length > 0 ? `RECENT RESEARCH FINDINGS (from background research — incorporate these, don't repeat raw):\n${recentFindings.map((f) => `- [${f.domain}] ${f.summary.slice(0, 200)}`).join("\n")}\n` : ""}
+${deltaPromptSection}${recentFindings.length > 0 ? `RECENT RESEARCH FINDINGS (from background research — incorporate these, don't repeat raw):\n${recentFindings.map((f) => `- [${f.domain}] ${f.summary.slice(0, 200)}`).join("\n")}\n` : ""}
 ${knowledgeContext ? `RELEVANT KNOWLEDGE (from docs, research reports, and previous digests — use as context):\n${knowledgeContext}\n` : ""}
 ${previousBriefingSummary ? `PREVIOUS BRIEFINGS (you MUST NOT repeat these — choose DIFFERENT angles):\n${previousBriefingSummary}\n` : ""}${feedbackContext ? `${feedbackContext}\n` : ""}
 Guidelines:
@@ -1459,8 +1611,8 @@ Guidelines:
 - If a linked action is already complete, use that completion as a change signal and do not repeat it as a next action.
 - If a linked action is still open or stale, make that explicit in the recommendation, evidence, or next actions instead of inventing duplicate follow-through.
 - what_changed should be concise and specific. Prefer 2-4 bullets.
-- evidence should cite either an external source or an observed product artifact (Program definition, memory belief, recent activity, task state).
-- memory_assumptions should name the assumptions that materially influenced the recommendation and explain where they came from.
+- evidence sourceLabel MUST be human-readable — use the watch title, finding goal, or topic name (e.g. "AI Agents Tracker", "H4 Visa research", "GitHub trending"). NEVER expose internal IDs, provenance tags, or system labels to the user. The bracketed tags in the data (e.g. [finding:abc123]) are for YOUR reference only — translate them into plain language for sourceLabel.
+- memory_assumptions MUST NOT be empty when beliefs are provided above. Name the specific beliefs that influenced the recommendation. provenance should be human-readable (e.g. "User preference", "Observed from research", "Inferred from activity") — never raw belief IDs.
 - next_actions should be specific and concrete. Keep them short.
 - correction_hook should invite the user to correct assumptions or priorities for the next brief.
 - Keep everything concise. Each field should be useful without exposing backend internals.
@@ -1544,10 +1696,30 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
     });
   }
 
+  // Back-fill empty memory_assumptions from linked beliefs
+  if (
+    (!parsed.memory_assumptions || parsed.memory_assumptions.length === 0) &&
+    topBeliefs.length > 0
+  ) {
+    const provenanceLabel = (b: Belief) =>
+      b.origin === "user-said" ? "User stated"
+        : b.origin === "document" || b.origin === "web" ? "Observed from research"
+          : b.origin === "synthesized" ? "Inferred from patterns"
+            : "Memory";
+    parsed.memory_assumptions = topBeliefs.slice(0, 3).map((b) => ({
+      statement: b.statement,
+      confidence: b.confidence >= 0.7 ? "high" as const : b.confidence >= 0.4 ? "medium" as const : "low" as const,
+      provenance: provenanceLabel(b),
+    }));
+  }
+
   try {
+    // Compute signal_hash for the daily brief — enables change detection across cycles
+    const signalHash = buildBriefSignalHash(parsed, { source: "daily" });
+
     ctx.storage.run(
-      "UPDATE briefings SET sections = ?, status = 'ready' WHERE id = ?",
-      [JSON.stringify(parsed), id],
+      "UPDATE briefings SET sections = ?, status = 'ready', signal_hash = ? WHERE id = ?",
+      [JSON.stringify(parsed), signalHash, id],
     );
     if (topBeliefs.length > 0) {
       linkBriefBeliefs(ctx.storage, id, topBeliefs.map((b) => ({ beliefId: b.id, role: "assumption" })));
@@ -1606,6 +1778,7 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
       attemptCount: 1,
       lastAttemptAt: new Date().toISOString(),
       sourceKind: "maintenance",
+      signalHash,
     };
   } catch (error) {
     console.error("Briefing generation failed:", error instanceof Error ? error.message : String(error));

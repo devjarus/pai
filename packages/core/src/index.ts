@@ -12,6 +12,14 @@ export { loadConfig, loadConfigFile, writeConfig, findGitRoot, resolveConfigHome
 export { createStorage, backupDatabase, resolveIdPrefix } from "./storage.js";
 export { createLLMClient } from "./llm.js";
 export { createLogger } from "./logger.js";
+export { createLinearIssue, isLinearIssueIntakeConfigured } from "./linear.js";
+export type { LinearIssueInput, LinearIssueResult } from "./linear.js";
+export {
+  linearIssueRegistryMigrations,
+  collectRecurringTelemetryFailures,
+  syncAutomaticLinearIssues,
+} from "./linear-auto-issues.js";
+export type { AutomaticLinearIssueSummary } from "./linear-auto-issues.js";
 export {
   acquireLlmTrafficPermit,
   configureLlmTraffic,
@@ -143,4 +151,20 @@ export { parseBinaryDocument, isBinaryDocument, parsePdf, parseExcel } from "./d
 
 // Agent harness
 export { runAgentHarness } from "./agent-harness/index.js";
-export type { AgentHarnessOptions, AgentResult, AgentBudget, AgentHarnessContext, AgentExecutionResult } from "./agent-harness/index.js";
+export type {
+  AgentHarnessOptions,
+  AgentResult,
+  AgentBudget,
+  AgentDepth,
+  AgentPlaneBlock,
+  CorePlatformBlock,
+  AgentIdentity,
+  AgentContextItem,
+  AgentPreviousFinding,
+  AgentUsage,
+  AgentReflection,
+  AgentBudgetStatus,
+  AgentPlatformServices,
+  AgentHarnessContext,
+  AgentExecutionResult,
+} from "./agent-harness/index.js";

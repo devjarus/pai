@@ -25,6 +25,11 @@ When knowledge_search returns previous research reports on the same topic:
 - Always produce a substantive report — there is always a new angle, a fresher source, or a deeper insight to find
 - Reference changes from previous findings where relevant ("Previously X — now Y")
 
+## Source Quality
+- Prefer primary and official sources when they exist: company documentation, investor relations, release notes, government filings, official announcements
+- Use strong secondary reporting to validate or contextualize, not replace, primary evidence
+- If you rely on discussion forums, aggregators, or community chatter, make that clear and do not present it as high-confidence evidence
+
 ## Report Format
 Your final response MUST contain TWO parts:
 

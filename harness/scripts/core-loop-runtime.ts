@@ -147,8 +147,10 @@ async function runExecutableScenario(relativePath: string): Promise<ValidationCh
       source_refs: [`scenario:${scenario.id}`],
     });
 
-    if (typeof programCreateResult !== "string" || !programCreateResult.includes("Program created")) {
-      blockers.push(`${scenario.id}: assistant program_create tool did not report successful Program creation`);
+    const creationMessageOk = typeof programCreateResult === "string"
+      && (programCreateResult.includes("Watch created") || programCreateResult.includes("Program created"));
+    if (!creationMessageOk) {
+      blockers.push(`${scenario.id}: assistant program_create tool did not report successful Watch creation`);
     }
 
     const initialProgram = listPrograms(storage, "active")[0];
