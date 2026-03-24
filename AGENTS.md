@@ -27,7 +27,12 @@ pnpm build
 
 ## Non-Negotiables
 
-1. `pnpm verify` must pass before done
+1. **All three gates must pass before done:**
+   ```bash
+   pnpm verify              # Typecheck + unit tests + coverage
+   pnpm harness:core-loop   # Core loop scenario tests
+   pnpm e2e                 # Browser smoke tests
+   ```
 2. Keep changes scoped; no drive-by refactors
 3. Update CHANGELOG.md for user-facing changes
 4. Update migration tests if you add a migration
@@ -40,15 +45,15 @@ pnpm build
 | **pre-commit** | `lint-staged` (eslint --fix on staged .ts files) + `agent-guard.sh` (nudges CHANGELOG/docs updates — bypass with `--no-verify` if not applicable) |
 | **pre-push** | `pnpm ci` (same as verify — typecheck + test + coverage) |
 
-## Default Workflow
+## Workflow
 
-1. Pick the owning block before you code.
-2. State the target behavior or metric and the main thing that must not regress.
-3. Make the smallest change that can prove the improvement.
-4. Run the right validation for the change.
-5. Summarize the outcome and any residual risk.
-
-Use `harness/README.md` for the detailed workflow. Use the task contract and evidence pack only for larger, riskier, or multi-step tasks. Do not create paperwork for a small scoped fix.
+1. Pick the owning architecture block
+2. State what you're changing and what must not regress
+3. Make the smallest change that proves the fix
+4. Update CHANGELOG.md for user-facing changes
+5. Update docs/README/ARCHITECTURE.md if the change is significant (new routes, new packages, changed domain boundaries)
+6. Pass all three gates
+7. Commit with a message that summarizes what changed, why, and any residual risk
 
 ## Architecture Blocks
 
@@ -71,7 +76,7 @@ Memory = `Belief` · Document = `KnowledgeSource` · Finding = `ResearchFinding`
 - Background job → `packages/server/src/workers.ts`
 - Memory change → `packages/core/src/memory/`
 - Architecture reference → [ARCHITECTURE.md](docs/ARCHITECTURE.md) and `docs/architecture/*`
-- Coding-agent harness → `harness/README.md`, `harness/checklists/*`, `harness/templates/*`
+- Coding-agent harness → `harness/README.md`, `harness/scenarios/*`
 
 ## Patterns
 
@@ -82,12 +87,9 @@ Memory = `Belief` · Document = `KnowledgeSource` · Finding = `ResearchFinding`
 - If you change UI behavior, smoke test it in a browser
 - If you add a new package, update `tsconfig.json` references, `Dockerfile`, and `pnpm-workspace.yaml`
 
-## Validation Rules
+## Validation
 
-- Always: targeted tests + `pnpm verify`
-- Core loop changed: also run `pnpm harness:core-loop`
-- Harness docs/scripts changed: also run `pnpm harness:regressions`
-- UI behavior changed: run browser verification (`pnpm e2e` or a focused manual/devtools smoke test)
+All three gates are mandatory. Run `pnpm harness:regressions` additionally if you change harness scripts or architecture docs.
 
 ## Useful Spot Checks
 

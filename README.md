@@ -66,9 +66,10 @@ pnpm stop                 # stop server
 For development or contributor workflows:
 
 ```bash
-pnpm verify               # repo-wide typecheck + tests + coverage
-pnpm harness:regressions  # validate coding-agent harness docs, checklists, templates, script wiring
-pnpm harness:core-loop    # validate Ask → Watch → Digest → Correction behavior
+pnpm verify               # typecheck + tests + coverage
+pnpm harness:core-loop    # Ask → Watch → Digest → Correction scenario tests
+pnpm e2e                  # browser smoke tests
+pnpm harness:regressions  # repo hygiene (secrets, hardcoded IDs, doc wiring)
 ```
 
 ## Web UI
@@ -250,7 +251,7 @@ pnpm run ci              # typecheck + tests + coverage
 
 **Git hooks** (Husky): pre-commit runs lint-staged, pre-push runs full CI.
 
-Non-trivial changes should follow the harness workflow in [harness/README.md](harness/README.md): identify the owning architecture block, pick the matching checklist, and capture a task contract plus evidence pack.
+See [AGENTS.md](AGENTS.md) for the contributor workflow.
 
 ## Tech Stack
 

@@ -1430,8 +1430,8 @@
           <div class="eyebrow">quality gates</div>
           <h2>Validation, harness, and operational loops</h2>
           <p>
-            The repo is opinionated about shipping behavior with proof. Product loop changes are
-            supposed to be backed by tests, harness runs, checklists, and evidence packs.
+            The repo is opinionated about shipping behavior with proof. All changes must pass
+            three gates: <code>pnpm verify</code>, <code>pnpm harness:core-loop</code>, and <code>pnpm e2e</code>.
           </p>
 
           <div class="triple">
@@ -1450,10 +1450,10 @@
               </p>
             </div>
             <div class="card">
-              <h3>Evidence model</h3>
+              <h3>Browser smoke tests</h3>
               <p>
-                Non-trivial tasks are expected to carry a task contract, evidence pack,
-                and at least one matching checklist in <code>harness/checklists</code>.
+                UI changes are validated with <code>pnpm e2e</code> — Playwright tests
+                covering setup, auth, settings, and chat flows.
               </p>
             </div>
           </div>

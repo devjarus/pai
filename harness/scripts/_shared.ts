@@ -268,41 +268,6 @@ export function validateScenario(relativePath: string, scenario: Partial<Harness
   );
 }
 
-export function validateTaskContractTemplate(relativePath: string): ValidationCheck {
-  const blockers: string[] = [];
-
-  if (!fileExists(relativePath)) {
-    return makeCheck(`template:${relativePath}`, "Task contract template is missing.", [`${relativePath} is missing`], []);
-  }
-
-  const template = readYamlFile<Record<string, unknown>>(relativePath);
-  const requiredFields = [
-    "id",
-    "title",
-    "owner_block",
-    "problem",
-    "target_change",
-    "guardrails",
-    "validation",
-  ];
-
-  for (const field of requiredFields) {
-    if (!(field in template)) {
-      blockers.push(`${relativePath}: missing required field ${field}`);
-    }
-  }
-
-  if (!Array.isArray(template.guardrails) || template.guardrails.length === 0) {
-    blockers.push(`${relativePath}: guardrails must be a non-empty array`);
-  }
-
-  if (!Array.isArray(template.validation) || template.validation.length === 0) {
-    blockers.push(`${relativePath}: validation must be a non-empty array`);
-  }
-
-  return makeCheck(`template:${path.basename(relativePath)}`, "Checked task contract template structure.", blockers, []);
-}
-
 export function validateMarkdownSections(relativePath: string, requiredHeadings: string[]): ValidationCheck {
   const blockers: string[] = [];
 

@@ -12,7 +12,6 @@ import {
   reportStatus,
   rootPath,
   validateMarkdownSections,
-  validateTaskContractTemplate,
   writeReport,
 } from "./_shared";
 
@@ -65,8 +64,8 @@ function validateHarnessDocsReference(): ValidationCheck {
   if (!content.includes("Architecture Blocks")) {
     blockers.push("AGENTS.md should describe Architecture Blocks");
   }
-  if (!content.includes("agent-harness")) {
-    warnings.push("AGENTS.md does not yet mention the agent harness path explicitly");
+  if (!content.includes("harness")) {
+    warnings.push("AGENTS.md does not mention the harness");
   }
 
   return makeCheck(
@@ -155,10 +154,7 @@ async function run(): Promise<ValidationReport> {
   checks.push(
     validateMarkdownSections("harness/README.md", [
       "# Harness",
-      "## Workflow",
-      "## Checklists",
-      "## Templates",
-      "## Verification",
+      "## Gates",
     ]),
   );
 
@@ -171,62 +167,6 @@ async function run(): Promise<ValidationReport> {
     ]),
   );
 
-  checks.push(
-    validateMarkdownSections("harness/checklists/core-platform.md", [
-      "# Core Platform Checklist",
-      "## Use This Checklist When",
-      "## Before Coding",
-      "## Keep True",
-      "## Validation",
-      "## Stop And Reassess",
-    ]),
-  );
-
-  checks.push(
-    validateMarkdownSections("harness/checklists/agent-plane.md", [
-      "# Agent Plane Checklist",
-      "## Use This Checklist When",
-      "## Before Coding",
-      "## Keep True",
-      "## Validation",
-      "## Stop And Reassess",
-    ]),
-  );
-
-  checks.push(
-    validateMarkdownSections("harness/checklists/digests.md", [
-      "# Digests Checklist",
-      "## Use This Checklist When",
-      "## Before Coding",
-      "## Keep True",
-      "## Validation",
-      "## Stop And Reassess",
-    ]),
-  );
-
-  checks.push(
-    validateMarkdownSections("harness/checklists/quality.md", [
-      "# Quality Checklist",
-      "## Use This Checklist When",
-      "## Before Coding",
-      "## Keep True",
-      "## Validation",
-      "## Stop And Reassess",
-    ]),
-  );
-
-  checks.push(validateTaskContractTemplate("harness/templates/task-contract.yaml"));
-  checks.push(
-    validateMarkdownSections("harness/templates/evidence-pack.md", [
-      "# Evidence Pack",
-      "## Problem",
-      "## Change",
-      "## Validation",
-      "## Outcome",
-      "## Risks",
-    ]),
-  );
-
   const blockers = flattenIssues(checks, "blockers");
   const warnings = flattenIssues(checks, "warnings");
   const report: ValidationReport = {
@@ -235,15 +175,13 @@ async function run(): Promise<ValidationReport> {
     generated_at: new Date().toISOString(),
     status: reportStatus(checks),
     summary:
-      "Regression harness run. This validates the coding-agent workflow assets: architecture block docs, lean checklists, lightweight task/evidence templates, repo hygiene, and root harness script wiring.",
+      "Regression harness run. This validates architecture docs, repo hygiene, and root harness script wiring.",
     checks,
     blockers,
     warnings,
     artifacts: ["harness/reports/latest-regressions.json"],
     todo: [
       "Add lintable import-boundary rules once block ownership stabilizes.",
-      "Add task-contract and evidence-pack examples tied to real block-specific changes.",
-      "Link checklist selection into issue or PR templates so the workflow becomes mandatory.",
     ],
   };
 
