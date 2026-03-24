@@ -46,24 +46,47 @@ export async function loginViaAPI(page: Page): Promise<void> {
   // Navigate to app first so fetch has a valid origin
   await page.goto("/login", { waitUntil: "domcontentloaded" });
 
-  const result = await page.evaluate(async () => {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: "test@example.com",
-        password: "testpass123",
-      }),
+  const deadline = Date.now() + 15_000;
+  let status = 0;
+  while (Date.now() < deadline) {
+    const result = await page.evaluate(async () => {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "test@example.com",
+          password: "testpass123",
+        }),
+      });
+      return { ok: res.ok, status: res.status };
     });
-    return { ok: res.ok, status: res.status };
-  });
 
-  if (!result.ok) {
-    throw new Error(`Login API failed with status ${result.status}`);
+    status = result.status;
+    if (result.ok) break;
+    if (result.status !== 429) {
+      throw new Error(`Login API failed with status ${result.status}`);
+    }
+    await page.waitForTimeout(750);
   }
 
+  if (status === 429) {
+    throw new Error("Login API remained rate-limited during E2E auth setup");
+  }
+
+  await expect
+    .poll(async () => {
+      const res = await page.evaluate(async () => {
+        const response = await fetch("/api/auth/status");
+        if (!response.ok) return { ok: false, authenticated: false };
+        const body = await response.json();
+        return { ok: true, authenticated: Boolean(body.authenticated) };
+      });
+      return res.ok && res.authenticated;
+    }, { timeout: 5_000 })
+    .toBe(true);
+
   // Navigate to the primary Ask surface — cookies are set from the fetch above
-  await page.goto("/ask");
+  await page.goto("/ask", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/ask/, { timeout: 10_000 });
 }
 

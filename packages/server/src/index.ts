@@ -271,6 +271,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
 
   // Detect PaaS environment (Railway, Render, etc.) via PORT env var
   const isPaaS = !!process.env.PORT;
+  const isE2E = process.env.PAI_E2E === "1";
 
   // Compute host early so we can decide whether to enable JWT auth
   const host = options?.host ?? process.env.PAI_HOST ?? (isPaaS ? "0.0.0.0" : "127.0.0.1");
@@ -534,8 +535,12 @@ export async function createServer(options?: { port?: number; host?: string }) {
     } else if (path === "/api/library/memories") {
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: "1 minute" } };
     } else if (path === "/api/auth/login") {
-      // Strict rate limit to prevent brute-force attacks
-      routeOptions.config = { ...routeOptions.config, rateLimit: { max: 5, timeWindow: "1 minute" } };
+      // Keep brute-force protection in normal runs, but give E2E enough headroom
+      // to tolerate retries without self-inflicted 429s.
+      routeOptions.config = {
+        ...routeOptions.config,
+        rateLimit: { max: isE2E ? 30 : 5, timeWindow: "1 minute" },
+      };
     } else if (path === "/api/auth/setup") {
       // One-time setup — strict limit
       routeOptions.config = { ...routeOptions.config, rateLimit: { max: 3, timeWindow: "1 minute" } };

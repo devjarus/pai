@@ -368,7 +368,15 @@ export default function Settings() {
                   {embedProvider !== "local" && (
                     <EditableRow label="Embed Model" value={embedModel} onChange={setEmbedModel} placeholder="e.g. nomic-embed-text" envLabel={envOverrides.includes("embedModel")} />
                   )}
-                  <EditableRow label="API Key" value={apiKey} onChange={setApiKey} placeholder={config?.llm.hasApiKey ? "Key saved — enter new to replace" : "Enter API key"} type="password" envLabel={envOverrides.includes("apiKey")} />
+                  <EditableRow
+                    label="API Key"
+                    inputLabel="LLM API Key"
+                    value={apiKey}
+                    onChange={setApiKey}
+                    placeholder={config?.llm.hasApiKey ? "Key saved — enter new to replace" : "Enter API key"}
+                    type="password"
+                    envLabel={envOverrides.includes("apiKey")}
+                  />
 
                   <Separator className="opacity-30" />
 
@@ -578,6 +586,7 @@ export default function Settings() {
                   </div>
                   <EditableRow
                     label="Bot Token"
+                    inputLabel="Telegram Bot Token"
                     value={telegramToken}
                     onChange={setTelegramToken}
                     placeholder={config.telegram?.hasToken ? "Token saved (enter new to replace)" : "Paste token from @BotFather"}
@@ -663,6 +672,7 @@ export default function Settings() {
                   </div>
                   <EditableRow
                     label="API Key"
+                    inputLabel="Linear API Key"
                     value={linearApiKey}
                     onChange={setLinearApiKey}
                     placeholder={config.linear?.hasApiKey ? "Key saved — enter new to replace" : "Paste Linear API key"}
@@ -1200,6 +1210,7 @@ function ConfigRow({ label, value, highlight }: { label: string; value: string; 
 
 function EditableRow({
   label,
+  inputLabel,
   value,
   onChange,
   placeholder,
@@ -1207,6 +1218,7 @@ function EditableRow({
   envLabel,
 }: {
   label: string;
+  inputLabel?: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
@@ -1221,6 +1233,7 @@ function EditableRow({
       </label>
       <input
         type={type}
+        aria-label={inputLabel ?? label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
