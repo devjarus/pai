@@ -17,6 +17,8 @@ pai.log.1
 .DS_Store
 *.tgz
 docs/plans/
+docs/design-notes/
+.claude/agent-memory/
 test-results/
 playwright-report/
 scripts/

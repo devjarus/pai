@@ -208,15 +208,7 @@ packages/
 
 Data stored at `~/.personal-ai/data/`. SQLite with WAL mode for the default storage backend.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for C4 diagrams, dataflows, and full data model.
-
-For the architecture-block split and contributor workflow:
-
-- [docs/architecture/overview.md](docs/architecture/overview.md)
-- [docs/architecture/core-platform.md](docs/architecture/core-platform.md)
-- [docs/architecture/agent-plane.md](docs/architecture/agent-plane.md)
-- [docs/architecture/dependency-rules.md](docs/architecture/dependency-rules.md)
-- [harness/README.md](harness/README.md)
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for C4 diagrams, dataflows, and full data model. See [AGENTS.md](AGENTS.md) for the contributor workflow.
 
 ## Configuration
 
@@ -224,7 +216,6 @@ Environment variables or `~/.personal-ai/config.json` (editable via Settings UI)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PAI_MODE` | `selfhosted` | Deployment mode: `selfhosted` or `hosted` |
 | `PAI_DATA_DIR` | `~/.personal-ai/data` | Database location |
 | `PAI_LLM_PROVIDER` | `ollama` | `ollama`, `openai`, `anthropic`, `google`, or `cerebras` |
 | `PAI_LLM_MODEL` | `llama3.2` | Chat model |
