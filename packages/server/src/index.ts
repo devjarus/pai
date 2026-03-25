@@ -594,7 +594,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   });
 
   await app.listen({ port, host });
-  console.log(`pai server running at http://${host}:${port}`);
+  console.log(`pai server running at http://${host}:${port} (mode: ${config.mode})`);
 
   // Auto-start Telegram bot if enabled in config
   if (config.telegram?.enabled && config.telegram?.token) {

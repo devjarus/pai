@@ -171,7 +171,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     : env["PAI_LINEAR_AUTO_ERRORS"] === "false" ? false
     : fileLinear.autoCreateRecurringIssues;
 
+  const mode = (env["PAI_MODE"] as Config["mode"]) ?? (dataDirConfig?.mode as Config["mode"]) ?? (fileConfig.mode as Config["mode"]) ?? "selfhosted";
+
   const config: Config = {
+    mode,
     dataDir: resolveDataDir(env, fileConfig),
     llm: {
       provider: (savedLlm.provider as Config["llm"]["provider"]) ?? (env["PAI_LLM_PROVIDER"] as Config["llm"]["provider"]) ?? (fileLlm.provider as Config["llm"]["provider"]) ?? "ollama",

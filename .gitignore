@@ -16,7 +16,7 @@ pai.log.1
 .claude/memory.md
 .DS_Store
 *.tgz
-docs/plans/
+# docs/plans/ — tracked (architecture plans are committed)
 test-results/
 playwright-report/
 scripts/

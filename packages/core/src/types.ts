@@ -88,7 +88,15 @@ export interface FeatureFlags {
   homeDashboard?: boolean;
 }
 
+/**
+ * Deployment mode — controls which infrastructure backends are used at runtime.
+ * - selfhosted: SQLite, local filesystem, in-process workers (default)
+ * - hosted: PostgreSQL, S3, external job queue (future)
+ */
+export type DeploymentMode = "selfhosted" | "hosted";
+
 export interface Config {
+  mode: DeploymentMode;
   dataDir: string;
   logLevel: LogLevel;
   llm: {

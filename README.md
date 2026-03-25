@@ -224,6 +224,7 @@ Environment variables or `~/.personal-ai/config.json` (editable via Settings UI)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `PAI_MODE` | `selfhosted` | Deployment mode: `selfhosted` or `hosted` |
 | `PAI_DATA_DIR` | `~/.personal-ai/data` | Database location |
 | `PAI_LLM_PROVIDER` | `ollama` | `ollama`, `openai`, `anthropic`, `google`, or `cerebras` |
 | `PAI_LLM_MODEL` | `llama3.2` | Chat model |
