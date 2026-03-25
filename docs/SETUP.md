@@ -142,26 +142,6 @@ In the Railway service settings, add these variables:
 
 ---
 
-## Linear Issue Intake
-
-pai can file feature requests and bugs into Linear directly from chat after only a few follow-up questions.
-
-Configure it from **Settings**:
-
-1. Enable **Linear Intake**
-2. Add a Linear personal API key
-3. Set a default team key, name, or UUID
-4. Optionally set a default project slugId, name, or UUID
-
-Or configure via environment variables:
-
-| Variable | Purpose |
-|----------|---------|
-| `PAI_LLM_MODEL` | e.g. `gpt-4o`, `claude-sonnet-4-20250514` | Recommended |
-| `PAI_DATA_DIR` | `/data` | Yes |
-| `PAI_CORS_ORIGIN` | Your custom domain (e.g. `https://pai.example.com`) | If using custom domain |
-| `PAI_TELEGRAM_TOKEN` | Telegram bot token | Optional |
-
 ### Step 4: Deploy
 
 Railway auto-deploys on push. The `railway.toml` in the repo configures the build and health check (`/api/health`) automatically.
@@ -493,15 +473,13 @@ When a digest or Watch-linked research/analysis run finishes, the bot sends a pr
 |---------|-------------|
 | `/start` | Welcome message |
 | `/help` | List available commands |
-| `/briefs` | Show recent digests linked to this chat |
-| `/programs` | Show active Watches |
+| `/digests` | Show recent digests linked to this chat |
+| `/watches` | Show active Watches |
 | `/clear` | Clear conversation history |
 | `/tasks` | Show To-Dos |
-| `/memories` | Show top 10 memories |
-| `/reply <brief-id> <message>` | Ask a follow-up tied to a digest |
-| `/action <brief-id> \| <title>` | Save a To-Do from a digest |
-| `/done <task-id>` | Mark a To-Do done |
-| `/correct <belief-id> \| <replacement>` | Correct a stored memory used by future digests |
+| `/library` | Show top 10 memories |
+| `/todo <title>` | Add a To-Do |
+| `/research <query>` | Start a background research job |
 
 Or just send any text message to chat naturally.
 
@@ -533,40 +511,23 @@ The **Chat** page is your main interface. Send messages and the assistant will:
 
 **Tool cards:** When the assistant uses tools (memory recall, web search, etc.), you'll see expandable cards showing what it did.
 
-### Memory
+### Library
 
-The **Memory Explorer** page lets you browse everything your AI has learned about you.
+The **Library** page is a unified view of memories, documents, and research findings.
 
-- **Browse** beliefs by type: factual, preference, procedural, architectural, insight, meta
-- **Filter** by status: active, invalidated, forgotten, pruned
-- **Search** semantically — type a query and get the most relevant beliefs
-- **View details** — click a belief to see confidence, stability, importance, creation date, and linked episodes
-- **Delete** beliefs you want forgotten
+**Memories** — everything pai has learned about you:
+- Browse beliefs by type (factual, preference, procedural)
+- Filter by status (active, invalidated)
+- Search semantically — type a query and get the most relevant beliefs
+- Delete beliefs you want forgotten
 
-**How memory works:**
-
-When you chat, the assistant extracts facts from your messages and stores them as "beliefs." Over time:
-
-- Repeated information **reinforces** beliefs (higher confidence)
-- Contradictory information **weakens or replaces** old beliefs
-- Unused beliefs **decay** over time (30-day half-life)
-- Related beliefs are **linked** in a knowledge graph
-- You can run `reflect` to find duplicates and `synthesize` to create higher-level insights
-
-### Knowledge Base
-
-The **Knowledge** page lets you build a personal knowledge base from web pages.
-
-1. Click **Learn from URL** and paste a link
-2. pai fetches the page, extracts content, splits into chunks, and stores with embeddings
-3. When you chat, the assistant can search your knowledge base for relevant information
-
-You can also:
-- Browse all learned sources
-- View individual chunks
-- Search across all knowledge
-- Re-learn a page (refresh content)
+**Documents** — your personal knowledge base:
+- Learn from URLs — pai fetches, extracts, chunks, and stores with embeddings
+- Upload files (PDF, Excel, text, images)
+- Browse learned sources, search across all knowledge
 - Crawl sub-pages from a source
+
+**How memory works:** When you chat, a background learning worker extracts facts and stores them as "beliefs." Repeated information reinforces beliefs; contradictions weaken or replace old ones; unused beliefs decay over time (30-day half-life).
 
 ### To-Dos & Legacy Goals
 
@@ -586,14 +547,14 @@ Legacy goals still exist for cleanup and backward compatibility, but new product
 
 The **Settings** page lets you configure:
 
-- **LLM Provider** — select from dropdown (Ollama, OpenAI, Anthropic, Google AI). Selecting a provider auto-fills sensible defaults for base URL, model, and embed model.
-- **Model** — chat model name
-- **Base URL** — provider endpoint
-- **API Key** — your provider API key (stored locally, never sent to pai servers)
-- **Embed Model** — model used for semantic search
-- **Data Directory** — where your database lives (default: `~/.personal-ai/data/`)
-- **Background Workers** — toggle digest generation, background learning, and knowledge cleanup
-- **Diagnostics** — owner-local observability for token usage, process hotspots, thread/job traces, and recent failures. Data stays inside the current instance and is surfaced only in Settings.
+- **LLM Provider** — Ollama, OpenAI, Anthropic, Google AI, OpenRouter, Cerebras
+- **Model, Base URL, API Key, Embed Model** — provider configuration
+- **Telegram** — bot token and enable/disable toggle
+- **Linear** — API key, default team/project, auto-error logging toggle
+- **Timezone** — IANA timezone for digest scheduling
+- **Background Workers** — toggle digest generation, background learning, knowledge cleanup, LLM traffic shaping
+- **Sidecar URLs** — sandbox, search, browser automation endpoints
+- **Diagnostics** — token usage, process hotspots, thread/job traces, recent failures
 
 Changes take effect immediately — no restart needed.
 
@@ -607,45 +568,35 @@ After building (`pnpm build`), use `pnpm pai <command>` or link globally:
 pnpm -C packages/cli link --global    # then use `pai` directly
 ```
 
-### Memory
+### Library (memories, documents, search)
 
 ```bash
-pai memory remember "I prefer dark mode in all editors"
-pai memory recall "editor preferences"
-pai memory beliefs                     # list all beliefs
-pai memory stats                       # memory health summary
-pai memory reflect                     # find duplicates
-pai memory synthesize                  # generate meta-beliefs
-pai memory export backup.json          # backup
-pai memory import backup.json          # restore
+pai library remember "I prefer dark mode in all editors"
+pai library search "editor preferences"
+pai library memories                   # list all memories
+pai library stats                      # memory health summary
+pai library learn "https://react.dev/learn"
+pai library documents                  # list learned documents
+pai library forget <id-or-prefix>      # remove a memory
 ```
 
-### Task Commands
-
-The CLI still uses `task` commands for compatibility, even though the web product presents these items as To-Dos.
+### Tasks
 
 ```bash
 pai task add "Review PR #42" --priority high --due 2026-03-15
 pai task list
-pai task done <id>
-pai task ai-suggest                    # AI prioritization
+pai task done <id-or-prefix>
 ```
 
-### Knowledge
+### Goals
 
 ```bash
-pai knowledge learn "https://react.dev/learn"
-pai knowledge search "hooks"
-pai knowledge list
+pai goal add "Launch v1"
+pai goal list
+pai goal done <id-or-prefix>
 ```
 
-### Health check
-
-```bash
-pai health                             # test LLM connection
-```
-
-All commands support `--json` for structured output and prefix-matched IDs (first 8 characters).
+All commands support `--json` for structured output and prefix-matched IDs.
 
 ---
 
