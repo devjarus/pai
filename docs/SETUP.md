@@ -285,11 +285,9 @@ pnpm harness:core-loop
 
 Use these docs when deciding where changes belong:
 
-- [docs/ARCHITECTURE.md](ARCHITECTURE.md)
-- [docs/architecture/overview.md](architecture/overview.md)
-- [docs/architecture/core-platform.md](architecture/core-platform.md)
-- [docs/architecture/agent-plane.md](architecture/agent-plane.md)
-- [harness/README.md](../harness/README.md)
+- [docs/ARCHITECTURE.md](ARCHITECTURE.md) — C4 diagrams, dataflows, data model, API reference
+- [AGENTS.md](../AGENTS.md) — contributor workflow, architecture blocks, coding patterns
+- [harness/README.md](../harness/README.md) — validation gates and scenario tests
 
 ### Development mode
 

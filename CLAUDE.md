@@ -2,4 +2,4 @@
 
 @AGENTS.md
 
-- UI/product work → read [PRODUCT.md](docs/PRODUCT.md)
+- UI/design work → read [DESIGN.md](docs/DESIGN.md)

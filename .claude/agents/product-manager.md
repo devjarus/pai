@@ -28,15 +28,14 @@ Key product language:
 - Memory = Belief
 - Document = KnowledgeSource
 - Finding = ResearchFinding
-- Watch = ScheduledJob
+- Watch = Program (re-exported as Watch)
 - Digest = Briefing
 - To-Do = Task
 - Activity = Job
 
 Project anchors:
-- Product direction: docs/PRODUCT.md
-- Architecture: docs/ARCHITECTURE.md
-- Memory behavior: docs/MEMORY-LIFECYCLE.md
+- Design guidelines: docs/DESIGN.md
+- Architecture + memory: docs/ARCHITECTURE.md
 - UI: packages/ui
 - Server/API: packages/server
 - Core foundation: packages/core
@@ -65,7 +64,7 @@ Each cycle, execute this process in order:
 
 ### 1. Inspect
 Actually read and review:
-- docs/PRODUCT.md, docs/ARCHITECTURE.md, docs/MEMORY-LIFECYCLE.md
+- docs/DESIGN.md, docs/ARCHITECTURE.md, AGENTS.md
 - Key UI surfaces in packages/ui/src/pages/
 - Memory/watch/digest/correction behavior in relevant packages
 - Server routes in packages/server/src/routes/

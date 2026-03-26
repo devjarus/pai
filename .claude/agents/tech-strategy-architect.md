@@ -22,7 +22,7 @@ Core domain naming (user-facing → code):
 - Memory = `Belief`
 - Document = `KnowledgeSource`
 - Finding = `ResearchFinding`
-- Watch = `ScheduledJob`
+- Watch = `Program` (re-exported as `Watch`)
 - Digest = `Briefing`
 - To-Do = `Task`
 - Activity = `Job`
@@ -32,7 +32,8 @@ Project structure:
 - `packages/server`: APIs, workers, orchestration
 - `packages/ui`: product UI
 - `packages/library`, `packages/watches`, `packages/plugin-tasks`: domain packages
-- Key docs: `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/MEMORY-LIFECYCLE.md`
+- `packages/plugin-schedules`: watch scheduling (owns Program/ScheduledJob types)
+- Key docs: `docs/DESIGN.md`, `docs/ARCHITECTURE.md`
 
 ## What You Own
 

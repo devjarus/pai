@@ -64,19 +64,21 @@ If ownership is unclear, stop and resolve that first. Do not hide product rules 
 
 ## Naming (user-facing → code)
 
-Memory = `Belief` · Document = `KnowledgeSource` · Finding = `ResearchFinding` · Watch = `ScheduledJob` · Digest = `Briefing` · To-Do = `Task` · Activity = `Job`
+Memory = `Belief` · Document = `KnowledgeSource` · Finding = `ResearchFinding` · Watch = `Program` (re-exported as `Watch` from `packages/watches`) · Digest = `Briefing` · To-Do = `Task` · Activity = `Job` (stored in `background_jobs`)
 
 ## Where Things Go
 
 - Core platform state/rules → owning domain block first, then the current package that implements it
 - Agent behavior / planning / synthesis → agent-plane package and, when possible, through `packages/core/src/agent-harness/`
 - Data entity → `packages/library` or relevant core-platform domain
-- API route → `packages/server/src/routes/library.ts` (unified) or domain-specific route file
+- API route → `packages/server/src/routes/<domain>.ts` (one file per domain: `library.ts`, `watches.ts`, `digests.ts`, `jobs.ts`, `tasks.ts`, `auth.ts`, `config.ts`, etc.)
 - UI page → `packages/ui/src/pages/`, wire in `App.tsx`
 - Background job → `packages/server/src/workers.ts`
 - Memory change → `packages/core/src/memory/`
-- Architecture reference → [ARCHITECTURE.md](docs/ARCHITECTURE.md) and `docs/architecture/*`
+- Watch/schedule types → `packages/plugin-schedules` (owns `Program`, `ScheduledJob`), re-exported via `packages/watches`
+- Architecture reference → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Coding-agent harness → `harness/README.md`, `harness/scenarios/*`
+- UI/design guidelines → [docs/DESIGN.md](docs/DESIGN.md)
 
 ## Patterns
 

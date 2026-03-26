@@ -48,16 +48,27 @@ The backend is organized into two planes:
 - **Core Platform** — owns state, business rules, orchestration, and quality.
 - **Agent Plane** — assistant, curator, research, and swarm agents operating through explicit platform interfaces.
 
-Working docs for this split live here:
+### Core Platform Blocks
 
-- [Architecture Overview](architecture/overview.md)
-- [Core Platform](architecture/core-platform.md)
-- [Agent Plane](architecture/agent-plane.md)
-- [Dependency Rules](architecture/dependency-rules.md)
+API/BFF, runtime/config/auth/storage, memory, knowledge, watches, digests, tasks/actions, background orchestration, quality/observability, channel adapters.
 
-The contributor workflow that goes with these blocks lives in:
+**Non-negotiable rule:** If a rule changes what gets stored, recommended, corrected, scheduled, or surfaced to the user, it belongs to the core platform. Agents may propose or synthesize, but the platform decides what state is canonical.
 
-- [Harness README](../harness/README.md)
+### Agent Plane Blocks
+
+Assistant (chat), curator (memory health), research (watch execution), swarm (multi-agent).
+
+Agents depend on platform services through the harness (`packages/core/src/agent-harness/`). They cannot own product state or core business rules.
+
+### Dependency Rules
+
+1. Core platform does not depend on agent plane logic
+2. Agents depend on platform services (memory, knowledge, watches, digests, tasks, telemetry)
+3. Channel adapters (Telegram, CLI) stay thin — no core domain behavior
+4. Background orchestration coordinates timing; domain blocks decide meaning
+5. Quality measures product outcomes, not agent self-assessment
+
+The contributor workflow lives in [AGENTS.md](../AGENTS.md) and [harness/README.md](../harness/README.md).
 
 ---
 

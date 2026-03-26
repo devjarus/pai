@@ -18,7 +18,7 @@ User-facing → code naming:
 - Memory = `Belief`
 - Document = `KnowledgeSource`
 - Finding = `ResearchFinding`
-- Watch = `ScheduledJob`
+- Watch = `Program` (re-exported as `Watch`)
 - Digest = `Briefing`
 - To-Do = `Task`
 - Activity = `Job`
@@ -36,7 +36,7 @@ Project rules (non-negotiable):
 3. Update `CHANGELOG.md` for user-facing changes
 4. Stay in scope — no drive-by refactors
 
-Reference docs: `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/MEMORY-LIFECYCLE.md`
+Reference docs: `docs/DESIGN.md`, `docs/ARCHITECTURE.md`, `AGENTS.md`
 
 Patterns:
 - `validate(schema, data)` — schema first

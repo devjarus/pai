@@ -22,7 +22,7 @@ Key naming (user-facing → code):
 - Memory = `Belief`
 - Document = `KnowledgeSource`
 - Finding = `ResearchFinding`
-- Watch = `ScheduledJob`
+- Watch = `Program` (re-exported as `Watch`)
 - Digest = `Briefing`
 - To-Do = `Task`
 - Activity = `Job`
@@ -35,9 +35,8 @@ Project structure:
 - `packages/watches`: watch/scheduling domain
 - `packages/plugin-tasks`: task domain
 - `packages/plugin-research`: research modules (types, repository, prompts, tools, charts, research)
-- `docs/PRODUCT.md`: product direction
-- `docs/ARCHITECTURE.md`: architecture reference
-- `docs/MEMORY-LIFECYCLE.md`: memory behavior
+- `docs/DESIGN.md`: UI design guidelines
+- `docs/ARCHITECTURE.md`: architecture, memory behavior, data model
 
 Project patterns:
 - `validate(schema, data)` — schema first
