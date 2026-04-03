@@ -136,7 +136,7 @@ describe("Research jobs", () => {
         threadId: null,
       });
 
-      await runResearchInBackground(ctx, id);
+      await expect(runResearchInBackground(ctx, id)).rejects.toThrow("LLM unavailable");
 
       const job = getResearchJob(storage, id);
       expect(job!.status).toBe("failed");
@@ -455,7 +455,7 @@ describe("Research jobs", () => {
         threadId: thread.id,
       });
 
-      await runResearchInBackground(ctx, id);
+      await expect(runResearchInBackground(ctx, id)).rejects.toThrow("LLM down");
 
       const messages = listMessages(storage, thread.id);
       expect(messages.length).toBeGreaterThan(0);
