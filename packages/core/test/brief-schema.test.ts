@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildBriefSignalHash, buildReportBriefSection, stripEnrichmentFromGoal } from "../src/brief-schema.js";
+import { buildBriefSignalHash, buildReportBriefSection, isBriefContentLine, stripEnrichmentFromGoal } from "../src/brief-schema.js";
 
 describe("stripEnrichmentFromGoal", () => {
   it("returns the original goal when no enrichment is present", () => {
@@ -208,5 +208,24 @@ describe("brief-schema", () => {
     expect(sameHash).toHaveLength(64);
     expect(sameHashAgain).toBe(sameHash);
     expect(changedHash).not.toBe(sameHash);
+  });
+
+  it("filters meta placeholder lines so recommendation/changes use real content", () => {
+    const section = buildReportBriefSection({
+      goal: "Track daily AI news",
+      execution: "research",
+      report: [
+        "# Daily news",
+        "Let me compile the top 5 stories for you.",
+        "OpenAI released a new safety eval benchmark with reproducible scoring.",
+      ].join("\n"),
+      structuredResult: JSON.stringify({
+        recommendation: "I need explicit direction before I proceed.",
+      }),
+    });
+
+    expect(isBriefContentLine("Let me compile the top 5 stories for you.")).toBe(false);
+    expect(section.recommendation.summary).toBe("OpenAI released a new safety eval benchmark with reproducible scoring.");
+    expect(section.what_changed[0]).toBe("OpenAI released a new safety eval benchmark with reproducible scoring.");
   });
 });

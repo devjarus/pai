@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   recordProductEvent,
+  isBriefContentLine,
 } from "@personal-ai/core";
 import {
   listWatches,
@@ -65,7 +66,8 @@ function parseRecommendationSummary(sectionsRaw: string): string | null {
     const parsed = JSON.parse(sectionsRaw) as Record<string, unknown>;
     const recommendation = parsed.recommendation as Record<string, unknown> | undefined;
     if (recommendation && typeof recommendation.summary === "string" && recommendation.summary.trim().length > 0) {
-      return recommendation.summary;
+      const summary = recommendation.summary.trim();
+      if (isBriefContentLine(summary)) return summary;
     }
     if (typeof parsed.goal === "string" && parsed.goal.trim().length > 0) {
       return parsed.goal;
@@ -74,7 +76,7 @@ function parseRecommendationSummary(sectionsRaw: string): string | null {
       const firstMeaningfulLine = parsed.report
         .split("\n")
         .map((line) => line.trim())
-        .find((line) => line.length > 0 && !line.startsWith("#") && !line.startsWith(">") && !line.startsWith("|"));
+        .find((line) => isBriefContentLine(line));
       return firstMeaningfulLine ?? null;
     }
   } catch {

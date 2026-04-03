@@ -108,7 +108,7 @@ export type { Owner } from "./auth.js";
 // Research schemas
 export { detectResearchDomain } from "./research-schemas.js";
 export type { FlightQuery, FlightOption, FlightReport, StockMetrics, ChartArtifact, StockReport, ResearchResult, ResearchResultType } from "./research-schemas.js";
-export { buildReportBriefSection, buildBriefSignalHash, stripEnrichmentFromGoal } from "./brief-schema.js";
+export { buildReportBriefSection, buildBriefSignalHash, stripEnrichmentFromGoal, isBriefContentLine } from "./brief-schema.js";
 export type { StandardBriefSection } from "./brief-schema.js";
 export {
   extractPresentationBlocks,

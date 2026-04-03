@@ -85,8 +85,18 @@ function firstMeaningfulLine(report: string): string | null {
   return report
     .split("\n")
     .map((line) => line.trim())
-    .find((line) => line.length > 0 && !line.startsWith("#") && !line.startsWith("|") && !line.startsWith(">"))
+    .find((line) => isBriefContentLine(line))
     ?? null;
+}
+
+const META_BRIEF_LINE_PATTERN =
+  /\b(let me|i (need|would need|can|can't|cannot)|should i|would you like|explicit direction|placeholder|meta[-\s]?commentary|compile the top|top \d+ stories|research findings (aren't|are not) converting)\b/i;
+
+export function isBriefContentLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("|") || trimmed.startsWith(">")) return false;
+  if (META_BRIEF_LINE_PATTERN.test(trimmed)) return false;
+  return true;
 }
 
 /** Extract a short title from the report — first markdown heading or first sentence */
@@ -128,7 +138,8 @@ function structuredRecommendation(parsed: Record<string, unknown> | null): strin
   ];
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim().length > 0) {
-      return candidate.trim();
+      const trimmed = candidate.trim();
+      if (isBriefContentLine(trimmed)) return trimmed;
     }
   }
   return null;
