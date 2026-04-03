@@ -24,6 +24,15 @@ const groupContexts = new Map<number, GroupContext>();
 const RELEVANCE_REACT_THRESHOLD = 0.65;
 const RELEVANCE_PROACTIVE_THRESHOLD = 0.78;
 const BUFFER_SIZE = 50;
+const DEFAULT_PROACTIVE_COOLDOWN_MIN = 24 * 60;
+
+function isSameUtcDay(aMs: number, bMs: number): boolean {
+  const a = new Date(aMs);
+  const b = new Date(bMs);
+  return a.getUTCFullYear() === b.getUTCFullYear()
+    && a.getUTCMonth() === b.getUTCMonth()
+    && a.getUTCDate() === b.getUTCDate();
+}
 
 // Telegram-allowed reaction emoji for non-premium bots
 const ALLOWED_REACTIONS = ["👍", "❤️", "🔥", "👏", "😁", "🎉", "😢", "🤔", "👎", "🤯", "😱", "💯", "😍", "🙏", "👀", "🤡", "🥰", "🤗", "🫡", "💔", "🥱", "😡"] as const;
@@ -59,10 +68,11 @@ async function shouldEngage(
   const gc = getGroupContext(chatId);
   const now = Date.now();
   const reactionCooldown = (ctx.config.telegram?.reactionCooldownMin ?? 3) * 60 * 1000;
-  const proactiveCooldown = (ctx.config.telegram?.proactiveCooldownMin ?? 10) * 60 * 1000;
+  const proactiveCooldown = (ctx.config.telegram?.proactiveCooldownMin ?? DEFAULT_PROACTIVE_COOLDOWN_MIN) * 60 * 1000;
+  const alreadyPostedToday = gc.lastProactiveTime > 0 && isSameUtcDay(gc.lastProactiveTime, now);
 
   const canReact = now - gc.lastReactionTime >= reactionCooldown;
-  const canPost = now - gc.lastProactiveTime >= proactiveCooldown;
+  const canPost = !alreadyPostedToday && (now - gc.lastProactiveTime >= proactiveCooldown);
   if (!canReact && !canPost) return { result: "ignore", score: 0 };
 
   // Single embedding call
@@ -165,6 +175,7 @@ Rules:
 - If you have nothing to add, respond with exactly "SKIP".
 - Keep responses brief (1-3 sentences).
 - Be natural, casual, and conversational.
+- Prefer sharing one interesting related topic, fun fact, or thoughtful question that helps keep the group active.
 - You can share relevant knowledge, make a witty observation, ask a follow-up question, or offer a helpful suggestion.
 - Do not announce yourself or explain why you're speaking.
 - Do not repeat what was already said.
