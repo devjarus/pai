@@ -228,4 +228,62 @@ describe("passiveProcess", () => {
     // But should NOT send a proactive message (LLM said SKIP)
     expect(mockApi.sendMessage).not.toHaveBeenCalled();
   });
+
+  it("limits proactive messages to once per UTC day per group", async () => {
+    (mockCtx.config.telegram as any).reactionCooldownMin = 0;
+    delete (mockCtx.config.telegram as any).proactiveCooldownMin;
+    (semanticSearch as any).mockReturnValue([{ similarity: 0.9 }]);
+    (knowledgeSearch as any).mockResolvedValue([]);
+
+    (instrumentedGenerateText as any)
+      .mockResolvedValueOnce({ result: { text: "🔥" } }) // first emoji
+      .mockResolvedValueOnce({ result: { text: "What trend do you think will matter most this week?" } }) // first proactive
+      .mockResolvedValueOnce({ result: { text: "👏" } }); // second emoji (no proactive)
+
+    bufferMessage(200009, "We're talking about market shifts", "Alice");
+
+    await passiveProcess(
+      mockCtx,
+      mockAgentPlugin,
+      200009,
+      { message_id: 4, text: "This is highly relevant and should trigger a proactive response first" },
+      mockApi,
+    );
+
+    await passiveProcess(
+      mockCtx,
+      mockAgentPlugin,
+      200009,
+      { message_id: 5, text: "Another highly relevant message later today should not trigger proactive again" },
+      mockApi,
+    );
+
+    expect(mockApi.setMessageReaction).toHaveBeenCalledTimes(2);
+    expect(mockApi.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends a daily topic starter even when relevance is low if the group is active", async () => {
+    delete (mockCtx.config.telegram as any).proactiveCooldownMin;
+    (mockCtx.config.telegram as any).reactionCooldownMin = 0;
+    (semanticSearch as any).mockReturnValue([{ similarity: 0.15 }]);
+    (knowledgeSearch as any).mockResolvedValue([{ score: 0.12 }]);
+
+    (instrumentedGenerateText as any)
+      .mockResolvedValueOnce({ result: { text: "👀" } }) // emoji picker
+      .mockResolvedValueOnce({ result: { text: "Quick one: what's one thing this group is optimistic about this week?" } }); // daily starter
+
+    bufferMessage(200010, "We should revisit roadmap priorities", "Alice");
+    bufferMessage(200010, "Yeah and also trim scope", "Bob");
+    bufferMessage(200010, "Could be a good week to align", "Cara");
+
+    await passiveProcess(
+      mockCtx,
+      mockAgentPlugin,
+      200010,
+      { message_id: 6, text: "Small update here" },
+      mockApi,
+    );
+
+    expect(mockApi.sendMessage).toHaveBeenCalledTimes(1);
+  });
 });
