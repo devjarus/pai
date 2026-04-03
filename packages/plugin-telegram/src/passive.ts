@@ -102,6 +102,11 @@ async function shouldEngage(
   if (canPost && bestScore >= RELEVANCE_PROACTIVE_THRESHOLD) {
     return { result: "proactive", score: bestScore };
   }
+  // Keep active group chats warm once per day even when semantic relevance is low.
+  // This enables lightweight "interesting topic" nudges that don't depend on memory matches.
+  if (canPost && gc.recentMessages.length >= 3) {
+    return { result: "proactive", score: bestScore };
+  }
   if (canReact && bestScore >= RELEVANCE_REACT_THRESHOLD) {
     return { result: "react", score: bestScore };
   }

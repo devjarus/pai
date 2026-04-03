@@ -261,4 +261,29 @@ describe("passiveProcess", () => {
     expect(mockApi.setMessageReaction).toHaveBeenCalledTimes(2);
     expect(mockApi.sendMessage).toHaveBeenCalledTimes(1);
   });
+
+  it("sends a daily topic starter even when relevance is low if the group is active", async () => {
+    delete (mockCtx.config.telegram as any).proactiveCooldownMin;
+    (mockCtx.config.telegram as any).reactionCooldownMin = 0;
+    (semanticSearch as any).mockReturnValue([{ similarity: 0.15 }]);
+    (knowledgeSearch as any).mockResolvedValue([{ score: 0.12 }]);
+
+    (instrumentedGenerateText as any)
+      .mockResolvedValueOnce({ result: { text: "👀" } }) // emoji picker
+      .mockResolvedValueOnce({ result: { text: "Quick one: what's one thing this group is optimistic about this week?" } }); // daily starter
+
+    bufferMessage(200010, "We should revisit roadmap priorities", "Alice");
+    bufferMessage(200010, "Yeah and also trim scope", "Bob");
+    bufferMessage(200010, "Could be a good week to align", "Cara");
+
+    await passiveProcess(
+      mockCtx,
+      mockAgentPlugin,
+      200010,
+      { message_id: 6, text: "Small update here" },
+      mockApi,
+    );
+
+    expect(mockApi.sendMessage).toHaveBeenCalledTimes(1);
+  });
 });

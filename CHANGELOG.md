@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Quality metric alignment** — Learning quality now counts finding/digest-driven runs, compounding coverage only measures active watches with credible findings, and sparse datasets no longer receive free high-confidence quality credit.
 
 ### Changed
-- **Telegram group proactive cadence** — Passive group chime-ins now default to at most one proactive message per group per UTC day (instead of frequent minute-scale nudges), and the proactive prompt now favors interesting topic starters to keep conversations active without spamming.
+- **Telegram group proactive cadence** — Passive group chime-ins now default to at most one proactive message per group per UTC day (instead of frequent minute-scale nudges), and active groups can receive one daily interesting-topic starter even when memory relevance is low.
 - **Coding-agent harness scaffold** — Added `harness/README.md`, block-specific checklists, task/evidence templates, and a new `pnpm harness:regressions` validator so contributors and coding agents can follow the architecture-block workflow consistently.
 - **Harness workflow simplified** — AGENTS and harness guidance now center on owner block, guardrails, minimal change, and correct validation. Task/evidence templates are now optional for larger or riskier work instead of implied paperwork for every scoped fix.
 - **Repo hygiene regression guard** — `pnpm harness:regressions` now also scans tracked files for committed secret-like credentials, tracked config/env files, and hardcoded Linear default team/project literals in runtime source.
