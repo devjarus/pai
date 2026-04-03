@@ -409,7 +409,7 @@ describe("Swarm jobs", () => {
         threadId: null,
       });
 
-      await runSwarmInBackground(ctx, id);
+      await expect(runSwarmInBackground(ctx, id)).rejects.toThrow("LLM unavailable");
 
       const job = getSwarmJob(storage, id);
       expect(job!.status).toBe("failed");

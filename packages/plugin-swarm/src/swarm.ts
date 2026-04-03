@@ -408,6 +408,7 @@ export async function runSwarmInBackground(
     }
 
     ctx.logger.error(`Swarm job ${jobId} failed: ${errorMsg}`);
+    throw err;
   }
 }
 

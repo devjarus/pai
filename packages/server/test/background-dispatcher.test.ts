@@ -156,4 +156,37 @@ describe("BackgroundDispatcher", () => {
     await vi.runAllTimersAsync();
     dispatcher.stop();
   });
+
+  it("re-queues transient recurring research failures with backoff", async () => {
+    mockListPendingResearchJobs
+      .mockReturnValueOnce([
+        { id: "job-1", queuedAt: "2026-03-05T10:00:00.000Z", sourceKind: "schedule" },
+      ])
+      .mockReturnValue([]);
+    mockRunResearchInBackground.mockRejectedValue(new Error("503 Service Unavailable"));
+
+    const ctx = makeCtx();
+    (ctx.storage.query as unknown as ReturnType<typeof vi.fn>).mockImplementation((sql: string) => {
+      if (sql.includes("SELECT attempt_count FROM background_jobs WHERE id = ?")) {
+        return [{ attempt_count: 0 }];
+      }
+      return [];
+    });
+
+    const dispatcher = new BackgroundDispatcher(ctx);
+    dispatcher.start();
+
+    await vi.runAllTimersAsync();
+
+    expect(ctx.storage.run).toHaveBeenCalledWith(
+      "UPDATE research_jobs SET status = 'pending' WHERE id = ? AND status = 'failed'",
+      ["job-1"],
+    );
+    expect(ctx.storage.run).toHaveBeenCalledWith(
+      "UPDATE background_jobs SET status = 'pending', progress = ?, error = ? WHERE id = ?",
+      [expect.stringContaining("retry 1/2 in 30s"), "503 Service Unavailable", "job-1"],
+    );
+
+    dispatcher.stop();
+  });
 });

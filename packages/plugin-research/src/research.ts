@@ -889,5 +889,6 @@ export async function runResearchInBackground(
     }
 
     ctx.logger.error(`Research job ${jobId} failed: ${errorMsg}`);
+    throw err;
   }
 }
