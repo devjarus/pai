@@ -326,13 +326,9 @@ export async function runSwarmInBackground(
       resultType: presentation.resultType,
       execution: "analysis",
     });
-    const briefingId = !program
-      || program.deliveryMode !== "change-gated"
-      || !program.lastSignalHash
-      || program.lastSignalHash !== signalHash
-      || !program.latestBriefId
-      ? `swarm-${jobId}`
-      : null;
+    const hasPreviousSignal = !!program?.latestBriefId && !!program?.lastSignalHash;
+    const signalChanged = !hasPreviousSignal || program!.lastSignalHash !== signalHash;
+    const briefingId = !program || signalChanged ? `swarm-${jobId}` : null;
     try {
       if (briefingId) {
         ctx.storage.run(

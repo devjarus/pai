@@ -707,11 +707,9 @@ export async function runResearchInBackground(
       execution: "research",
     });
 
-    const shouldDeliver = !program
-      || program.deliveryMode !== "change-gated"
-      || !program.lastSignalHash
-      || program.lastSignalHash !== signalHash
-      || !program.latestBriefId;
+    const hasPreviousSignal = !!program?.latestBriefId && !!program?.lastSignalHash;
+    const signalChanged = !hasPreviousSignal || program!.lastSignalHash !== signalHash;
+    const shouldDeliver = !program || signalChanged;
 
     const briefingId = shouldDeliver ? `research-${jobId}` : null;
     try {
