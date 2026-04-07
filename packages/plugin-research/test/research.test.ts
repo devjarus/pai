@@ -441,6 +441,42 @@ describe("Research jobs", () => {
       expect(lastMsg.role).toBe("assistant");
     });
 
+    it("suppresses duplicate briefings when the signal hash has not changed", async () => {
+      const { generateText } = await import("ai");
+      (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+        text: "# Report\n\nNo material change in the market today.",
+        steps: [],
+      });
+
+      storage.run(
+        "INSERT INTO scheduled_jobs (id, label, type, goal, interval_hours, next_run_at, status, delivery_mode) VALUES (?, ?, ?, ?, ?, datetime('now'), 'active', 'interval')",
+        ["watch-dup", "Duplicate Watch", "research", "Track daily updates", 24],
+      );
+
+      const ctx = makeCtx();
+      const first = createResearchJob(storage, {
+        goal: "Track daily updates",
+        threadId: null,
+        sourceScheduleId: "watch-dup",
+      });
+      await runResearchInBackground(ctx, first);
+
+      const second = createResearchJob(storage, {
+        goal: "Track daily updates",
+        threadId: null,
+        sourceScheduleId: "watch-dup",
+      });
+      await runResearchInBackground(ctx, second);
+
+      const rows = storage.query<{ count: number }>(
+        "SELECT COUNT(*) as count FROM briefings WHERE program_id = ?",
+        ["watch-dup"],
+      );
+      expect(rows[0]?.count).toBe(1);
+      expect(getResearchJob(storage, first)?.briefingId).toBeTruthy();
+      expect(getResearchJob(storage, second)?.briefingId).toBeNull();
+    });
+
     it("posts failure message to thread when research fails", async () => {
       const { generateText } = await import("ai");
       (generateText as ReturnType<typeof vi.fn>).mockRejectedValue(
