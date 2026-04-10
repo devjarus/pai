@@ -9,6 +9,8 @@ import {
   completeTask,
   editTask,
   reopenTask,
+  snoozeTask,
+  unsnoozeTask,
   deleteTask,
   clearAllTasks,
   addGoal,
@@ -38,6 +40,10 @@ const editTaskSchema = z.object({
   dueDate: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   goalId: z.string().nullable().optional(),
+});
+
+const snoozeTaskSchema = z.object({
+  until: z.string().min(1, "until is required (ISO datetime or date)"),
 });
 
 const createGoalSchema = z.object({
@@ -122,6 +128,28 @@ export function registerTaskRoutes(app: FastifyInstance, { ctx }: ServerContext)
   app.post<{ Params: { id: string } }>("/api/tasks/:id/reopen", async (request, reply) => {
     try {
       reopenTask(ctx.storage, request.params.id);
+      return { ok: true };
+    } catch (err) {
+      return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.post<{ Params: { id: string }; Body: { until: string } }>(
+    "/api/tasks/:id/snooze",
+    async (request, reply) => {
+      try {
+        const body = validate(snoozeTaskSchema, request.body);
+        const snoozedUntil = snoozeTask(ctx.storage, request.params.id, body.until);
+        return { ok: true, snoozed_until: snoozedUntil };
+      } catch (err) {
+        return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>("/api/tasks/:id/unsnooze", async (request, reply) => {
+    try {
+      unsnoozeTask(ctx.storage, request.params.id);
       return { ok: true };
     } catch (err) {
       return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createStorage } from "@personal-ai/core";
-import { taskMigrations, addTask, listTasks, completeTask, editTask, reopenTask, addGoal, listGoals, completeGoal } from "../src/tasks.js";
+import { taskMigrations, addTask, listTasks, completeTask, editTask, reopenTask, snoozeTask, unsnoozeTask, addGoal, listGoals, completeGoal } from "../src/tasks.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -231,5 +231,80 @@ describe("Tasks", () => {
   it("should reject empty title on edit", () => {
     const task = addTask(storage, { title: "Test" });
     expect(() => editTask(storage, task.id, { title: "" })).toThrow(/title cannot be empty/i);
+  });
+
+  // ---- Snooze ----
+
+  it("should hide a snoozed task from the open list until its wake time", () => {
+    const task = addTask(storage, { title: "Call the bank" });
+    const until = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    snoozeTask(storage, task.id, until);
+
+    expect(listTasks(storage, "open")).toHaveLength(0);
+    const snoozed = listTasks(storage, "snoozed");
+    expect(snoozed).toHaveLength(1);
+    expect(snoozed[0]!.id).toBe(task.id);
+    expect(snoozed[0]!.snoozed_until).toBeTruthy();
+  });
+
+  it("should include snoozed tasks in the 'all' filter", () => {
+    const task = addTask(storage, { title: "Renew passport" });
+    snoozeTask(storage, task.id, new Date(Date.now() + 3600 * 1000).toISOString());
+    const all = listTasks(storage, "all");
+    expect(all).toHaveLength(1);
+    expect(all[0]!.id).toBe(task.id);
+  });
+
+  it("should surface a task in the open list again when snooze expires", () => {
+    const task = addTask(storage, { title: "Follow up on invoice" });
+    // Write a snooze target in the past directly to simulate expiry.
+    storage.run("UPDATE tasks SET snoozed_until = ? WHERE id = ?", [
+      "2000-01-01 00:00:00",
+      task.id,
+    ]);
+    expect(listTasks(storage, "open")).toHaveLength(1);
+    expect(listTasks(storage, "snoozed")).toHaveLength(0);
+  });
+
+  it("should clear the snooze with unsnoozeTask", () => {
+    const task = addTask(storage, { title: "Review budget" });
+    snoozeTask(storage, task.id, new Date(Date.now() + 3600 * 1000).toISOString());
+    expect(listTasks(storage, "open")).toHaveLength(0);
+
+    unsnoozeTask(storage, task.id);
+    const open = listTasks(storage, "open");
+    expect(open).toHaveLength(1);
+    expect(open[0]!.snoozed_until).toBeNull();
+  });
+
+  it("should snooze by task id prefix", () => {
+    const task = addTask(storage, { title: "Pay rent" });
+    snoozeTask(storage, task.id.slice(0, 8), new Date(Date.now() + 60 * 60 * 1000).toISOString());
+    expect(listTasks(storage, "open")).toHaveLength(0);
+    expect(listTasks(storage, "snoozed")).toHaveLength(1);
+  });
+
+  it("should reject a snooze target in the past", () => {
+    const task = addTask(storage, { title: "Plan trip" });
+    expect(() =>
+      snoozeTask(storage, task.id, new Date(Date.now() - 60 * 1000).toISOString()),
+    ).toThrow(/future/i);
+  });
+
+  it("should reject an invalid snooze target", () => {
+    const task = addTask(storage, { title: "Plan trip" });
+    expect(() => snoozeTask(storage, task.id, "not-a-date")).toThrow(/invalid snooze/i);
+  });
+
+  it("should sort snoozed tasks by wake time ascending", () => {
+    const first = addTask(storage, { title: "Second to wake" });
+    const second = addTask(storage, { title: "First to wake" });
+    snoozeTask(storage, first.id, new Date(Date.now() + 2 * 3600 * 1000).toISOString());
+    snoozeTask(storage, second.id, new Date(Date.now() + 1 * 3600 * 1000).toISOString());
+
+    const snoozed = listTasks(storage, "snoozed");
+    expect(snoozed).toHaveLength(2);
+    expect(snoozed[0]!.id).toBe(second.id);
+    expect(snoozed[1]!.id).toBe(first.id);
   });
 });

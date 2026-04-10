@@ -128,6 +128,8 @@ const mockListTasks = vi.fn();
 const mockCompleteTask = vi.fn();
 const mockEditTask = vi.fn();
 const mockReopenTask = vi.fn();
+const mockSnoozeTask = vi.fn();
+const mockUnsnoozeTask = vi.fn();
 const mockDeleteTask = vi.fn();
 const mockAddGoal = vi.fn();
 const mockListGoals = vi.fn();
@@ -147,6 +149,8 @@ vi.mock("@personal-ai/plugin-tasks", () => ({
   completeTask: (...args: unknown[]) => mockCompleteTask(...args),
   editTask: (...args: unknown[]) => mockEditTask(...args),
   reopenTask: (...args: unknown[]) => mockReopenTask(...args),
+  snoozeTask: (...args: unknown[]) => mockSnoozeTask(...args),
+  unsnoozeTask: (...args: unknown[]) => mockUnsnoozeTask(...args),
   deleteTask: (...args: unknown[]) => mockDeleteTask(...args),
   addGoal: (...args: unknown[]) => mockAddGoal(...args),
   listGoals: (...args: unknown[]) => mockListGoals(...args),
@@ -1775,6 +1779,8 @@ describe("task routes", () => {
     mockCompleteTask.mockReset();
     mockEditTask.mockReset();
     mockReopenTask.mockReset();
+    mockSnoozeTask.mockReset();
+    mockUnsnoozeTask.mockReset();
     mockDeleteTask.mockReset();
     mockAddGoal.mockReset();
     mockListGoals.mockReset();
@@ -1907,6 +1913,45 @@ describe("task routes", () => {
     const res = await app.inject({ method: "POST", url: "/api/tasks/t1/reopen" });
     expect(res.statusCode).toBe(200);
     expect(mockReopenTask).toHaveBeenCalledWith(expect.anything(), "t1");
+  });
+
+  it("POST /api/tasks/:id/snooze snoozes a task", async () => {
+    mockSnoozeTask.mockReturnValue("2030-01-01 09:00:00");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tasks/t1/snooze",
+      payload: { until: "2030-01-01T09:00:00Z" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual({ ok: true, snoozed_until: "2030-01-01 09:00:00" });
+    expect(mockSnoozeTask).toHaveBeenCalledWith(expect.anything(), "t1", "2030-01-01T09:00:00Z");
+  });
+
+  it("POST /api/tasks/:id/snooze returns 400 when snooze target is invalid", async () => {
+    mockSnoozeTask.mockImplementation(() => { throw new Error("Snooze target must be in the future."); });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tasks/t1/snooze",
+      payload: { until: "1999-01-01" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("POST /api/tasks/:id/snooze returns 400 when body is missing 'until'", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tasks/t1/snooze",
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+    expect(mockSnoozeTask).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/tasks/:id/unsnooze clears a snooze", async () => {
+    mockUnsnoozeTask.mockReturnValue(undefined);
+    const res = await app.inject({ method: "POST", url: "/api/tasks/t1/unsnooze" });
+    expect(res.statusCode).toBe(200);
+    expect(mockUnsnoozeTask).toHaveBeenCalledWith(expect.anything(), "t1");
   });
 
   it("DELETE /api/tasks/:id deletes a task", async () => {

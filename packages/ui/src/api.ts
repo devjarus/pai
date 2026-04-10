@@ -514,6 +514,14 @@ export function reopenTask(id: string): Promise<{ ok: boolean }> {
   return request(`/tasks/${id}/reopen`, { method: "POST", body: "{}" });
 }
 
+export function snoozeTask(id: string, until: string): Promise<{ ok: boolean; snoozed_until: string }> {
+  return request(`/tasks/${id}/snooze`, { method: "POST", body: JSON.stringify({ until }) });
+}
+
+export function unsnoozeTask(id: string): Promise<{ ok: boolean }> {
+  return request(`/tasks/${id}/unsnooze`, { method: "POST", body: "{}" });
+}
+
 export function deleteTask(id: string): Promise<{ ok: boolean }> {
   return request(`/tasks/${id}`, { method: "DELETE" });
 }

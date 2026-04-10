@@ -7,6 +7,8 @@ import {
   useUpdateTask,
   useCompleteTask,
   useReopenTask,
+  useSnoozeTask,
+  useUnsnoozeTask,
   useDeleteTask,
   useClearAllTasks,
   useGoals,
@@ -33,7 +35,16 @@ import {
   CircleIcon,
   TargetIcon,
   CalendarIcon,
+  ClockIcon,
+  BellIcon,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Task, Goal } from "../types";
 import { QueryError } from "@/components/QueryError";
 import { FirstVisitBanner } from "../components/FirstVisitBanner";
@@ -47,6 +58,49 @@ function isOverdue(dueDateStr: string): boolean {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return due < today;
+}
+
+function isSnoozedActive(snoozedUntil: string | null): boolean {
+  if (!snoozedUntil) return false;
+  const target = parseApiDate(snoozedUntil);
+  if (isNaN(target.getTime())) return false;
+  return target.getTime() > Date.now();
+}
+
+type SnoozeQuickOption = { label: string; value: () => Date };
+
+const SNOOZE_QUICK_OPTIONS: SnoozeQuickOption[] = [
+  {
+    label: "Later today",
+    value: () => {
+      const d = new Date();
+      d.setHours(d.getHours() + 3, 0, 0, 0);
+      return d;
+    },
+  },
+  {
+    label: "Tomorrow morning",
+    value: () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      d.setHours(9, 0, 0, 0);
+      return d;
+    },
+  },
+  {
+    label: "Next week",
+    value: () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      d.setHours(9, 0, 0, 0);
+      return d;
+    },
+  },
+];
+
+function toLocalDatetimeInputValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 const priorityStyles: Record<string, string> = {
@@ -86,6 +140,8 @@ export default function Tasks() {
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
   const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null);
   const [showClearAll, setShowClearAll] = useState(false);
+  const [customSnoozeTask, setCustomSnoozeTask] = useState<Task | null>(null);
+  const [customSnoozeValue, setCustomSnoozeValue] = useState("");
 
   const [quickAddTitle, setQuickAddTitle] = useState("");
 
@@ -114,6 +170,8 @@ export default function Tasks() {
   const updateTaskMut = useUpdateTask();
   const completeTaskMut = useCompleteTask();
   const reopenTaskMut = useReopenTask();
+  const snoozeTaskMut = useSnoozeTask();
+  const unsnoozeTaskMut = useUnsnoozeTask();
   const deleteTaskMut = useDeleteTask();
   const clearAllTasksMut = useClearAllTasks();
 
@@ -157,6 +215,56 @@ export default function Tasks() {
       toast.error(
         err instanceof Error ? err.message : "Failed to update to-do",
       );
+    }
+  };
+
+  const handleQuickSnooze = async (task: Task, target: Date) => {
+    try {
+      await snoozeTaskMut.mutateAsync({ id: task.id, until: target.toISOString() });
+      toast.success(`Snoozed until ${formatDate(target.toISOString())}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to snooze to-do");
+    }
+  };
+
+  const openCustomSnooze = (task: Task) => {
+    const defaultDate = new Date();
+    defaultDate.setDate(defaultDate.getDate() + 1);
+    defaultDate.setHours(9, 0, 0, 0);
+    setCustomSnoozeValue(toLocalDatetimeInputValue(defaultDate));
+    setCustomSnoozeTask(task);
+  };
+
+  const handleCustomSnoozeSave = async () => {
+    if (!customSnoozeTask) return;
+    if (!customSnoozeValue) {
+      toast.error("Pick a snooze target");
+      return;
+    }
+    const target = new Date(customSnoozeValue);
+    if (Number.isNaN(target.getTime())) {
+      toast.error("Invalid snooze target");
+      return;
+    }
+    if (target.getTime() <= Date.now()) {
+      toast.error("Snooze target must be in the future");
+      return;
+    }
+    try {
+      await snoozeTaskMut.mutateAsync({ id: customSnoozeTask.id, until: target.toISOString() });
+      toast.success(`Snoozed until ${formatDate(target.toISOString())}`);
+      setCustomSnoozeTask(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to snooze to-do");
+    }
+  };
+
+  const handleUnsnooze = async (task: Task) => {
+    try {
+      await unsnoozeTaskMut.mutateAsync(task.id);
+      toast.success("Snooze cleared");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to clear snooze");
     }
   };
 
@@ -361,6 +469,9 @@ export default function Tasks() {
                 <TabsTrigger value="open" className="text-xs">
                   Open
                 </TabsTrigger>
+                <TabsTrigger value="snoozed" className="text-xs">
+                  Snoozed
+                </TabsTrigger>
                 <TabsTrigger value="done" className="text-xs">
                   Done
                 </TabsTrigger>
@@ -429,7 +540,9 @@ export default function Tasks() {
                     ? `No to-dos exist for this ${scopedSourceKind?.toLowerCase() ?? "source"} yet.`
                     : statusFilter === "open"
                       ? 'Click the + button to add your first to-do, or switch to "All" to see completed to-dos.'
-                      : "No to-dos match the current filter."}
+                      : statusFilter === "snoozed"
+                        ? "No snoozed to-dos. Snooze a to-do from the open list to defer it."
+                        : "No to-dos match the current filter."}
                 </p>
               </div>
             ) : (
@@ -454,6 +567,9 @@ export default function Tasks() {
                     onToggle={handleToggleTask}
                     onEdit={openEditTask}
                     onDelete={setDeletingTask}
+                    onQuickSnooze={handleQuickSnooze}
+                    onCustomSnooze={openCustomSnooze}
+                    onUnsnooze={handleUnsnooze}
                   />
                 ))}
               </div>
@@ -758,6 +874,52 @@ export default function Tasks() {
       >
         Delete all to-dos? This cannot be undone.
       </ConfirmDialog>
+
+      {/* Custom Snooze Dialog */}
+      <Dialog
+        open={!!customSnoozeTask}
+        onOpenChange={(open) => {
+          if (!open) setCustomSnoozeTask(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Snooze until…</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Hide{" "}
+              <strong className="text-foreground/80">
+                &quot;{customSnoozeTask?.title}&quot;
+              </strong>{" "}
+              from the open list until this moment.
+            </p>
+            <input
+              type="datetime-local"
+              value={customSnoozeValue}
+              onChange={(e) => setCustomSnoozeValue(e.target.value)}
+              className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/25"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCustomSnoozeTask(null)}
+              disabled={snoozeTaskMut.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleCustomSnoozeSave}
+              disabled={snoozeTaskMut.isPending || !customSnoozeValue}
+            >
+              {snoozeTaskMut.isPending ? "Snoozing..." : "Snooze"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -768,17 +930,24 @@ function TaskRow({
   onToggle,
   onEdit,
   onDelete,
+  onQuickSnooze,
+  onCustomSnooze,
+  onUnsnooze,
 }: {
   task: Task;
   goalName?: string;
   onToggle: (task: Task) => void;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
+  onQuickSnooze: (task: Task, target: Date) => void;
+  onCustomSnooze: (task: Task) => void;
+  onUnsnooze: (task: Task) => void;
 }) {
   const isDone = task.status === "done";
+  const snoozed = isSnoozedActive(task.snoozed_until);
 
   return (
-    <div className="group flex items-center gap-3 rounded-lg border border-border/40 bg-card/50 px-4 py-3 transition-colors hover:bg-accent/50">
+    <div className={`group flex items-center gap-3 rounded-lg border border-border/40 bg-card/50 px-4 py-3 transition-colors hover:bg-accent/50 ${snoozed ? "opacity-70" : ""}`}>
       {/* Toggle button */}
       <button
         type="button"
@@ -828,6 +997,12 @@ function TaskRow({
               </span>
             )
           )}
+          {snoozed && task.snoozed_until && (
+            <span className="flex items-center gap-1 text-[11px] text-amber-400">
+              <ClockIcon className="size-3" />
+              Snoozed until {formatDate(task.snoozed_until)}
+            </span>
+          )}
           {goalName && (
             <Badge
               variant="secondary"
@@ -859,6 +1034,46 @@ function TaskRow({
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-1 md:opacity-0 md:transition-opacity md:group-hover:opacity-100">
+        {!isDone && (
+          snoozed ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-amber-400 hover:text-foreground"
+              onClick={() => onUnsnooze(task)}
+              title="Clear snooze"
+            >
+              <BellIcon className="size-3.5" />
+            </Button>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  title="Snooze"
+                >
+                  <ClockIcon className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {SNOOZE_QUICK_OPTIONS.map((option) => (
+                  <DropdownMenuItem
+                    key={option.label}
+                    onClick={() => onQuickSnooze(task, option.value())}
+                  >
+                    {option.label}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onCustomSnooze(task)}>
+                  Pick date & time...
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )
+        )}
         <Button
           variant="ghost"
           size="icon"

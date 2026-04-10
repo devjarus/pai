@@ -330,6 +330,7 @@ export interface Task {
   source_type: TaskSourceType | null;
   source_id: string | null;
   source_label: string | null;
+  snoozed_until: string | null;
 }
 
 export interface Goal {

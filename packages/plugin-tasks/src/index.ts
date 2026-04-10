@@ -6,6 +6,8 @@ import {
   completeTask,
   editTask,
   reopenTask,
+  snoozeTask,
+  unsnoozeTask,
   addGoal,
   listGoals,
   completeGoal,
@@ -14,10 +16,10 @@ import {
 
 function parseTaskStatus(input: string | undefined): TaskStatusFilter {
   const status = (input ?? "open").toLowerCase();
-  if (status === "open" || status === "done" || status === "all") {
+  if (status === "open" || status === "done" || status === "all" || status === "snoozed") {
     return status;
   }
-  throw new Error(`Invalid status "${input}". Use one of: open, done, all.`);
+  throw new Error(`Invalid status "${input}". Use one of: open, done, all, snoozed.`);
 }
 
 function out(ctx: PluginContext, data: unknown, humanText: string): void {
@@ -142,6 +144,29 @@ export const tasksPlugin: Plugin = {
         },
       },
       {
+        name: "task snooze",
+        description: "Hide a task from the open list until a future date",
+        args: [{ name: "id", description: "Task ID (or prefix)", required: true }],
+        options: [
+          { flags: "--until <when>", description: "ISO datetime or date (e.g. 2026-04-15 or 2026-04-15T09:00)" },
+        ],
+        async action(args, opts) {
+          const until = opts["until"];
+          if (!until) throw new Error("--until is required.");
+          const when = snoozeTask(ctx.storage, args["id"]!, until);
+          out(ctx, { ok: true, snoozed_until: when }, `Task snoozed until ${when}.`);
+        },
+      },
+      {
+        name: "task unsnooze",
+        description: "Remove a task's snooze",
+        args: [{ name: "id", description: "Task ID (or prefix)", required: true }],
+        async action(args) {
+          unsnoozeTask(ctx.storage, args["id"]!);
+          out(ctx, { ok: true }, "Task unsnoozed.");
+        },
+      },
+      {
         name: "goal add",
         description: "Add a new goal",
         args: [{ name: "title", description: "Goal title", required: true }],
@@ -187,4 +212,4 @@ export const tasksPlugin: Plugin = {
   },
 };
 
-export { taskMigrations, addTask, listTasks, completeTask, editTask, reopenTask, deleteTask, clearAllTasks, addGoal, listGoals, completeGoal, deleteGoal, type TaskStatusFilter, type TaskSourceType } from "./tasks.js";
+export { taskMigrations, addTask, listTasks, completeTask, editTask, reopenTask, snoozeTask, unsnoozeTask, deleteTask, clearAllTasks, addGoal, listGoals, completeGoal, deleteGoal, type TaskStatusFilter, type TaskSourceType } from "./tasks.js";

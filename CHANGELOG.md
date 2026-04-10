@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Snooze to-dos** — A to-do can now be deferred until a future moment with quick presets (later today, tomorrow morning, next week) or a custom date/time. Snoozed to-dos are hidden from the default Open list and reappear automatically when their wake time passes. New `Snoozed` tab on the To-Dos page, `POST /api/tasks/:id/snooze` + `/unsnooze` endpoints, and `pai task snooze/unsnooze` CLI commands. Tasks plugin gains a `snoozed_until` column via migration v3.
 - **Image attachment support in chat** — JPG, PNG, GIF, and WebP images can now be uploaded in chat and are passed as multimodal image parts to the LLM. Knowledge page also accepts image uploads.
 
 ### Fixed

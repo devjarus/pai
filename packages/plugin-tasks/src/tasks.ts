@@ -35,6 +35,13 @@ export const taskMigrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source_type, source_id);
     `,
   },
+  {
+    version: 3,
+    up: `
+      ALTER TABLE tasks ADD COLUMN snoozed_until TEXT;
+      CREATE INDEX IF NOT EXISTS idx_tasks_snoozed ON tasks(snoozed_until);
+    `,
+  },
 ];
 
 export interface Task {
@@ -50,6 +57,7 @@ export interface Task {
   source_type: TaskSourceType | null;
   source_id: string | null;
   source_label: string | null;
+  snoozed_until: string | null;
 }
 
 export interface Goal {
@@ -60,7 +68,7 @@ export interface Goal {
   created_at: string;
 }
 
-export type TaskStatusFilter = "open" | "done" | "all";
+export type TaskStatusFilter = "open" | "done" | "all" | "snoozed";
 export type TaskSourceType = "briefing" | "program";
 
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
@@ -131,10 +139,20 @@ export function addTask(
 }
 
 export function listTasks(storage: Storage, status: TaskStatusFilter = "open"): Task[] {
-  const tasks =
-    status === "all"
-      ? storage.query<Task>("SELECT * FROM tasks ORDER BY created_at DESC")
-      : storage.query<Task>("SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC", [status]);
+  let tasks: Task[];
+  if (status === "all") {
+    tasks = storage.query<Task>("SELECT * FROM tasks ORDER BY created_at DESC");
+  } else if (status === "snoozed") {
+    tasks = storage.query<Task>(
+      "SELECT * FROM tasks WHERE status = 'open' AND snoozed_until IS NOT NULL AND snoozed_until > datetime('now') ORDER BY snoozed_until ASC",
+    );
+  } else if (status === "open") {
+    tasks = storage.query<Task>(
+      "SELECT * FROM tasks WHERE status = 'open' AND (snoozed_until IS NULL OR snoozed_until <= datetime('now')) ORDER BY created_at DESC",
+    );
+  } else {
+    tasks = storage.query<Task>("SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC", [status]);
+  }
   return tasks.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 1) - (PRIORITY_ORDER[b.priority] ?? 1));
 }
 
@@ -175,6 +193,31 @@ export function editTask(
 export function reopenTask(storage: Storage, taskId: string): void {
   const id = resolveTaskIdStr(storage, taskId, "done");
   storage.run("UPDATE tasks SET status = 'open', completed_at = NULL WHERE id = ?", [id]);
+}
+
+function parseSnoozeUntil(until: string): string {
+  const raw = until.trim();
+  if (!raw) throw new Error("Snooze target time is required.");
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid snooze target "${until}". Use an ISO date/datetime.`);
+  }
+  if (parsed.getTime() <= Date.now()) {
+    throw new Error("Snooze target must be in the future.");
+  }
+  return parsed.toISOString().replace("T", " ").replace(/\.\d+Z$/, "");
+}
+
+export function snoozeTask(storage: Storage, taskId: string, until: string): string {
+  const id = resolveTaskIdStr(storage, taskId);
+  const snoozedUntil = parseSnoozeUntil(until);
+  storage.run("UPDATE tasks SET snoozed_until = ? WHERE id = ?", [snoozedUntil, id]);
+  return snoozedUntil;
+}
+
+export function unsnoozeTask(storage: Storage, taskId: string): void {
+  const id = resolveTaskIdStr(storage, taskId);
+  storage.run("UPDATE tasks SET snoozed_until = NULL WHERE id = ?", [id]);
 }
 
 export function clearAllTasks(storage: Storage): number {

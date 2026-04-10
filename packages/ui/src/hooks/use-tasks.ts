@@ -5,6 +5,8 @@ import {
   updateTask,
   completeTask,
   reopenTask,
+  snoozeTask,
+  unsnoozeTask,
   deleteTask,
   clearAllTasks,
 } from "../api";
@@ -98,6 +100,26 @@ export function useReopenTask() {
       context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
     },
     onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    },
+  });
+}
+
+export function useSnoozeTask() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; until: string }) => snoozeTask(input.id, input.until),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    },
+  });
+}
+
+export function useUnsnoozeTask() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => unsnoozeTask(id),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.all });
     },
   });
