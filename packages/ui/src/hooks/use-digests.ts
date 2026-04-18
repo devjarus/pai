@@ -9,7 +9,10 @@ import {
   acceptDigestRecommendation,
   rerunDigestResearch,
   getDigestSuggestions,
+  deleteDigest,
 } from "../api";
+
+type DigestListData = { digests: Array<{ id: string; generatedAt: string; sections: Record<string, unknown>; status: string; type: string }> };
 
 export const digestKeys = {
   all: ["digests"] as const,
@@ -91,6 +94,27 @@ export function useRerunDigestResearch() {
   return useMutation({
     mutationFn: (id: string) => rerunDigestResearch(id),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: digestKeys.all });
+    },
+  });
+}
+
+export function useDeleteDigest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteDigest(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: digestKeys.all });
+      const prev = queryClient.getQueriesData<DigestListData>({ queryKey: digestKeys.list() });
+      queryClient.setQueriesData<DigestListData>({ queryKey: digestKeys.list() }, (old) =>
+        old ? { ...old, digests: old.digests.filter((d) => d.id !== id) } : old,
+      );
+      return { prev };
+    },
+    onError: (_err, _id, context) => {
+      context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: digestKeys.all });
     },
   });

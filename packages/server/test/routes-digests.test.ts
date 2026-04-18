@@ -21,6 +21,7 @@ const mockGetBriefingById = vi.fn();
 const mockListAllBriefings = vi.fn();
 const mockGetDailyBriefingState = vi.fn().mockReturnValue({ generating: false, pending: false });
 const mockGetBriefBeliefs = vi.fn();
+const mockDeleteBriefing = vi.fn();
 
 vi.mock("../src/briefing.js", () => ({
   getLatestBriefing: (...args: unknown[]) => mockGetLatestBriefing(...args),
@@ -28,6 +29,7 @@ vi.mock("../src/briefing.js", () => ({
   listAllBriefings: (...args: unknown[]) => mockListAllBriefings(...args),
   getDailyBriefingState: (...args: unknown[]) => mockGetDailyBriefingState(...args),
   getBriefBeliefs: (...args: unknown[]) => mockGetBriefBeliefs(...args),
+  deleteBriefing: (...args: unknown[]) => mockDeleteBriefing(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -226,6 +228,25 @@ describe("digest routes", () => {
     mockGetBriefingById.mockReturnValue(null);
 
     const res = await app.inject({ method: "GET", url: "/api/digests/nonexistent" });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("Digest not found");
+  });
+
+  // --- DELETE /api/digests/:id ---
+
+  it("DELETE /api/digests/:id deletes a digest", async () => {
+    mockDeleteBriefing.mockReturnValue(true);
+
+    const res = await app.inject({ method: "DELETE", url: "/api/digests/briefing-1" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(mockDeleteBriefing).toHaveBeenCalledWith(serverCtx.ctx.storage, "briefing-1");
+  });
+
+  it("DELETE /api/digests/:id returns 404 for unknown digest", async () => {
+    mockDeleteBriefing.mockReturnValue(false);
+
+    const res = await app.inject({ method: "DELETE", url: "/api/digests/nonexistent" });
     expect(res.statusCode).toBe(404);
     expect(res.json().error).toBe("Digest not found");
   });

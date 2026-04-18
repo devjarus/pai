@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDigests } from "@/hooks/use-digests";
+import { useDigests, useDeleteDigest } from "@/hooks/use-digests";
 import { useWatches } from "@/hooks/use-watches";
 import { useTasks, useCompleteTask } from "@/hooks/use-tasks";
 import { useLibraryStats, useQualityScore } from "@/hooks/use-library";
@@ -16,8 +17,10 @@ import {
   SearchIcon,
   AlertCircleIcon,
   LoaderIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { QueryError } from "@/components/QueryError";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 // ---------------------------------------------------------------------------
 // Smart data extraction — handles garbage LLM output gracefully
@@ -206,6 +209,20 @@ function DigestFeed() {
   const { data, isLoading, isError, refetch } = useDigests();
   const digests = data?.digests ?? [];
   const [showAll, setShowAll] = useState(false);
+  const [deletingDigest, setDeletingDigest] = useState<DigestItem | null>(null);
+  const deleteMut = useDeleteDigest();
+
+  const handleConfirmDelete = async () => {
+    if (!deletingDigest) return;
+    const target = deletingDigest;
+    setDeletingDigest(null);
+    try {
+      await deleteMut.mutateAsync(target.id);
+      toast.success("Digest deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete digest");
+    }
+  };
 
   if (isLoading) {
     return (
@@ -247,7 +264,7 @@ function DigestFeed() {
   return (
     <div>
       {/* Hero */}
-      {hero && <HeroDigest digest={hero} />}
+      {hero && <HeroDigest digest={hero} onDelete={setDeletingDigest} />}
 
       {/* Feed */}
       {rest.length > 0 && (
@@ -256,7 +273,7 @@ function DigestFeed() {
           <div className="space-y-px">
             {showRest.map((d, i) => (
               <div key={d.id} className={i < 7 ? "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1" : ""} style={i < 7 ? { animationDelay: `${i * 40}ms`, animationFillMode: "both" } : undefined}>
-                <CompactDigest digest={d} />
+                <CompactDigest digest={d} onDelete={setDeletingDigest} />
               </div>
             ))}
           </div>
@@ -275,61 +292,95 @@ function DigestFeed() {
             <AlertCircleIcon className="mr-1 inline size-3" />{failed.length} incomplete digest{failed.length > 1 ? "s" : ""}
           </summary>
           <div className="mt-2 space-y-px opacity-50">
-            {failed.slice(0, 5).map((d) => <CompactDigest key={d.id} digest={d} />)}
+            {failed.slice(0, 5).map((d) => <CompactDigest key={d.id} digest={d} onDelete={setDeletingDigest} />)}
           </div>
         </details>
       )}
+
+      <ConfirmDialog
+        open={!!deletingDigest}
+        onOpenChange={(open) => { if (!open) setDeletingDigest(null); }}
+        title="Delete Digest"
+        confirmLabel="Delete"
+        onConfirm={handleConfirmDelete}
+      >
+        Delete{" "}
+        <strong className="text-foreground/80">
+          &quot;{deletingDigest ? extractTitle(deletingDigest.sections, deletingDigest.type) : ""}&quot;
+        </strong>
+        ? This cannot be undone.
+      </ConfirmDialog>
     </div>
   );
 }
 
-function HeroDigest({ digest }: { digest: DigestItem }) {
+function HeroDigest({ digest, onDelete }: { digest: DigestItem; onDelete: (d: DigestItem) => void }) {
   const sections = digest.sections as Record<string, unknown>;
   const summary = extractSummary(sections);
   const title = extractTitle(sections, digest.type);
 
   return (
-    <Link
-      to={`/digests/${digest.id}`}
-      className={`group block rounded-xl border bg-card/50 p-6 transition-all duration-200 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-lg ${
-        digest.type === "research" ? "border-indigo-500/15 hover:border-indigo-500/30" : "border-amber-500/15 hover:border-amber-500/30"
-      }`}
-    >
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50">
-        <span className={`h-1.5 w-1.5 rounded-full ${digest.type === "research" ? "bg-indigo-400" : "bg-amber-400"}`} />
-        <span className="capitalize">{digest.type}</span>
-        <span>·</span>
-        <span>{timeAgoCompact(digest.generatedAt)}</span>
-      </div>
-      <h2 className="mt-3 text-lg font-semibold leading-snug text-foreground group-hover:text-primary transition-colors">
-        {title}
-      </h2>
-      {summary && (
-        <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground line-clamp-3">{summary}</p>
-      )}
-    </Link>
+    <div className="group relative">
+      <Link
+        to={`/digests/${digest.id}`}
+        className={`block rounded-xl border bg-card/50 p-6 transition-all duration-200 hover:bg-card/70 hover:-translate-y-0.5 hover:shadow-lg ${
+          digest.type === "research" ? "border-indigo-500/15 hover:border-indigo-500/30" : "border-amber-500/15 hover:border-amber-500/30"
+        }`}
+      >
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50">
+          <span className={`h-1.5 w-1.5 rounded-full ${digest.type === "research" ? "bg-indigo-400" : "bg-amber-400"}`} />
+          <span className="capitalize">{digest.type}</span>
+          <span>·</span>
+          <span>{timeAgoCompact(digest.generatedAt)}</span>
+        </div>
+        <h2 className="mt-3 text-lg font-semibold leading-snug text-foreground group-hover:text-primary transition-colors">
+          {title}
+        </h2>
+        {summary && (
+          <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground line-clamp-3">{summary}</p>
+        )}
+      </Link>
+      <button
+        type="button"
+        aria-label="Delete digest"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(digest); }}
+        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+      >
+        <Trash2Icon className="size-3.5" />
+      </button>
+    </div>
   );
 }
 
-function CompactDigest({ digest }: { digest: DigestItem }) {
+function CompactDigest({ digest, onDelete }: { digest: DigestItem; onDelete: (d: DigestItem) => void }) {
   const sections = digest.sections as Record<string, unknown>;
   const summary = extractSummary(sections);
   const title = extractTitle(sections, digest.type);
 
   return (
-    <Link
-      to={`/digests/${digest.id}`}
-      className="group flex items-start gap-3 px-3 py-2.5 transition-colors hover:bg-muted/20"
-    >
-      <div className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${digest.type === "research" ? "bg-indigo-400/60" : "bg-amber-400/60"}`} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium text-foreground/85 group-hover:text-primary transition-colors truncate">{title}</span>
-          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/40">{timeAgoCompact(digest.generatedAt)}</span>
+    <div className="group relative">
+      <Link
+        to={`/digests/${digest.id}`}
+        className="flex items-start gap-3 px-3 py-2.5 transition-colors hover:bg-muted/20"
+      >
+        <div className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${digest.type === "research" ? "bg-indigo-400/60" : "bg-amber-400/60"}`} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-foreground/85 group-hover:text-primary transition-colors truncate">{title}</span>
+            <span className="shrink-0 pr-7 text-[10px] tabular-nums text-muted-foreground/40">{timeAgoCompact(digest.generatedAt)}</span>
+          </div>
+          {summary && <p className="mt-0.5 text-xs text-muted-foreground/55 line-clamp-1">{summary}</p>}
         </div>
-        {summary && <p className="mt-0.5 text-xs text-muted-foreground/55 line-clamp-1">{summary}</p>}
-      </div>
-    </Link>
+      </Link>
+      <button
+        type="button"
+        aria-label="Delete digest"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(digest); }}
+        className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/50 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+      >
+        <Trash2Icon className="size-3" />
+      </button>
+    </div>
   );
 }
 
