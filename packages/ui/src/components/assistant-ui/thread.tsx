@@ -158,10 +158,10 @@ const ThreadWelcome: FC = () => {
 };
 
 const SUGGESTIONS = [
-  { title: "Do a deep research report on...", description: "Multi-agent swarm research" },
-  { title: "What saved moves are open?", description: "Review saved moves and priorities" },
-  { title: "Check my memory health", description: "Curator finds duplicates and contradictions" },
-  { title: "Run some Python code for me", description: "Sandboxed code execution" },
+  { title: "What shipped in the AI world this week?", description: "Live web search across recent news and releases" },
+  { title: "Research self-hosted vector databases for RAG and recommend one", description: "Deep multi-agent investigation with sources and a verdict" },
+  { title: "Watch Anthropic's changelog and brief me when a new model ships", description: "Sets up a recurring watch — you only hear back on real changes" },
+  { title: "Report a bug or request a feature: add a dark-mode toggle to settings", description: "Sends your feedback straight to the pai developers" },
 ];
 
 const WelcomeSuggestions: FC = () => {
@@ -177,7 +177,7 @@ const WelcomeSuggestions: FC = () => {
         >
           <Button
             variant="ghost"
-            className="aui-thread-welcome-suggestion h-auto w-full @md:flex-col flex-wrap items-start justify-start gap-1 rounded-2xl border px-4 py-3 text-left text-sm transition-colors hover:bg-muted"
+            className="aui-thread-welcome-suggestion h-auto w-full @md:flex-col flex-col items-start justify-start gap-1 whitespace-normal rounded-2xl border px-4 py-3 text-left text-sm transition-colors hover:bg-muted [&>span]:whitespace-normal [&>span]:break-words"
           >
             <span className="aui-thread-welcome-suggestion-text-1 font-medium">{s.title}</span>
             <span className="aui-thread-welcome-suggestion-text-2 text-muted-foreground">{s.description}</span>

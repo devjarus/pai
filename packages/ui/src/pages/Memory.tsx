@@ -210,7 +210,7 @@ export default function Memory() {
 
   return (
     <div className="flex h-full">
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-y-auto md:overflow-hidden">
         {/* Library navigation tabs */}
         <nav className="flex items-center gap-1 border-b border-border/30 px-3 md:px-6">
           {[
@@ -445,7 +445,7 @@ export default function Memory() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 md:overflow-y-auto">
           <div className="p-4 md:p-6">
             {loading ? (
               <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
