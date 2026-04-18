@@ -8,6 +8,7 @@ import {
   listAllBriefings,
   getDailyBriefingState,
   getBriefBeliefs,
+  deleteBriefing,
 } from "../briefing.js";
 import { rateDigest } from "../digest-ratings.js";
 import { ingestCorrection } from "@personal-ai/library";
@@ -58,6 +59,13 @@ export function registerDigestRoutes(app: FastifyInstance, { ctx, backgroundDisp
       metadata: { type: briefing.type },
     });
     return { briefing };
+  });
+
+  // Delete a digest
+  app.delete<{ Params: { id: string } }>("/api/digests/:id", async (request, reply) => {
+    const deleted = deleteBriefing(ctx.storage, request.params.id);
+    if (!deleted) return reply.status(404).send({ error: "Digest not found" });
+    return { ok: true };
   });
 
   // Get digest sources / provenance (beliefs that shaped the digest)

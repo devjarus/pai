@@ -495,6 +495,14 @@ export function clearAllBriefings(storage: PluginContext["storage"]): number {
   return count;
 }
 
+export function deleteBriefing(storage: PluginContext["storage"], id: string): boolean {
+  const existing = storage.query<{ id: string }>("SELECT id FROM briefings WHERE id = ?", [id])[0];
+  if (!existing) return false;
+  storage.run("DELETE FROM digest_ratings WHERE digest_id = ?", [id]);
+  storage.run("DELETE FROM briefings WHERE id = ?", [id]);
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // brief_beliefs — junction table linking briefs to the beliefs that shaped them
 // ---------------------------------------------------------------------------

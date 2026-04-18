@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Delete digests from home feed** — Each digest on the home page now has a delete button (on hover) that removes the brief with a confirmation dialog. Backed by a new `DELETE /api/digests/:id` endpoint and an optimistic-update React Query mutation.
 - **Image attachment support in chat** — JPG, PNG, GIF, and WebP images can now be uploaded in chat and are passed as multimodal image parts to the LLM. Knowledge page also accepts image uploads.
 
 ### Fixed

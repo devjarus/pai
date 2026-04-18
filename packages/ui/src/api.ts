@@ -1183,6 +1183,10 @@ export function rerunDigestResearch(id: string): Promise<{ ok: boolean; jobId: s
   return request(`/digests/${id}/rerun`, { method: "POST", body: "{}" });
 }
 
+export function deleteDigest(id: string): Promise<{ ok: boolean }> {
+  return request(`/digests/${id}`, { method: "DELETE" });
+}
+
 export function getDigestSuggestions(id: string): Promise<{ suggestions: Array<{ title: string; description?: string; priority?: string }> }> {
   return request(`/digests/${id}/suggestions`);
 }
