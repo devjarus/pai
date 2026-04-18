@@ -228,4 +228,22 @@ describe("brief-schema", () => {
     expect(section.recommendation.summary).toBe("OpenAI released a new safety eval benchmark with reproducible scoring.");
     expect(section.what_changed[0]).toBe("OpenAI released a new safety eval benchmark with reproducible scoring.");
   });
+
+  it("filters truncation-diagnosis meta lines from report-first recommendations", () => {
+    const section = buildReportBriefSection({
+      goal: "Track daily AI news",
+      execution: "research",
+      report: [
+        "# Daily Digest",
+        "Research Data Exists — Output Truncation Blocks Delivery",
+        "Pull raw research logs from today's runs immediately — output truncation prevents delivery.",
+        "OpenAI released a new model card update with expanded red-team disclosures.",
+      ].join("\n"),
+    });
+
+    expect(isBriefContentLine("Research Data Exists — Output Truncation Blocks Delivery")).toBe(false);
+    expect(isBriefContentLine("Pull raw research logs from today's runs immediately — output truncation prevents delivery.")).toBe(false);
+    expect(section.recommendation.summary).toBe("OpenAI released a new model card update with expanded red-team disclosures.");
+    expect(section.what_changed[0]).toBe("OpenAI released a new model card update with expanded red-team disclosures.");
+  });
 });

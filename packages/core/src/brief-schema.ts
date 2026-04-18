@@ -90,7 +90,7 @@ function firstMeaningfulLine(report: string): string | null {
 }
 
 const META_BRIEF_LINE_PATTERN =
-  /\b(let me|i (need|would need|can|can't|cannot)|should i|would you like|explicit direction|placeholder|meta[-\s]?commentary|compile the top|top \d+ stories|research findings (aren't|are not) converting)\b/i;
+  /\b(let me|i (need|would need|can|can't|cannot)|should i|would you like|explicit direction|placeholder|meta[-\s]?commentary|compile the top|top \d+ stories|research findings (aren't|are not) converting|output truncation|truncated output|token limit|max(?:imum)? (?:token|context) limit|recoverable before .* overwrite|pull raw research logs)\b/i;
 
 export function isBriefContentLine(line: string): boolean {
   const trimmed = line.trim();

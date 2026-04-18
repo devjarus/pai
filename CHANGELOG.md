@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Watch/brief placeholder text suppression** — Brief generation and watch summary parsing now filter meta placeholder lines (e.g. “Let me compile…” / “I need explicit direction…”) so recommendations and “what changed” use substantive findings instead of self-referential filler.
+- **Research truncation warning leakage in digests** — Brief extraction now also suppresses truncation-diagnostic/meta lines (e.g. “Output truncation blocks delivery”, “pull raw research logs”, token-limit warnings) so recommendation cards show actual findings instead of pipeline troubleshooting text.
 - **Duplicate watch brief spam suppression** — Research and swarm watch runs now skip creating a new briefing when the computed signal hash matches the last delivered briefing, preventing identical day-after-day repeats when nothing materially changed.
 - **Settings edit no longer clears API tokens** — Saving settings when the LLM API key, Linear API key, or Telegram token was provided via environment variables no longer silently drops those secrets from the config file. Preservation now falls back to the in-memory config (which includes env-var-sourced values).
 - **Scheduled research retries with exponential backoff** — Rate-limited research and swarm jobs now retry up to 3 times with exponential backoff (30s → 60s → 120s) instead of silently failing after 2 immediate retries. Swarm jobs now also retry on transient errors.
