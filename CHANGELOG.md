@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Capability-driven chat welcome prompts** — The four starter suggestions on a new chat now each exercise a distinct capability (live web search, deep research, recurring watches, product feedback to the pai developers) so first-time users are immediately exposed to what pai can do.
+
+### Fixed
+- **Memory page scroll on mobile** — The Memories page now scrolls as a single column on mobile so the header and filter chips scroll away with the list, instead of occupying a fixed slice of the viewport and leaving the belief cards with nearly no scroll area. Desktop keeps the sticky-header + inner-grid-scroll layout.
+
+### Added
 - **Delete digests from home feed** — Each digest on the home page now has a delete button (on hover) that removes the brief with a confirmation dialog. Backed by a new `DELETE /api/digests/:id` endpoint and an optimistic-update React Query mutation.
 - **Image attachment support in chat** — JPG, PNG, GIF, and WebP images can now be uploaded in chat and are passed as multimodal image parts to the LLM. Knowledge page also accepts image uploads.
 
