@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Capability-driven chat welcome prompts** — The four starter suggestions on a new chat now each exercise a distinct capability (live web search, deep research, recurring watches, product feedback to the pai developers) so first-time users are immediately exposed to what pai can do.
 
 ### Fixed
+- **Research findings no longer store LLM preamble as summary** — The brief-content filter now also rejects narrating lead-ins ("Based on my research…", "Here are the fresh developments:", "I've gathered…", "Compiling findings…") and short list-intro lines ending in a colon. Research finding-storage also reuses this filter before falling back to the first report line, so findings carry the first real substantive sentence instead of a preamble. Prevents daily digests from flagging the pipeline as stalled when the underlying reports are fine.
 - **Memory page scroll on mobile** — The Memories page now scrolls as a single column on mobile so the header and filter chips scroll away with the list, instead of occupying a fixed slice of the viewport and leaving the belief cards with nearly no scroll area. Desktop keeps the sticky-header + inner-grid-scroll layout.
 
 ### Added

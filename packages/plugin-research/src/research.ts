@@ -4,6 +4,7 @@ import type { BackgroundJob, AgentPlatformServices } from "@personal-ai/core";
 import {
   buildBriefSignalHash,
   buildReportBriefSection,
+  isBriefContentLine,
   getContextBudget,
   getProviderOptions,
   knowledgeSearch,
@@ -742,10 +743,14 @@ export async function runResearchInBackground(
             summary = rawSummary;
           }
         }
-        if (!summary || summary.length < 20) {
-          // Fall back to first substantive line of the report
-          const lines = presentation.report.split("\n").filter((l: string) => l.trim().length > 20 && !l.startsWith("#"));
-          summary = lines[0]?.trim() || presentation.report.slice(0, 500);
+        if (!summary || summary.length < 20 || !isBriefContentLine(summary)) {
+          // Fall back to first substantive line of the report, skipping
+          // markdown headings and LLM preamble/meta lines.
+          const lines = presentation.report
+            .split("\n")
+            .map((l: string) => l.trim())
+            .filter((l: string) => l.length > 20 && isBriefContentLine(l));
+          summary = lines[0] || presentation.report.slice(0, 500);
         }
         // Truncate to reasonable length
         if (summary.length > 500) summary = summary.slice(0, 500);

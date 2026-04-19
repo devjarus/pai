@@ -92,10 +92,30 @@ function firstMeaningfulLine(report: string): string | null {
 const META_BRIEF_LINE_PATTERN =
   /\b(let me|i (need|would need|can|can't|cannot)|should i|would you like|explicit direction|placeholder|meta[-\s]?commentary|compile the top|top \d+ stories|research findings (aren't|are not) converting|output truncation|truncated output|token limit|max(?:imum)? (?:token|context) limit|recoverable before .* overwrite|pull raw research logs)\b/i;
 
+/**
+ * Narrating-preamble lines the LLM likes to emit just before the real content
+ * (e.g. "Based on my research, here are the fresh developments:"). They carry
+ * no substantive information but would otherwise be picked up as the first
+ * meaningful line and stored as finding/recommendation text.
+ */
+const PREAMBLE_BRIEF_LINE_PATTERN =
+  /^\s*(?:\*+\s*)?(?:based on (?:my|the|our|recent|this)\b|here (?:are|is|'s)\b|below (?:are|is)\b|following (?:are|is)\b|i(?:'ve| have) (?:gathered|compiled|researched|found|reviewed|analyzed|completed|conducted|put together)\b|compiling (?:findings|research|results|fresh)\b|gather(?:ed|ing) (?:fresh|the|my)\b|in (?:this|the following)\b|as (?:requested|promised)\b|summary of (?:my|the|today'?s)\b)/i;
+
+/** Short lead-in lines that end with a colon and clearly introduce a list (e.g. "Fresh developments:"). */
+function isShortColonLeadIn(trimmed: string): boolean {
+  if (trimmed.length > 140) return false;
+  if (!trimmed.endsWith(":")) return false;
+  const withoutMarkdown = trimmed.replace(/\*+/g, "").trim();
+  // Lines that are just a noun phrase + colon (no verb phrase beyond the lead-in) are almost always list intros.
+  return /\b(developments|updates|stories|findings|highlights|headlines|news|items|results|takeaways|observations|changes)\s*:$/i.test(withoutMarkdown);
+}
+
 export function isBriefContentLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("|") || trimmed.startsWith(">")) return false;
   if (META_BRIEF_LINE_PATTERN.test(trimmed)) return false;
+  if (PREAMBLE_BRIEF_LINE_PATTERN.test(trimmed)) return false;
+  if (isShortColonLeadIn(trimmed)) return false;
   return true;
 }
 

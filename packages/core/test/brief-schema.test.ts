@@ -229,6 +229,26 @@ describe("brief-schema", () => {
     expect(section.what_changed[0]).toBe("OpenAI released a new safety eval benchmark with reproducible scoring.");
   });
 
+  it("filters LLM preamble/lead-in lines from report-first recommendations", () => {
+    const section = buildReportBriefSection({
+      goal: "Track daily news",
+      execution: "research",
+      report: [
+        "Based on my research covering April 18-19, 2026, here are the **fresh breaking developments**:",
+        "",
+        "1. OpenAI released GPT-5 with a new safety framework.",
+      ].join("\n"),
+    });
+
+    expect(isBriefContentLine("Based on my research covering April 18-19, 2026, here are the **fresh breaking developments**:")).toBe(false);
+    expect(isBriefContentLine("Here are the top stories:")).toBe(false);
+    expect(isBriefContentLine("Below are this week's developments:")).toBe(false);
+    expect(isBriefContentLine("I've gathered fresh information on the topic.")).toBe(false);
+    expect(isBriefContentLine("Compiling findings from today's sources.")).toBe(false);
+    expect(section.recommendation.summary).toBe("1. OpenAI released GPT-5 with a new safety framework.");
+    expect(section.what_changed[0]).toBe("1. OpenAI released GPT-5 with a new safety framework.");
+  });
+
   it("filters truncation-diagnosis meta lines from report-first recommendations", () => {
     const section = buildReportBriefSection({
       goal: "Track daily AI news",
