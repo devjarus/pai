@@ -646,6 +646,23 @@ function pruneOldBriefings(storage: PluginContext["storage"]): void {
   );
 }
 
+function getLatestDailySignalHash(
+  storage: PluginContext["storage"],
+  excludeId?: string,
+): { id: string; signalHash: string | null } | null {
+  const rows = excludeId
+    ? storage.query<{ id: string; signal_hash: string | null }>(
+      "SELECT id, signal_hash FROM briefings WHERE type = 'daily' AND status = 'ready' AND id != ? ORDER BY generated_at DESC LIMIT 1",
+      [excludeId],
+    )
+    : storage.query<{ id: string; signal_hash: string | null }>(
+      "SELECT id, signal_hash FROM briefings WHERE type = 'daily' AND status = 'ready' ORDER BY generated_at DESC LIMIT 1",
+    );
+  const row = rows[0];
+  if (!row) return null;
+  return { id: row.id, signalHash: row.signal_hash };
+}
+
 export interface BriefingProgramInput {
   id: string;
   title: string;
@@ -1724,6 +1741,23 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
   try {
     // Compute signal_hash for the daily brief — enables change detection across cycles
     const signalHash = buildBriefSignalHash(parsed, { source: "daily" });
+    const sourceRow = ctx.storage.query<{ source_kind: string | null }>(
+      "SELECT source_kind FROM briefings WHERE id = ?",
+      [id],
+    )[0];
+    const sourceKind = (sourceRow?.source_kind as BackgroundJobSourceKind | null) ?? "maintenance";
+    const previousDaily = getLatestDailySignalHash(ctx.storage, id);
+    const isDuplicateSignal = !!signalHash && !!previousDaily?.signalHash && previousDaily.signalHash === signalHash;
+
+    if (isDuplicateSignal && sourceKind !== "manual") {
+      ctx.storage.run("UPDATE briefings SET status = 'skipped' WHERE id = ?", [id]);
+      ctx.logger.info("Skipping duplicate daily briefing with unchanged signal", {
+        briefingId: id,
+        previousBriefingId: previousDaily?.id,
+        sourceKind,
+      });
+      return null;
+    }
 
     ctx.storage.run(
       "UPDATE briefings SET sections = ?, status = 'ready', signal_hash = ? WHERE id = ?",
