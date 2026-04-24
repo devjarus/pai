@@ -12,6 +12,7 @@ import {
   listBriefings,
   clearAllBriefings,
   generateBriefing,
+  enqueueBriefingGeneration,
   getResearchBriefings,
   selectBriefingBeliefs,
   linkBriefBeliefs,
@@ -596,6 +597,50 @@ describe("generateBriefing", () => {
     expect(result).not.toBeNull();
     expect(result!.status).toBe("ready");
     expect(result!.sections.memory_assumptions.length).toBeGreaterThan(0);
+  });
+
+  it("skips creating a new ready daily brief when the signal hash is unchanged for maintenance runs", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: JSON.stringify(sampleSections),
+    });
+
+    const ctx = makeCtx(true);
+    const first = await generateBriefing(ctx);
+    const second = await generateBriefing(ctx);
+
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+
+    const readyDaily = storage.query<{ cnt: number }>(
+      "SELECT COUNT(*) as cnt FROM briefings WHERE type = 'daily' AND status = 'ready'",
+    )[0]?.cnt ?? 0;
+    const skippedDaily = storage.query<{ cnt: number }>(
+      "SELECT COUNT(*) as cnt FROM briefings WHERE type = 'daily' AND status = 'skipped'",
+    )[0]?.cnt ?? 0;
+    expect(readyDaily).toBe(1);
+    expect(skippedDaily).toBe(1);
+  });
+
+  it("still allows manual refreshes even when the signal hash is unchanged", async () => {
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: JSON.stringify(sampleSections),
+    });
+
+    const ctx = makeCtx(true);
+    const first = await generateBriefing(ctx);
+    const manualId = enqueueBriefingGeneration(storage, "manual");
+    const manualRefresh = await generateBriefing(ctx, undefined, manualId);
+
+    expect(first).not.toBeNull();
+    expect(manualRefresh).not.toBeNull();
+    expect(manualRefresh!.status).toBe("ready");
+
+    const readyDaily = storage.query<{ cnt: number }>(
+      "SELECT COUNT(*) as cnt FROM briefings WHERE type = 'daily' AND status = 'ready'",
+    )[0]?.cnt ?? 0;
+    expect(readyDaily).toBe(2);
   });
 
   it("prioritizes open linked program actions in deterministic fallback briefs", async () => {

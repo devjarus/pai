@@ -35,35 +35,51 @@ describe("getSystemQualityScore", () => {
   });
 
   it("computes recent learning, memory, feedback, and compounding quality ratios", () => {
+    const now = Date.now();
+    const isoDaysAgo = (daysAgo: number, hour = 9, minute = 0) => {
+      const date = new Date(now - daysAgo * 24 * 60 * 60 * 1000);
+      date.setUTCHours(hour, minute, 0, 0);
+      return date.toISOString();
+    };
+    const staleBeliefAt = isoDaysAgo(45);
+    const freshBeliefAt = isoDaysAgo(3, 9, 30);
+    const runOneAt = isoDaysAgo(4, 10, 0);
+    const runOneDoneAt = isoDaysAgo(4, 10, 1);
+    const runTwoAt = isoDaysAgo(3, 10, 0);
+    const runTwoDoneAt = isoDaysAgo(3, 10, 1);
+    const brief1At = isoDaysAgo(4, 9, 0);
+    const brief2At = isoDaysAgo(3, 9, 0);
+    const brief3At = isoDaysAgo(2, 9, 0);
+
     storage.run(
       `INSERT INTO beliefs (
         id, statement, confidence, status, type, importance, subject, origin, freshness_at, correction_state, sensitive, access_count
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ["b1", "User prefers concise status reports", 0.82, "active", "preference", 8, "owner", "user-said", "2026-03-01T00:00:00Z", "active", 0, 3],
+      ["b1", "User prefers concise status reports", 0.82, "active", "preference", 8, "owner", "user-said", staleBeliefAt, "active", 0, 3],
     );
     storage.run(
       `INSERT INTO beliefs (
         id, statement, confidence, status, type, importance, subject, origin, freshness_at, correction_state, sensitive, access_count
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ["b2", "User values reproducible builds", 0.74, "active", "preference", 7, "owner", "user-said", "2026-03-01T00:00:00Z", "active", 0, 1],
+      ["b2", "User values reproducible builds", 0.74, "active", "preference", 7, "owner", "user-said", staleBeliefAt, "active", 0, 1],
     );
     storage.run(
       `INSERT INTO beliefs (
         id, statement, confidence, status, type, importance, subject, origin, freshness_at, correction_state, sensitive, access_count
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ["b3", "User follows infrastructure releases", 0.6, "active", "factual", 6, "owner", "inferred", "2026-03-01T00:00:00Z", "active", 0, 5],
+      ["b3", "User follows infrastructure releases", 0.6, "active", "factual", 6, "owner", "inferred", staleBeliefAt, "active", 0, 5],
     );
     storage.run(
       `INSERT INTO beliefs (
         id, statement, confidence, status, type, importance, subject, origin, freshness_at, correction_state, sensitive, access_count
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ["b4", "Old assumption", 0.4, "invalidated", "factual", 5, "owner", "inferred", "2026-03-01T00:00:00Z", "invalidated", 0, 0],
+      ["b4", "Old assumption", 0.4, "invalidated", "factual", 5, "owner", "inferred", staleBeliefAt, "invalidated", 0, 0],
     );
     storage.run(
       `INSERT INTO beliefs (
         id, statement, confidence, status, type, importance, subject, origin, freshness_at, correction_state, sensitive, access_count, supersedes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ["b5", "Updated assumption", 0.86, "active", "factual", 5, "owner", "user-said", "2026-03-21T09:30:00Z", "confirmed", 0, 1, "b4"],
+      ["b5", "Updated assumption", 0.86, "active", "factual", 5, "owner", "user-said", freshBeliefAt, "confirmed", 0, 1, "b4"],
     );
     storage.run("UPDATE beliefs SET superseded_by = ? WHERE id = ?", ["b5", "b4"]);
     storage.run(
@@ -79,10 +95,10 @@ describe("getSystemQualityScore", () => {
       ["bp3", "b5", "briefing", "brief-2", "Digest correction", "prompted-correction"],
     );
 
-    const successRun = insertLearningRun(storage, "2026-03-20T10:00:00Z");
+    const successRun = insertLearningRun(storage, runOneAt);
     updateLearningRun(storage, successRun, {
       status: "done",
-      completedAt: "2026-03-20T10:01:00Z",
+      completedAt: runOneDoneAt,
       threadsCount: 1,
       messagesCount: 4,
       factsExtracted: 4,
@@ -90,10 +106,10 @@ describe("getSystemQualityScore", () => {
       beliefsReinforced: 2,
       durationMs: 1_000,
     });
-    const failedRun = insertLearningRun(storage, "2026-03-21T10:00:00Z");
+    const failedRun = insertLearningRun(storage, runTwoAt);
     updateLearningRun(storage, failedRun, {
       status: "error",
-      completedAt: "2026-03-21T10:01:00Z",
+      completedAt: runTwoDoneAt,
       threadsCount: 1,
       messagesCount: 2,
       error: "provider timeout",
@@ -102,35 +118,35 @@ describe("getSystemQualityScore", () => {
 
     storage.run(
       "INSERT INTO briefings (id, generated_at, sections, status, type, source_kind) VALUES (?, ?, ?, ?, ?, ?)",
-      ["brief-1", "2026-03-20T09:00:00Z", "{}", "ready", "daily", "maintenance"],
+      ["brief-1", brief1At, "{}", "ready", "daily", "maintenance"],
     );
     storage.run(
       "INSERT INTO briefings (id, generated_at, sections, status, type, source_kind) VALUES (?, ?, ?, ?, ?, ?)",
-      ["brief-2", "2026-03-21T09:00:00Z", "{}", "ready", "daily", "maintenance"],
+      ["brief-2", brief2At, "{}", "ready", "daily", "maintenance"],
     );
     storage.run(
       "INSERT INTO briefings (id, generated_at, sections, status, type, source_kind) VALUES (?, ?, ?, ?, ?, ?)",
-      ["brief-3", "2026-03-22T09:00:00Z", "{}", "ready", "daily", "maintenance"],
+      ["brief-3", brief3At, "{}", "ready", "daily", "maintenance"],
     );
     recordProductEvent(storage, {
       eventType: "brief_opened",
-      occurredAt: "2026-03-20T09:05:00Z",
+      occurredAt: isoDaysAgo(4, 9, 5),
       briefId: "brief-1",
     });
     recordProductEvent(storage, {
       eventType: "brief_opened",
-      occurredAt: "2026-03-21T09:05:00Z",
+      occurredAt: isoDaysAgo(3, 9, 5),
       briefId: "brief-2",
     });
     recordProductEvent(storage, {
       eventType: "recommendation_accepted",
-      occurredAt: "2026-03-20T09:10:00Z",
+      occurredAt: isoDaysAgo(4, 9, 10),
       briefId: "brief-1",
     });
     rateDigest(storage, "brief-1", 4, "Useful");
     recordProductEvent(storage, {
       eventType: "belief_corrected",
-      occurredAt: "2026-03-21T10:00:00Z",
+      occurredAt: isoDaysAgo(3, 10, 0),
       briefId: "brief-2",
       beliefId: "b5",
     });
@@ -140,15 +156,15 @@ describe("getSystemQualityScore", () => {
     );
     storage.run(
       "INSERT INTO tasks (id, title, description, status, priority, created_at, completed_at, source_type, source_id, source_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ["task-1", "Follow updated assumption", null, "done", "medium", "2026-03-20T09:15:00Z", "2026-03-20T12:00:00Z", "briefing", "brief-1", "Brief 1"],
+      ["task-1", "Follow updated assumption", null, "done", "medium", isoDaysAgo(4, 9, 15), isoDaysAgo(4, 12, 0), "briefing", "brief-1", "Brief 1"],
     );
     storage.run(
       "INSERT INTO tasks (id, title, description, status, priority, created_at, completed_at, source_type, source_id, source_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ["task-2", "Re-check platform choice", null, "open", "high", "2026-03-21T09:15:00Z", null, "briefing", "brief-2", "Brief 2"],
+      ["task-2", "Re-check platform choice", null, "open", "high", isoDaysAgo(3, 9, 15), null, "briefing", "brief-2", "Brief 2"],
     );
     recordProductEvent(storage, {
       eventType: "brief_action_completed",
-      occurredAt: "2026-03-20T12:00:00Z",
+      occurredAt: isoDaysAgo(4, 12, 0),
       briefId: "brief-1",
       actionId: "task-1",
     });
@@ -158,15 +174,15 @@ describe("getSystemQualityScore", () => {
       ["watch-1", "Infra Watch", "research", "Track inference infra", 24],
     );
     const sourcesA = [
-      { url: "https://www.sec.gov/ixviewer/ix.html", title: "SEC filing", fetchedAt: "2026-03-20T09:00:00Z", relevance: 0.9 },
-      { url: "https://www.reuters.com/technology/example", title: "Reuters", fetchedAt: "2026-03-20T09:00:00Z", relevance: 0.85 },
+      { url: "https://www.sec.gov/ixviewer/ix.html", title: "SEC filing", fetchedAt: brief1At, relevance: 0.9 },
+      { url: "https://www.reuters.com/technology/example", title: "Reuters", fetchedAt: brief1At, relevance: 0.85 },
     ];
     const sourcesB = [
-      { url: "https://docs.anthropic.com/en/docs/overview", title: "Documentation", fetchedAt: "2026-03-21T09:00:00Z", relevance: 0.85 },
-      { url: "https://www.theverge.com/ai/example", title: "The Verge", fetchedAt: "2026-03-21T09:00:00Z", relevance: 0.8 },
+      { url: "https://docs.anthropic.com/en/docs/overview", title: "Documentation", fetchedAt: brief2At, relevance: 0.85 },
+      { url: "https://www.theverge.com/ai/example", title: "The Verge", fetchedAt: brief2At, relevance: 0.8 },
     ];
     const sourcesC = [
-      { url: "https://example.com/analysis", title: "Independent analysis", fetchedAt: "2026-03-22T09:00:00Z", relevance: 0.8 },
+      { url: "https://example.com/analysis", title: "Independent analysis", fetchedAt: brief3At, relevance: 0.8 },
     ];
     const finding1 = createFinding(storage, { watchId: "watch-1", goal: "Inference infra", domain: "general", summary: "Vendor consolidation is accelerating", confidence: 0.8, agentName: "test", depthLevel: "standard", sources: sourcesA });
     const finding2 = createFinding(storage, {
