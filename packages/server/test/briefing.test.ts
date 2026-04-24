@@ -615,11 +615,11 @@ describe("generateBriefing", () => {
     const readyDaily = storage.query<{ cnt: number }>(
       "SELECT COUNT(*) as cnt FROM briefings WHERE type = 'daily' AND status = 'ready'",
     )[0]?.cnt ?? 0;
-    const failedDaily = storage.query<{ cnt: number }>(
-      "SELECT COUNT(*) as cnt FROM briefings WHERE type = 'daily' AND status = 'failed'",
+    const skippedDaily = storage.query<{ cnt: number }>(
+      "SELECT COUNT(*) as cnt FROM briefings WHERE type = 'daily' AND status = 'skipped'",
     )[0]?.cnt ?? 0;
     expect(readyDaily).toBe(1);
-    expect(failedDaily).toBe(1);
+    expect(skippedDaily).toBe(1);
   });
 
   it("still allows manual refreshes even when the signal hash is unchanged", async () => {

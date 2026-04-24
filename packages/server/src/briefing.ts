@@ -1750,7 +1750,7 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
     const isDuplicateSignal = !!signalHash && !!previousDaily?.signalHash && previousDaily.signalHash === signalHash;
 
     if (isDuplicateSignal && sourceKind !== "manual") {
-      ctx.storage.run("UPDATE briefings SET status = 'failed' WHERE id = ?", [id]);
+      ctx.storage.run("UPDATE briefings SET status = 'skipped' WHERE id = ?", [id]);
       ctx.logger.info("Skipping duplicate daily briefing with unchanged signal", {
         briefingId: id,
         previousBriefingId: previousDaily?.id,
