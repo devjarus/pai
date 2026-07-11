@@ -17,8 +17,12 @@ import {
   linkBriefBeliefs,
   getBriefBeliefs,
   buildBriefingDelta,
+  buildFallbackBriefing,
+  isMaterialBriefingDelta,
+  rankMaterialFindings,
+  MATERIAL_FINDING_SIGNIFICANCE,
 } from "../src/briefing.js";
-import type { BriefingSection, BriefingDelta } from "../src/briefing.js";
+import type { BriefingSection, BriefingDelta, BriefingContextInput } from "../src/briefing.js";
 import { findingsMigrations, createFinding } from "@personal-ai/library";
 import type { Belief } from "@personal-ai/core";
 
@@ -511,7 +515,7 @@ describe("generateBriefing", () => {
   const sampleSections: BriefingSection = {
     title: "Project Atlas launch readiness",
     recommendation: {
-      summary: "Keep Project Atlas as the top watch for the next brief.",
+      summary: "Confirm rollback owners before the Atlas launch window.",
       confidence: "medium",
       rationale: "Release blockers still matter more than broad status updates.",
     },
@@ -527,7 +531,7 @@ describe("generateBriefing", () => {
     const result = await generateBriefing(ctx);
     expect(result).not.toBeNull();
     expect(result!.status).toBe("ready");
-    expect(result!.sections.recommendation.summary).toContain("watch");
+    expect(result!.sections.recommendation.summary).toBe("No material change since last brief.");
   });
 
   it("falls back to a deterministic brief when LLM health check throws", async () => {
@@ -549,9 +553,10 @@ describe("generateBriefing", () => {
 
     expect(result).not.toBeNull();
     expect(result!.status).toBe("ready");
-    expect(result!.sections.recommendation.summary).toBe("Keep Project Atlas as the top watch for the next brief.");
-    expect(result!.sections.what_changed).toHaveLength(1);
-    expect(result!.sections.next_actions).toHaveLength(1);
+    // Quiet-day floor wins over LLM inventing change when the state delta is empty.
+    expect(result!.sections.recommendation.summary).toBe("No material change since last brief.");
+    expect(result!.sections.what_changed).toEqual(["No material change since the last brief."]);
+    expect(result!.sections.next_actions.length).toBeGreaterThan(0);
 
     // Verify it was persisted in the DB
     const fromDb = getBriefingById(storage, result!.id);
@@ -569,7 +574,46 @@ describe("generateBriefing", () => {
     const result = await generateBriefing(ctx);
 
     expect(result).not.toBeNull();
-    expect(result!.sections.recommendation.summary).toBe("Keep Project Atlas as the top watch for the next brief.");
+    expect(result!.sections.recommendation.summary).toBe("No material change since last brief.");
+  });
+
+  it("keeps LLM rewrite when the grounded floor has material finding deltas", async () => {
+    storage.migrate("findings", findingsMigrations);
+    const program = createProgram(storage, {
+      title: "Project Atlas launch readiness",
+      question: "Track blockers, rollback readiness, and launch signoff for Project Atlas.",
+      family: "work",
+      executionMode: "research",
+      intervalHours: 168,
+    });
+    createFinding(storage, {
+      goal: "Atlas rollback",
+      domain: "work",
+      summary: "Rollback drill failed on staging.",
+      confidence: 0.9,
+      agentName: "Researcher",
+      depthLevel: "standard",
+      watchId: program.id,
+      sources: [{
+        url: "https://status.example/atlas",
+        title: "Atlas status",
+        fetchedAt: new Date().toISOString(),
+        relevance: 0.9,
+        authorityScore: 0.9,
+      }],
+      delta: { changed: ["+ Rollback drill failed on staging."], significance: 0.8 },
+    });
+
+    const { generateText } = await import("ai");
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: JSON.stringify(sampleSections),
+    });
+
+    const result = await generateBriefing(makeCtx(true));
+    expect(result).not.toBeNull();
+    expect(result!.sections.recommendation.summary).toBe("Confirm rollback owners before the Atlas launch window.");
+    expect(result!.sections.evidence.some((item) => item.sourceUrl === "https://status.example/atlas")).toBe(true);
+    expect(result!.sections.what_changed.some((line) => line.includes("Rollback"))).toBe(true);
   });
 
   it("falls back to a deterministic brief when generateText throws", async () => {
@@ -988,6 +1032,255 @@ describe("buildBriefingDelta", () => {
     const delta = buildBriefingDelta(storage, "2025-01-01T00:00:00.000Z");
     expect(delta.newFindings[0].delta).toBeDefined();
     expect(delta.newFindings[0].delta!.changed).toContain("+ Price dropped $100.");
+    expect(delta.newFindings[0].sources).toEqual([]);
+    expect(delta.newFindings[0].confidence).toBe(0.85);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Delta-grounded deterministic floor
+// ---------------------------------------------------------------------------
+describe("delta-grounded fallback briefing", () => {
+  const emptyContext = (): BriefingContextInput => ({
+    ownerName: "Alex",
+    date: "2026-07-11",
+    time: "08:00",
+    tasks: [],
+    recentlyCompleted: [],
+    goals: [],
+    programs: [{
+      id: "watch-gpu",
+      title: "GPU price watch",
+      question: "Track RTX 4090 street price.",
+      family: "buying",
+      executionMode: "research",
+      intervalHours: 24,
+      lastRunAt: null,
+      nextRunAt: "2026-07-12T08:00:00.000Z",
+      preferences: ["Prefer authoritative retailers."],
+      constraints: ["Ignore rumor posts."],
+      openQuestions: ["Is the drop durable?"],
+    }],
+    actionSignals: [],
+    beliefs: [],
+    recentActivity: [],
+    stats: { totalBeliefs: 0, avgConfidence: 0, episodes: 0 },
+    knowledgeSources: [],
+  });
+
+  const emptyDelta = (overrides: Partial<BriefingDelta> = {}): BriefingDelta => ({
+    newFindings: [],
+    changedInsights: [],
+    newBeliefs: [],
+    correctedBeliefs: [],
+    completedActions: [],
+    sinceTimestamp: "2026-07-10T08:00:00.000Z",
+    ...overrides,
+  });
+
+  it("isMaterialBriefingDelta treats corrections and completed actions as material", () => {
+    expect(isMaterialBriefingDelta(emptyDelta())).toBe(false);
+    expect(isMaterialBriefingDelta(emptyDelta({
+      correctedBeliefs: [{ statement: "Visa is approved", type: "factual", confidence: 0.9 }],
+    }))).toBe(true);
+    expect(isMaterialBriefingDelta(emptyDelta({
+      completedActions: [{ title: "Email landlord", completedAt: "2026-07-11T01:00:00.000Z" }],
+    }))).toBe(true);
+  });
+
+  it("ranks findings by significance and authority", () => {
+    const delta = emptyDelta({
+      newFindings: [
+        {
+          id: "low",
+          goal: "Low signal",
+          summary: "Minor note.",
+          domain: "general",
+          confidence: 0.4,
+          sources: [{ url: "https://forum.example/a", title: "Forum", authorityScore: 0.4 }],
+          delta: { changed: ["+ Minor note."], significance: 0.2 },
+        },
+        {
+          id: "high",
+          goal: "GPU prices",
+          summary: "RTX 4090 dropped to $1499 at Best Buy.",
+          domain: "general",
+          confidence: 0.9,
+          sources: [{ url: "https://bestbuy.com/gpu", title: "Best Buy", authorityScore: 0.95 }],
+          delta: { changed: ["+ Price dropped to $1499."], significance: 0.8 },
+        },
+      ],
+    });
+
+    expect(rankMaterialFindings(delta)[0]?.id).toBe("high");
+    expect(MATERIAL_FINDING_SIGNIFICANCE).toBeLessThanOrEqual(0.2);
+  });
+
+  it("grounds what_changed and evidence in finding deltas with sourceUrl", () => {
+    const delta = emptyDelta({
+      newFindings: [{
+        id: "f1",
+        goal: "GPU prices",
+        summary: "RTX 4090 dropped to $1499 at Best Buy.",
+        domain: "general",
+        watchId: "watch-gpu",
+        confidence: 0.9,
+        sources: [{ url: "https://bestbuy.com/gpu", title: "Best Buy listing", authorityScore: 0.95 }],
+        delta: { changed: ["+ Price dropped to $1499."], significance: 0.7 },
+      }],
+    });
+
+    const brief = buildFallbackBriefing(emptyContext(), {
+      delta,
+      programTitles: new Map([["watch-gpu", "GPU price watch"]]),
+    });
+
+    expect(brief.recommendation.summary).toContain("Price dropped to $1499");
+    expect(brief.what_changed.some((line) => line.includes("Price dropped to $1499"))).toBe(true);
+    expect(brief.evidence[0]?.sourceUrl).toBe("https://bestbuy.com/gpu");
+    expect(brief.evidence[0]?.sourceLabel).toBe("GPU price watch");
+    expect(brief.what_changed.join(" ")).not.toMatch(/remains active|memory signal|recurring brief cadence/i);
+  });
+
+  it("emits an honest no-material-change brief on a quiet day", () => {
+    const brief = buildFallbackBriefing(emptyContext(), {
+      delta: emptyDelta({
+        newFindings: [{
+          id: "tiny",
+          goal: "GPU prices",
+          summary: "Negligible wording tweak.",
+          domain: "general",
+          confidence: 0.3,
+          sources: [],
+          delta: { changed: ["+ Negligible wording tweak."], significance: 0.05 },
+        }],
+      }),
+      programTitles: new Map([["watch-gpu", "GPU price watch"]]),
+    });
+
+    expect(brief.recommendation.summary).toBe("No material change since last brief.");
+    expect(brief.what_changed).toEqual(["No material change since the last brief."]);
+    expect(brief.evidence[0]?.detail).toMatch(/No significant/);
+    expect(brief.next_actions[0]?.title).toMatch(/material change/i);
+  });
+
+  it("still elevates forced open linked actions over the quiet-day gate", () => {
+    const ctx = emptyContext();
+    ctx.actionSignals = [{
+      sourceType: "program",
+      sourceId: "watch-gpu",
+      sourceLabel: "GPU price watch",
+      openCount: 1,
+      staleOpenCount: 0,
+      recentlyCompletedCount: 0,
+      highestPriorityOpen: "high",
+      openTitles: ["Confirm Best Buy stock"],
+      recentlyCompletedTitles: [],
+    }];
+
+    const brief = buildFallbackBriefing(ctx, {
+      delta: emptyDelta(),
+      programTitles: new Map([["watch-gpu", "GPU price watch"]]),
+    });
+
+    expect(brief.recommendation.summary).toContain("Close the open linked action");
+    expect(brief.next_actions[0]?.title).toBe("Confirm Best Buy stock");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration: generateBriefing uses finding-grounded deterministic floor
+// ---------------------------------------------------------------------------
+describe("generateBriefing delta-grounded floor", () => {
+  let dir: string;
+  let storage: Storage;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pai-brief-floor-"));
+    storage = createStorage(dir);
+    storage.migrate("briefing", briefingMigrations);
+    storage.migrate("schedules", scheduleMigrations);
+    storage.migrate("findings", findingsMigrations);
+    vi.clearAllMocks();
+    mockListTasks.mockImplementation((_storage: Storage, status = "open") => (status === "done" ? [] : []));
+    mockListGoals.mockReturnValue([]);
+    mockListBeliefs.mockReturnValue([]);
+    mockMemoryStats.mockReturnValue({
+      beliefs: { active: 0, forgotten: 0, invalidated: 0 },
+      avgConfidence: 0,
+      episodes: 0,
+    });
+    mockListSources.mockReturnValue([]);
+  });
+
+  afterEach(() => {
+    storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function makeCtx(healthOk = false) {
+    return {
+      config: { timezone: "America/Los_Angeles", llm: { provider: "ollama", model: "test-model" } } as never,
+      storage,
+      llm: {
+        health: vi.fn().mockResolvedValue({ ok: healthOk }),
+        getModel: vi.fn().mockReturnValue("mock-model"),
+      },
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      },
+    } as never;
+  }
+
+  it("surfaces finding deltas in deterministic digests", async () => {
+    const program = createProgram(storage, {
+      title: "GPU price watch",
+      question: "Track RTX 4090 street price.",
+      family: "buying",
+      executionMode: "research",
+      intervalHours: 24,
+    });
+    createFinding(storage, {
+      goal: "GPU prices",
+      domain: "general",
+      summary: "RTX 4090 dropped to $1499 at Best Buy.",
+      confidence: 0.9,
+      agentName: "Researcher",
+      depthLevel: "standard",
+      watchId: program.id,
+      sources: [{
+        url: "https://bestbuy.com/gpu",
+        title: "Best Buy listing",
+        fetchedAt: new Date().toISOString(),
+        relevance: 0.9,
+        authorityScore: 0.95,
+      }],
+      delta: { changed: ["+ Price dropped to $1499."], significance: 0.7 },
+    });
+
+    const result = await generateBriefing(makeCtx(false));
+    expect(result).not.toBeNull();
+    expect(result!.sections.what_changed.join(" ")).toContain("Price dropped to $1499");
+    expect(result!.sections.evidence.some((item) => item.sourceUrl === "https://bestbuy.com/gpu")).toBe(true);
+    expect(result!.sections.recommendation.summary).not.toMatch(/remains active|memory signal/i);
+  });
+
+  it("says no material change when the delta is empty", async () => {
+    createProgram(storage, {
+      title: "Quiet watch",
+      question: "Anything new?",
+      family: "general",
+      executionMode: "research",
+      intervalHours: 24,
+    });
+
+    const result = await generateBriefing(makeCtx(false));
+    expect(result).not.toBeNull();
+    expect(result!.sections.recommendation.summary).toBe("No material change since last brief.");
+    expect(result!.sections.what_changed[0]).toMatch(/No material change/i);
   });
 });
 
