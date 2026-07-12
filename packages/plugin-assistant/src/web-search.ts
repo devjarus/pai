@@ -36,18 +36,19 @@ export function resolveSearchUrl(configUrl?: string): string {
 
 export type TimeRange = "day" | "week" | "month" | "year" | "";
 
-/**
- * Fetches search results from a SearXNG instance.
- * Returns up to `maxResults` results (default 5).
- */
-export async function webSearch(
+const TIME_RANGE_FALLBACKS: Record<Exclude<TimeRange, "">, TimeRange[]> = {
+  day: ["week", ""],
+  week: [""],
+  month: [""],
+  year: [""],
+};
+
+async function fetchSearxResults(
+  baseUrl: string,
   query: string,
-  maxResults = 5,
-  category: SearchCategory = "general",
-  configUrl?: string,
-  timeRange: TimeRange = "",
-): Promise<SearchResult[]> {
-  const baseUrl = resolveSearchUrl(configUrl);
+  category: SearchCategory,
+  timeRange: TimeRange,
+): Promise<Array<{ title?: string; url?: string; content?: string; thumbnail?: string; img_src?: string }>> {
   const params = new URLSearchParams({
     q: query,
     format: "json",
@@ -65,8 +66,33 @@ export async function webSearch(
     throw new Error(`SearXNG search failed: ${response.status}`);
   }
 
-  const data = (await response.json()) as { results?: Array<{ title?: string; url?: string; content?: string; thumbnail?: string; img_src?: string }> };
-  const results = data.results ?? [];
+  const data = (await response.json()) as {
+    results?: Array<{ title?: string; url?: string; content?: string; thumbnail?: string; img_src?: string }>;
+  };
+  return data.results ?? [];
+}
+
+/**
+ * Fetches search results from a SearXNG instance.
+ * Returns up to `maxResults` results (default 5).
+ * When a narrow time_range (especially `day`) returns nothing — common for news engines —
+ * widens to week / unfiltered so the tool does not silently return empty.
+ */
+export async function webSearch(
+  query: string,
+  maxResults = 5,
+  category: SearchCategory = "general",
+  configUrl?: string,
+  timeRange: TimeRange = "",
+): Promise<SearchResult[]> {
+  const baseUrl = resolveSearchUrl(configUrl);
+  const ranges: TimeRange[] = [timeRange, ...(timeRange ? TIME_RANGE_FALLBACKS[timeRange] : [])];
+
+  let results: Array<{ title?: string; url?: string; content?: string; thumbnail?: string; img_src?: string }> = [];
+  for (const range of ranges) {
+    results = await fetchSearxResults(baseUrl, query, category, range);
+    if (results.length > 0) break;
+  }
 
   return results.slice(0, maxResults).map((r) => ({
     title: r.title ?? "",

@@ -174,6 +174,60 @@ describe("webSearch", () => {
     expect(results[0]!.snippet).toBe("");
   });
 
+  it("passes time_range to SearXNG", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [{ title: "T", url: "https://a.com", content: "c" }] }),
+    });
+
+    await webSearch("AI news", 5, "news", undefined, "day");
+
+    const callUrl = mockFetch.mock.calls[0]![0] as string;
+    expect(callUrl).toContain("categories=news");
+    expect(callUrl).toContain("time_range=day");
+  });
+
+  it("widens day to week when the day filter returns no results", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ results: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [{ title: "Weekly hit", url: "https://example.com/w", content: "Fresh AI news" }],
+        }),
+      });
+
+    const results = await webSearch("AI news this week", 5, "news", undefined, "day");
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[0]![0] as string).toContain("time_range=day");
+    expect(mockFetch.mock.calls[1]![0] as string).toContain("time_range=week");
+    expect(results).toEqual([
+      { title: "Weekly hit", url: "https://example.com/w", snippet: "Fresh AI news" },
+    ]);
+  });
+
+  it("falls back to unfiltered search when week is also empty", async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [] }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [{ title: "Any hit", url: "https://example.com/a", content: "Something" }],
+        }),
+      });
+
+    const results = await webSearch("obscure", 5, "news", undefined, "day");
+
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockFetch.mock.calls[2]![0] as string).not.toContain("time_range=");
+    expect(results[0]?.title).toBe("Any hit");
+  });
+
   it("throws on non-ok response", async () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
 
