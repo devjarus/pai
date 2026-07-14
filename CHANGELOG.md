@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Digest deterministic floor is finding-delta grounded** — Daily digests now build the fallback brief from research finding deltas (with source URLs, ranked by significance/authority), corrected beliefs, and completed actions instead of self-referential program/memory meta-text. Quiet days emit an honest "No material change since last brief" recommendation, and the LLM step is instructed to rewrite/tighten that grounded floor rather than invent filler.
+
 ### Fixed
 - **Web search no longer returns empty on `time_range=day`** — When SearXNG news/general engines return no hits for a narrow day filter (common for Bing/Google News), `webSearch` now widens to `week` and then unfiltered instead of silently returning nothing.
 
