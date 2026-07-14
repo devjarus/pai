@@ -18,7 +18,7 @@ services:
       - PAI_CORS_ORIGIN=${PAI_CORS_ORIGIN:-}
       - PAI_TELEGRAM_TOKEN=${PAI_TELEGRAM_TOKEN:-}
       - PAI_SEARCH_URL=http://searxng:8080
-      - PAI_SANDBOX_URL=${PAI_SANDBOX_URL:-http://sandbox:9867}
+      - PAI_SANDBOX_URL=${PAI_SANDBOX_URL:-http://sandbox:8888}
       - PAI_BROWSER_URL=${PAI_BROWSER_URL:-http://sandbox:9867}
       - NODE_ENV=production
     healthcheck:
@@ -57,6 +57,7 @@ services:
     profiles:
       - sandbox
     ports:
+      - "8888:8888"
       - "9867:9867"
     mem_limit: 1536m
     cpus: "1.0"

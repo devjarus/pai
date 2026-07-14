@@ -1,9 +1,9 @@
-# Stage 1: Build Pinchtab from source with --no-sandbox patch
+# Stage 1: Build Pinchtab from source
 FROM golang:1.26 AS pinchtab-builder
 WORKDIR /src
 RUN git clone --depth 1 https://github.com/pinchtab/pinchtab.git .
-# Add --no-sandbox to Chrome launch options (required in containers that drop capabilities)
-RUN sed -i '/chromedp.Flag("no-first-run"/a \\t\tchromedp.NoSandbox,' internal/bridge/init.go
+# PinchTab enables --no-sandbox when it detects /.dockerenv (or runs as root).
+# We create that marker in the runtime image — no source patch required.
 RUN cd cmd/pinchtab && go build -o /go/bin/pinchtab .
 
 # Stage 2: Runtime image with code executor + browser automation
@@ -49,6 +49,15 @@ ENV PINCHTAB_BIND=0.0.0.0
 ENV PINCHTAB_HEADLESS=true
 ENV PINCHTAB_AUTO_LAUNCH=1
 
+# Railway healthchecks probe $PORT. Keep it aligned with the fixed sandbox API port
+# used by PAI internal networking (sandbox.railway.internal:8888).
+ENV PORT=8888
+
+# PinchTab only adds --no-sandbox for non-root processes when /.dockerenv exists.
+# Docker creates this automatically; Railway/containerd often does not — without it
+# Chrome crashes immediately and the sandbox service fails to deploy.
+RUN touch /.dockerenv
+
 # Create non-root user for execution
 RUN useradd -m -s /bin/bash -u 1000 sandbox
 
@@ -57,7 +66,7 @@ COPY sandbox/entrypoint.py /app/entrypoint.py
 COPY sandbox/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
-# Entrypoint runs as root to bind port, but code executes as sandbox user
+# Entrypoint runs as non-root; code executes as sandbox user
 # (see SAFE_ENV and work_dir permissions in entrypoint.py)
 USER sandbox
 
