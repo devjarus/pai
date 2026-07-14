@@ -251,7 +251,7 @@ export function createAgentTools(ctx: AgentContext) {
       inputSchema: z.object({
         query: z.string().describe("The search query"),
         category: z.enum(["general", "news", "it", "images", "videos", "social media", "files"]).default("general").describe("Search category — pick the best fit for the query"),
-        time_range: z.enum(["", "day", "week", "month", "year"]).default("").describe("Time range filter — use 'week' for latest/recent/current queries, 'day' for today only, 'month' for this month. Empty for no filter."),
+        time_range: z.enum(["", "day", "week", "month", "year"]).default("").describe("Time range filter — use 'week' for 'this week'/latest/recent queries (news engines often return nothing for 'day'). Use 'day' only for today-only headlines. Empty for no filter."),
       }),
       execute: async ({ query, category, time_range }) => {
         if (ctx.config.webSearchEnabled === false) {
