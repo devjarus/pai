@@ -1186,6 +1186,41 @@ describe("delta-grounded fallback briefing", () => {
     expect(brief.recommendation.summary).toContain("Close the open linked action");
     expect(brief.next_actions[0]?.title).toBe("Confirm Best Buy stock");
   });
+
+  it("does not crash when finding deltas omit significance, changed, or sources", () => {
+    const malformed = emptyDelta({
+      newFindings: [{
+        id: "broken",
+        goal: "GPU prices",
+        summary: "RTX 4090 is still elevated.",
+        domain: "general",
+        watchId: "watch-gpu",
+        confidence: Number.NaN,
+        // Runtime/storage can produce incomplete delta JSON / missing sources.
+        sources: undefined as unknown as [],
+        delta: { changed: undefined as unknown as string[], significance: undefined as unknown as number },
+      }],
+      changedInsights: [{
+        topic: "GPU",
+        insight: "Prices remain elevated.",
+        confidence: undefined as unknown as number,
+        cycleCount: 2,
+      }],
+    });
+
+    expect(() => buildFallbackBriefing(emptyContext(), {
+      delta: malformed,
+      programTitles: new Map([["watch-gpu", "GPU price watch"]]),
+    })).not.toThrow();
+
+    const brief = buildFallbackBriefing(emptyContext(), {
+      delta: malformed,
+      programTitles: new Map([["watch-gpu", "GPU price watch"]]),
+    });
+    expect(brief.recommendation.summary).toContain("RTX 4090 is still elevated");
+    expect(brief.evidence[0]?.freshness).toBe("Updated finding");
+    expect(brief.evidence.some((item) => item.sourceLabel === "Topic insight")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

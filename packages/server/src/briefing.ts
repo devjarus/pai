@@ -102,7 +102,8 @@ export interface BriefingDelta {
 export const MATERIAL_FINDING_SIGNIFICANCE = 0.15;
 
 export function findingSignificance(finding: BriefingDeltaFinding): number {
-  return finding.delta?.significance ?? 0.5;
+  const value = finding.delta?.significance;
+  return typeof value === "number" && Number.isFinite(value) ? value : 0.5;
 }
 
 export function isMaterialBriefingDelta(delta: BriefingDelta): boolean {
@@ -117,12 +118,29 @@ export function isMaterialBriefingDelta(delta: BriefingDelta): boolean {
   );
 }
 
+function findingSources(finding: BriefingDeltaFinding): BriefingDeltaFinding["sources"] {
+  return Array.isArray(finding.sources) ? finding.sources : [];
+}
+
+function findingChangedLines(finding: BriefingDeltaFinding): string[] {
+  return Array.isArray(finding.delta?.changed) ? finding.delta.changed.filter((line) => typeof line === "string") : [];
+}
+
+function formatSignificance(finding: BriefingDeltaFinding): string | null {
+  const value = finding.delta?.significance;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value.toFixed(2);
+}
+
 function maxAuthorityScore(finding: BriefingDeltaFinding): number {
-  return finding.sources.reduce((max, source) => Math.max(max, source.authorityScore ?? 0), 0);
+  return findingSources(finding).reduce((max, source) => Math.max(max, source.authorityScore ?? 0), 0);
 }
 
 function rankDeltaFinding(finding: BriefingDeltaFinding): number {
-  return findingSignificance(finding) * 10 + maxAuthorityScore(finding) + finding.confidence;
+  const confidence = typeof finding.confidence === "number" && Number.isFinite(finding.confidence)
+    ? finding.confidence
+    : 0;
+  return findingSignificance(finding) * 10 + maxAuthorityScore(finding) + confidence;
 }
 
 export function rankMaterialFindings(delta: BriefingDelta): BriefingDeltaFinding[] {
@@ -142,20 +160,35 @@ export function buildBriefingDelta(
     newFindings = allFindings
       .filter((f: ResearchFinding) => f.createdAt >= sinceTimestamp)
       .slice(0, 15)
-      .map((f: ResearchFinding) => ({
-        id: f.id,
-        goal: f.goal,
-        summary: f.summary,
-        domain: f.domain,
-        watchId: f.watchId,
-        confidence: f.confidence,
-        sources: f.sources.map((source) => ({
-          url: source.url,
-          title: source.title,
-          authorityScore: source.authorityScore,
-        })),
-        delta: f.delta,
-      }));
+      .map((f: ResearchFinding) => {
+        const sources = Array.isArray(f.sources) ? f.sources : [];
+        const changed = Array.isArray(f.delta?.changed)
+          ? f.delta.changed.filter((line): line is string => typeof line === "string")
+          : [];
+        const significance = typeof f.delta?.significance === "number" && Number.isFinite(f.delta.significance)
+          ? f.delta.significance
+          : undefined;
+        return {
+          id: f.id,
+          goal: f.goal,
+          summary: f.summary,
+          domain: f.domain,
+          watchId: f.watchId,
+          confidence: typeof f.confidence === "number" && Number.isFinite(f.confidence) ? f.confidence : 0,
+          sources: sources.map((source) => ({
+            url: source.url,
+            title: source.title,
+            authorityScore: source.authorityScore,
+          })),
+          delta: f.delta || changed.length > 0
+            ? {
+              changed,
+              // Missing significance defaults to mid weight so incomplete stored deltas stay material.
+              significance: significance ?? 0.5,
+            }
+            : undefined,
+        };
+      });
   } catch {
     newFindings = [];
   }
@@ -223,8 +256,10 @@ function formatDeltaForPrompt(delta: BriefingDelta, programTitles: Map<string, s
     const findingLines = delta.newFindings.map((f) => {
       const watchLabel = f.watchId ? (programTitles.get(f.watchId) ?? f.watchId) : "ad-hoc";
       const base = `- [finding:${f.id}] [watch:${watchLabel}] [${f.domain}] ${f.summary.slice(0, 200)}`;
-      if (f.delta && f.delta.changed.length > 0) {
-        return `${base}\n  Delta (significance ${f.delta.significance}): ${f.delta.changed.slice(0, 3).join("; ")}`;
+      const changed = findingChangedLines(f);
+      const significance = formatSignificance(f);
+      if (changed.length > 0) {
+        return `${base}\n  Delta${significance ? ` (significance ${significance})` : ""}: ${changed.slice(0, 3).join("; ")}`;
       }
       return base;
     });
@@ -1250,11 +1285,12 @@ function findingChangeBullet(
   const watchLabel = finding.watchId
     ? (programTitles.get(finding.watchId) ?? finding.goal)
     : finding.goal;
-  if (finding.delta && finding.delta.changed.length > 0) {
-    const change = finding.delta.changed[0]!.replace(/^[+-]\s*/, "").trim();
+  const changed = findingChangedLines(finding);
+  if (changed.length > 0) {
+    const change = changed[0]!.replace(/^[+-]\s*/, "").trim();
     return `${watchLabel}: ${change}`;
   }
-  return `${watchLabel}: ${finding.summary.slice(0, 180).trim()}`;
+  return `${watchLabel}: ${(finding.summary ?? "").slice(0, 180).trim()}`;
 }
 
 function findingEvidenceItem(
@@ -1264,20 +1300,24 @@ function findingEvidenceItem(
   const watchLabel = finding.watchId
     ? (programTitles.get(finding.watchId) ?? finding.goal)
     : finding.goal;
-  const topSource = [...finding.sources].sort(
+  const topSource = [...findingSources(finding)].sort(
     (left, right) => (right.authorityScore ?? 0) - (left.authorityScore ?? 0),
   )[0];
-  const detail = finding.delta && finding.delta.changed.length > 0
-    ? finding.delta.changed.slice(0, 2).map((line) => line.replace(/^[+-]\s*/, "").trim()).join("; ")
-    : finding.summary.slice(0, 240).trim();
+  const changed = findingChangedLines(finding);
+  const detail = changed.length > 0
+    ? changed.slice(0, 2).map((line) => line.replace(/^[+-]\s*/, "").trim()).join("; ")
+    : (finding.summary ?? "").slice(0, 240).trim();
+  const significance = formatSignificance(finding);
   return {
     title: topSource?.title || finding.goal,
     detail,
     sourceLabel: watchLabel,
     sourceUrl: topSource?.url,
-    freshness: finding.delta
-      ? `Significance ${finding.delta.significance.toFixed(2)}`
-      : "New finding",
+    freshness: significance
+      ? `Significance ${significance}`
+      : finding.delta
+        ? "Updated finding"
+        : "New finding",
   };
 }
 
@@ -1295,17 +1335,22 @@ function buildDeltaGroundedChanges(
 
   const evidence = dedupeEvidence([
     ...rankedFindings.slice(0, 4).map((finding) => findingEvidenceItem(finding, programTitles)),
-    ...delta.changedInsights.slice(0, 2).map((insight) => ({
-      title: insight.topic,
-      detail: insight.insight,
-      sourceLabel: "Topic insight",
-      freshness: `Confidence ${insight.confidence.toFixed(2)} · ${insight.cycleCount} cycles`,
-    })),
+    ...delta.changedInsights.slice(0, 2).map((insight) => {
+      const confidence = typeof insight.confidence === "number" && Number.isFinite(insight.confidence)
+        ? insight.confidence.toFixed(2)
+        : "unknown";
+      return {
+        title: insight.topic,
+        detail: insight.insight,
+        sourceLabel: "Topic insight",
+        freshness: `Confidence ${confidence} · ${insight.cycleCount ?? 0} cycles`,
+      };
+    }),
     ...delta.correctedBeliefs.slice(0, 2).map((belief) => ({
       title: "Corrected belief",
       detail: belief.statement,
       sourceLabel: "Memory correction",
-      freshness: confidenceLabel(belief.confidence),
+      freshness: confidenceLabel(typeof belief.confidence === "number" ? belief.confidence : 0),
     })),
     ...delta.completedActions.slice(0, 2).map((action) => ({
       title: "Completed action",
@@ -1353,7 +1398,10 @@ export function buildFallbackBriefing(
     : quietDay
       ? "No significant new findings, corrections, or completed actions were recorded since the last digest."
       : topFinding
-        ? `Grounded in research finding for ${topFinding.goal}${topFinding.delta ? ` (significance ${topFinding.delta.significance.toFixed(2)})` : ""}.`
+        ? (() => {
+          const significance = formatSignificance(topFinding);
+          return `Grounded in research finding for ${topFinding.goal}${significance ? ` (significance ${significance})` : ""}.`;
+        })()
         : actionLead
           ? actionLead.recommendationRationale
           : primaryProgram

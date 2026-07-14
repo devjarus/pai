@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Digest floor no longer crashes on malformed finding deltas** — Deterministic briefing helpers now tolerate missing `significance`/`changed`/`sources` (and non-numeric confidence) instead of throwing on `.toFixed` / `.reduce` during daily digest generation.
+
 ### Changed
 - **Digest deterministic floor is finding-delta grounded** — Daily digests now build the fallback brief from research finding deltas (with source URLs, ranked by significance/authority), corrected beliefs, and completed actions instead of self-referential program/memory meta-text. Quiet days emit an honest "No material change since last brief" recommendation, and the LLM step is instructed to rewrite/tighten that grounded floor rather than invent filler.
 
