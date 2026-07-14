@@ -84,6 +84,8 @@ export interface BriefingDeltaFinding {
   summary: string;
   domain: string;
   watchId?: string;
+  confidence: number;
+  sources: Array<{ url: string; title: string; authorityScore?: number }>;
   delta?: { changed: string[]; significance: number };
 }
 
@@ -94,6 +96,39 @@ export interface BriefingDelta {
   correctedBeliefs: Array<{ statement: string; type: string; confidence: number }>;
   completedActions: Array<{ title: string; completedAt: string | null }>;
   sinceTimestamp: string;
+}
+
+/** Findings at or above this significance count as material change. New findings without a delta are treated as material. */
+export const MATERIAL_FINDING_SIGNIFICANCE = 0.15;
+
+export function findingSignificance(finding: BriefingDeltaFinding): number {
+  return finding.delta?.significance ?? 0.5;
+}
+
+export function isMaterialBriefingDelta(delta: BriefingDelta): boolean {
+  const hasSignificantFinding = delta.newFindings.some(
+    (finding) => findingSignificance(finding) >= MATERIAL_FINDING_SIGNIFICANCE,
+  );
+  return (
+    hasSignificantFinding
+    || delta.changedInsights.length > 0
+    || delta.correctedBeliefs.length > 0
+    || delta.completedActions.length > 0
+  );
+}
+
+function maxAuthorityScore(finding: BriefingDeltaFinding): number {
+  return finding.sources.reduce((max, source) => Math.max(max, source.authorityScore ?? 0), 0);
+}
+
+function rankDeltaFinding(finding: BriefingDeltaFinding): number {
+  return findingSignificance(finding) * 10 + maxAuthorityScore(finding) + finding.confidence;
+}
+
+export function rankMaterialFindings(delta: BriefingDelta): BriefingDeltaFinding[] {
+  return [...delta.newFindings]
+    .filter((finding) => findingSignificance(finding) >= MATERIAL_FINDING_SIGNIFICANCE)
+    .sort((left, right) => rankDeltaFinding(right) - rankDeltaFinding(left));
 }
 
 export function buildBriefingDelta(
@@ -113,6 +148,12 @@ export function buildBriefingDelta(
         summary: f.summary,
         domain: f.domain,
         watchId: f.watchId,
+        confidence: f.confidence,
+        sources: f.sources.map((source) => ({
+          url: source.url,
+          title: source.title,
+          authorityScore: source.authorityScore,
+        })),
         delta: f.delta,
       }));
   } catch {
@@ -1197,66 +1238,166 @@ function normalizeBriefingSections(raw: unknown, fallback: BriefingSection): Bri
   };
 }
 
-function buildFallbackBriefing(rawContext: BriefingContextInput): BriefingSection {
-  const primaryProgram = selectPrimaryProgram(rawContext.programs, rawContext.actionSignals);
-  const recentBeliefs = rawContext.beliefs.slice(0, 2);
-  const actionLead = buildActionLead(rawContext, primaryProgram);
-  const recommendationSummary = actionLead
-    ? actionLead.recommendationSummary
-    : primaryProgram
-      ? `Keep ${primaryProgram.title} as the top watch for the next brief.`
-      : rawContext.tasks[0]
-        ? `Keep momentum on ${rawContext.tasks[0].title} before starting something new.`
-        : "Keep the current watchlist active and tighten the next follow-up around the clearest open question.";
-  const recommendationRationale = actionLead
-    ? actionLead.recommendationRationale
-    : primaryProgram
-      ? `${primaryProgram.question} ${primaryProgram.constraints.length > 0 ? `Current constraints: ${primaryProgram.constraints.slice(0, 2).join("; ")}.` : ""}`.trim()
-      : rawContext.tasks[0]
-        ? `Keep momentum on ${rawContext.tasks[0].title} before starting something new.`
-        : rawContext.recentlyCompleted.length > 0
-          ? `${rawContext.recentlyCompleted.length} recent completion${rawContext.recentlyCompleted.length === 1 ? "" : "s"} give enough signal for a concise next-step brief.`
-          : "This fallback brief is grounded in the stored Program, memory, and activity context.";
+export interface BuildFallbackBriefingOptions {
+  delta?: BriefingDelta;
+  programTitles?: Map<string, string>;
+}
 
+function findingChangeBullet(
+  finding: BriefingDeltaFinding,
+  programTitles: Map<string, string>,
+): string {
+  const watchLabel = finding.watchId
+    ? (programTitles.get(finding.watchId) ?? finding.goal)
+    : finding.goal;
+  if (finding.delta && finding.delta.changed.length > 0) {
+    const change = finding.delta.changed[0]!.replace(/^[+-]\s*/, "").trim();
+    return `${watchLabel}: ${change}`;
+  }
+  return `${watchLabel}: ${finding.summary.slice(0, 180).trim()}`;
+}
+
+function findingEvidenceItem(
+  finding: BriefingDeltaFinding,
+  programTitles: Map<string, string>,
+): BriefingSection["evidence"][number] {
+  const watchLabel = finding.watchId
+    ? (programTitles.get(finding.watchId) ?? finding.goal)
+    : finding.goal;
+  const topSource = [...finding.sources].sort(
+    (left, right) => (right.authorityScore ?? 0) - (left.authorityScore ?? 0),
+  )[0];
+  const detail = finding.delta && finding.delta.changed.length > 0
+    ? finding.delta.changed.slice(0, 2).map((line) => line.replace(/^[+-]\s*/, "").trim()).join("; ")
+    : finding.summary.slice(0, 240).trim();
+  return {
+    title: topSource?.title || finding.goal,
+    detail,
+    sourceLabel: watchLabel,
+    sourceUrl: topSource?.url,
+    freshness: finding.delta
+      ? `Significance ${finding.delta.significance.toFixed(2)}`
+      : "New finding",
+  };
+}
+
+function buildDeltaGroundedChanges(
+  delta: BriefingDelta,
+  programTitles: Map<string, string>,
+): { whatChanged: string[]; evidence: BriefingSection["evidence"] } {
+  const rankedFindings = rankMaterialFindings(delta);
   const whatChanged = dedupeStrings([
-    ...(actionLead?.whatChanged ?? []),
-    primaryProgram
-      ? `${primaryProgram.title} remains active with ${primaryProgram.intervalHours >= 24 ? "a recurring brief cadence" : "short-interval follow-through"}.`
-      : "No active Program was selected, so this brief is using the strongest recent context instead.",
-    rawContext.recentlyCompleted.length > 0
-      ? `${rawContext.recentlyCompleted.length} recent completion${rawContext.recentlyCompleted.length === 1 ? "" : "s"} may shift the next recommendation.`
-      : "There were no recent completions worth elevating into a change signal.",
-    recentBeliefs.length > 0
-      ? `${recentBeliefs.length} recent memory signal${recentBeliefs.length === 1 ? "" : "s"} are available for the next recommendation.`
-      : "No recent memory updates were detected, so assumptions are coming from the Program definition.",
+    ...rankedFindings.slice(0, 4).map((finding) => findingChangeBullet(finding, programTitles)),
+    ...delta.changedInsights.slice(0, 2).map((insight) => `${insight.topic}: ${insight.insight}`),
+    ...delta.correctedBeliefs.slice(0, 2).map((belief) => `Corrected assumption: ${belief.statement}`),
+    ...delta.completedActions.slice(0, 2).map((action) => `Completed: ${action.title}`),
   ]).slice(0, 4);
 
   const evidence = dedupeEvidence([
-    ...(actionLead?.evidence ?? []),
-    primaryProgram
-      ? {
-        title: "Program definition",
-        detail: primaryProgram.question,
-        sourceLabel: "Program",
-        freshness: `Next brief ${primaryProgram.nextRunAt}`,
-      }
-      : {
-        title: "Observed activity",
-        detail: rawContext.recentActivity[0] ?? "No recent activity was stored.",
-        sourceLabel: "Activity log",
-      },
-    ...primaryProgram?.constraints.slice(0, 2).map((constraint) => ({
-      title: "Program constraint",
-      detail: constraint,
-      sourceLabel: "Program",
-    })) ?? [],
-    ...rawContext.knowledgeSources.slice(0, 1).map((source) => ({
-      title: source.title,
-      detail: "Reference source available for grounding future recommendations.",
-      sourceLabel: "Knowledge source",
-      sourceUrl: source.url,
+    ...rankedFindings.slice(0, 4).map((finding) => findingEvidenceItem(finding, programTitles)),
+    ...delta.changedInsights.slice(0, 2).map((insight) => ({
+      title: insight.topic,
+      detail: insight.insight,
+      sourceLabel: "Topic insight",
+      freshness: `Confidence ${insight.confidence.toFixed(2)} · ${insight.cycleCount} cycles`,
     })),
-  ].filter((item) => item.detail.trim().length > 0));
+    ...delta.correctedBeliefs.slice(0, 2).map((belief) => ({
+      title: "Corrected belief",
+      detail: belief.statement,
+      sourceLabel: "Memory correction",
+      freshness: confidenceLabel(belief.confidence),
+    })),
+    ...delta.completedActions.slice(0, 2).map((action) => ({
+      title: "Completed action",
+      detail: action.title,
+      sourceLabel: "Task",
+      freshness: action.completedAt ?? "Completed recently",
+    })),
+  ].filter((item) => item.detail.trim().length > 0)).slice(0, 4);
+
+  return { whatChanged, evidence };
+}
+
+export function buildFallbackBriefing(
+  rawContext: BriefingContextInput,
+  options: BuildFallbackBriefingOptions = {},
+): BriefingSection {
+  const primaryProgram = selectPrimaryProgram(rawContext.programs, rawContext.actionSignals);
+  const recentBeliefs = rawContext.beliefs.slice(0, 2);
+  const actionLead = buildActionLead(rawContext, primaryProgram);
+  const delta = options.delta;
+  const programTitles = options.programTitles ?? new Map(rawContext.programs.map((program) => [program.id, program.title]));
+  const materialDelta = delta ? isMaterialBriefingDelta(delta) : false;
+  const deltaGrounded = delta && materialDelta
+    ? buildDeltaGroundedChanges(delta, programTitles)
+    : { whatChanged: [] as string[], evidence: [] as BriefingSection["evidence"] };
+  const forceOpenAction = Boolean(actionLead?.forceRecommendation);
+  const quietDay = Boolean(delta) && !materialDelta && !forceOpenAction;
+
+  const topFinding = delta ? rankMaterialFindings(delta)[0] : undefined;
+  const recommendationSummary = forceOpenAction && actionLead
+    ? actionLead.recommendationSummary
+    : quietDay
+      ? "No material change since last brief."
+      : topFinding
+        ? findingChangeBullet(topFinding, programTitles)
+        : actionLead
+          ? actionLead.recommendationSummary
+          : primaryProgram
+            ? `Review the latest signal for ${primaryProgram.title} and decide the next concrete follow-up.`
+            : rawContext.tasks[0]
+              ? `Keep momentum on ${rawContext.tasks[0].title} before starting something new.`
+              : "No material change since last brief.";
+  const recommendationRationale = forceOpenAction && actionLead
+    ? actionLead.recommendationRationale
+    : quietDay
+      ? "No significant new findings, corrections, or completed actions were recorded since the last digest."
+      : topFinding
+        ? `Grounded in research finding for ${topFinding.goal}${topFinding.delta ? ` (significance ${topFinding.delta.significance.toFixed(2)})` : ""}.`
+        : actionLead
+          ? actionLead.recommendationRationale
+          : primaryProgram
+            ? `${primaryProgram.question} ${primaryProgram.constraints.length > 0 ? `Current constraints: ${primaryProgram.constraints.slice(0, 2).join("; ")}.` : ""}`.trim()
+            : rawContext.tasks[0]
+              ? `Keep momentum on ${rawContext.tasks[0].title} before starting something new.`
+              : "No significant state delta was available for this brief.";
+
+  const whatChanged = quietDay
+    ? ["No material change since the last brief."]
+    : dedupeStrings([
+      ...(actionLead?.whatChanged ?? []),
+      ...deltaGrounded.whatChanged,
+      ...(!delta && rawContext.recentlyCompleted.length > 0
+        ? [`${rawContext.recentlyCompleted.length} recent completion${rawContext.recentlyCompleted.length === 1 ? "" : "s"} may shift the next recommendation.`]
+        : []),
+    ]).slice(0, 4);
+
+  const evidence = quietDay
+    ? [{
+      title: "State delta",
+      detail: "No significant new findings, corrections, or completed actions since the last brief.",
+      sourceLabel: "Digest delta",
+    }]
+    : dedupeEvidence([
+      ...(actionLead?.evidence ?? []),
+      ...deltaGrounded.evidence,
+      ...(!delta && primaryProgram
+        ? [{
+          title: primaryProgram.title,
+          detail: primaryProgram.question,
+          sourceLabel: "Watch",
+          freshness: `Next brief ${primaryProgram.nextRunAt}`,
+        }]
+        : []),
+      ...(!delta
+        ? rawContext.knowledgeSources.slice(0, 1).map((source) => ({
+          title: source.title,
+          detail: source.title,
+          sourceLabel: "Knowledge source",
+          sourceUrl: source.url,
+        }))
+        : []),
+    ].filter((item) => item.detail.trim().length > 0)).slice(0, 4);
 
   const memoryAssumptions = [
     ...primaryProgram?.preferences.slice(0, 2).map((preference) => ({
@@ -1276,48 +1417,60 @@ function buildFallbackBriefing(rawContext: BriefingContextInput): BriefingSectio
     })),
   ];
 
-  const nextActions = [
-    ...(actionLead?.nextActions ?? []),
-    primaryProgram?.openQuestions[0]
-      ? {
-        title: "Resolve the top open question",
-        timing: "Before the next brief",
-        detail: primaryProgram.openQuestions[0],
-      }
-      : null,
-    primaryProgram
-      ? {
-        title: "Review the Program definition",
-        timing: "Now",
-        detail: `Confirm that ${primaryProgram.title} still has the right priorities and constraints.`,
-      }
-      : null,
-    rawContext.tasks[0]
-      ? {
-        title: "Close the most immediate task",
-        timing: "Today",
-        detail: `${rawContext.tasks[0].title} is the clearest actionable item in the current context.`,
-      }
-      : null,
-  ]
-    .filter((item): item is NonNullable<typeof item> => item !== null)
-    .filter((item, index, items) => items.findIndex((candidate) => candidate.title.trim().toLowerCase() === item.title.trim().toLowerCase()) === index)
-    .slice(0, 3);
+  const nextActions = quietDay
+    ? [{
+      title: "Wait for the next material change",
+      timing: "Until the next brief",
+      detail: primaryProgram
+        ? `No significant delta landed for ${primaryProgram.title}; reopen only if a new external signal or correction arrives.`
+        : "No significant delta landed; reopen only if a new external signal or correction arrives.",
+    }]
+    : [
+      ...(actionLead?.nextActions ?? []),
+      primaryProgram?.openQuestions[0]
+        ? {
+          title: "Resolve the top open question",
+          timing: "Before the next brief",
+          detail: primaryProgram.openQuestions[0],
+        }
+        : null,
+      topFinding
+        ? {
+          title: "Act on the top finding",
+          timing: "Today",
+          detail: findingChangeBullet(topFinding, programTitles),
+        }
+        : null,
+      rawContext.tasks[0]
+        ? {
+          title: "Close the most immediate task",
+          timing: "Today",
+          detail: `${rawContext.tasks[0].title} is the clearest actionable item in the current context.`,
+        }
+        : null,
+    ]
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .filter((item, index, items) => items.findIndex((candidate) => candidate.title.trim().toLowerCase() === item.title.trim().toLowerCase()) === index)
+      .slice(0, 3);
 
   return {
     title: primaryProgram?.title ?? "Daily Briefing",
     recommendation: {
       summary: recommendationSummary,
-      confidence: actionLead?.recommendationConfidence ?? (primaryProgram || rawContext.tasks.length > 0 ? "medium" : "low"),
+      confidence: quietDay
+        ? "medium"
+        : actionLead?.recommendationConfidence ?? (topFinding || primaryProgram || rawContext.tasks.length > 0 ? "medium" : "low"),
       rationale: recommendationRationale,
     },
-    what_changed: whatChanged,
+    what_changed: whatChanged.length > 0
+      ? whatChanged
+      : ["No material change since the last brief."],
     evidence: evidence.length > 0
       ? evidence
       : [{
-        title: "Program context",
-        detail: "No external evidence was attached, so this brief is grounded in stored product context only.",
-        sourceLabel: "System",
+        title: "State delta",
+        detail: "No significant external evidence was attached to this brief.",
+        sourceLabel: "Digest delta",
       }],
     memory_assumptions: memoryAssumptions.length > 0
       ? memoryAssumptions
@@ -1329,15 +1482,57 @@ function buildFallbackBriefing(rawContext: BriefingContextInput): BriefingSectio
     next_actions: nextActions.length > 0
       ? nextActions
       : [{
-        title: "Add a Program",
+        title: "Add a Watch",
         timing: "Now",
-        detail: "Create a Program so the next brief has a stable recurring object to follow.",
+        detail: "Create a Watch so the next brief has a stable recurring object to follow.",
       }],
     correction_hook: {
       prompt: primaryProgram
         ? `Correction for ${primaryProgram.title}: tell pai what changed, what assumption is wrong, or what should matter more next time.`
         : "Correction: tell pai what assumption is wrong or what should matter more next time.",
     },
+  };
+}
+
+function evidenceHasSourceUrls(evidence: BriefingSection["evidence"]): boolean {
+  return evidence.some((item) => typeof item.sourceUrl === "string" && item.sourceUrl.trim().length > 0);
+}
+
+function preferGroundedBriefingSections(
+  llmSections: BriefingSection,
+  groundedFloor: BriefingSection,
+  delta: BriefingDelta | undefined,
+): BriefingSection {
+  if (!delta) return llmSections;
+
+  const material = isMaterialBriefingDelta(delta);
+  const groundedHasFindingEvidence = evidenceHasSourceUrls(groundedFloor.evidence)
+    || rankMaterialFindings(delta).length > 0;
+
+  if (!material) {
+    const llmLooksLikeFiller = /keep (watching|monitoring)|continue monitoring|no active program|memory signal|recurring brief cadence/i
+      .test(`${llmSections.recommendation.summary} ${llmSections.what_changed.join(" ")}`);
+    if (llmLooksLikeFiller || groundedFloor.recommendation.summary.startsWith("No material change")) {
+      return {
+        ...llmSections,
+        recommendation: groundedFloor.recommendation,
+        what_changed: groundedFloor.what_changed,
+        evidence: groundedFloor.evidence,
+        next_actions: llmSections.next_actions.length > 0 ? llmSections.next_actions : groundedFloor.next_actions,
+      };
+    }
+    return llmSections;
+  }
+
+  if (!groundedHasFindingEvidence) return llmSections;
+
+  return {
+    ...llmSections,
+    what_changed: dedupeStrings([...groundedFloor.what_changed, ...llmSections.what_changed]).slice(0, 4),
+    evidence: dedupeEvidence([
+      ...groundedFloor.evidence,
+      ...llmSections.evidence,
+    ]).slice(0, 4),
   };
 }
 
@@ -1435,7 +1630,6 @@ export async function generateBriefing(
   // Fetch recent research findings from Library — this makes digests aware of accumulated research
   let recentFindings: Array<{ goal: string; summary: string; domain: string; createdAt: string; watchId?: string }> = [];
   try {
-    const { listFindings } = await import("@personal-ai/library");
     recentFindings = listFindings(ctx.storage).slice(0, 10).map((f) => ({
       goal: f.goal,
       summary: f.summary,
@@ -1563,7 +1757,10 @@ export async function generateBriefing(
     knowledgeSources: sources.map((source) => ({ title: source.title ?? source.url, url: source.url })),
   };
 
-  const fallbackSections = buildFallbackBriefing(rawContext);
+  const fallbackSections = buildFallbackBriefing(rawContext, {
+    delta: stateDelta,
+    programTitles,
+  });
 
   // Digest feedback loop — surface user satisfaction signals to the LLM
   let feedbackContext = "";
@@ -1580,10 +1777,17 @@ export async function generateBriefing(
     feedbackContext = "";
   }
 
+  const groundedFloorJson = JSON.stringify(fallbackSections, null, 2);
+  const materialDelta = isMaterialBriefingDelta(stateDelta);
   const prompt = `You are a personal AI assistant generating a daily briefing for ${ownerName}.
 Today is ${rawContext.date}, ${rawContext.time}.
 
-Generate a FRESH, decision-ready briefing based on the following context. The output must stay recommendation-first, highlight what changed, and make correction easy.
+Your job is to REWRITE AND TIGHTEN the grounded floor below into a decision-ready briefing. Do not invent plumbing text about schedules, memory counts, or internal system state. Prefer the floor's evidence and what_changed; you may tighten wording and improve the recommendation, but keep claims traceable to the floor or STATE DELTA.
+
+GROUNDED FLOOR (deterministic baseline — rewrite/tighten this, do not replace with filler):
+${groundedFloorJson}
+
+CHANGE WORTHINESS: ${materialDelta ? "MATERIAL — surface the real finding/correction/action deltas." : "QUIET — preserve an honest \"No material change since last brief\" recommendation unless the floor already forces an open linked action."}
 
 OPEN TASKS (${tasks.length}):
 ${JSON.stringify(rawContext.tasks, null, 2)}
@@ -1613,12 +1817,14 @@ ${deltaPromptSection}${recentFindings.length > 0 ? `RECENT RESEARCH FINDINGS (fr
 ${knowledgeContext ? `RELEVANT KNOWLEDGE (from docs, research reports, and previous digests — use as context):\n${knowledgeContext}\n` : ""}
 ${previousBriefingSummary ? `PREVIOUS BRIEFINGS (you MUST NOT repeat these — choose DIFFERENT angles):\n${previousBriefingSummary}\n` : ""}${feedbackContext ? `${feedbackContext}\n` : ""}
 Guidelines:
-- Recommendation comes first. Tell the user what to DO based on what was found — a specific action, decision, or insight. NEVER recommend "keep watching" or "continue monitoring" — that's the default and adds no value. If nothing actionable was found, summarize the most interesting finding instead.
+- Start from the grounded floor. Rewrite for clarity; do not invent sections from system meta-text.
+- Recommendation comes first. Tell the user what to DO based on what was found — a specific action, decision, or insight. NEVER recommend "keep watching" or "continue monitoring" — that's the default and adds no value. If the floor says there was no material change, keep that honesty.
+- Preserve sourceUrl on evidence items whenever the floor or STATE DELTA provides one.
 - Use active watches as the primary context when they exist. Avoid talking about raw schedules, jobs, programs, or internal mechanics.
 - Linked actions are existing follow-through attached to Programs or previous Briefs. Treat them as product context, not as anonymous tasks.
 - If a linked action is already complete, use that completion as a change signal and do not repeat it as a next action.
 - If a linked action is still open or stale, make that explicit in the recommendation, evidence, or next actions instead of inventing duplicate follow-through.
-- what_changed should be concise and specific. Prefer 2-4 bullets.
+- what_changed should be concise and specific. Prefer 2-4 bullets grounded in findings, corrections, or completed actions.
 - evidence sourceLabel MUST be human-readable — use the watch title, finding goal, or topic name (e.g. "AI Agents Tracker", "H4 Visa research", "GitHub trending"). NEVER expose internal IDs, provenance tags, or system labels to the user. The bracketed tags in the data (e.g. [finding:abc123]) are for YOUR reference only — translate them into plain language for sourceLabel.
 - memory_assumptions MUST NOT be empty when beliefs are provided above. Name the specific beliefs that influenced the recommendation. provenance should be human-readable (e.g. "User preference", "Observed from research", "Inferred from activity") — never raw belief IDs.
 - next_actions should be specific and concrete. Keep them short.
@@ -1688,9 +1894,13 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
       let jsonText = result.text.trim();
       const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (fenceMatch?.[1]) jsonText = fenceMatch[1].trim();
-      parsed = mergeActionLeadIntoBriefing(
-        normalizeBriefingSections(JSON.parse(jsonText), fallbackSections),
-        buildActionLead(rawContext, selectPrimaryProgram(rawContext.programs, rawContext.actionSignals)),
+      parsed = preferGroundedBriefingSections(
+        mergeActionLeadIntoBriefing(
+          normalizeBriefingSections(JSON.parse(jsonText), fallbackSections),
+          buildActionLead(rawContext, selectPrimaryProgram(rawContext.programs, rawContext.actionSignals)),
+        ),
+        fallbackSections,
+        stateDelta,
       );
     } catch (error) {
       ctx.logger.warn("Briefing generation fell back to deterministic brief", {
