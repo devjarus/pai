@@ -56,10 +56,14 @@ jobs:
             # Main branch push — latest + SHA
             TAGS="${IMAGE}:latest,${IMAGE}:main-${SHA}"
           else
-            # Feature/hotfix branch — SHA tags always; also refresh latest so
-            # Railway sidecars on :latest can pick up critical sandbox fixes
-            # before the PR merges.
-            TAGS="${IMAGE}:sha-${SHA},${IMAGE}:latest"
+            # Feature/hotfix branch — always push a sha tag. Only refresh
+            # :latest for the sandbox image so Railway sidecars can pick up
+            # deploy fixes before merge without clobbering pai/searxng.
+            if [ "${{ matrix.service }}" = "sandbox" ]; then
+              TAGS="${IMAGE}:sha-${SHA},${IMAGE}:latest"
+            else
+              TAGS="${IMAGE}:sha-${SHA}"
+            fi
           fi
 
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
