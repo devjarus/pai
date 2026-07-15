@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      # Allow hotfix image publishes from cloud-agent branches before merge
+      - "cursor/**"
     tags:
       - "v*"
   workflow_dispatch:
@@ -42,6 +44,7 @@ jobs:
         run: |
           IMAGE="${{ env.REGISTRY_GHCR }}/${{ github.repository }}${{ matrix.image_suffix }}"
           SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          REF="${{ github.ref_name }}"
 
           if [ "${{ github.ref_type }}" = "tag" ]; then
             # Manual release tag (e.g. v0.3.0)
@@ -49,9 +52,18 @@ jobs:
             VERSION="${VERSION#v}"
             MINOR=$(echo "$VERSION" | grep -oE '^[0-9]+\.[0-9]+')
             TAGS="${IMAGE}:${VERSION},${IMAGE}:${MINOR},${IMAGE}:latest"
-          else
-            # Main branch push — just latest + SHA
+          elif [ "$REF" = "main" ]; then
+            # Main branch push — latest + SHA
             TAGS="${IMAGE}:latest,${IMAGE}:main-${SHA}"
+          else
+            # Feature/hotfix branch — always push a sha tag. Only refresh
+            # :latest for the sandbox image so Railway sidecars can pick up
+            # deploy fixes before merge without clobbering pai/searxng.
+            if [ "${{ matrix.service }}" = "sandbox" ]; then
+              TAGS="${IMAGE}:sha-${SHA},${IMAGE}:latest"
+            else
+              TAGS="${IMAGE}:sha-${SHA}"
+            fi
           fi
 
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"

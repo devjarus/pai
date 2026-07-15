@@ -144,7 +144,7 @@ In the Railway service settings, add these variables:
 
 ### Step 4: Deploy
 
-Railway auto-deploys on push. The `railway.toml` in the repo configures the build and health check (`/api/health`) automatically.
+Railway auto-deploys on push. Configure the main service to build from the root `Dockerfile` with health check path `/api/health`.
 
 ### Step 5: Access your instance
 
@@ -153,17 +153,25 @@ Railway auto-deploys on push. The `railway.toml` in the repo configures the buil
 
 ### Step 5b: Add sidecars (optional)
 
-pai provides scripts to add SearXNG (web search) and Sandbox (code execution) as Railway services:
+Add SearXNG (web search) and Sandbox (code execution + browser) as separate Railway services using the pre-built GHCR images (or Dockerfile builds from this repo).
 
-```bash
-# Add web search (recommended — enables the assistant's web search tool)
-./scripts/railway-add-searxng.sh
+**SearXNG (recommended)**
 
-# Add code sandbox (enables chart generation in research reports)
-./scripts/railway-add-sandbox.sh
-```
+1. New Railway service → Docker Image → `ghcr.io/devjarus/pai-searxng:latest` (or Dockerfile `searxng/Dockerfile` with repo-root build context)
+2. Set health check path to `/healthz` (or SearXNG’s health endpoint)
+3. On the **pai** service, set `PAI_SEARCH_URL=http://searxng.railway.internal:8080` (use your SearXNG service name)
 
-Both scripts use pre-built GHCR images and auto-configure the PAI service via internal Railway networking.
+**Sandbox (code execution / charts / browser tools)**
+
+1. New Railway service named `sandbox` → Docker Image → `ghcr.io/devjarus/pai-sandbox:latest`  
+   Or deploy from source with `sandbox/railway.toml` (Dockerfile path `sandbox/Dockerfile`, health check `/health`)
+2. Ensure the sandbox service has **`PORT=8888`** (the image sets this by default — do not override to a random port)
+3. Give the service enough memory (≈1.5GB+) and prefer larger `/dev/shm` if Railway exposes it — Chromium is heavy
+4. On the **pai** service, set:
+   - `PAI_SANDBOX_URL=http://sandbox.railway.internal:8888`
+   - `PAI_BROWSER_URL=http://sandbox.railway.internal:9867` (optional; browser automation via PinchTab)
+
+Private networking uses the service name + fixed ports above. If the sandbox deploy crash-loops, check logs for Chrome/`pinchtab` failures; code execution on `:8888` should stay up even when the browser sidecar restarts.
 
 ### Step 6: Create your account
 

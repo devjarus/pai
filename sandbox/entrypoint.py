@@ -212,7 +212,10 @@ def execute_code(language: str, code: str, timeout: int) -> dict:
 
 
 if __name__ == "__main__":
-    port = 8888  # Fixed port — Railway/Docker internal networking expects this
+    # Prefer PORT (Railway healthchecks / routing) but default to 8888 — the
+    # fixed port PAI uses for Docker Compose and Railway private networking.
+    # The image sets ENV PORT=8888 so both stay aligned unless overridden.
+    port = int(os.environ.get("PORT", "8888"))
     server = HTTPServer(("0.0.0.0", port), SandboxHandler)
     log("info", "sandbox server started", port=port)
     try:
