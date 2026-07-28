@@ -278,6 +278,14 @@ interface DailyBriefingV2 {
     statement?: string;
     confidence?: "low" | "medium" | "high";
     provenance?: string;
+    beliefId?: string;
+  }>;
+  applied_corrections?: Array<{
+    userText?: string;
+    target?: "memory" | "recommendation" | "evidence" | "cadence" | "scope";
+    appliedAs?: string;
+    correctedAt?: string;
+    correctionId?: string;
   }>;
   next_actions?: Array<{
     title?: string;
@@ -939,6 +947,35 @@ function DailyBriefingV2Detail({
         </div>
       )}
 
+      {(sections.applied_corrections?.length ?? 0) > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2Icon className="h-4 w-4 text-emerald-400" />
+            <span className="font-mono text-sm font-semibold text-foreground">Applied Corrections</span>
+          </div>
+          <div className="space-y-3">
+            {sections.applied_corrections!.map((item, index) => (
+              <div key={item.correctionId ?? index} className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] uppercase border-emerald-500/20 text-emerald-300">
+                    {item.target ?? "memory"}
+                  </Badge>
+                  {item.correctedAt && (
+                    <span className="text-[11px] text-muted-foreground">{timeAgo(item.correctedAt)}</span>
+                  )}
+                </div>
+                <p className="mt-2 text-sm text-foreground">
+                  You told me: <span className="font-medium">{item.userText}</span>
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  This brief used: {item.appliedAs}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {(sections.memory_assumptions?.length ?? 0) > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -947,7 +984,7 @@ function DailyBriefingV2Detail({
           </div>
           <div className="space-y-3">
             {sections.memory_assumptions!.map((item, index) => (
-              <AssumptionCard key={index} assumption={item} briefId={briefId} />
+              <AssumptionCard key={item.beliefId ?? index} assumption={item} briefId={briefId} />
             ))}
           </div>
         </div>
@@ -1090,20 +1127,105 @@ function DailyBriefingV2Detail({
       )}
 
       {sections.correction_hook?.prompt && (
-        <div className="rounded-lg border border-border/20 bg-card/40 p-4">
-          <div className="flex items-center gap-2">
-            <MessageCircleIcon className="h-4 w-4 text-primary" />
-            <span className="font-mono text-sm font-semibold text-foreground">Correction Hook</span>
+        <DigestCorrectionPanel
+          briefId={briefId}
+          prompt={sections.correction_hook.prompt}
+          navigate={navigate}
+        />
+      )}
+    </div>
+  );
+}
+
+function DigestCorrectionPanel({
+  briefId,
+  prompt,
+  navigate,
+}: {
+  briefId: string;
+  prompt: string;
+  navigate: ReturnType<typeof useNavigate>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState<"memory" | "recommendation" | "evidence" | "cadence" | "scope">("recommendation");
+  const [text, setText] = useState("");
+  const correctDigestMut = useCorrectDigest();
+
+  const handleSubmit = async () => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      toast.error("Enter what should change");
+      return;
+    }
+    try {
+      await correctDigestMut.mutateAsync({
+        id: briefId,
+        text: trimmed,
+        target,
+        note: `Digest ${target} correction`,
+      });
+      toast.success("Correction saved — next digest will use it");
+      setText("");
+      setOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save correction");
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-border/20 bg-card/40 p-4">
+      <div className="flex items-center gap-2">
+        <MessageCircleIcon className="h-4 w-4 text-primary" />
+        <span className="font-mono text-sm font-semibold text-foreground">Correction Hook</span>
+      </div>
+      <p className="mt-2 text-sm text-muted-foreground">{prompt}</p>
+      {open ? (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {([
+              ["recommendation", "Recommendation"],
+              ["evidence", "Evidence"],
+              ["cadence", "Cadence"],
+              ["scope", "Scope"],
+              ["memory", "Memory"],
+            ] as const).map(([value, label]) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={target === value ? "default" : "outline"}
+                onClick={() => setTarget(value)}
+              >
+                {label}
+              </Button>
+            ))}
           </div>
-          <p className="mt-2 text-sm text-muted-foreground">{sections.correction_hook.prompt}</p>
-          <div className="mt-3 flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => navigate("/programs")}>
-              Review Watches
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={3}
+            placeholder="Tell pai what was wrong or what should matter more next time"
+          />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleSubmit} disabled={correctDigestMut.isPending}>
+              {correctDigestMut.isPending ? "Saving..." : "Save correction"}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/ask")}>
-              Open Ask
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={correctDigestMut.isPending}>
+              Cancel
             </Button>
           </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex gap-2">
+          <Button size="sm" onClick={() => setOpen(true)}>
+            Correct this digest
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate("/programs")}>
+            Review Watches
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => navigate("/ask")}>
+            Open Ask
+          </Button>
         </div>
       )}
     </div>
@@ -1116,7 +1238,12 @@ function AssumptionCard({
   assumption,
   briefId,
 }: {
-  assumption: { statement?: string; confidence?: "low" | "medium" | "high"; provenance?: string };
+  assumption: {
+    statement?: string;
+    confidence?: "low" | "medium" | "high";
+    provenance?: string;
+    beliefId?: string;
+  };
   briefId: string;
 }) {
   const [editing, setEditing] = useState(false);
@@ -1130,13 +1257,23 @@ function AssumptionCard({
       return;
     }
     try {
+      const beliefId = assumption.beliefId?.trim();
       await correctDigestMut.mutateAsync({
         id: briefId,
-        beliefId: "", // assumption-level correction, no specific belief ID
-        correctedStatement: text,
+        ...(beliefId
+          ? {
+            beliefId,
+            correctedStatement: text,
+            target: "memory" as const,
+          }
+          : {
+            text,
+            target: "memory" as const,
+            targetRef: assumption.statement,
+          }),
         note: `Corrected assumption: "${assumption.statement}"`,
       });
-      toast.success("Correction saved");
+      toast.success("Correction saved — next digest will use it");
       setEditing(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save correction");

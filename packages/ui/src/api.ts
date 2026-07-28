@@ -1158,7 +1158,14 @@ export function refreshDigests(): Promise<{ ok: boolean; digestId?: string; mess
   return request("/digests/refresh", { method: "POST", body: "{}" });
 }
 
-export function correctDigest(id: string, input: { beliefId: string; correctedStatement: string; note?: string }): Promise<{ ok: boolean }> {
+export function correctDigest(id: string, input: {
+  beliefId?: string;
+  correctedStatement?: string;
+  text?: string;
+  target?: "memory" | "recommendation" | "evidence" | "cadence" | "scope";
+  targetRef?: string;
+  note?: string;
+}): Promise<{ ok: boolean; target?: string; correctionId?: string; replacementBeliefId?: string }> {
   return request(`/digests/${id}/correct`, {
     method: "POST",
     body: JSON.stringify(input),

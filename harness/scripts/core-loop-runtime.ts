@@ -9,7 +9,6 @@ import {
   memoryMigrations,
   productEventMigrations,
   threadMigrations,
-  correctBelief,
   getBeliefHistory,
   listBeliefProvenance,
 } from "../../packages/core/src/index.js";
@@ -20,8 +19,9 @@ import { listPrograms, scheduleMigrations } from "../../packages/plugin-schedule
 import { assistantPlugin } from "../../packages/plugin-assistant/src/index.js";
 
 import { generateBriefing, briefingMigrations } from "../../packages/server/src/briefing.js";
-import { findingsMigrations, createFinding, listFindings, unifiedSearch } from "../../packages/library/src/index.js";
+import { findingsMigrations, createFinding, listFindings, unifiedSearch, applyDigestCorrection } from "../../packages/library/src/index.js";
 import { digestRatingsMigrations, rateDigest, getAverageRating } from "../../packages/server/src/digest-ratings.js";
+import { digestCorrectionsMigrations } from "../../packages/server/src/digest-corrections.js";
 import {
   HarnessScenario,
   REQUIRED_SCENARIO_IDS,
@@ -114,6 +114,7 @@ async function runExecutableScenario(relativePath: string): Promise<ValidationCh
     storage.migrate("briefing", briefingMigrations);
     storage.migrate("findings", findingsMigrations);
     storage.migrate("digest_ratings", digestRatingsMigrations);
+    storage.migrate("digest_corrections", digestCorrectionsMigrations);
 
     const ctx = createHarnessContext(storage);
     const thread = createThread(storage, {
@@ -213,12 +214,19 @@ async function runExecutableScenario(relativePath: string): Promise<ValidationCh
       }
     }
 
-    const correction = await correctBelief(storage, ctx.llm, seededBelief.id, {
-      statement: replacementAssumption,
+    const correctionResult = await applyDigestCorrection(storage, ctx.llm, {
+      briefId: firstBrief?.id ?? "harness-correction",
+      beliefId: seededBelief.id,
+      correctedStatement: replacementAssumption,
+      target: "memory",
       note: scenario.correction_step.user_message,
     });
-    const correctionHistory = getBeliefHistory(storage, correction.invalidatedBelief.id);
-    const correctionProvenance = listBeliefProvenance(storage, correction.replacementBelief.id);
+    if (!correctionResult.corrected || !correctionResult.replacementBeliefId || !correctionResult.invalidatedBeliefId) {
+      blockers.push(`${scenario.id}: digest correction failed: ${correctionResult.error ?? "unknown error"}`);
+      return makeCheck(`runtime-scenario:${scenario.id}`, `Executable ${scenario.id} scenario failed.`, blockers, warnings);
+    }
+    const correctionHistory = getBeliefHistory(storage, correctionResult.invalidatedBeliefId);
+    const correctionProvenance = listBeliefProvenance(storage, correctionResult.replacementBeliefId);
     if (!correctionHistory.some((entry) => entry.change_type === "invalidated")) {
       blockers.push(`${scenario.id}: corrected belief history does not show invalidation`);
     }
@@ -256,6 +264,11 @@ async function runExecutableScenario(relativePath: string): Promise<ValidationCh
       }
       if (!secondBrief.sections.correction_hook?.prompt) {
         blockers.push(`${scenario.id}: corrected briefing is missing a correction hook`);
+      }
+      const applied = secondBrief.sections.applied_corrections ?? [];
+      if (!applied.some((item) => item.appliedAs.toLowerCase().includes(replacementAssumption.toLowerCase())
+        || item.userText.toLowerCase().includes(replacementAssumption.toLowerCase()))) {
+        blockers.push(`${scenario.id}: corrected briefing is missing applied_corrections proof for the replacement memory`);
       }
     }
     // --- Phase 1-3 additions: Library findings + Digest ratings ---

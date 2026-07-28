@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@personal-ai/core": "workspace:*",
+    "@personal-ai/library": "workspace:*",
     "@personal-ai/plugin-assistant": "workspace:*",
     "@personal-ai/plugin-curator": "workspace:*",
     "@personal-ai/plugin-research": "workspace:*",

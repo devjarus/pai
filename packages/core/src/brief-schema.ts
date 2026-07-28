@@ -21,6 +21,19 @@ export interface StandardBriefSection {
     statement: string;
     confidence: "low" | "medium" | "high";
     provenance: string;
+    /** Linked belief ID when this assumption maps to a durable memory. */
+    beliefId?: string;
+  }>;
+  /**
+   * Deterministic proof that prior user corrections shaped this brief.
+   * Intentionally excluded from buildBriefSignalHash so quiet-day dedup stays stable.
+   */
+  applied_corrections?: Array<{
+    userText: string;
+    target: "memory" | "recommendation" | "evidence" | "cadence" | "scope";
+    appliedAs: string;
+    correctedAt: string;
+    correctionId?: string;
   }>;
   next_actions: Array<{
     title: string;

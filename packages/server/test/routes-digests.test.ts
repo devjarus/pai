@@ -42,12 +42,12 @@ vi.mock("../src/digest-ratings.js", () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock @personal-ai/library
+// Mock ../src/digest-corrections.js
 // ---------------------------------------------------------------------------
-const mockIngestCorrection = vi.fn();
+const mockApplyDigestCorrection = vi.fn();
 
-vi.mock("@personal-ai/library", () => ({
-  ingestCorrection: (...args: unknown[]) => mockIngestCorrection(...args),
+vi.mock("../src/digest-corrections.js", () => ({
+  applyDigestCorrection: (...args: unknown[]) => mockApplyDigestCorrection(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -273,7 +273,11 @@ describe("digest routes", () => {
 
   it("POST /api/digests/:id/correct corrects a belief", async () => {
     mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
-    mockIngestCorrection.mockResolvedValue({ corrected: true, replacementBeliefId: "belief-new-1" });
+    mockApplyDigestCorrection.mockResolvedValue({
+      corrected: true,
+      replacementBeliefId: "belief-new-1",
+      correction: { id: "corr-1", target: "memory" },
+    });
 
     const res = await app.inject({
       method: "POST",
@@ -285,13 +289,16 @@ describe("digest routes", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
-    expect(mockIngestCorrection).toHaveBeenCalledWith(
+    expect(mockApplyDigestCorrection).toHaveBeenCalledWith(
       serverCtx.ctx.storage,
       serverCtx.ctx.llm,
       {
+        briefId: "briefing-1",
         beliefId: "b1",
         correctedStatement: "Node 22 is actually already supported",
-        digestId: "briefing-1",
+        text: "Node 22 is actually already supported",
+        target: undefined,
+        targetRef: undefined,
         note: undefined,
       },
     );
@@ -308,7 +315,7 @@ describe("digest routes", () => {
 
   it("POST /api/digests/:id/correct returns 400 when correction is invalid", async () => {
     mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
-    mockIngestCorrection.mockResolvedValue({ corrected: false, error: "Correction must change the belief statement" });
+    mockApplyDigestCorrection.mockResolvedValue({ corrected: false, error: "Correction must change the belief statement" });
 
     const res = await app.inject({
       method: "POST",
@@ -326,7 +333,7 @@ describe("digest routes", () => {
 
   it("POST /api/digests/:id/correct returns 404 when the target belief is missing", async () => {
     mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
-    mockIngestCorrection.mockResolvedValue({ corrected: false, error: "Belief not found" });
+    mockApplyDigestCorrection.mockResolvedValue({ corrected: false, error: "Belief not found" });
 
     const res = await app.inject({
       method: "POST",
@@ -340,6 +347,38 @@ describe("digest routes", () => {
     expect(res.statusCode).toBe(404);
     expect(res.json().error).toBe("Belief not found");
     expect(mockRecordProductEvent).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/digests/:id/correct accepts empty beliefId as a directive correction", async () => {
+    mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
+    mockApplyDigestCorrection.mockResolvedValue({
+      corrected: true,
+      replacementBeliefId: "directive-1",
+      correction: { id: "corr-2", target: "cadence" },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/digests/briefing-1/correct",
+      payload: {
+        beliefId: "",
+        text: "too noisy — send fewer digests",
+        target: "cadence",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(mockApplyDigestCorrection).toHaveBeenCalledWith(
+      serverCtx.ctx.storage,
+      serverCtx.ctx.llm,
+      expect.objectContaining({
+        briefId: "briefing-1",
+        beliefId: undefined,
+        text: "too noisy — send fewer digests",
+        target: "cadence",
+      }),
+    );
   });
 
   it("POST /api/digests/:id/correct returns 404 for unknown digest", async () => {

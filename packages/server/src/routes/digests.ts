@@ -11,14 +11,23 @@ import {
   deleteBriefing,
 } from "../briefing.js";
 import { rateDigest } from "../digest-ratings.js";
-import { ingestCorrection } from "@personal-ai/library";
+import { applyDigestCorrection } from "../digest-corrections.js";
 import { recordProductEvent } from "@personal-ai/core";
 
 const correctSchema = z.object({
-  beliefId: z.string().min(1, "beliefId is required"),
-  correctedStatement: z.string().min(1, "correctedStatement is required").max(5000),
+  beliefId: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  correctedStatement: z.string().min(1).max(5000).optional(),
+  text: z.string().min(1).max(5000).optional(),
+  target: z.enum(["memory", "recommendation", "evidence", "cadence", "scope"]).optional(),
+  targetRef: z.string().max(500).optional(),
   note: z.string().max(2000).optional(),
-});
+}).refine(
+  (body) => Boolean((body.text ?? body.correctedStatement)?.trim()),
+  { message: "Correction text is required", path: ["text"] },
+);
 
 const rateSchema = z.object({
   rating: z.number().int().min(1).max(5),
@@ -76,16 +85,20 @@ export function registerDigestRoutes(app: FastifyInstance, { ctx, backgroundDisp
     return { sources: beliefs };
   });
 
-  // Correct a belief referenced in the digest
+  // Correct a belief or wider digest target
   app.post<{ Params: { id: string } }>("/api/digests/:id/correct", async (request, reply) => {
     const briefing = getBriefingById(ctx.storage, request.params.id);
     if (!briefing) return reply.status(404).send({ error: "Digest not found" });
 
     const body = validate(correctSchema, request.body);
-    const result = await ingestCorrection(ctx.storage, ctx.llm, {
-      beliefId: body.beliefId,
+    const beliefId = typeof body.beliefId === "string" ? body.beliefId : undefined;
+    const result = await applyDigestCorrection(ctx.storage, ctx.llm, {
+      briefId: request.params.id,
+      beliefId,
       correctedStatement: body.correctedStatement,
-      digestId: request.params.id,
+      text: body.text ?? body.correctedStatement,
+      target: body.target,
+      targetRef: body.targetRef,
       note: body.note,
     });
     if (!result.corrected) {
@@ -93,7 +106,7 @@ export function registerDigestRoutes(app: FastifyInstance, { ctx, backgroundDisp
       const normalized = message.toLowerCase();
       const status = normalized.includes("not found") || normalized.includes("no match found")
         ? 404
-        : normalized.includes("ambiguous") || normalized.includes("must change")
+        : normalized.includes("ambiguous") || normalized.includes("must change") || normalized.includes("required")
           ? 400
           : 500;
       return reply.status(status).send({ error: message });
@@ -104,11 +117,20 @@ export function registerDigestRoutes(app: FastifyInstance, { ctx, backgroundDisp
       channel: "web",
       programId: typeof briefing.programId === "string" ? briefing.programId : null,
       briefId: request.params.id,
-      beliefId: result.replacementBeliefId ?? body.beliefId,
+      beliefId: result.replacementBeliefId ?? beliefId ?? null,
       threadId: typeof briefing.threadId === "string" ? briefing.threadId : null,
+      metadata: {
+        target: result.correction?.target ?? body.target ?? "memory",
+        correctionId: result.correction?.id,
+      },
     });
 
-    return { ok: true };
+    return {
+      ok: true,
+      target: result.correction?.target ?? body.target ?? "memory",
+      correctionId: result.correction?.id,
+      replacementBeliefId: result.replacementBeliefId,
+    };
   });
 
   // Rate a digest

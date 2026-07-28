@@ -16,6 +16,10 @@ import {
 import { listPrograms } from "@personal-ai/plugin-schedules";
 import { listGoals, listTasks } from "@personal-ai/plugin-tasks";
 import { getAverageRating, getBeliefRatingBonus, getRecentFeedback } from "./digest-ratings.js";
+import {
+  buildAppliedCorrectionsSection,
+  reconcileAssumptionBeliefIds,
+} from "./digest-corrections.js";
 import { listInsights, listFindings } from "@personal-ai/library";
 import type { ResearchFinding, TopicInsight } from "@personal-ai/library";
 import { buildBriefSignalHash } from "@personal-ai/core";
@@ -468,11 +472,15 @@ function sanitizeBriefingSections(
   const allowedStatements = new Set(
     rawContext.beliefs.map((belief) => normalizeBriefingText(belief.statement)),
   );
+  const allowedBeliefIds = new Set(
+    rawContext.beliefs.map((belief) => belief.id).filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
 
   return {
     ...sections,
     memory_assumptions: sections.memory_assumptions.filter((item) =>
-      allowedStatements.has(normalizeBriefingText(item.statement)),
+      (item.beliefId && allowedBeliefIds.has(item.beliefId))
+      || allowedStatements.has(normalizeBriefingText(item.statement)),
     ),
   };
 }
@@ -1237,10 +1245,42 @@ function normalizeBriefingSections(raw: unknown, fallback: BriefingSection): Bri
           statement: typeof item.statement === "string" ? item.statement : "",
           confidence: confidence as "low" | "medium" | "high",
           provenance: typeof item.provenance === "string" ? item.provenance : "Program context",
+          beliefId: typeof item.beliefId === "string" && item.beliefId.trim().length > 0
+            ? item.beliefId.trim()
+            : undefined,
         };
       })
       .filter((item) => item.statement.trim().length > 0)
     : [];
+  const appliedCorrections: BriefingSection["applied_corrections"] = Array.isArray(value.applied_corrections)
+    ? value.applied_corrections
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+      .map((item) => {
+        const target = item.target;
+        if (
+          target !== "memory"
+          && target !== "recommendation"
+          && target !== "evidence"
+          && target !== "cadence"
+          && target !== "scope"
+        ) {
+          return null;
+        }
+        const userText = typeof item.userText === "string" ? item.userText.trim() : "";
+        const appliedAs = typeof item.appliedAs === "string" ? item.appliedAs.trim() : "";
+        const correctedAt = typeof item.correctedAt === "string" ? item.correctedAt : "";
+        if (!userText || !appliedAs || !correctedAt) return null;
+        const entry: NonNullable<BriefingSection["applied_corrections"]>[number] = {
+          userText,
+          target,
+          appliedAs,
+          correctedAt,
+          correctionId: typeof item.correctionId === "string" ? item.correctionId : undefined,
+        };
+        return entry;
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+    : undefined;
   const nextActions = Array.isArray(value.next_actions)
     ? value.next_actions
       .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
@@ -1266,6 +1306,7 @@ function normalizeBriefingSections(raw: unknown, fallback: BriefingSection): Bri
     what_changed: safeStringArray(value.what_changed).length > 0 ? safeStringArray(value.what_changed) : fallback.what_changed,
     evidence: evidence.length > 0 ? evidence : fallback.evidence,
     memory_assumptions: memoryAssumptions.length > 0 ? memoryAssumptions : fallback.memory_assumptions,
+    ...(appliedCorrections && appliedCorrections.length > 0 ? { applied_corrections: appliedCorrections } : {}),
     next_actions: nextActions.length > 0 ? nextActions : fallback.next_actions,
     correction_hook: {
       prompt: typeof correctionHook.prompt === "string" ? correctionHook.prompt : fallback.correction_hook.prompt,
@@ -1462,6 +1503,7 @@ export function buildFallbackBriefing(
       statement: belief.statement,
       confidence: confidenceLabel(belief.confidence),
       provenance: `Memory belief (${belief.type})`,
+      beliefId: belief.id,
     })),
   ];
 
@@ -1976,7 +2018,21 @@ Respond ONLY with a valid JSON object matching this exact shape (no markdown, no
       statement: b.statement,
       confidence: b.confidence >= 0.7 ? "high" as const : b.confidence >= 0.4 ? "medium" as const : "low" as const,
       provenance: provenanceLabel(b),
+      beliefId: b.id,
     }));
+  } else if (parsed.memory_assumptions && parsed.memory_assumptions.length > 0 && topBeliefs.length > 0) {
+    parsed.memory_assumptions = reconcileAssumptionBeliefIds(parsed.memory_assumptions, topBeliefs);
+  }
+
+  // Deterministic proof that prior corrections shaped this brief (excluded from signal hash)
+  const appliedCorrections = buildAppliedCorrectionsSection(
+    ctx.storage,
+    topBeliefs.map((belief) => belief.id),
+  );
+  if (appliedCorrections.length > 0) {
+    parsed.applied_corrections = appliedCorrections;
+  } else {
+    delete parsed.applied_corrections;
   }
 
   try {

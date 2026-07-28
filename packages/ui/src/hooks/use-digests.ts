@@ -58,8 +58,23 @@ export function useRefreshDigests() {
 export function useCorrectDigest() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { id: string; beliefId: string; correctedStatement: string; note?: string }) =>
-      correctDigest(input.id, { beliefId: input.beliefId, correctedStatement: input.correctedStatement, note: input.note }),
+    mutationFn: (input: {
+      id: string;
+      beliefId?: string;
+      correctedStatement?: string;
+      text?: string;
+      target?: "memory" | "recommendation" | "evidence" | "cadence" | "scope";
+      targetRef?: string;
+      note?: string;
+    }) =>
+      correctDigest(input.id, {
+        beliefId: input.beliefId,
+        correctedStatement: input.correctedStatement,
+        text: input.text,
+        target: input.target,
+        targetRef: input.targetRef,
+        note: input.note,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: digestKeys.all });
       queryClient.invalidateQueries({ queryKey: ["library"] });
