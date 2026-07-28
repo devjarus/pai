@@ -1270,13 +1270,14 @@ function normalizeBriefingSections(raw: unknown, fallback: BriefingSection): Bri
         const appliedAs = typeof item.appliedAs === "string" ? item.appliedAs.trim() : "";
         const correctedAt = typeof item.correctedAt === "string" ? item.correctedAt : "";
         if (!userText || !appliedAs || !correctedAt) return null;
-        return {
+        const entry: NonNullable<BriefingSection["applied_corrections"]>[number] = {
           userText,
           target,
           appliedAs,
           correctedAt,
           correctionId: typeof item.correctionId === "string" ? item.correctionId : undefined,
         };
+        return entry;
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
     : undefined;

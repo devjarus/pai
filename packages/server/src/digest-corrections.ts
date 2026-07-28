@@ -82,7 +82,7 @@ export function listDigestCorrections(
       );
 
     return rows
-      .filter((row) => isDigestCorrectionTarget(row.target))
+      .filter((row): row is typeof row & { target: DigestCorrectionTarget } => isDigestCorrectionTarget(row.target))
       .map((row) => ({
         id: row.id,
         briefId: row.brief_id,

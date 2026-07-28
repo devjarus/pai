@@ -91,9 +91,10 @@ export function registerDigestRoutes(app: FastifyInstance, { ctx, backgroundDisp
     if (!briefing) return reply.status(404).send({ error: "Digest not found" });
 
     const body = validate(correctSchema, request.body);
+    const beliefId = typeof body.beliefId === "string" ? body.beliefId : undefined;
     const result = await applyDigestCorrection(ctx.storage, ctx.llm, {
       briefId: request.params.id,
-      beliefId: body.beliefId,
+      beliefId,
       correctedStatement: body.correctedStatement,
       text: body.text ?? body.correctedStatement,
       target: body.target,
@@ -116,7 +117,7 @@ export function registerDigestRoutes(app: FastifyInstance, { ctx, backgroundDisp
       channel: "web",
       programId: typeof briefing.programId === "string" ? briefing.programId : null,
       briefId: request.params.id,
-      beliefId: result.replacementBeliefId ?? body.beliefId ?? null,
+      beliefId: result.replacementBeliefId ?? beliefId ?? null,
       threadId: typeof briefing.threadId === "string" ? briefing.threadId : null,
       metadata: {
         target: result.correction?.target ?? body.target ?? "memory",
