@@ -38,6 +38,29 @@ Here is the analysis.
       markdown: input,
     });
   });
+
+  it("converts truncated unfenced news JSON into markdown", () => {
+    const truncated = `{
+  "topic": "Future of AI",
+  "summary": "AI continues to reshape software.",
+  "articles": [
+    {
+      "title": "IBM Advances Enterprise AI",
+      "source": "IBM Newsroom",
+      "決済URL": "https://newsroom.ibm.com/ai",
+      "keyPoints": ["Enterprise copilots"]
+    },
+    {
+      "title": "Cut off",
+      "source"`;
+
+    const blocks = extractPresentationBlocks(truncated);
+    expect(blocks.markdown).toContain("# Future of AI");
+    expect(blocks.markdown).toContain("IBM Advances Enterprise AI");
+    expect(blocks.markdown).toContain("[Read more](https://newsroom.ibm.com/ai)");
+    expect(blocks.markdown.trim().startsWith("{")).toBe(false);
+    expect(blocks.structuredResult).toBeTruthy();
+  });
 });
 
 describe("artifactReferencesToVisuals", () => {

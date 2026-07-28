@@ -77,6 +77,37 @@ describe("report presentation helpers", () => {
     expect(blocks.report).toContain("[Reuters](https://reuters.com)");
   });
 
+  it("repairs truncated news JSON and converts it to markdown", () => {
+    const truncated = `{
+  "topic": "Future of AI and its Impact",
+  "summary": "AI continues to reshape software development.",
+  "articles": [
+    {
+      "title": "IBM Advances Enterprise AI",
+      "source": "IBM Newsroom",
+      "決済URL": "https://newsroom.ibm.com/ai",
+      "date": "2026-07-09",
+      "keyPoints": [
+        "Enterprise tools now include copilots",
+        "Code-generation is effectively a commodity"
+      ]
+    },
+    {
+      "title": "AI Tools Accelerates Coding",
+      "source"`;
+
+    const blocks = extractPresentationBlocks(truncated);
+
+    expect(blocks.structuredResult).toBeTruthy();
+    expect(blocks.report).toContain("# Future of AI and its Impact");
+    expect(blocks.report).toContain("AI continues to reshape software development.");
+    expect(blocks.report).toContain("IBM Advances Enterprise AI");
+    expect(blocks.report).toContain("[Read more](https://newsroom.ibm.com/ai)");
+    expect(blocks.report).toContain("Enterprise tools now include copilots");
+    expect(blocks.report).not.toContain('"決済URL"');
+    expect(blocks.report.trim().startsWith("{")).toBe(false);
+  });
+
   it("does not extract non-report JSON as structuredResult", () => {
     const blocks = extractPresentationBlocks('{"random": "data", "count": 42}');
     expect(blocks.structuredResult).toBeUndefined();

@@ -118,6 +118,8 @@ export {
   mergeRenderSpecWithVisuals,
   buildReportPresentation,
   getReferencedVisualsFromSpec,
+  repairTruncatedJson,
+  sanitizeReportMarkdown,
 } from "./report-presentation.js";
 export type { ReportExecution, ReportVisual, ReportPresentation } from "./report-presentation.js";
 

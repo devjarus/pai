@@ -6,6 +6,7 @@ import { AlertTriangle } from "lucide-react";
 import { useState, useCallback, useRef, type ReactNode } from "react";
 import type { ReportVisual } from "@/types";
 import { VisualGallery } from "./VisualGallery";
+import { sanitizeReportMarkdown } from "@/lib/sanitize-report-markdown";
 
 interface ResultRendererProps {
   /** json-render spec from LLM (parsed JSON object or JSON string) */
@@ -57,59 +58,35 @@ function parseSpec(spec: unknown): Spec | null {
 }
 
 /**
- * Detect raw JSON report text and convert to readable markdown.
- * Handles cases where the LLM output JSON without code fences.
+ * Sanitize Markdown element content inside a render spec.
+ * Fallback specs often embed raw / truncated research JSON as Markdown props.
  */
-function sanitizeMarkdown(text: string | undefined): string | undefined {
-  if (!text) return text;
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return text;
-  try {
-    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-    // Only convert known report structures (news, research, etc.)
-    if (!parsed.topic && !parsed.summary && !parsed.articles && !parsed.ticker && !parsed.findings) {
-      return text;
-    }
-    const lines: string[] = [];
-    const topic = (parsed.topic ?? parsed.title ?? "Research Report") as string;
-    const summary = (parsed.summary ?? parsed.description ?? "") as string;
-    lines.push(`# ${topic}`);
-    if (summary) lines.push("", summary);
+function sanitizeSpecMarkdown(spec: Spec | null): Spec | null {
+  if (!spec) return null;
+  let changed = false;
+  const elements: Spec["elements"] = {};
 
-    const items = (parsed.articles ?? parsed.findings ?? parsed.results) as Array<Record<string, unknown>> | undefined;
-    if (Array.isArray(items) && items.length > 0) {
-      lines.push("", "## Key Findings");
-      for (const item of items) {
-        lines.push("", `### ${item.title ?? "Untitled"}`);
-        if (item.source) lines.push(`*Source: ${item.source as string}*`);
-        if (item.url) lines.push(`[Read more](${item.url as string})`);
-        const keyPoints = item.keyPoints as string[] | undefined;
-        if (Array.isArray(keyPoints)) {
-          for (const point of keyPoints) lines.push(`- ${point}`);
-        }
+  for (const [id, element] of Object.entries(spec.elements)) {
+    const props = (element as { props?: Record<string, unknown> }).props;
+    if (
+      (element as { type?: string }).type === "Markdown" &&
+      props &&
+      typeof props.content === "string"
+    ) {
+      const sanitized = sanitizeReportMarkdown(props.content);
+      if (sanitized && sanitized !== props.content) {
+        changed = true;
+        elements[id] = {
+          ...element,
+          props: { ...props, content: sanitized },
+        };
+        continue;
       }
     }
-
-    const timeline = parsed.timeline as Array<Record<string, unknown>> | undefined;
-    if (Array.isArray(timeline) && timeline.length > 0) {
-      lines.push("", "## Timeline");
-      for (const event of timeline) lines.push(`- **${event.date as string}** — ${event.event as string}`);
-    }
-
-    const sources = parsed.sources as Array<Record<string, unknown>> | undefined;
-    if (Array.isArray(sources) && sources.length > 0) {
-      lines.push("", "## Sources");
-      for (const src of sources) {
-        const title = (src.title ?? src.name ?? "Source") as string;
-        const url = src.url as string | undefined;
-        lines.push(url ? `- [${title}](${url})` : `- ${title}`);
-      }
-    }
-
-    return lines.join("\n");
-  } catch {
-    return text;
+    elements[id] = element;
   }
+
+  return changed ? { ...spec, elements } : spec;
 }
 
 /**
@@ -128,7 +105,7 @@ export function ResultRenderer({
   visuals = [],
   debug,
 }: ResultRendererProps) {
-  const markdown = sanitizeMarkdown(rawMarkdown);
+  const markdown = sanitizeReportMarkdown(rawMarkdown);
   const [showDebug, setShowDebug] = useState(false);
   const stateRef = useRef<StateModel>({});
   const setStateRef = useRef<
@@ -154,7 +131,7 @@ export function ResultRenderer({
     () => stateRef.current,
   );
 
-  const parsedSpec = parseSpec(spec);
+  const parsedSpec = sanitizeSpecMarkdown(parseSpec(spec));
   const referencedArtifactIds = getReferencedArtifactIds(parsedSpec);
   const remainingVisuals = visuals.filter((visual) => !referencedArtifactIds.has(visual.artifactId));
 
