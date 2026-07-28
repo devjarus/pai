@@ -349,6 +349,38 @@ describe("digest routes", () => {
     expect(mockRecordProductEvent).not.toHaveBeenCalled();
   });
 
+  it("POST /api/digests/:id/correct accepts empty beliefId as a directive correction", async () => {
+    mockGetBriefingById.mockReturnValue(MOCK_BRIEFING);
+    mockApplyDigestCorrection.mockResolvedValue({
+      corrected: true,
+      replacementBeliefId: "directive-1",
+      correction: { id: "corr-2", target: "cadence" },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/digests/briefing-1/correct",
+      payload: {
+        beliefId: "",
+        text: "too noisy — send fewer digests",
+        target: "cadence",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(mockApplyDigestCorrection).toHaveBeenCalledWith(
+      serverCtx.ctx.storage,
+      serverCtx.ctx.llm,
+      expect.objectContaining({
+        briefId: "briefing-1",
+        beliefId: undefined,
+        text: "too noisy — send fewer digests",
+        target: "cadence",
+      }),
+    );
+  });
+
   it("POST /api/digests/:id/correct returns 404 for unknown digest", async () => {
     mockGetBriefingById.mockReturnValue(null);
 
