@@ -8,8 +8,10 @@ import {
   collectReportVisuals,
   deriveReportVisuals,
   extractPresentationBlocks,
+  hasSubstantiveReportContent,
   mergeRenderSpecWithVisuals,
   parseVisualManifest,
+  stripLeakedToolMarkup,
 } from "../src/report-presentation.js";
 
 describe("report presentation helpers", () => {
@@ -106,6 +108,32 @@ describe("report presentation helpers", () => {
     expect(blocks.report).toContain("Enterprise tools now include copilots");
     expect(blocks.report).not.toContain('"決済URL"');
     expect(blocks.report.trim().startsWith("{")).toBe(false);
+  });
+
+  it("strips leaked tool_call markup from research report text", () => {
+    const leaked = `Let me search for the latest developments on AI's impact on software since July 24th, 2026.
+<tool_call>web_search <arg_key>query</arg_key><arg_value>AI changing software development 2026 latest news</arg_value><arg_key>num</arg_key><arg_value>10</arg_value>
+<tool_call>web_search <arg_key>query</arg_key><arg_value>AI coding agents software engineering 2026</arg_value><arg_key>num</arg_key><arg_value>10</arg_value>
+<tool_call>web_search <arg_key>query</arg_key><arg_value>AI impact on software industry trends July 2026</arg_value><arg_key>num</arg_key><arg_value>10</arg_value>
+
+## Key Findings
+
+Enterprise coding agents moved from demos into production workflows.`;
+
+    const blocks = extractPresentationBlocks(leaked);
+    expect(blocks.report).toContain("## Key Findings");
+    expect(blocks.report).toContain("Enterprise coding agents moved from demos into production workflows.");
+    expect(blocks.report).not.toContain("<tool_call>");
+    expect(blocks.report).not.toContain("<arg_key>");
+    expect(blocks.report).not.toContain("<arg_value>");
+    expect(blocks.report).not.toContain("AI changing software development 2026 latest news");
+  });
+
+  it("treats tool-call-only reports as non-substantive", () => {
+    const leaked = `Let me search for updates.
+<tool_call>web_search <arg_key>query</arg_key><arg_value>AI news</arg_value><arg_key>num</arg_key><arg_value>10</arg_value>`;
+    expect(stripLeakedToolMarkup(leaked)).toContain("Let me search");
+    expect(hasSubstantiveReportContent(leaked)).toBe(false);
   });
 
   it("does not extract non-report JSON as structuredResult", () => {

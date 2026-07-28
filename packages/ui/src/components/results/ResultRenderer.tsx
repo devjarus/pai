@@ -59,7 +59,8 @@ function parseSpec(spec: unknown): Spec | null {
 
 /**
  * Sanitize Markdown element content inside a render spec.
- * Fallback specs often embed raw / truncated research JSON as Markdown props.
+ * Fallback specs often embed raw / truncated research JSON or leaked tool-call
+ * markup as Markdown props.
  */
 function sanitizeSpecMarkdown(spec: Spec | null): Spec | null {
   if (!spec) return null;
@@ -74,11 +75,11 @@ function sanitizeSpecMarkdown(spec: Spec | null): Spec | null {
       typeof props.content === "string"
     ) {
       const sanitized = sanitizeReportMarkdown(props.content);
-      if (sanitized && sanitized !== props.content) {
+      if (sanitized !== props.content) {
         changed = true;
         elements[id] = {
           ...element,
-          props: { ...props, content: sanitized },
+          props: { ...props, content: sanitized ?? "" },
         };
         continue;
       }
@@ -87,6 +88,24 @@ function sanitizeSpecMarkdown(spec: Spec | null): Spec | null {
   }
 
   return changed ? { ...spec, elements } : spec;
+}
+
+/** True when a spec still has user-visible body content (not just empty wrappers). */
+function specHasVisibleContent(spec: Spec): boolean {
+  for (const element of Object.values(spec.elements)) {
+    const type = (element as { type?: string }).type;
+    if (!type || type === "Section" || type === "Grid" || type === "Stack" || type === "Columns") {
+      continue;
+    }
+    if (type === "Markdown") {
+      const content = (element as { props?: { content?: unknown } }).props?.content;
+      if (typeof content === "string" && content.trim()) return true;
+      continue;
+    }
+    // Charts, tables, cards, etc. count as visible
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -132,17 +151,18 @@ export function ResultRenderer({
   );
 
   const parsedSpec = sanitizeSpecMarkdown(parseSpec(spec));
-  const referencedArtifactIds = getReferencedArtifactIds(parsedSpec);
+  const usableSpec = parsedSpec && specHasVisibleContent(parsedSpec) ? parsedSpec : null;
+  const referencedArtifactIds = getReferencedArtifactIds(usableSpec);
   const remainingVisuals = visuals.filter((visual) => !referencedArtifactIds.has(visual.artifactId));
 
   // Determine which content to render via the fallback chain
   let content: ReactNode;
-  if (parsedSpec) {
+  if (usableSpec) {
     content = (
       <StateProvider initialState={{}} onStateChange={handleStateChange}>
         <VisibilityProvider>
           <ActionProvider handlers={actionHandlers}>
-            <Renderer spec={parsedSpec} registry={registry} />
+            <Renderer spec={usableSpec} registry={registry} />
           </ActionProvider>
         </VisibilityProvider>
       </StateProvider>
@@ -170,7 +190,7 @@ export function ResultRenderer({
   return (
     <div className="space-y-4">
       {content}
-      {parsedSpec && remainingVisuals.length > 0 && (
+      {usableSpec && remainingVisuals.length > 0 && (
         <VisualGallery visuals={remainingVisuals} title="Additional visuals" />
       )}
 

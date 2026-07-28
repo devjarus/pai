@@ -11,9 +11,11 @@ import {
   buildReportPresentation,
   deriveReportVisuals,
   extractPresentationBlocks,
+  hasSubstantiveReportContent,
   instrumentedGenerateText,
   runAgentHarness,
   stripEnrichmentFromGoal,
+  stripLeakedToolMarkup,
 } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, appendMessages, learnFromContent } from "@personal-ai/core";
 import { getProgramById, recordProgramEvaluation } from "@personal-ai/plugin-schedules";
@@ -494,11 +496,12 @@ export async function runResearchInBackground(
         agentCtx.noteToolCalls(toolCallCount);
         agentCtx.noteTokens(result.usage?.totalTokens ?? 0);
 
-        let reportText = result.text;
+        let reportText = stripLeakedToolMarkup(result.text ?? "");
 
         // If the LLM exhausted all steps on tool calls without producing a report,
-        // do a follow-up call to synthesize findings from the tool results.
-        if (!reportText) {
+        // or only leaked raw <tool_call> markup as "text", synthesize from tool results.
+        if (!reportText || !hasSubstantiveReportContent(reportText)) {
+          reportText = "";
           ctx.logger.warn(`Research job ${jobId}: no report text, running synthesis pass`);
           await agentCtx.services.telemetry?.recordStep?.("primary pass produced no report text; running synthesis pass");
           const toolResults = result.steps
@@ -557,7 +560,8 @@ export async function runResearchInBackground(
               },
             );
             agentCtx.noteTokens(synthResult.usage?.totalTokens ?? 0);
-            reportText = synthResult.text || "";
+            reportText = stripLeakedToolMarkup(synthResult.text || "");
+            if (!hasSubstantiveReportContent(reportText)) reportText = "";
           }
         }
 

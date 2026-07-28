@@ -1,5 +1,5 @@
 import type { ArtifactReference, ReportVisual } from "@/types";
-import { sanitizeReportMarkdown } from "./sanitize-report-markdown";
+import { sanitizeReportMarkdown, stripLeakedToolMarkup } from "./sanitize-report-markdown";
 
 interface JsonRenderElement {
   type: string;
@@ -42,7 +42,7 @@ function trimMarkdown(markdown: string): string {
 }
 
 export function extractPresentationBlocks(text: string): ExtractedPresentationBlocks {
-  let markdown = text ?? "";
+  let markdown = stripLeakedToolMarkup(text ?? "");
   let structuredResult: string | undefined;
   let renderSpec: string | undefined;
 

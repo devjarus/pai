@@ -4,6 +4,7 @@ import {
   buildVisualResultSpec,
   extractPresentationBlocks,
 } from "../src/lib/report-presentation";
+import { sanitizeReportMarkdown } from "../src/lib/sanitize-report-markdown";
 
 describe("extractPresentationBlocks", () => {
   it("extracts markdown, structured data, and render spec", () => {
@@ -60,6 +61,18 @@ Here is the analysis.
     expect(blocks.markdown).toContain("[Read more](https://newsroom.ibm.com/ai)");
     expect(blocks.markdown.trim().startsWith("{")).toBe(false);
     expect(blocks.structuredResult).toBeTruthy();
+  });
+
+  it("strips leaked tool_call markup from markdown reports", () => {
+    const leaked = `Let me search for the latest developments.
+<tool_call>web_search <arg_key>query</arg_key><arg_value>AI coding agents 2026</arg_value><arg_key>num</arg_key><arg_value>10</arg_value>
+
+Coding agents are shipping into production.`;
+    const cleaned = sanitizeReportMarkdown(leaked);
+    expect(cleaned).toContain("Coding agents are shipping into production.");
+    expect(cleaned).not.toContain("<tool_call>");
+    expect(cleaned).not.toContain("<arg_key>");
+    expect(cleaned).not.toContain("AI coding agents 2026");
   });
 });
 

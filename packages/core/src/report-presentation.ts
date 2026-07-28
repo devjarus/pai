@@ -64,6 +64,50 @@ function trimReport(report: string): string {
   return report.trim().replace(/\n{3,}/g, "\n\n");
 }
 
+/**
+ * Strip XML-style tool-call markup some models emit as plain text
+ * (e.g. `<tool_call>web_search <arg_key>query</arg_key><arg_value>...</arg_value>`).
+ * Leaves surrounding prose intact.
+ */
+export function stripLeakedToolMarkup(text: string): string {
+  let s = text;
+
+  // Closed blocks: <tool_call>...</tool_call>, <function_calls>...</function_calls>, <invoke>...</invoke>
+  s = s.replace(/<(tool_call|function_call|function_calls|tool_calls)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
+  s = s.replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke\s*>/gi, "");
+
+  // Unclosed <tool_call>name <arg_key>..</arg_key><arg_value>..</arg_value> sequences
+  const unclosedToolCall =
+    /<(?:tool_call|function_call)\b[^>]*>\s*[\w.:/-]*\s*(?:<\s*(?:arg_key|arg_value|arg_name|parameter)\b[^>]*>[\s\S]*?(?:<\/\s*(?:arg_key|arg_value|arg_name|parameter)\s*>|\/>)[\s\/>]*)*/gi;
+  s = s.replace(unclosedToolCall, "");
+
+  // Orphan markup tags left after partial strips
+  s = s.replace(
+    /<\/?(?:tool_call|function_call|function_calls|tool_calls|invoke|arg_key|arg_value|arg_name|parameter)\b[^>]*>/gi,
+    "",
+  );
+  s = s.replace(/^\s*\/>\s*$/gm, "");
+
+  return trimReport(s);
+}
+
+/** True when the report still has at least one substantive prose line after cleanup. */
+export function hasSubstantiveReportContent(text: string): boolean {
+  const cleaned = stripLeakedToolMarkup(text);
+  if (!cleaned) return false;
+  return cleaned
+    .split("\n")
+    .map((line) => line.trim())
+    .some((line) => {
+      if (!line || line.startsWith("#") || line.startsWith("|") || line.startsWith(">")) return false;
+      // Narrating / search-intent preambles that often accompany leaked tool calls
+      if (/^\s*(?:let me|i(?:'ll| will)? (?:search|look|find|gather|browse)|searching for)\b/i.test(line)) {
+        return false;
+      }
+      return line.length >= 5;
+    });
+}
+
 function isReportStructuredData(data: Record<string, unknown>): boolean {
   return !!(data.topic || data.summary || data.articles || data.ticker || data.findings || data.results);
 }
@@ -227,16 +271,19 @@ function structuredJsonToMarkdown(data: Record<string, unknown>): string {
 }
 
 /**
- * Convert raw / truncated report JSON into readable markdown.
- * Returns the original text when it is not a known report JSON payload.
+ * Convert raw / truncated report JSON into readable markdown, and strip
+ * leaked tool-call markup. Returns the cleaned text (or undefined when empty).
  */
 export function sanitizeReportMarkdown(text: string | undefined): string | undefined {
   if (!text) return text;
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{")) return text;
+  const withoutTools = stripLeakedToolMarkup(text);
+  if (!withoutTools) return undefined;
+
+  const trimmed = withoutTools.trim();
+  if (!trimmed.startsWith("{")) return withoutTools;
 
   const parsed = tryParseReportJson(trimmed);
-  if (!parsed) return text;
+  if (!parsed) return withoutTools;
   return structuredJsonToMarkdown(parsed.data);
 }
 
@@ -399,7 +446,7 @@ export function extractPresentationBlocks(text: string): {
   structuredResult?: string;
   renderSpec?: string;
 } {
-  let report = text ?? "";
+  let report = stripLeakedToolMarkup(text ?? "");
   let structuredResult: string | undefined;
   let renderSpec: string | undefined;
 

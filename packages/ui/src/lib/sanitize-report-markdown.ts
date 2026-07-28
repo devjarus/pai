@@ -160,11 +160,37 @@ function tryParseReportJson(text: string): Record<string, unknown> | null {
   return null;
 }
 
+/**
+ * Strip XML-style tool-call markup some models emit as plain text
+ * (e.g. `<tool_call>web_search <arg_key>query</arg_key><arg_value>...</arg_value>`).
+ */
+export function stripLeakedToolMarkup(text: string): string {
+  let s = text;
+
+  s = s.replace(/<(tool_call|function_call|function_calls|tool_calls)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
+  s = s.replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke\s*>/gi, "");
+
+  const unclosedToolCall =
+    /<(?:tool_call|function_call)\b[^>]*>\s*[\w.:/-]*\s*(?:<\s*(?:arg_key|arg_value|arg_name|parameter)\b[^>]*>[\s\S]*?(?:<\/\s*(?:arg_key|arg_value|arg_name|parameter)\s*>|\/>)[\s\/>]*)*/gi;
+  s = s.replace(unclosedToolCall, "");
+
+  s = s.replace(
+    /<\/?(?:tool_call|function_call|function_calls|tool_calls|invoke|arg_key|arg_value|arg_name|parameter)\b[^>]*>/gi,
+    "",
+  );
+  s = s.replace(/^\s*\/>\s*$/gm, "");
+
+  return s.trim().replace(/\n{3,}/g, "\n\n");
+}
+
 export function sanitizeReportMarkdown(text: string | undefined): string | undefined {
   if (!text) return text;
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{")) return text;
+  const withoutTools = stripLeakedToolMarkup(text);
+  if (!withoutTools) return undefined;
+
+  const trimmed = withoutTools.trim();
+  if (!trimmed.startsWith("{")) return withoutTools;
   const parsed = tryParseReportJson(trimmed);
-  if (!parsed) return text;
+  if (!parsed) return withoutTools;
   return structuredJsonToMarkdown(parsed);
 }
