@@ -1,5 +1,5 @@
 import type { ArtifactReference, ReportVisual } from "@/types";
-import { sanitizeReportMarkdown } from "@/lib/sanitize-report-markdown";
+import { sanitizeReportMarkdown } from "./sanitize-report-markdown";
 
 interface JsonRenderElement {
   type: string;
