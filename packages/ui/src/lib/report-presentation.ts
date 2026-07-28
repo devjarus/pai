@@ -1,4 +1,5 @@
 import type { ArtifactReference, ReportVisual } from "@/types";
+import { sanitizeReportMarkdown } from "@/lib/sanitize-report-markdown";
 
 interface JsonRenderElement {
   type: string;
@@ -60,6 +61,15 @@ export function extractPresentationBlocks(text: string): ExtractedPresentationBl
     if (parseJson<unknown>(candidate) !== null) {
       structuredResult = candidate;
       markdown = markdown.replace(/```json\s*[\s\S]*?```/i, "").trim();
+    }
+  }
+
+  // Convert unfenced / truncated report JSON into readable markdown for chat.
+  if (!structuredResult) {
+    const sanitized = sanitizeReportMarkdown(markdown);
+    if (sanitized && sanitized !== markdown.trim() && !sanitized.trim().startsWith("{")) {
+      structuredResult = markdown.trim();
+      markdown = sanitized;
     }
   }
 

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { marked } from "marked";
 import { recordProductEventApi } from "@/api";
 import { stripMarkdown, cleanDigestTitle } from "@/lib/utils";
+import { sanitizeReportMarkdown } from "@/lib/sanitize-report-markdown";
 import type { Program } from "@/api";
 import { useInboxAll, useInboxBriefing, useRefreshInbox, useClearInbox, useCreateThread, useRerunResearch, useConfig, useCreateProgram, useCorrectBelief, useCreateTask, usePrograms, useTasks, useRateDigest, useDigestSuggestions, useCorrectDigest, useAcceptDigestRecommendation } from "@/hooks";
 import type { BriefingRawContextBelief, Task } from "@/types";
@@ -2331,6 +2332,12 @@ function stripCodeFences(md: string): string {
     .trim();
 }
 
+/** Prepare report body for card preview / expanded markdown (never show raw JSON). */
+function readableReportMarkdown(report: string): string {
+  const stripped = stripCodeFences(report);
+  return sanitizeReportMarkdown(stripped) ?? stripped;
+}
+
 const domainBadges: Record<string, { icon: string; label: string; color: string; border: string; bg: string }> = {
   flight: { icon: "\u2708", label: "Flight", color: "text-blue-400", border: "border-blue-500/20", bg: "bg-blue-500/10" },
   stock: { icon: "\uD83D\uDCCA", label: "Stock", color: "text-green-400", border: "border-green-500/20", bg: "bg-green-500/10" },
@@ -2384,7 +2391,7 @@ function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; on
             </p>
             {!expanded && sections.report && (
               <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                {stripCodeFences(sections.report).replace(/^(Based on|I'll|I will|Let me|Here('s| is)|I can)[^.]*\.\s*/i, "").slice(0, 200)}
+                {readableReportMarkdown(sections.report).replace(/^(Based on|I'll|I will|Let me|Here('s| is)|I can)[^.]*\.\s*/i, "").replace(/^#+\s*/, "").slice(0, 200)}
               </p>
             )}
           </div>
@@ -2402,7 +2409,7 @@ function ResearchReportCard({ item, onCardClick, isRead }: { item: InboxItem; on
 
         {expanded && sections.report && (
           <div className="mt-4 rounded-md border border-border/20 bg-background/40 p-4">
-            <MarkdownContent content={stripCodeFences(sections.report)} />
+            <MarkdownContent content={readableReportMarkdown(sections.report)} />
             <div className="mt-4 flex justify-end">
               <Button
                 variant="outline"
