@@ -104,7 +104,7 @@ export function hasSubstantiveReportContent(text: string): boolean {
       if (/^\s*(?:let me|i(?:'ll| will)? (?:search|look|find|gather|browse)|searching for)\b/i.test(line)) {
         return false;
       }
-      return line.length >= 12;
+      return line.length >= 5;
     });
 }
 
