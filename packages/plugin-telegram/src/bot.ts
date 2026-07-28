@@ -1,6 +1,7 @@
 import { Bot, type CommandContext, type Context } from "grammy";
 import type { AgentPlugin, PluginContext } from "@personal-ai/core";
 import { listBeliefs, getThread, formatDateTime, parseTimestamp, getArtifact, correctBelief, recordProductEvent } from "@personal-ai/core";
+import { applyDigestCorrection, inferCorrectionTarget } from "@personal-ai/library";
 import { addTask, completeTask, listTasks } from "@personal-ai/plugin-tasks";
 import { listResearchJobs, createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
 import type { ResearchContext } from "@personal-ai/plugin-research";
@@ -185,7 +186,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
     { command: "reply", description: "Reply to a digest by ID" },
     { command: "todo", description: "Save a to-do from a digest" },
     { command: "done", description: "Mark a saved move done" },
-    { command: "correct", description: "Correct a memory by ID" },
+    { command: "correct", description: "Correct a memory or the latest digest" },
   ]).catch((err) => {
     ctx.logger.warn(`Failed to register bot commands: ${err instanceof Error ? err.message : String(err)}`);
   });
@@ -206,7 +207,8 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       "/reply &lt;digest-id&gt; &lt;message&gt; — Follow up on a digest\n" +
       "/todo &lt;digest-id&gt; | &lt;title&gt; — Save a to-do from a digest\n" +
       "/done &lt;move-id&gt; — Mark a saved move done\n" +
-      "/correct &lt;memory-id&gt; | &lt;replacement&gt; — Correct a memory",
+      "/correct &lt;memory-id&gt; | &lt;replacement&gt; — Correct a memory\n" +
+      "/correct &lt;free text&gt; — Correct the latest digest",
       { parse_mode: "HTML" },
     );
   });
@@ -225,7 +227,8 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       "/reply &lt;digest-id&gt; &lt;message&gt; — Continue a digest discussion\n" +
       "/todo &lt;digest-id&gt; | &lt;title&gt; — Save a to-do linked to a digest\n" +
       "/done &lt;move-id&gt; — Mark a saved move done\n" +
-      "/correct &lt;memory-id&gt; | &lt;replacement&gt; — Replace a memory used by future digests\n\n" +
+      "/correct &lt;memory-id&gt; | &lt;replacement&gt; — Replace a memory used by future digests\n" +
+      "/correct &lt;free text&gt; — Correct the latest digest (recommendation, cadence, scope, etc.)\n\n" +
       "Or just send any message to chat!",
       { parse_mode: "HTML" },
     );
@@ -369,29 +372,81 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
 
   bot.command("correct", async (tgCtx) => {
     const raw = tgCtx.match?.trim() ?? "";
-    const [beliefId, replacement] = raw.split("|").map((part) => part.trim());
-    if (!beliefId || !replacement) {
-      await tgCtx.reply("Usage: /correct <memory-id> | <replacement memory>");
+    if (!raw) {
+      await tgCtx.reply(
+        "Usage:\n" +
+        "/correct <memory-id> | <replacement memory>\n" +
+        "/correct <free text about the latest digest>",
+      );
       return;
     }
+
+    // Legacy belief-id path: /correct <id> | <replacement>
+    if (raw.includes("|")) {
+      const [beliefId, replacement] = raw.split("|").map((part) => part.trim());
+      if (!beliefId || !replacement) {
+        await tgCtx.reply("Usage: /correct <memory-id> | <replacement memory>");
+        return;
+      }
+      try {
+        const result = await correctBelief(ctx.storage, ctx.llm, beliefId, {
+          statement: replacement,
+          note: `Telegram correction from chat ${tgCtx.chat.id}`,
+        });
+        recordProductEvent(ctx.storage, {
+          eventType: "belief_corrected",
+          beliefId: result.replacementBelief.id,
+          threadId: getExistingThreadId(ctx, tgCtx.chat.id),
+          channel: "telegram",
+          metadata: {
+            invalidatedBeliefId: result.invalidatedBelief.id,
+            correctionEpisodeId: result.correctionEpisode.id,
+            target: "memory",
+          },
+        });
+        await tgCtx.reply("Memory corrected. Future digests will use the replacement memory.");
+      } catch (err) {
+        await tgCtx.reply(`Failed to correct memory: ${err instanceof Error ? err.message : "unknown error"}`);
+      }
+      return;
+    }
+
+    // Free-text path: correct the latest digest available to this chat
+    const briefings = listRecentBriefingsForChat(ctx, tgCtx.chat.id, tgCtx.from?.username);
+    const latest = briefings[0];
+    if (!latest) {
+      await tgCtx.reply("No recent digest found to correct. Open a digest first, or use /correct <memory-id> | <replacement>.");
+      return;
+    }
+
+    const target = inferCorrectionTarget(raw);
     try {
-      const result = await correctBelief(ctx.storage, ctx.llm, beliefId, {
-        statement: replacement,
-        note: `Telegram correction from chat ${tgCtx.chat.id}`,
+      const result = await applyDigestCorrection(ctx.storage, ctx.llm, {
+        briefId: latest.id,
+        text: raw,
+        target,
+        note: `Telegram free-text correction from chat ${tgCtx.chat.id}`,
       });
+      if (!result.corrected) {
+        await tgCtx.reply(`Failed to save correction: ${result.error ?? "unknown error"}`);
+        return;
+      }
       recordProductEvent(ctx.storage, {
         eventType: "belief_corrected",
-        beliefId: result.replacementBelief.id,
+        beliefId: result.replacementBeliefId ?? null,
+        briefId: latest.id,
         threadId: getExistingThreadId(ctx, tgCtx.chat.id),
         channel: "telegram",
         metadata: {
-          invalidatedBeliefId: result.invalidatedBelief.id,
-          correctionEpisodeId: result.correctionEpisode.id,
+          target,
+          correctionId: result.correction?.id,
         },
       });
-      await tgCtx.reply("Memory corrected. Future digests will use the replacement memory.");
+      await tgCtx.reply(
+        `Correction saved for the latest digest (${target}). Future digests will use it.`,
+      );
     } catch (err) {
-      await tgCtx.reply(`Failed to correct memory: ${err instanceof Error ? err.message : "unknown error"}`);
+      await tgCtx.reply(`Failed to save correction: ${err instanceof Error ? err.message : "unknown error"}`);
     }
   });
 

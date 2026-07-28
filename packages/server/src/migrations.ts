@@ -9,6 +9,7 @@ import { learningMigrations } from "./learning.js";
 import { scheduleMigrations } from "@personal-ai/plugin-schedules";
 import { findingsMigrations, insightMigrations } from "@personal-ai/library";
 import { digestRatingsMigrations } from "./digest-ratings.js";
+import { digestCorrectionsMigrations } from "./digest-corrections.js";
 
 /** All plugin migrations in registration order */
 export const allMigrations: Array<[string, Migration[]]> = [
@@ -30,6 +31,7 @@ export const allMigrations: Array<[string, Migration[]]> = [
   ["linear_issue_registry", linearIssueRegistryMigrations],
   ["findings", findingsMigrations],
   ["digest_ratings", digestRatingsMigrations],
+  ["digest_corrections", digestCorrectionsMigrations],
   ["topic_insights", insightMigrations],
 ];
 

@@ -17,8 +17,14 @@ export type { ResearchSourceQuality, ResearchSourceAssessment, ResearchSourceSum
 export { storeFindingEmbedding, getFindingEmbedding, embedFinding } from "./findings-embed.js";
 
 // Ingestion pipelines
-export { ingestResearchResult, ingestCorrection } from "./ingestion.js";
-export type { CorrectionInput } from "./ingestion.js";
+export { ingestResearchResult, ingestCorrection, applyDigestCorrection, inferCorrectionTarget, isDigestCorrectionTarget } from "./ingestion.js";
+export type {
+  CorrectionInput,
+  ApplyDigestCorrectionInput,
+  ApplyDigestCorrectionResult,
+  DigestCorrectionRecord,
+  DigestCorrectionTarget,
+} from "./ingestion.js";
 
 // Topic insights (compounding knowledge)
 export { insightMigrations, createInsight, updateInsight, getInsight, listInsights, deleteInsight, deleteInsightsForWatch } from "./insights.js";

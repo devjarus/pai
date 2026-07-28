@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **First-class digest corrections** — Digests now support correction targets beyond memory (`recommendation`, `evidence`, `cadence`, `scope`). Corrections are stored in `digest_corrections`, resolve into durable preference beliefs, and surface in a deterministic **Applied Corrections** section on the next digest (“You told me X → this brief used Y”). The digest pencil edit no longer 400s on empty `beliefId`; Telegram `/correct <free text>` corrects the latest digest without hunting a memory ID.
+
 ### Fixed
 - **Digest floor no longer crashes on malformed finding deltas** — Deterministic briefing helpers now tolerate missing `significance`/`changed`/`sources` (and non-numeric confidence) instead of throwing on `.toFixed` / `.reduce` during daily digest generation.
 
