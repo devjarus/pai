@@ -120,6 +120,8 @@ export {
   getReferencedVisualsFromSpec,
   repairTruncatedJson,
   sanitizeReportMarkdown,
+  stripLeakedToolMarkup,
+  hasSubstantiveReportContent,
 } from "./report-presentation.js";
 export type { ReportExecution, ReportVisual, ReportPresentation } from "./report-presentation.js";
 
