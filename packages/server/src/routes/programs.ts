@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
@@ -118,10 +119,28 @@ function buildLatestBriefSummary(serverCtx: ServerContext, program: Program) {
 }
 
 function enrichProgram(serverCtx: ServerContext, program: Program) {
+  const latestBriefSummary = buildLatestBriefSummary(serverCtx, program);
+  // #region agent log
+  appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({
+    hypothesisId: "D",
+    location: "packages/server/src/routes/programs.ts:124",
+    message: "Program enriched for inbox card",
+    data: {
+      programId: program.id,
+      latestBriefId: program.latestBriefId,
+      lastDeliveredAt: program.lastDeliveredAt,
+      lastEvaluatedAt: program.lastEvaluatedAt,
+      latestBriefSummaryId: latestBriefSummary?.id ?? null,
+      latestBriefSummaryGeneratedAt: latestBriefSummary?.generatedAt ?? null,
+      latestBriefSummaryPreview: latestBriefSummary?.recommendationSummary?.slice(0, 180) ?? null,
+    },
+    timestamp: Date.now(),
+  }) + "\n");
+  // #endregion
   return {
     ...program,
     actionSummary: buildProgramActionSummary(serverCtx, program.id),
-    latestBriefSummary: buildLatestBriefSummary(serverCtx, program),
+    latestBriefSummary,
   };
 }
 

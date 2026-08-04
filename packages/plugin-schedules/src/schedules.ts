@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
 import type { Migration, PluginContext, ReportExecution } from "@personal-ai/core";
@@ -474,6 +475,26 @@ export function recordProgramEvaluation(storage: Storage, id: string, updates: P
   const existing = getProgramById(storage, id);
   if (!existing) return null;
 
+  // #region agent log
+  appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({
+    hypothesisId: "B",
+    location: "packages/plugin-schedules/src/schedules.ts:476",
+    message: "Program evaluation before write",
+    data: {
+      programId: id,
+      existingLatestBriefId: existing.latestBriefId,
+      existingLastDeliveredAt: existing.lastDeliveredAt,
+      existingLastEvaluatedAt: existing.lastEvaluatedAt,
+      existingLastSignalHash: existing.lastSignalHash,
+      requestedLatestBriefId: updates.latestBriefId ?? "__preserve__",
+      requestedLastDeliveredAt: updates.lastDeliveredAt ?? "__preserve__",
+      requestedLastEvaluatedAt: updates.lastEvaluatedAt ?? "__preserve__",
+      requestedLastSignalHash: updates.lastSignalHash ?? "__preserve__",
+    },
+    timestamp: Date.now(),
+  }) + "\n");
+  // #endregion
+
   storage.run(
     `UPDATE scheduled_jobs
      SET latest_brief_id = ?, last_delivered_at = ?, last_evaluated_at = ?, last_signal_hash = ?
@@ -487,7 +508,24 @@ export function recordProgramEvaluation(storage: Storage, id: string, updates: P
     ],
   );
 
-  return getProgramById(storage, id);
+  const updated = getProgramById(storage, id);
+  // #region agent log
+  appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({
+    hypothesisId: "B",
+    location: "packages/plugin-schedules/src/schedules.ts:491",
+    message: "Program evaluation after write",
+    data: {
+      programId: id,
+      updatedLatestBriefId: updated?.latestBriefId ?? null,
+      updatedLastDeliveredAt: updated?.lastDeliveredAt ?? null,
+      updatedLastEvaluatedAt: updated?.lastEvaluatedAt ?? null,
+      updatedLastSignalHash: updated?.lastSignalHash ?? null,
+    },
+    timestamp: Date.now(),
+  }) + "\n");
+  // #endregion
+
+  return updated;
 }
 
 export function createProgram(storage: Storage, opts: ProgramCreateInput): Program {
