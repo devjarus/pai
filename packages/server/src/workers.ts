@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync } from "node:fs";
 import type { PluginContext } from "@personal-ai/core";
 import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads, cleanupOldTelemetrySpans, startSpan, finishSpan, syncAutomaticLinearIssues } from "@personal-ai/core";
 import { cleanupFindings } from "@personal-ai/library";
@@ -70,21 +69,6 @@ export function buildEnrichedResearchGoal(
     ? new Date(schedule.lastDeliveredAt).toISOString().split("T")[0]
     : null;
   const sinceClause = sinceDate ? ` since ${sinceDate}` : "";
-
-  // #region agent log
-  appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({
-    hypothesisId: "C",
-    location: "packages/server/src/workers.ts:71",
-    message: "Schedule baseline brief reused",
-    data: {
-      latestBriefId: schedule.latestBriefId ?? null,
-      lastDeliveredAt: schedule.lastDeliveredAt ?? null,
-      sinceDate,
-      previousSummaryPreview: previousSummary.slice(0, 180),
-    },
-    timestamp: Date.now(),
-  }) + "\n");
-  // #endregion
 
   return (
     `${schedule.goal}\n\n` +

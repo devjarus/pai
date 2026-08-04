@@ -107,6 +107,7 @@ function buildWatchActionSummary(serverCtx: ServerContext, watchId: string) {
 
 function buildLatestBriefSummary(serverCtx: ServerContext, watch: Watch) {
   if (!watch.latestBriefId) return null;
+  if (hasUndeliveredWatchEvaluation(watch)) return null;
 
   const rows = serverCtx.ctx.storage.query<WatchBriefSummaryRow>(
     "SELECT id, generated_at, type, sections, source_job_id, source_job_kind FROM briefings WHERE id = ?",
@@ -123,6 +124,14 @@ function buildLatestBriefSummary(serverCtx: ServerContext, watch: Watch) {
     sourceJobId: row.source_job_id,
     sourceJobKind: row.source_job_kind,
   };
+}
+
+function hasUndeliveredWatchEvaluation(watch: Pick<Watch, "lastDeliveredAt" | "lastEvaluatedAt">): boolean {
+  if (!watch.lastDeliveredAt || !watch.lastEvaluatedAt) return false;
+  const deliveredAt = Date.parse(watch.lastDeliveredAt);
+  const evaluatedAt = Date.parse(watch.lastEvaluatedAt);
+  if (!Number.isFinite(deliveredAt) || !Number.isFinite(evaluatedAt)) return false;
+  return evaluatedAt > deliveredAt;
 }
 
 function enrichWatch(serverCtx: ServerContext, watch: Watch) {

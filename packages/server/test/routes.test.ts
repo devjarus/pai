@@ -2088,6 +2088,39 @@ describe("program routes", () => {
     }));
   });
 
+  it("GET /api/programs/:id hides stale latest brief summaries after a quiet evaluation", async () => {
+    const program = {
+      id: "prog-stale",
+      title: "AI agents",
+      question: "Track AI agent launches",
+      family: "general",
+      executionMode: "research",
+      intervalHours: 24,
+      chatId: null,
+      threadId: null,
+      lastRunAt: null,
+      nextRunAt: "2026-08-05T12:00:00.000Z",
+      status: "active",
+      createdAt: "2026-08-01T05:00:00.000Z",
+      latestBriefId: "brief-stale-1",
+      lastDeliveredAt: "2026-08-01T05:29:04.917Z",
+      lastEvaluatedAt: "2026-08-04T23:11:00.000Z",
+      preferences: [],
+      constraints: [],
+      openQuestions: [],
+    };
+    mockGetProgramById.mockReturnValue(program);
+    mockListTasks.mockReturnValue([]);
+
+    const res = await app.inject({ method: "GET", url: "/api/programs/prog-stale" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(expect.objectContaining({
+      id: "prog-stale",
+      latestBriefSummary: null,
+    }));
+  });
+
   it("GET /api/programs/:id returns 404 when a program is missing", async () => {
     mockGetProgramById.mockReturnValue(null);
 

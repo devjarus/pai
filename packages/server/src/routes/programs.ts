@@ -1,4 +1,3 @@
-import { appendFileSync } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
@@ -100,6 +99,7 @@ function buildProgramActionSummary(serverCtx: ServerContext, programId: string) 
 
 function buildLatestBriefSummary(serverCtx: ServerContext, program: Program) {
   if (!program.latestBriefId) return null;
+  if (hasUndeliveredProgramEvaluation(program)) return null;
 
   const rows = serverCtx.ctx.storage.query<ProgramBriefSummaryRow>(
     "SELECT id, generated_at, type, sections, source_job_id, source_job_kind FROM briefings WHERE id = ?",
@@ -118,25 +118,16 @@ function buildLatestBriefSummary(serverCtx: ServerContext, program: Program) {
   };
 }
 
+function hasUndeliveredProgramEvaluation(program: Pick<Program, "lastDeliveredAt" | "lastEvaluatedAt">): boolean {
+  if (!program.lastDeliveredAt || !program.lastEvaluatedAt) return false;
+  const deliveredAt = Date.parse(program.lastDeliveredAt);
+  const evaluatedAt = Date.parse(program.lastEvaluatedAt);
+  if (!Number.isFinite(deliveredAt) || !Number.isFinite(evaluatedAt)) return false;
+  return evaluatedAt > deliveredAt;
+}
+
 function enrichProgram(serverCtx: ServerContext, program: Program) {
   const latestBriefSummary = buildLatestBriefSummary(serverCtx, program);
-  // #region agent log
-  appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({
-    hypothesisId: "D",
-    location: "packages/server/src/routes/programs.ts:124",
-    message: "Program enriched for inbox card",
-    data: {
-      programId: program.id,
-      latestBriefId: program.latestBriefId,
-      lastDeliveredAt: program.lastDeliveredAt,
-      lastEvaluatedAt: program.lastEvaluatedAt,
-      latestBriefSummaryId: latestBriefSummary?.id ?? null,
-      latestBriefSummaryGeneratedAt: latestBriefSummary?.generatedAt ?? null,
-      latestBriefSummaryPreview: latestBriefSummary?.recommendationSummary?.slice(0, 180) ?? null,
-    },
-    timestamp: Date.now(),
-  }) + "\n");
-  // #endregion
   return {
     ...program,
     actionSummary: buildProgramActionSummary(serverCtx, program.id),

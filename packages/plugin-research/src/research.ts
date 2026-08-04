@@ -1,4 +1,3 @@
-import { appendFileSync } from "node:fs";
 import { stepCountIs } from "ai";
 import type { LanguageModel } from "ai";
 import type { BackgroundJob, AgentPlatformServices } from "@personal-ai/core";
@@ -717,27 +716,6 @@ export async function runResearchInBackground(
     const signalChanged = !hasPreviousSignal || program!.lastSignalHash !== signalHash;
     const shouldDeliver = !program || signalChanged;
 
-    // #region agent log
-    appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({
-      hypothesisId: "A",
-      location: "packages/plugin-research/src/research.ts:717",
-      message: "Research signal evaluation",
-      data: {
-        jobId,
-        programId: job.sourceScheduleId ?? null,
-        hasPreviousSignal,
-        previousLatestBriefId: program?.latestBriefId ?? null,
-        previousLastDeliveredAt: program?.lastDeliveredAt ?? null,
-        previousLastEvaluatedAt: program?.lastEvaluatedAt ?? null,
-        previousLastSignalHash: program?.lastSignalHash ?? null,
-        nextSignalHash: signalHash,
-        signalChanged,
-        shouldDeliver,
-      },
-      timestamp: Date.now(),
-    }) + "\n");
-    // #endregion
-
     const briefingId = shouldDeliver ? `research-${jobId}` : null;
     try {
       if (briefingId) {
@@ -837,11 +815,11 @@ export async function runResearchInBackground(
       }
 
       if (job.sourceScheduleId) {
-
+        const evaluationTimestamp = new Date().toISOString();
         recordProgramEvaluation(ctx.storage, job.sourceScheduleId, {
           latestBriefId: briefingId ?? undefined,
-          lastDeliveredAt: briefingId ? new Date().toISOString() : undefined,
-          lastEvaluatedAt: new Date().toISOString(),
+          lastDeliveredAt: briefingId ? evaluationTimestamp : undefined,
+          lastEvaluatedAt: evaluationTimestamp,
           lastSignalHash: signalHash,
         });
       }

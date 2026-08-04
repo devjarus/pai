@@ -185,6 +185,23 @@ describe("watches routes", () => {
     expect(res.json().id).toBe("watch-1");
   });
 
+  it("GET /api/watches/:id hides stale latest brief summaries after a quiet evaluation", async () => {
+    mockGetWatch.mockReturnValue({
+      ...MOCK_WATCH,
+      latestBriefId: "brief-stale-1",
+      lastDeliveredAt: "2026-08-01T05:29:04.917Z",
+      lastEvaluatedAt: "2026-08-04T23:11:00.000Z",
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/watches/watch-1" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(expect.objectContaining({
+      id: "watch-1",
+      latestBriefSummary: null,
+    }));
+  });
+
   it("GET /api/watches/:id returns 404 for unknown watch", async () => {
     mockGetWatch.mockReturnValue(null);
 
