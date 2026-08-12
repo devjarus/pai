@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { createStorage, threadMigrations, backgroundJobMigrations, artifactMigrations, createThread, listMessages, getJob } from "@personal-ai/core";
 import type { Storage } from "@personal-ai/core";
 import type { Migration } from "@personal-ai/core";
-import { scheduleMigrations } from "@personal-ai/plugin-schedules";
+import { getProgramById, scheduleMigrations } from "@personal-ai/plugin-schedules";
 import { createFinding, findingsMigrations, listFindings } from "@personal-ai/library";
 import { researchMigrations } from "../src/index.js";
 import { runResearchInBackground, getResearchJob, createResearchJob } from "../src/research.js";
@@ -475,6 +475,33 @@ describe("Research jobs", () => {
       expect(rows[0]?.count).toBe(1);
       expect(getResearchJob(storage, first)?.briefingId).toBeTruthy();
       expect(getResearchJob(storage, second)?.briefingId).toBeNull();
+    });
+
+    it("aligns delivered and evaluated timestamps when a new briefing is created", async () => {
+      const { generateText } = await import("ai");
+      (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({
+        text: "# Report\n\nA materially new update landed today.",
+        steps: [],
+      });
+
+      storage.run(
+        "INSERT INTO scheduled_jobs (id, label, type, goal, interval_hours, next_run_at, status, delivery_mode) VALUES (?, ?, ?, ?, ?, datetime('now'), 'active', 'interval')",
+        ["watch-ts", "Timestamp Watch", "research", "Track daily updates", 24],
+      );
+
+      const ctx = makeCtx();
+      const jobId = createResearchJob(storage, {
+        goal: "Track daily updates",
+        threadId: null,
+        sourceScheduleId: "watch-ts",
+      });
+
+      await runResearchInBackground(ctx, jobId);
+
+      const program = getProgramById(storage, "watch-ts");
+      expect(program?.latestBriefId).toBeTruthy();
+      expect(program?.lastDeliveredAt).toBeTruthy();
+      expect(program?.lastEvaluatedAt).toBe(program?.lastDeliveredAt);
     });
 
     it("posts failure message to thread when research fails", async () => {

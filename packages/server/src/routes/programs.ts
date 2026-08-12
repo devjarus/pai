@@ -99,6 +99,7 @@ function buildProgramActionSummary(serverCtx: ServerContext, programId: string) 
 
 function buildLatestBriefSummary(serverCtx: ServerContext, program: Program) {
   if (!program.latestBriefId) return null;
+  if (hasUndeliveredProgramEvaluation(program)) return null;
 
   const rows = serverCtx.ctx.storage.query<ProgramBriefSummaryRow>(
     "SELECT id, generated_at, type, sections, source_job_id, source_job_kind FROM briefings WHERE id = ?",
@@ -117,11 +118,20 @@ function buildLatestBriefSummary(serverCtx: ServerContext, program: Program) {
   };
 }
 
+function hasUndeliveredProgramEvaluation(program: Pick<Program, "lastDeliveredAt" | "lastEvaluatedAt">): boolean {
+  if (!program.lastDeliveredAt || !program.lastEvaluatedAt) return false;
+  const deliveredAt = Date.parse(program.lastDeliveredAt);
+  const evaluatedAt = Date.parse(program.lastEvaluatedAt);
+  if (!Number.isFinite(deliveredAt) || !Number.isFinite(evaluatedAt)) return false;
+  return evaluatedAt > deliveredAt;
+}
+
 function enrichProgram(serverCtx: ServerContext, program: Program) {
+  const latestBriefSummary = buildLatestBriefSummary(serverCtx, program);
   return {
     ...program,
     actionSummary: buildProgramActionSummary(serverCtx, program.id),
-    latestBriefSummary: buildLatestBriefSummary(serverCtx, program),
+    latestBriefSummary,
   };
 }
 

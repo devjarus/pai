@@ -815,11 +815,11 @@ export async function runResearchInBackground(
       }
 
       if (job.sourceScheduleId) {
-
+        const evaluationTimestamp = new Date().toISOString();
         recordProgramEvaluation(ctx.storage, job.sourceScheduleId, {
           latestBriefId: briefingId ?? undefined,
-          lastDeliveredAt: briefingId ? new Date().toISOString() : undefined,
-          lastEvaluatedAt: new Date().toISOString(),
+          lastDeliveredAt: briefingId ? evaluationTimestamp : undefined,
+          lastEvaluatedAt: evaluationTimestamp,
           lastSignalHash: signalHash,
         });
       }
