@@ -8,8 +8,6 @@ export { ToolBeliefsList } from "./ToolBeliefsList";
 export { ToolKnowledgeSearch } from "./ToolKnowledgeSearch";
 export { ToolKnowledgeSources } from "./ToolKnowledgeSources";
 export { ToolKnowledgeAction } from "./ToolKnowledgeAction";
-export { ToolCurateMemory } from "./ToolCurateMemory";
-export { ToolCuratorAction } from "./ToolCuratorAction";
 export { ToolResearchStart } from "./ToolResearchStart";
 export { ToolScheduleAction } from "./ToolScheduleAction";
 export { ToolFlightResults } from "./ToolFlightResults";

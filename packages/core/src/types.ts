@@ -81,22 +81,9 @@ export interface TelemetryAttributes {
   metadata?: Record<string, unknown>;
 }
 
-export interface FeatureFlags {
-  libraryDomain?: boolean;
-  watchesDomain?: boolean;
-  digestsDomain?: boolean;
-  homeDashboard?: boolean;
-}
-
-/**
- * Deployment mode — controls which infrastructure backends are used at runtime.
- * - selfhosted: SQLite, local filesystem, in-process workers (default)
- * - hosted: PostgreSQL, S3, external job queue (future)
- */
-export type DeploymentMode = "selfhosted" | "hosted";
-
 export interface Config {
-  mode: DeploymentMode;
+  /** Always self-hosted for now (hosted backends not implemented). */
+  mode: "selfhosted";
   dataDir: string;
   logLevel: LogLevel;
   llm: {
@@ -148,8 +135,6 @@ export interface Config {
   debugResearch?: boolean;
   /** SearXNG web search URL (e.g. http://localhost:8080). Auto-detected in Docker/Railway if unset. */
   searchUrl?: string;
-  /** Feature flags for phased domain rollout */
-  features?: FeatureFlags;
 }
 
 export interface Migration {

@@ -17,8 +17,6 @@ import { ToolBeliefsList } from "../tools/ToolBeliefsList";
 import { ToolKnowledgeSearch } from "../tools/ToolKnowledgeSearch";
 import { ToolKnowledgeSources } from "../tools/ToolKnowledgeSources";
 import { ToolKnowledgeAction } from "../tools/ToolKnowledgeAction";
-import { ToolCurateMemory } from "../tools/ToolCurateMemory";
-import { ToolCuratorAction } from "../tools/ToolCuratorAction";
 import { ToolResearchStart } from "../tools/ToolResearchStart";
 import { ToolScheduleAction } from "../tools/ToolScheduleAction";
 import { ToolDocumentReport } from "../tools/ToolDocumentReport";
@@ -133,24 +131,12 @@ export const JobStatusToolUI = makeAssistantToolUI({
   ),
 });
 
-export const CurateMemoryToolUI = makeAssistantToolUI({
-  toolName: "curate_memory",
-  render: ({ args, result, status }) => (
-    <ToolCurateMemory state={mapStatus(status)} input={args} output={result as any} />
-  ),
-});
 
-export const FixIssuesToolUI = makeAssistantToolUI({
-  toolName: "fix_issues",
-  render: ({ args, result, status }) => (
-    <ToolCuratorAction state={mapStatus(status)} toolName="fix_issues" input={args} output={result as any} />
-  ),
-});
 
 export const ListBeliefsToolUI = makeAssistantToolUI({
   toolName: "list_beliefs",
   render: ({ args, result, status }) => (
-    <ToolCuratorAction state={mapStatus(status)} toolName="list_beliefs" input={args} output={result as any} />
+    <ToolBeliefsList state={mapStatus(status)} input={args} output={result as any} />
   ),
 });
 
@@ -211,35 +197,6 @@ export const GenerateReportToolUI = makeAssistantToolUI({
 });
 
 
-export const AgentCuratorToolUI = makeAssistantToolUI({
-  toolName: "agent_curator",
-  render: ({ args, result, status }) => {
-    const state = mapStatus(status);
-    const input = args as { task?: string };
-    const output = result as { response?: string } | undefined;
-
-    if (state === "input-available") {
-      return (
-        <div className="my-2 rounded-lg border border-violet-500/30 bg-violet-500/5 p-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            Delegating to Memory Curator...
-          </div>
-          {input.task && <p className="mt-1 text-xs text-muted-foreground">{input.task}</p>}
-        </div>
-      );
-    }
-
-    return (
-      <div className="my-2 rounded-lg border border-violet-500/30 bg-violet-500/5 p-3 space-y-2">
-        <div className="text-xs font-medium text-violet-400 uppercase tracking-wide">Memory Curator</div>
-        {output?.response && (
-          <p className="text-sm text-foreground whitespace-pre-wrap">{output.response}</p>
-        )}
-      </div>
-    );
-  },
-});
 
 
 /**
@@ -261,8 +218,6 @@ export const AllToolUIs = () => (
     <LearnFromUrlToolUI />
     <KnowledgeForgetToolUI />
     <JobStatusToolUI />
-    <CurateMemoryToolUI />
-    <FixIssuesToolUI />
     <ListBeliefsToolUI />
     <ResearchStartToolUI />
     <ProgramCreateToolUI />
@@ -272,6 +227,5 @@ export const AllToolUIs = () => (
     <ScheduleListToolUI />
     <ScheduleDeleteToolUI />
     <GenerateReportToolUI />
-    <AgentCuratorToolUI />
   </>
 );

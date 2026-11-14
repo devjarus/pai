@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **Code-execution sandbox and PinchTab browser automation** — Removed the `sandbox/` sidecar, `run_code` / `browse_*` tools, Settings fields, health capabilities, Compose/Railway deploy docs, and related config (`sandboxUrl` / `browserUrl`, `PAI_SANDBOX_URL` / `PAI_BROWSER_URL`). SearXNG search remains.
 - **Swarm runtime** — Multi-agent swarm execution (`swarm_start`, `enqueueSwarm`, `runSwarmInBackground`) is gone. Watches and digests with `executionMode`/`execution` of `analysis` now enqueue **deep research** instead. Historical `swarm_*` tables and read/cancel helpers remain so existing DBs and old Jobs still load.
+- **Background LLM maintenance loops** — Disabled automatic background learning, profile consolidation, weekly compounding, and Linear auto-issue workers. Memory updates come from explicit remember/correct flows and digests.
+- **Memory Curator agent (`plugin-curator`)** — Removed the curator agent package and its chat/Telegram wiring.
+- **Telegram PDF + passive group chime-ins** — Reports always deliver as HTML (no puppeteer/Chromium). Group chats only respond when mentioned or replied to.
+- **Dead scaffolding** — Removed unused feature flags (`watchesDomain` / `digestsDomain` / `homeDashboard`), `PAI_MODE` hosted stub, and orphan `Library.tsx` overview page.
 
 ### Fixed
 - **CI runner pinned to Ubuntu 24.04** — `ubuntu-latest` moved to 26.04, which Playwright 1.58.2 cannot install Chromium on. E2E install now runs on `ubuntu-24.04`.

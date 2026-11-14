@@ -19,7 +19,6 @@ import {
   stripHtmlTags,
   buildTelegramDigestMarkdown,
 } from "./formatter.js";
-import { bufferMessage, passiveProcess } from "./passive.js";
 import { sendArtifactsToTelegram } from "./delivery.js";
 import { sendReportDocumentToTelegram } from "./report-document.js";
 
@@ -684,7 +683,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
           await sendReportDocumentToTelegram(ctx.storage, bot, chatId, {
             title: docTitle,
             markdown: formattedText,
-            fileName: `${docTitle}.pdf`,
+            fileName: `${docTitle}.html`,
           }, ctx.logger);
         } catch (err) {
           ctx.logger.warn("Failed to send Telegram PDF attachment", { error: err instanceof Error ? err.message : String(err) });
@@ -739,16 +738,9 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
       const botUsername = tgCtx.me.username;
       const isMentioned = tgCtx.message.text.includes(`@${botUsername}`);
       const isReply = tgCtx.message.reply_to_message?.from?.id === tgCtx.me.id;
-      const senderName = tgCtx.from
-        ? [tgCtx.from.first_name, tgCtx.from.last_name].filter(Boolean).join(" ") || tgCtx.from.username || "Unknown"
-        : "Unknown";
 
       if (!isMentioned && !isReply) {
-        // Always buffer (free)
-        bufferMessage(tgCtx.chat.id, tgCtx.message.text, senderName);
-        // Passive processing (fire-and-forget, don't block)
-        passiveProcess(ctx, agentPlugin, tgCtx.chat.id, tgCtx.message, bot.api)
-          .catch((err) => ctx.logger.debug("Passive processing failed", { error: String(err) }));
+        // Groups: only respond when mentioned or replied to (no passive chime-ins).
         return;
       }
 

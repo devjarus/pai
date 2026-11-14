@@ -59,7 +59,6 @@ packages/
   plugin-research/    Background research with agent harness
   plugin-swarm/       Parallel sub-agent coordination
   plugin-tasks/       To-dos + Goals
-  plugin-curator/     Memory health (dedup, contradiction resolution)
   plugin-telegram/    Telegram bot (grammY)
 ```
 

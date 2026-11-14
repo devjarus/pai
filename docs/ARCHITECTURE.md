@@ -80,7 +80,6 @@ packages/
   cli/                Commander.js CLI + MCP server (stdio, 19 tools) + `pai init`
   plugin-tasks/       Tasks with AI prioritization, clearAllTasks
   plugin-assistant/   Personal Assistant agent — split into 3 files (system-prompt, auto-memory, index), AI SDK tools, afterResponse hook
-  plugin-curator/     Memory Curator agent — health analysis, dedup, contradiction resolution
   plugin-research/    Background research — split into 6 modules (types, repository, prompts, tools, charts, research). Domain detection (flight/stock/general), domain-specific LLM prompts, structured JSON output
   plugin-swarm/       Sub-agent swarm — decomposes tasks into 2-5 parallel domain-specific sub-agents with shared SQLite blackboard, budget-limited tools, and orchestrator synthesis
   plugin-schedules/   Recurring scheduled research jobs
@@ -634,7 +633,6 @@ interface AgentContext extends PluginContext {
 - `afterResponse`: auto-learns URLs from user messages (fire-and-forget)
 - Web search: SearXNG (self-hosted, no API key, supports search categories)
 
-### Memory Curator (`plugin-curator`)
 
 - System prompt instructs analysis → present findings → wait for approval → fix
 - Tools: `curate_memory` (read-only health analysis), `fix_issues` (merge/prune/resolve/synthesize), `list_beliefs`

@@ -10,11 +10,6 @@ vi.mock("../src/briefing.js", () => ({
   getLatestBriefing: (...args: unknown[]) => mockGetLatestBriefing(...args),
 }));
 
-const mockRunBackgroundLearning = vi.fn().mockResolvedValue(undefined);
-vi.mock("../src/learning.js", () => ({
-  runBackgroundLearning: (...args: unknown[]) => mockRunBackgroundLearning(...args),
-}));
-
 const mockGetDueSchedules = vi.fn().mockReturnValue([]);
 const mockMarkScheduleRun = vi.fn();
 vi.mock("@personal-ai/plugin-schedules", () => ({
@@ -40,20 +35,12 @@ vi.mock("@personal-ai/plugin-assistant/page-fetch", () => ({
 
 const mockListBeliefs = vi.fn().mockReturnValue([]);
 const mockListThreads = vi.fn().mockReturnValue([]);
-const mockSyncAutomaticLinearIssues = vi.fn().mockResolvedValue({
-  created: 0,
-  updated: 0,
-  candidates: 0,
-  skipped: 0,
-  reason: "disabled",
-});
 vi.mock("@personal-ai/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@personal-ai/core")>();
   return {
     ...actual,
     listBeliefs: (...args: unknown[]) => mockListBeliefs(...args),
     listThreads: (...args: unknown[]) => mockListThreads(...args),
-    syncAutomaticLinearIssues: (...args: unknown[]) => mockSyncAutomaticLinearIssues(...args),
   };
 });
 
@@ -93,13 +80,6 @@ describe("WorkerLoop", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
-    mockSyncAutomaticLinearIssues.mockResolvedValue({
-      created: 0,
-      updated: 0,
-      candidates: 0,
-      skipped: 0,
-      reason: "disabled",
-    });
   });
 
   afterEach(() => {
@@ -120,8 +100,6 @@ describe("WorkerLoop", () => {
     const loop = new WorkerLoop(ctx, {
       briefingIntervalMs: 5000,
       scheduleCheckIntervalMs: 1000,
-      learningIntervalMs: 5000,
-      learningInitialDelayMs: 5000,
       generateInitialBriefing: false,
     });
 
@@ -221,38 +199,6 @@ describe("WorkerLoop", () => {
     loop.stop();
   });
 
-  it("runs learning after initial delay", () => {
-    const ctx = createMockCtx();
-    const loop = new WorkerLoop(ctx, {
-      learningInitialDelayMs: 3000,
-      learningIntervalMs: 10000,
-      generateInitialBriefing: false,
-    });
-    loop.start();
-
-    expect(mockRunBackgroundLearning).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(3000);
-    expect(mockRunBackgroundLearning).toHaveBeenCalledTimes(1);
-
-    loop.stop();
-  });
-
-  it("runs learning on interval", () => {
-    const ctx = createMockCtx();
-    const loop = new WorkerLoop(ctx, {
-      learningInitialDelayMs: 100,
-      learningIntervalMs: 5000,
-      generateInitialBriefing: false,
-    });
-    loop.start();
-
-    vi.advanceTimersByTime(5000);
-    expect(mockRunBackgroundLearning).toHaveBeenCalledTimes(2); // initial delay + first interval
-
-    loop.stop();
-  });
-
   it("updateContext replaces internal context", () => {
     const ctx = createMockCtx();
     const loop = new WorkerLoop(ctx, {
@@ -326,32 +272,6 @@ describe("WorkerLoop", () => {
     loop.stop();
   });
 
-  it("runs the automatic Linear issue sweep on interval", () => {
-    const ctx = createMockCtx();
-    ctx.config.linear = {
-      enabled: true,
-      autoCreateRecurringIssues: true,
-      apiKey: "lin_api_key",
-      defaultTeam: "ENG",
-    } as any;
-    mockSyncAutomaticLinearIssues.mockResolvedValue({
-      created: 1,
-      updated: 0,
-      candidates: 1,
-      skipped: 0,
-    });
-
-    const loop = new WorkerLoop(ctx, {
-      generateInitialBriefing: false,
-    });
-    loop.start();
-
-    vi.advanceTimersByTime(60 * 60 * 1000);
-
-    expect(mockSyncAutomaticLinearIssues).toHaveBeenCalledWith(ctx.storage, ctx.config, ctx.logger);
-
-    loop.stop();
-  });
 });
 
 describe("buildEnrichedResearchGoal", () => {

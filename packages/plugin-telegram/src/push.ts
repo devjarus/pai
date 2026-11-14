@@ -218,7 +218,7 @@ async function pushReportBrief(
     await sendReportDocumentToTelegram(storage, bot, chatId, {
       title,
       markdown: presentation.report,
-      fileName: `${title}.pdf`,
+      fileName: `${title}.html`,
       renderSpec: presentation.renderSpec,
       visuals: presentation.visuals.map((visual) => ({
         artifactId: visual.artifactId,

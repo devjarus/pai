@@ -1,10 +1,5 @@
-import { existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
-
 import { InputFile } from "grammy";
 import type { Bot } from "grammy";
-import puppeteer from "puppeteer-core";
 import { marked } from "marked";
 
 import { getArtifact, specToStaticHtml } from "@personal-ai/core";
@@ -290,136 +285,17 @@ ${bodyParts.join("\n")}
 </html>`;
 }
 
-/**
- * Find a usable Chromium executable.
- * Returns null if none found (caller falls back to HTML delivery).
- */
-function findChromiumPath(): string | null {
-  // 1. Env override
-  if (process.env.CHROMIUM_PATH && existsSync(process.env.CHROMIUM_PATH)) {
-    return process.env.CHROMIUM_PATH;
-  }
-
-  // 2. Playwright cache (search multiple homes)
-  const cacheRoots = [
-    join(homedir(), ".cache", "ms-playwright"),
-    "/root/.cache/ms-playwright",
-    join(process.cwd(), "node_modules", ".cache", "ms-playwright"),
-  ];
-
-  for (const root of cacheRoots) {
-    if (!existsSync(root)) continue;
-    try {
-      const entries = readdirSync(root)
-        .filter((d: string) => d.startsWith("chromium-"))
-        .sort()
-        .reverse();
-      for (const dir of entries) {
-        const candidate = resolve(root, dir, "chrome-linux", "chrome");
-        if (existsSync(candidate)) return candidate;
-      }
-    } catch {
-      // continue searching
-    }
-  }
-
-  // 3. Common system paths
-  const systemPaths = [
-    "/usr/bin/chromium-browser",
-    "/usr/bin/chromium",
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/google-chrome",
-  ];
-  for (const p of systemPaths) {
-    if (existsSync(p)) return p;
-  }
-
-  return null;
-}
-
-let _chromiumPath: string | null | undefined;
-
-function getChromiumPath(): string | null {
-  if (_chromiumPath === undefined) {
-    _chromiumPath = findChromiumPath();
-  }
-  return _chromiumPath;
-}
-
-/**
- * Try to render HTML to PDF via Chromium. Returns null if Chromium is unavailable.
- */
-async function tryRenderPdfBuffer(
-  html: string,
-  logger: Logger,
-): Promise<Buffer | null> {
-  const chromiumPath = getChromiumPath();
-  if (!chromiumPath) {
-    return null;
-  }
-
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      executablePath: chromiumPath,
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-    });
-
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0", timeout: 15_000 });
-
-    const pdfUint8 = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      margin: { top: "20mm", bottom: "20mm", left: "16mm", right: "16mm" },
-      displayHeaderFooter: false,
-      preferCSSPageSize: false,
-    });
-
-    return Buffer.from(pdfUint8);
-  } catch (err) {
-    logger.warn("PDF rendering failed, will fall back to HTML document", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  } finally {
-    if (browser) {
-      await browser.close().catch(() => {});
-    }
-  }
-}
-
-/**
- * Render a report as PDF (if Chromium available) or HTML (fallback).
- */
-async function renderReportDocument(
-  storage: Storage,
-  options: TelegramReportDocumentOptions,
-  logger: Logger,
-): Promise<{ data: Buffer; extension: "pdf" | "html" }> {
-  const html = buildReportHtml(storage, options, logger);
-
-  const pdf = await tryRenderPdfBuffer(html, logger);
-  if (pdf) {
-    return { data: pdf, extension: "pdf" };
-  }
-
-  logger.info("Chromium not available — delivering report as HTML document");
-  return { data: Buffer.from(html, "utf-8"), extension: "html" };
-}
-
 export async function buildTelegramReportDocument(
   storage: Storage,
   options: TelegramReportDocumentOptions,
   logger: Logger,
 ): Promise<{ data: Buffer; fileName: string }> {
   const title = options.title.trim() || "Report";
-  const { data, extension } = await renderReportDocument(storage, options, logger);
+  const html = buildReportHtml(storage, options, logger);
   const stem = resolvePdfFileName(title, options.fileName).replace(/\.pdf$/, "");
   return {
-    data,
-    fileName: `${stem}.${extension}`,
+    data: Buffer.from(html, "utf-8"),
+    fileName: `${stem}.html`,
   };
 }
 
