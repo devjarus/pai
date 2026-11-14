@@ -176,9 +176,6 @@ EOF
   echo ""
   echo "  Web UI:  http://localhost:3141"
   echo "  Search:  SearXNG (self-hosted, no API key needed)"
-  if [ "$SANDBOX_CHOICE" = "2" ]; then
-    echo "  Sandbox: Code execution enabled (Python + Node)"
-  fi
   if [ "$PROVIDER" = "ollama" ]; then
     echo "  LLM:     Ollama (local inference)"
   fi

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Docker installer no longer crashes after sandbox removal** — `install.sh` still referenced unset `SANDBOX_CHOICE` under `set -u`, so installs aborted right after containers came up.
+
 ### Removed
 - **Code-execution sandbox and PinchTab browser automation** — Removed the `sandbox/` sidecar, `run_code` / `browse_*` tools, Settings fields, health capabilities, Compose/Railway deploy docs, and related config (`sandboxUrl` / `browserUrl`, `PAI_SANDBOX_URL` / `PAI_BROWSER_URL`). SearXNG search remains.
 - **Swarm runtime** — Multi-agent swarm execution (`swarm_start`, `enqueueSwarm`, `runSwarmInBackground`) is gone. Watches and digests with `executionMode`/`execution` of `analysis` now enqueue **deep research** instead. Historical `swarm_*` tables and read/cancel helpers remain so existing DBs and old Jobs still load.
