@@ -33,7 +33,6 @@ Or run manually with Docker:
 ```bash
 docker compose up -d                              # cloud provider (configure in Settings UI)
 docker compose --profile local up -d              # with local Ollama
-docker compose --profile local --profile sandbox up -d  # everything
 ```
 
 Or from source:

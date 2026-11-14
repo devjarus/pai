@@ -68,8 +68,6 @@ function createMockCtx(): PluginContext {
   return {
     config: {
       dataDir: "/tmp",
-      sandboxUrl: "http://sandbox",
-      browserUrl: "http://browser",
       llm: { provider: "ollama" },
       plugins: [],
       logLevel: "silent",

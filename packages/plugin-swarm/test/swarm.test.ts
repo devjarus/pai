@@ -415,22 +415,21 @@ describe("Swarm jobs", () => {
       expect(job!.status).toBe("failed");
     });
 
-    it("persists sandbox artifacts and posts structured blackboard entry", async () => {
-      // Plan with a coder agent that uses run_code
+    it("runs a coder agent and posts blackboard findings", async () => {
       mockInstrumentedGenerateText
         .mockResolvedValueOnce({
           // Planner
           result: {
-            text: '```json\n[{"role":"coder","task":"Generate a chart","tools":["run_code"]}]\n```',
+            text: '```json\n[{"role":"coder","task":"Analyze quantitative findings","tools":["knowledge_search"]}]\n```',
             steps: [],
           },
           traceId: "trace-planner",
           spanId: "span-planner",
         })
         .mockResolvedValueOnce({
-          // Sub-agent (coder) — tool calls happen inside the mock, but result text comes back
+          // Sub-agent (coder)
           result: {
-            text: "Generated chart successfully.",
+            text: "Analyzed quantitative findings successfully.",
             steps: [{ type: "tool-result" }],
           },
           traceId: "trace-agent-1",
@@ -455,19 +454,16 @@ describe("Swarm jobs", () => {
         .mockResolvedValueOnce({
           // Synthesizer
           result: {
-            text: "# Report\nChart generated.",
+            text: "# Report\nAnalysis complete.",
             steps: [],
           },
           traceId: "trace-synth",
           spanId: "span-synth",
         });
 
-      // Mock sandbox to return a file
-      vi.stubEnv("PAI_SANDBOX_URL", "http://localhost:8888");
-
       const ctx = makeCtx();
       const id = createSwarmJob(storage, {
-        goal: "Generate stock chart",
+        goal: "Analyze stock metrics",
         threadId: null,
       });
 
@@ -480,12 +476,8 @@ describe("Swarm jobs", () => {
       expect(agents).toHaveLength(3);
       expect(agents.some((agent) => agent.role === "coder" || agent.role === "chart_generator")).toBe(true);
 
-      // Artifacts are persisted when run_code executes inside generateText,
-      // which is mocked — so we verify the blackboard has at least the final finding
       const entries = getBlackboardEntries(storage, id);
       expect(entries.length).toBeGreaterThanOrEqual(1);
-
-      vi.unstubAllEnvs();
     });
 
     it("registers job in background_jobs DB table", async () => {

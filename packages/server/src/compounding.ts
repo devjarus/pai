@@ -143,7 +143,7 @@ export async function runWeeklyCompounding(
         if (!item.insight || item.insight.length < 10) continue;
 
         // Filter out meta/self-referential insights about the research process
-        const isMeta = /\b(search.*(fail|return|cycle|attempt)|tool.*(fail|limit|unavail)|data.*(retriev|limit|gap)|research.*(encounter|fail|cycle|tool)|web.search|fetch_rss|browse_navigate|no results)\b/i.test(item.insight);
+        const isMeta = /\b(search.*(fail|return|cycle|attempt)|tool.*(fail|limit|unavail)|data.*(retriev|limit|gap)|research.*(encounter|fail|cycle|tool)|web.search|fetch_rss|no results)\b/i.test(item.insight);
         if (isMeta) continue;
 
         // Quality gate: skip low-confidence insights that are too vague

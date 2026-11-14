@@ -135,8 +135,6 @@ function createMockServerCtx(): ServerContext {
     ctx: {
       config: {
         dataDir: "/tmp/test",
-        sandboxUrl: "http://sandbox",
-        browserUrl: "http://browser",
         logLevel: "silent" as const,
         llm: {
           provider: "ollama" as const,

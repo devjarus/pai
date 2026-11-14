@@ -81,9 +81,7 @@ export default function Settings() {
   const [llmTrafficReservedInteractiveSlots, setLlmTrafficReservedInteractiveSlots] = useState(DEFAULT_LLM_TRAFFIC.reservedInteractiveSlots);
 
   // Sidecar URLs
-  const [sandboxUrl, setSandboxUrl] = useState("");
   const [searchUrl, setSearchUrl] = useState("");
-  const [browserUrl, setBrowserUrl] = useState("");
 
   // Debug settings
   const [debugResearch, setDebugResearch] = useState(false);
@@ -134,9 +132,7 @@ export default function Settings() {
       setLlmTrafficStartupDelayMs(llmTraffic.startupDelayMs ?? DEFAULT_LLM_TRAFFIC.startupDelayMs);
       setLlmTrafficSwarmAgentConcurrency(llmTraffic.swarmAgentConcurrency ?? DEFAULT_LLM_TRAFFIC.swarmAgentConcurrency);
       setLlmTrafficReservedInteractiveSlots(llmTraffic.reservedInteractiveSlots ?? DEFAULT_LLM_TRAFFIC.reservedInteractiveSlots);
-      setSandboxUrl(config.sandboxUrl ?? "");
       setSearchUrl(config.searchUrl ?? "");
-      setBrowserUrl(config.browserUrl ?? "");
     }
   }, [config, editing]);
 
@@ -179,9 +175,7 @@ export default function Settings() {
       if (llmTrafficReservedInteractiveSlots !== (config.workers?.llmTraffic?.reservedInteractiveSlots ?? DEFAULT_LLM_TRAFFIC.reservedInteractiveSlots)) {
         updates.llmTrafficReservedInteractiveSlots = llmTrafficReservedInteractiveSlots;
       }
-      if (sandboxUrl !== (config.sandboxUrl ?? "")) updates.sandboxUrl = sandboxUrl;
       if (searchUrl !== (config.searchUrl ?? "")) updates.searchUrl = searchUrl;
-      if (browserUrl !== (config.browserUrl ?? "")) updates.browserUrl = browserUrl;
 
       if (Object.keys(updates).length === 0) {
         setEditing(false);
@@ -197,7 +191,7 @@ export default function Settings() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save configuration");
     }
-  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, linearApiKey, linearEnabled, linearDefaultTeam, linearDefaultProject, linearAutoCreateRecurringIssues, bgLearningEnabled, briefingEnabled, knowledgeCleanupEnabled, llmTrafficMaxConcurrent, llmTrafficStartGapMs, llmTrafficStartupDelayMs, llmTrafficSwarmAgentConcurrency, llmTrafficReservedInteractiveSlots, sandboxUrl, searchUrl, browserUrl, config, updateConfigMut]);
+  }, [provider, model, baseUrl, embedModel, embedProvider, apiKey, dataDir, timezone, telegramToken, telegramEnabled, linearApiKey, linearEnabled, linearDefaultTeam, linearDefaultProject, linearAutoCreateRecurringIssues, bgLearningEnabled, briefingEnabled, knowledgeCleanupEnabled, llmTrafficMaxConcurrent, llmTrafficStartGapMs, llmTrafficStartupDelayMs, llmTrafficSwarmAgentConcurrency, llmTrafficReservedInteractiveSlots, searchUrl, config, updateConfigMut]);
 
   const handleCancel = useCallback(() => {
     if (config) {
@@ -226,9 +220,7 @@ export default function Settings() {
     setLlmTrafficSwarmAgentConcurrency(config?.workers?.llmTraffic?.swarmAgentConcurrency ?? DEFAULT_LLM_TRAFFIC.swarmAgentConcurrency);
     setLlmTrafficReservedInteractiveSlots(config?.workers?.llmTraffic?.reservedInteractiveSlots ?? DEFAULT_LLM_TRAFFIC.reservedInteractiveSlots);
     setDebugResearch(config?.debugResearch ?? false);
-    setSandboxUrl(config?.sandboxUrl ?? "");
     setSearchUrl(config?.searchUrl ?? "");
-    setBrowserUrl(config?.browserUrl ?? "");
     setEditing(false);
   }, [config]);
 
@@ -495,15 +487,13 @@ export default function Settings() {
                 <div className="space-y-2 border-t border-border/30 px-5 py-3">
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
                     Capabilities
-                    <InfoBubble text="Each dependency is checked honestly. Search must be green for Watches and research Digests. Sandbox and browser stay off unless you set their URLs." side="right" />
+                    <InfoBubble text="Each dependency is checked honestly. Search must be green for Watches and research Digests." side="right" />
                   </span>
                   <div className="grid gap-1.5 font-mono text-xs sm:grid-cols-2">
                     {(
                       [
                         ["Embeddings", health.capabilities.embeddings],
                         ["Search", health.capabilities.search],
-                        ["Sandbox", health.capabilities.sandbox],
-                        ["Browser", health.capabilities.browser],
                       ] as const
                     ).map(([label, cap]) => {
                       const off = cap.configured === false;
@@ -985,19 +975,6 @@ export default function Settings() {
                   <div className="border-t border-border/30 px-5 py-3 space-y-3">
                     <div className="space-y-1">
                       <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                        Sandbox URL
-                        <InfoBubble text="URL for the code execution sandbox (e.g. http://localhost:8888). Auto-detected in Docker/Railway if left empty." side="right" />
-                      </label>
-                      <input
-                        type="text"
-                        value={sandboxUrl}
-                        onChange={(e) => setSandboxUrl(e.target.value)}
-                        placeholder="Auto-detect"
-                        className="w-full rounded-md border border-border/50 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
                         Search URL
                         <InfoBubble text="URL for the SearXNG search engine (e.g. http://localhost:8080). Auto-detected in Docker/Railway if left empty." side="right" />
                       </label>
@@ -1009,42 +986,15 @@ export default function Settings() {
                         className="w-full rounded-md border border-border/50 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                        Browser URL
-                        <InfoBubble text="URL for the Pinchtab browser automation service (e.g. http://localhost:9867). Auto-detected in Docker/Railway if left empty. Enables browse_* tools for JS-rendered pages." side="right" />
-                      </label>
-                      <input
-                        type="text"
-                        value={browserUrl}
-                        onChange={(e) => setBrowserUrl(e.target.value)}
-                        placeholder="Auto-detect"
-                        className="w-full rounded-md border border-border/50 bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
-                      />
-                    </div>
                   </div>
                 </>
               )}
-              {!editing && (sandboxUrl || searchUrl || browserUrl) && (
+              {!editing && searchUrl && (
                 <div className="border-t border-border/30 px-5 py-3 space-y-1.5">
-                  {sandboxUrl && (
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">Sandbox URL</span>
-                      <span className="font-mono text-foreground/80">{sandboxUrl}</span>
-                    </div>
-                  )}
-                  {searchUrl && (
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">Search URL</span>
-                      <span className="font-mono text-foreground/80">{searchUrl}</span>
-                    </div>
-                  )}
-                  {browserUrl && (
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">Browser URL</span>
-                      <span className="font-mono text-foreground/80">{browserUrl}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Search URL</span>
+                    <span className="font-mono text-foreground/80">{searchUrl}</span>
+                  </div>
                 </div>
               )}
 

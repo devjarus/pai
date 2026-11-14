@@ -28,7 +28,6 @@ import { RESEARCH_LLM_TIMEOUT } from "./types.js";
 import { getResearchJob, updateResearchJob, getProgramActionSummary } from "./repository.js";
 import { getPromptForResultType } from "./prompts.js";
 import { createResearchTools } from "./tools.js";
-import { generateStockChartCode } from "./charts.js";
 
 // Re-export everything consumers need from the split modules
 export type { ResearchJob, ResearchContext } from "./types.js";
@@ -599,53 +598,6 @@ export async function runResearchInBackground(
       updateResearchJob(ctx.storage, jobId, { steps_log: JSON.stringify(currentSteps) });
     }
     let { report, structuredResult, renderSpec } = extractPresentationBlocks(rawReport);
-
-    // Generate charts for stock research via sandbox (if available)
-    if (job.resultType === "stock" && structuredResult) {
-      try {
-        const { resolveSandboxUrl, runInSandbox, storeArtifact, guessMimeType } = await import("@personal-ai/core");
-        const sandboxUrl = resolveSandboxUrl(ctx.sandboxUrl);
-        if (sandboxUrl) {
-          const stockData = JSON.parse(structuredResult);
-          const ticker = stockData.ticker ?? "STOCK";
-          const chartCode = generateStockChartCode(ticker, stockData.metrics);
-
-          const chartResult = await runInSandbox({
-            language: "python",
-            code: chartCode,
-            timeout: 60,
-          }, ctx.logger, ctx.sandboxUrl);
-
-          if (chartResult.files.length > 0) {
-            const charts: Array<{ id: string; type: string; title: string; artifactId: string }> = [];
-            for (const file of chartResult.files) {
-              const mimeType = guessMimeType(file.name);
-              const artifactId = storeArtifact(ctx.storage, ctx.dataDir ?? "", {
-                jobId: jobId,
-                name: file.name,
-                mimeType,
-                data: Buffer.from(file.data, "base64"),
-              });
-              const chartType = file.name.includes("comparison") ? "comparison" : file.name.includes("volume") ? "volume" : "price";
-              charts.push({
-                id: artifactId,
-                type: chartType,
-                title: `${ticker} ${chartType} chart`,
-                artifactId,
-              });
-            }
-
-            // Inject charts into the structured result
-            stockData.charts = charts;
-            structuredResult = JSON.stringify(stockData);
-          }
-
-          ctx.logger.info("Generated stock charts via sandbox", { jobId, chartCount: chartResult.files.length });
-        }
-      } catch (err) {
-        ctx.logger.warn(`Failed to generate stock charts: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
 
     const visuals = deriveReportVisuals(ctx.storage, jobId);
     const presentation = buildReportPresentation({

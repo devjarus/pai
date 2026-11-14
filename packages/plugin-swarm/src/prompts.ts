@@ -8,11 +8,9 @@ export function getPlannerPrompt(resultType?: string, timezone?: string): string
 ${currentDateBlock(timezone)}
 
 ## Available Roles
-- **researcher** — Searches the web, reads pages, gathers information. Tools: web_search, read_page, knowledge_search, browse_navigate, browse_text, browse_snapshot, browse_action.
-- **coder** — Writes and executes code for analysis, calculations, or data processing. Tools: run_code, knowledge_search.
-- **analyst** — Analyzes data and produces insights. Tools: web_search, read_page, knowledge_search, browse_navigate, browse_text.
-
-Note: browse_* tools are for JavaScript-rendered pages (SPAs) where read_page returns empty content. Use read_page first; only fall back to browse_* when needed.
+- **researcher** — Searches the web, reads pages, gathers information. Tools: web_search, read_page, knowledge_search.
+- **coder** — Analyzes quantitative data, compares metrics, and describes chart-ready findings. Tools: web_search, read_page, knowledge_search.
+- **analyst** — Analyzes data and produces insights. Tools: web_search, read_page, knowledge_search.
 ${domainGuidance}
 ## Output Format
 You MUST respond with valid JSON wrapped in a code fence:
@@ -38,7 +36,7 @@ You MUST respond with valid JSON wrapped in a code fence:
 - Always include one research role, one analyst role, and one coder/chart-generator role
 - Assign the most appropriate role for each subtask
 - Each subtask should have a clear, specific objective
-- Include only the tools each agent actually needs
+- Include only the tools each agent actually needs (web_search, read_page, knowledge_search)
 - Prefer fewer agents doing more focused work over many agents with vague tasks`;
 }
 
@@ -57,7 +55,7 @@ Prefer these roles over generic ones for flight-related goals.
 ## Domain: Stock / Equity Research
 Use these specialized roles:
 - **stock_researcher** — Researches company fundamentals, earnings, financials, and market position. Tools: web_search, read_page, knowledge_search.
-- **chart_generator** — Generates charts and performs quantitative analysis on stock data. Tools: run_code, knowledge_search.
+- **chart_generator** — Performs quantitative analysis on stock data and describes chart-ready findings. Tools: web_search, read_page, knowledge_search.
 Prefer these roles over generic ones for stock-related goals.
 `;
     case "crypto":
@@ -109,21 +107,21 @@ ${currentDateBlock(timezone)}
 }
 
 export function getCoderPrompt(timezone?: string): string {
-  return `You are a Coder Sub-Agent in a swarm. Your job is to write and execute code to analyze data, generate charts, or perform calculations.
+  return `You are a Coder Sub-Agent in a swarm. Your job is to analyze quantitative data, compare metrics, and describe chart-ready findings.
 
 ${currentDateBlock(timezone)}
 
 ## Process
 1. Check the blackboard for data from other agents
 2. Check knowledge base for relevant context
-3. Write code to process, analyze, or visualize the real data
-4. Write PNG images to OUTPUT_DIR and optionally write a visuals.json manifest describing titles, captions, kinds, and order
-5. Post results (calculations, insights, chart descriptions, artifact references) to the blackboard
+3. Analyze, compare, and summarize the real data
+4. Describe visuals that would help (titles, captions, axes, series) without inventing data
+5. Post results (calculations, insights, chart descriptions) to the blackboard
 
 ## Rules
-- Post all outputs to the blackboard as findings or artifacts
-- Use run_code for Python (matplotlib, pandas, numpy available) or Node.js
-- Keep code simple and focused on the task
+- Post all outputs to the blackboard as findings
+- Use web_search, read_page, and knowledge_search when you need more evidence
+- Keep analysis focused on the task
 - If data is missing, post a question to the blackboard asking for it
 - Only use real, sourced quantitative data from the blackboard or authoritative references
 - Never fabricate, simulate, or synthesize chart data just to make a visual`;

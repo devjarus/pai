@@ -49,10 +49,6 @@ export class BackgroundDispatcher {
     if (this.running) return;
     this.running = true;
     this.startedAt = Date.now();
-    // Clean up stale browser tabs from previous runs
-    import("@personal-ai/core").then(({ browserCloseAllTabs }) => {
-      browserCloseAllTabs(this.ctx.logger, this.ctx.config.browserUrl).catch(() => {});
-    }).catch(() => {});
     this.nudge();
   }
 
@@ -306,12 +302,6 @@ export class BackgroundDispatcher {
         this.notifyFailure(next.id, next.kind, errorMsg, attemptCount);
       }
     } finally {
-      // Clean up browser tabs after research/swarm to prevent tab leak
-      if (next.kind === "research" || next.kind === "swarm") {
-        import("@personal-ai/core").then(({ browserCloseAllTabs }) => {
-          browserCloseAllTabs(this.ctx.logger, this.ctx.config.browserUrl).catch(() => {});
-        }).catch(() => {});
-      }
       this.activeWorkId = null;
       this.activeKind = null;
       const delay = this.retryDelayMs ?? 500;
@@ -373,8 +363,6 @@ export class BackgroundDispatcher {
       provider: this.ctx.config.llm.provider,
       model: this.ctx.config.llm.model,
       contextWindow: this.ctx.config.llm.contextWindow,
-      sandboxUrl: this.ctx.config.sandboxUrl,
-      browserUrl: this.ctx.config.browserUrl,
       dataDir: this.ctx.config.dataDir,
       searchConfigured: isSearchConfigured(this.ctx.config.searchUrl),
       webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", this.ctx.config.searchUrl),

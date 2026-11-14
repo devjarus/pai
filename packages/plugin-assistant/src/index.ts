@@ -3,7 +3,7 @@ import { createAgentTools } from "./tools.js";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
 import { autoLearnUrls } from "./auto-memory.js";
 
-export { SYSTEM_PROMPT, appendOptionalToolGuidance } from "./system-prompt.js";
+export { SYSTEM_PROMPT } from "./system-prompt.js";
 export { isSearchConfigured, resolveSearchUrl, searchHealth, webSearch, formatSearchResults } from "./web-search.js";
 
 export const assistantPlugin: AgentPlugin = {

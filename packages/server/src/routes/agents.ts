@@ -33,7 +33,6 @@ import { streamText, createUIMessageStream, createUIMessageStreamResponse, stepC
 
 import type { LanguageModel } from "ai";
 import { z } from "zod";
-import { appendOptionalToolGuidance } from "@personal-ai/plugin-assistant";
 import { validate } from "../validate.js";
 
 export { threadMigrations };
@@ -565,11 +564,6 @@ export function registerAgentRoutes(app: FastifyInstance, { ctx, agents }: Serve
           } catch { /* table may not exist */ }
 
           const tools = agentPlugin.agent.createTools?.(agentCtx) as Record<string, unknown> | undefined;
-
-          // Only document optional tools that are actually registered (sandbox/browser).
-          if (tools && agentPlugin.name === "assistant") {
-            systemPrompt = appendOptionalToolGuidance(systemPrompt, Object.keys(tools));
-          }
 
           // Inject sub-agent delegation tools: let the assistant call other agents
           if (tools && agentPlugin.name === "assistant") {

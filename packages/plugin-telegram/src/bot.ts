@@ -590,8 +590,6 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         provider: ctx.config.llm.provider,
         model: ctx.config.llm.model,
         contextWindow: ctx.config.llm.contextWindow,
-        sandboxUrl: ctx.config.sandboxUrl,
-        browserUrl: ctx.config.browserUrl,
         dataDir: ctx.config.dataDir,
         searchConfigured: true,
         webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),

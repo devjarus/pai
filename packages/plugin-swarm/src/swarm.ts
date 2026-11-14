@@ -9,18 +9,15 @@ import {
   knowledgeSearch,
   appendMessages,
   learnFromContent,
-  resolveSandboxUrl,
   getContextBudget,
   getProviderOptions,
   getLlmTrafficConfig,
-  createBrowserTools,
   buildReportPresentation,
   deriveReportVisuals,
   extractPresentationBlocks,
   instrumentedGenerateText,
 } from "@personal-ai/core";
 import { upsertJob, updateJobStatus } from "@personal-ai/core";
-import { storeArtifact, guessMimeType } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import { getProgramById, recordProgramEvaluation } from "@personal-ai/plugin-schedules";
 import {
@@ -59,10 +56,6 @@ export interface SwarmContext {
   provider?: string;
   model?: string;
   contextWindow?: number;
-  /** Sandbox URL from config (passed through to resolveSandboxUrl) */
-  sandboxUrl?: string;
-  /** Browser automation URL from config (passed through to resolveBrowserUrl) */
-  browserUrl?: string;
   /** Data directory for artifact file storage */
   dataDir?: string;
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
@@ -161,8 +154,8 @@ function buildDefaultAnalysisPlan(goal: string, resultType?: string): SwarmPlanI
     },
     {
       role: "chart_generator",
-      task: `Using only real data from the blackboard or authoritative sources, generate at least one PNG visual for: ${goal}. Write image files to OUTPUT_DIR and optionally write visuals.json describing titles, captions, kinds, and order. Do not fabricate, simulate, or synthesize data.`,
-      tools: ["web_search", "read_page", "knowledge_search", "run_code"],
+      task: `Using only real data from the blackboard or authoritative sources, produce quantitative analysis and describe chart-ready findings for: ${goal}. Do not fabricate, simulate, or synthesize data.`,
+      tools: ["web_search", "read_page", "knowledge_search"],
     },
   ];
 }
@@ -677,80 +670,6 @@ function createSubAgentTools(
       },
     }),
   };
-
-  // Browser tools for JS-rendered pages (with artifact storage for screenshots)
-  const browserTools = createBrowserTools({
-    logger: ctx.logger,
-    browserUrl: ctx.browserUrl,
-    storeArtifact: (name, mimeType, data) => storeArtifact(ctx.storage, ctx.dataDir ?? "", { jobId: swarmId, name, mimeType, data }),
-  });
-  Object.assign(allTools, browserTools);
-
-  // Conditionally add run_code if sandbox is available and tools include it
-  if (allowed.has("run_code")) {
-    try {
-      const sandboxUrl = resolveSandboxUrl(ctx.sandboxUrl);
-      if (sandboxUrl) {
-        allTools.run_code = tool({
-          description: "Execute Python or JavaScript code in an isolated sandbox.",
-          inputSchema: z.object({
-            language: z.enum(["python", "node"]).describe("Programming language"),
-            code: z.string().describe("The code to execute"),
-          }),
-          execute: async ({ language, code }: { language: string; code: string }) => {
-            try {
-              ctx.logger.info("Swarm sandbox execution", { agentId, language, codeLength: code.length });
-              const { runInSandbox } = await import("@personal-ai/core");
-              const result = await runInSandbox({ language: language as "python" | "node", code, timeout: 30 }, ctx.logger, ctx.sandboxUrl);
-
-              // Persist each output file as an artifact
-              const artifactIds: Array<{ name: string; id: string }> = [];
-              for (const f of result.files) {
-                try {
-                  const id = storeArtifact(ctx.storage, ctx.dataDir ?? "", {
-                    jobId: swarmId,
-                    name: f.name,
-                    mimeType: guessMimeType(f.name),
-                    data: Buffer.from(f.data, "base64"),
-                  });
-                  artifactIds.push({ name: f.name, id });
-                } catch (err) {
-                  ctx.logger.warn(`Failed to store artifact ${f.name}: ${err instanceof Error ? err.message : String(err)}`);
-                }
-              }
-
-              // Post structured blackboard entry
-              const filesLine = artifactIds.length > 0
-                ? `\nFiles: ${artifactIds.map((a) => `${a.name} (artifact:${a.id})`).join(", ")}`
-                : "";
-              insertBlackboardEntry(ctx.storage, {
-                swarmId,
-                agentId,
-                type: "artifact",
-                content: `[code_execution] Language: ${language} | Exit: ${result.exitCode}\nCode:\n\`\`\`${language}\n${code.slice(0, 500)}\n\`\`\`\nStdout: ${(result.stdout || "(none)").slice(0, 1000)}\nStderr: ${(result.stderr || "(none)").slice(0, 1000)}${filesLine}`,
-              });
-
-              return {
-                stdout: result.stdout,
-                stderr: result.stderr,
-                exitCode: result.exitCode,
-                files: artifactIds.map((a) => ({ name: a.name, artifactId: a.id })),
-              };
-            } catch (err) {
-              ctx.logger.error("Swarm sandbox run_code failed", {
-                agentId,
-                language,
-                error: err instanceof Error ? err.message : String(err),
-              });
-              return { error: `Sandbox execution failed: ${err instanceof Error ? err.message : "unknown error"}` };
-            }
-          },
-        });
-      }
-    } catch {
-      // sandbox not available
-    }
-  }
 
   // Filter to only allowed tools + always include blackboard tools
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

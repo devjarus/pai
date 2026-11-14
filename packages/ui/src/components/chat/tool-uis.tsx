@@ -23,14 +23,6 @@ import { ToolResearchStart } from "../tools/ToolResearchStart";
 import { ToolSwarmStart } from "../tools/ToolSwarmStart";
 import { ToolScheduleAction } from "../tools/ToolScheduleAction";
 import { ToolDocumentReport } from "../tools/ToolDocumentReport";
-import { ToolBrowseAction } from "../tools/ToolBrowseAction";
-import { ArtifactGallery } from "../results/ArtifactGallery";
-import { ResultRenderer } from "../results/ResultRenderer";
-import {
-  artifactReferencesToVisuals,
-  buildVisualResultSpec,
-} from "@/lib/report-presentation";
-import type { ArtifactReference } from "@/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -226,99 +218,6 @@ export const GenerateReportToolUI = makeAssistantToolUI({
   ),
 });
 
-export const RunCodeToolUI = makeAssistantToolUI({
-  toolName: "run_code",
-  render: ({ args, result, status }) => {
-    const state = mapStatus(status);
-    const input = args as { language?: string; code?: string; purpose?: string };
-    const output = result as {
-      stdout?: string;
-      stderr?: string;
-      exitCode?: number;
-      artifacts?: Array<{ id: string; name: string; mimeType: string }>;
-      error?: string;
-    } | undefined;
-    const artifacts: ArtifactReference[] = output?.artifacts ?? [];
-    const visuals = artifactReferencesToVisuals(artifacts);
-    const files = artifacts.filter((artifact) => !artifact.mimeType.startsWith("image/"));
-    const generatedSpec = buildVisualResultSpec({
-      title: visuals.length > 1 ? "Generated visuals" : "Generated visual",
-      subtitle: input.purpose ?? (input.language ? `Created with ${input.language}` : undefined),
-      visuals,
-    });
-    const hasError = state === "output-error" || Boolean(output?.error);
-
-    if (state === "input-available") {
-      return (
-        <div className="my-2 rounded-lg border border-border/30 bg-card/50 p-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            Running {input.language ?? "code"}...
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div
-        className={`my-2 rounded-lg p-3 space-y-2 ${
-          hasError
-            ? "border border-red-500/30 bg-red-500/5"
-            : "border border-border/30 bg-card/50"
-        }`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div
-            className={`text-xs font-medium uppercase tracking-wide ${
-              hasError ? "text-red-400" : "text-muted-foreground"
-            }`}
-          >
-            {hasError ? "Code execution completed with errors" : input.language ?? "Code"}
-          </div>
-          {typeof output?.exitCode === "number" && (
-            <div className={`text-xs ${hasError ? "text-red-300/80" : "text-muted-foreground"}`}>
-              Exit code: {output.exitCode}
-            </div>
-          )}
-        </div>
-        {generatedSpec && (
-          <div className="rounded-lg border border-border/20 bg-background/40 p-3">
-            <ResultRenderer spec={generatedSpec} />
-          </div>
-        )}
-        {input.code && (
-          <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{input.code}</pre>
-        )}
-        {output?.stdout && (
-          <>
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Stdout</div>
-            <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{output.stdout}</pre>
-          </>
-        )}
-        {output?.stderr && (
-          <>
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Stderr</div>
-            <pre className="overflow-x-auto rounded bg-background/60 p-2 text-xs font-mono whitespace-pre-wrap">{output.stderr}</pre>
-          </>
-        )}
-        {output?.error && (
-          <>
-            <div className="text-xs font-medium uppercase tracking-wide text-red-400">Error</div>
-            <pre className="overflow-x-auto rounded bg-red-500/10 p-2 text-xs font-mono text-red-400 whitespace-pre-wrap">{output.error}</pre>
-          </>
-        )}
-        {hasError && artifacts.length > 0 && (
-          <p className="text-xs text-red-200/80">
-            Generated files were still saved and may be usable.
-          </p>
-        )}
-        {files.length > 0 && (
-          <ArtifactGallery artifacts={files} title={hasError ? "Generated files" : "Files"} />
-        )}
-      </div>
-    );
-  },
-});
 
 export const AgentCuratorToolUI = makeAssistantToolUI({
   toolName: "agent_curator",
@@ -350,40 +249,6 @@ export const AgentCuratorToolUI = makeAssistantToolUI({
   },
 });
 
-export const BrowseNavigateToolUI = makeAssistantToolUI({
-  toolName: "browse_navigate",
-  render: ({ args, result, status }) => (
-    <ToolBrowseAction state={mapStatus(status)} toolName="browse_navigate" input={args} output={result as any} />
-  ),
-});
-
-export const BrowseSnapshotToolUI = makeAssistantToolUI({
-  toolName: "browse_snapshot",
-  render: ({ args, result, status }) => (
-    <ToolBrowseAction state={mapStatus(status)} toolName="browse_snapshot" input={args} output={result as any} />
-  ),
-});
-
-export const BrowseActionToolUI = makeAssistantToolUI({
-  toolName: "browse_action",
-  render: ({ args, result, status }) => (
-    <ToolBrowseAction state={mapStatus(status)} toolName="browse_action" input={args} output={result as any} />
-  ),
-});
-
-export const BrowseTextToolUI = makeAssistantToolUI({
-  toolName: "browse_text",
-  render: ({ args, result, status }) => (
-    <ToolBrowseAction state={mapStatus(status)} toolName="browse_text" input={args} output={result as any} />
-  ),
-});
-
-export const BrowseScreenshotToolUI = makeAssistantToolUI({
-  toolName: "browse_screenshot",
-  render: ({ args, result, status }) => (
-    <ToolBrowseAction state={mapStatus(status)} toolName="browse_screenshot" input={args} output={result as any} />
-  ),
-});
 
 /**
  * Array of all tool UI components. Render these inside AssistantRuntimeProvider
@@ -416,12 +281,6 @@ export const AllToolUIs = () => (
     <ScheduleListToolUI />
     <ScheduleDeleteToolUI />
     <GenerateReportToolUI />
-    <RunCodeToolUI />
     <AgentCuratorToolUI />
-    <BrowseNavigateToolUI />
-    <BrowseSnapshotToolUI />
-    <BrowseActionToolUI />
-    <BrowseTextToolUI />
-    <BrowseScreenshotToolUI />
   </>
 );

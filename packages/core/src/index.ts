@@ -125,14 +125,6 @@ export {
 } from "./report-presentation.js";
 export type { ReportExecution, ReportVisual, ReportPresentation } from "./report-presentation.js";
 
-// Sandbox
-export { resolveSandboxUrl, sandboxHealth, runInSandbox } from "./sandbox.js";
-export type { SandboxResult, SandboxOptions } from "./sandbox.js";
-
-// Browser automation (Pinchtab)
-export { resolveBrowserUrl, browserHealth, browserNavigate, browserSnapshot, browserAction, browserText, browserScreenshot, browserCloseAllTabs, createBrowserTools } from "./browser.js";
-export type { BrowserNavigateOptions, BrowserNavigateResult, BrowserActionOptions, BrowserActionResult, BrowserToolContext } from "./browser.js";
-
 // Context budget
 export { getContextBudget, estimateTokens, _resetBudgetCache } from "./context-budget.js";
 export type { ContextBudget } from "./context-budget.js";

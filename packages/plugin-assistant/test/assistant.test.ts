@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AgentContext } from "@personal-ai/core";
 import { assistantPlugin } from "../src/index.js";
-import { appendOptionalToolGuidance } from "../src/system-prompt.js";
 
 const { mockEnsureProgram, mockListPrograms, mockDeleteProgram, mockCreateLinearIssue, mockIsLinearIssueIntakeConfigured } = vi.hoisted(() => ({
   mockEnsureProgram: vi.fn(),
@@ -18,9 +17,6 @@ vi.mock("@personal-ai/core", () => ({
   listBeliefs: vi.fn().mockReturnValue([]),
   recordProductEvent: vi.fn(),
   formatDateTime: vi.fn().mockReturnValue({ full: "Mar 12, 2026 09:00" }),
-  resolveSandboxUrl: vi.fn().mockReturnValue(null),
-  resolveBrowserUrl: vi.fn().mockReturnValue(null),
-  createBrowserTools: vi.fn().mockReturnValue({}),
   createLinearIssue: mockCreateLinearIssue,
   isLinearIssueIntakeConfigured: mockIsLinearIssueIntakeConfigured,
 }));
@@ -418,23 +414,5 @@ describe("afterResponse", () => {
 
     // afterResponse should NOT call LLM — memory extraction is handled by background learning worker
     expect(mockChat).not.toHaveBeenCalled();
-  });
-});
-
-describe("appendOptionalToolGuidance", () => {
-  it("leaves the base prompt unchanged when optional tools are absent", () => {
-    const base = "BASE";
-    expect(appendOptionalToolGuidance(base, ["memory_recall", "web_search"])).toBe(base);
-  });
-
-  it("appends run_code and browser guidance only when those tools are registered", () => {
-    const withCode = appendOptionalToolGuidance("BASE", ["run_code"]);
-    expect(withCode).toContain("**run_code**");
-    expect(withCode).not.toContain("browse_navigate");
-
-    const withBrowser = appendOptionalToolGuidance("BASE", ["browse_navigate", "browse_text"]);
-    expect(withBrowser).toContain("Browser tools");
-    expect(withBrowser).toContain("browse_navigate");
-    expect(withBrowser).not.toContain("**run_code**");
   });
 });

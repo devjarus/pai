@@ -14,7 +14,7 @@ ${currentDateBlock(timezone)}
    - Hacker News → search "site:news.ycombinator.com {topic}" or read_page "https://news.ycombinator.com"
    - Reddit → search "site:reddit.com r/{subreddit} {topic}"
    - Product Hunt → search "site:producthunt.com {topic} ${dt.year}"
-3. Read important pages using read_page to get detailed content. If read_page returns empty or incomplete content (common with JavaScript-rendered SPAs), use browse_navigate + browse_text as a fallback
+3. Read important pages using read_page to get detailed content
 4. Synthesize findings into a structured report with NEW information only
 
 ## Building on Previous Research

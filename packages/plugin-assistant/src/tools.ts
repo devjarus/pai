@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
-import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, correctBelief, recordProductEvent, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType, createBrowserTools, createLinearIssue, isLinearIssueIntakeConfigured } from "@personal-ai/core";
+import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, correctBelief, recordProductEvent, learnFromContent, knowledgeSearch, listSources, forgetSource, storeArtifact, createLinearIssue, isLinearIssueIntakeConfigured } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
@@ -508,8 +508,6 @@ export function createAgentTools(ctx: AgentContext) {
                 provider: ctx.config.llm.provider,
                 model: ctx.config.llm.model,
                 contextWindow: ctx.config.llm.contextWindow,
-                sandboxUrl: ctx.config.sandboxUrl,
-                browserUrl: ctx.config.browserUrl,
                 dataDir: ctx.config.dataDir,
                 searchConfigured: true,
                 webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
@@ -563,8 +561,6 @@ export function createAgentTools(ctx: AgentContext) {
                 provider: ctx.config.llm.provider,
                 model: ctx.config.llm.model,
                 contextWindow: ctx.config.llm.contextWindow,
-                sandboxUrl: ctx.config.sandboxUrl,
-                browserUrl: ctx.config.browserUrl,
                 dataDir: ctx.config.dataDir,
                 webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
                 formatSearchResults,
@@ -761,73 +757,5 @@ export function createAgentTools(ctx: AgentContext) {
         }
       },
     }),
-
-    // Browser tools (shared from core — conditional on browser availability)
-    ...createBrowserTools({
-      logger: ctx.logger,
-      browserUrl: ctx.config.browserUrl,
-      storeArtifact: (name, mimeType, data) => {
-        const threadId = (ctx as unknown as Record<string, unknown>).threadId as string ?? "browser";
-        return storeArtifact(ctx.storage, ctx.config.dataDir, { jobId: threadId, name, mimeType, data });
-      },
-    }),
-
-    // Conditionally add sandbox tool
-    ...(resolveSandboxUrl(ctx.config.sandboxUrl) ? {
-      run_code: tool({
-        description: "Execute Python or JavaScript code in an isolated sandbox. Use for data analysis, chart generation, calculations, or file processing. The sandbox starts inside OUTPUT_DIR, so relative file writes like `plt.savefig(\"chart.png\")` are saved as artifacts automatically. For charts the UI can preview inline, write PNG, JPEG, or WebP image files instead of HTML-only outputs unless the user explicitly asks for an interactive HTML file. Available packages: matplotlib, pandas, numpy, plotly, yfinance.",
-        inputSchema: z.object({
-          language: z.enum(["python", "node"]).describe("Programming language to execute"),
-          code: z.string().describe("The code to execute"),
-          purpose: z.string().describe("Brief description of what this code does (for audit logging)"),
-          timeout: z.number().optional().describe("Execution timeout in seconds (default 30, max 120)"),
-        }),
-        execute: async ({ language, code, purpose, timeout }) => {
-          try {
-            ctx.logger.info("Sandbox execution", { purpose, language });
-            const result = await runInSandbox({ language, code, timeout }, ctx.logger, ctx.config.sandboxUrl);
-
-            // Store any output files as artifacts
-            const savedArtifacts: Array<{ id: string; name: string; mimeType: string }> = [];
-            if (result.files.length > 0) {
-              const jobId = (ctx as unknown as Record<string, unknown>).threadId as string ?? "sandbox";
-              for (const file of result.files) {
-                const mimeType = guessMimeType(file.name);
-                const artifactId = storeArtifact(ctx.storage, ctx.config.dataDir, {
-                  jobId,
-                  name: file.name,
-                  mimeType,
-                  data: Buffer.from(file.data, "base64"),
-                });
-                savedArtifacts.push({ id: artifactId, name: file.name, mimeType });
-              }
-            }
-
-            if (result.exitCode !== 0) {
-              ctx.logger.warn("Sandbox run_code non-zero exit", {
-                purpose,
-                exitCode: result.exitCode,
-                stderr: result.stderr.slice(0, 500),
-              });
-            }
-
-            return {
-              stdout: result.stdout,
-              stderr: result.stderr,
-              exitCode: result.exitCode,
-              artifacts: savedArtifacts,
-              ...(result.exitCode !== 0 ? { error: `Code exited with code ${result.exitCode}` } : {}),
-            };
-          } catch (err) {
-            ctx.logger.error("Sandbox run_code failed", {
-              purpose,
-              language,
-              error: err instanceof Error ? err.message : String(err),
-            });
-            return { error: `Sandbox execution failed: ${err instanceof Error ? err.message : "unknown error"}` };
-          }
-        },
-      }),
-    } : {}),
   };
 }

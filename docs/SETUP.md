@@ -93,21 +93,9 @@ pai includes optional Docker sidecars for enhanced functionality:
 
 **SearXNG** (always-on) — Self-hosted web search engine. No API key needed, no rate limits. Starts automatically with `docker compose up -d`.
 
-**Sandbox** (opt-in) — Isolated Python 3.12 + Node.js 20 environment for code execution, chart generation (matplotlib, plotly), and data analysis. Enable with:
-```bash
-PAI_SANDBOX_URL=http://sandbox:8888 PAI_BROWSER_URL=http://sandbox:9867 \
-  docker compose --profile sandbox up -d
-```
-Without those env vars, `run_code` and browser tools stay unregistered (Compose no longer invents sidecar URLs).
-
 **Ollama** (opt-in) — Local LLM inference. Enable with:
 ```bash
 docker compose --profile local up -d
-```
-
-**All sidecars together:**
-```bash
-docker compose --profile local --profile sandbox up -d
 ```
 
 ### Data persistence
@@ -155,25 +143,13 @@ Railway auto-deploys on push. Configure the main service to build from the root 
 
 ### Step 5b: Add sidecars (optional)
 
-Add SearXNG (web search) and Sandbox (code execution + browser) as separate Railway services using the pre-built GHCR images (or Dockerfile builds from this repo).
+Add SearXNG (web search) as a separate Railway service using the pre-built GHCR image (or Dockerfile build from this repo).
 
 **SearXNG (recommended)**
 
 1. New Railway service → Docker Image → `ghcr.io/devjarus/pai-searxng:latest` (or Dockerfile `searxng/Dockerfile` with repo-root build context)
 2. Set health check path to `/healthz` (or SearXNG’s health endpoint)
 3. On the **pai** service, set `PAI_SEARCH_URL=http://searxng.railway.internal:8080` (use your SearXNG service name)
-
-**Sandbox (code execution / charts / browser tools)**
-
-1. New Railway service named `sandbox` → Docker Image → `ghcr.io/devjarus/pai-sandbox:latest`  
-   Or deploy from source with `sandbox/railway.toml` (Dockerfile path `sandbox/Dockerfile`, health check `/health`)
-2. Ensure the sandbox service has **`PORT=8888`** (the image sets this by default — do not override to a random port)
-3. Give the service enough memory (≈1.5GB+) and prefer larger `/dev/shm` if Railway exposes it — Chromium is heavy
-4. On the **pai** service, set:
-   - `PAI_SANDBOX_URL=http://sandbox.railway.internal:8888`
-   - `PAI_BROWSER_URL=http://sandbox.railway.internal:9867` (optional; browser automation via PinchTab)
-
-Private networking uses the service name + fixed ports above. If the sandbox deploy crash-loops, check logs for Chrome/`pinchtab` failures; code execution on `:8888` should stay up even when the browser sidecar restarts.
 
 ### Step 6: Create your account
 
@@ -561,7 +537,7 @@ The **Settings** page lets you configure:
 - **Linear** — API key, default team/project, auto-error logging toggle
 - **Timezone** — IANA timezone for digest scheduling
 - **Background Workers** — toggle digest generation, background learning, knowledge cleanup, LLM traffic shaping
-- **Sidecar URLs** — sandbox, search, browser automation endpoints
+- **Sidecar URLs** — search (SearXNG) endpoint
 - **Diagnostics** — token usage, process hotspots, thread/job traces, recent failures
 
 Changes take effect immediately — no restart needed.
