@@ -125,10 +125,10 @@ describe("createTools", () => {
     expect(toolNames).not.toContain("schedule_delete");
   });
 
-  it("returns 22 tools total", () => {
+  it("returns 21 tools total", () => {
     const ctx = createMockCtx();
     const tools = assistantPlugin.agent!.createTools!(ctx);
-    expect(Object.keys(tools)).toHaveLength(22);
+    expect(Object.keys(tools)).toHaveLength(21);
   });
 
   it("each tool has description and execute function", () => {

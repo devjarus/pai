@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - **Code-execution sandbox and PinchTab browser automation** — Removed the `sandbox/` sidecar, `run_code` / `browse_*` tools, Settings fields, health capabilities, Compose/Railway deploy docs, and related config (`sandboxUrl` / `browserUrl`, `PAI_SANDBOX_URL` / `PAI_BROWSER_URL`). SearXNG search remains.
+- **Swarm runtime** — Multi-agent swarm execution (`swarm_start`, `enqueueSwarm`, `runSwarmInBackground`) is gone. Watches and digests with `executionMode`/`execution` of `analysis` now enqueue **deep research** instead. Historical `swarm_*` tables and read/cancel helpers remain so existing DBs and old Jobs still load.
 
 ### Fixed
 - **CI runner pinned to Ubuntu 24.04** — `ubuntu-latest` moved to 26.04, which Playwright 1.58.2 cannot install Chromium on. E2E install now runs on `ubuntu-24.04`.

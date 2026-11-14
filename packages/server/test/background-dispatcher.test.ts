@@ -9,10 +9,6 @@ const mockCreateResearchJob = vi.fn();
 const mockListPendingResearchJobs = vi.fn();
 const mockRunResearchInBackground = vi.fn();
 
-const mockCreateSwarmJob = vi.fn();
-const mockListPendingSwarmJobs = vi.fn();
-const mockRunSwarmInBackground = vi.fn();
-
 const mockEnqueueBriefingGeneration = vi.fn();
 const mockGenerateBriefing = vi.fn();
 const mockListPendingDailyBriefings = vi.fn();
@@ -31,12 +27,6 @@ vi.mock("@personal-ai/plugin-research", () => ({
   createResearchJob: (...args: unknown[]) => mockCreateResearchJob(...args),
   listPendingResearchJobs: (...args: unknown[]) => mockListPendingResearchJobs(...args),
   runResearchInBackground: (...args: unknown[]) => mockRunResearchInBackground(...args),
-}));
-
-vi.mock("@personal-ai/plugin-swarm", () => ({
-  createSwarmJob: (...args: unknown[]) => mockCreateSwarmJob(...args),
-  listPendingSwarmJobs: (...args: unknown[]) => mockListPendingSwarmJobs(...args),
-  runSwarmInBackground: (...args: unknown[]) => mockRunSwarmInBackground(...args),
 }));
 
 vi.mock("../src/briefing.js", () => ({
@@ -106,7 +96,6 @@ describe("BackgroundDispatcher", () => {
       queuedTotal: 0,
     });
     mockListPendingResearchJobs.mockReturnValue([]);
-    mockListPendingSwarmJobs.mockReturnValue([]);
     mockListPendingDailyBriefings.mockReturnValue([]);
   });
 
@@ -119,9 +108,7 @@ describe("BackgroundDispatcher", () => {
     mockListPendingResearchJobs.mockReturnValue([
       { id: "research-schedule", queuedAt: "2026-03-05T10:00:00.000Z", sourceKind: "schedule" },
       { id: "research-manual", queuedAt: "2026-03-05T11:00:00.000Z", sourceKind: "manual" },
-    ]);
-    mockListPendingSwarmJobs.mockReturnValue([
-      { id: "swarm-maintenance", queuedAt: "2026-03-05T09:00:00.000Z", sourceKind: "maintenance" },
+      { id: "research-maintenance", queuedAt: "2026-03-05T09:00:00.000Z", sourceKind: "maintenance" },
     ]);
 
     const dispatcher = new BackgroundDispatcher(makeCtx());
@@ -130,7 +117,7 @@ describe("BackgroundDispatcher", () => {
     expect(state.pending.map((item) => item.id)).toEqual([
       "research-manual",
       "research-schedule",
-      "swarm-maintenance",
+      "research-maintenance",
     ]);
   });
 

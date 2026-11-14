@@ -119,27 +119,18 @@ export function registerInboxRoutes(app: FastifyInstance, { ctx, backgroundDispa
     if (!goal) return reply.status(400).send({ error: "No research goal found in briefing" });
 
     const resultType = (sections.resultType as string | undefined) ?? "general";
+    const isAnalysis = sections.execution === "analysis" || briefing.id.startsWith("swarm-");
+    const deepBudgets = isAnalysis
+      ? { budgetMaxSearches: 10, budgetMaxPages: 15 }
+      : {};
 
-    const execution = sections.execution === "analysis" || briefing.id.startsWith("swarm-")
-      ? "analysis"
-      : "research";
-
-    let jobId: string;
-    if (execution === "analysis") {
-      jobId = await backgroundDispatcher.enqueueSwarm({
-        goal,
-        threadId: null,
-        resultType,
-        sourceKind: "manual",
-      });
-    } else {
-      jobId = await backgroundDispatcher.enqueueResearch({
-        goal,
-        threadId: null,
-        resultType: resultType as ResearchResultType,
-        sourceKind: "manual",
-      });
-    }
+    const jobId = await backgroundDispatcher.enqueueResearch({
+      goal,
+      threadId: null,
+      resultType: resultType as ResearchResultType,
+      sourceKind: "manual",
+      ...deepBudgets,
+    });
 
     return { ok: true, jobId };
   });

@@ -360,25 +360,20 @@ export function registerWatchesRoutes(app: FastifyInstance, serverCtx: ServerCon
       return reply.status(404).send({ error: "Watch not found" });
     }
 
-    const depth = resolveDepthForWatch({}, /* isManualTrigger */ true);
-    const execution = watch.executionMode === "analysis" ? "analysis" : "research";
+    // Analysis mode maps to deep research (swarm runtime removed).
+    const depth = resolveDepthForWatch(
+      { depthLevel: watch.executionMode === "analysis" ? "deep" : undefined },
+      /* isManualTrigger */ true,
+    );
 
-    let jobId: string;
-    if (execution === "analysis") {
-      jobId = await backgroundDispatcher.enqueueSwarm({
-        goal: watch.question,
-        threadId: watch.threadId ?? null,
-        sourceKind: "manual",
-        sourceScheduleId: watch.id,
-      });
-    } else {
-      jobId = await backgroundDispatcher.enqueueResearch({
-        goal: watch.question,
-        threadId: watch.threadId ?? null,
-        sourceKind: "manual",
-        sourceScheduleId: watch.id,
-      });
-    }
+    const jobId = await backgroundDispatcher.enqueueResearch({
+      goal: watch.question,
+      threadId: watch.threadId ?? null,
+      sourceKind: "manual",
+      sourceScheduleId: watch.id,
+      budgetMaxSearches: depth.budgetMaxSearches,
+      budgetMaxPages: depth.budgetMaxPages,
+    });
 
     return { ok: true, jobId, depth };
   });

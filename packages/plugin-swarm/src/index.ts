@@ -2,8 +2,9 @@ import type { BackgroundJobSourceKind, Plugin, PluginContext, Command, Migration
 import { detectResearchDomain } from "@personal-ai/core";
 import { nanoid } from "nanoid";
 
-export { runSwarmInBackground } from "./swarm.js";
-export type { SwarmContext } from "./swarm.js";
+// Runtime swarm execution was removed (Phase 2 lite cut).
+// Analysis watches now enqueue deep research. This package keeps
+// migrations + read/cancel helpers for historical swarm_* tables.
 
 // ---- Types ----
 

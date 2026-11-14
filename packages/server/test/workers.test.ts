@@ -29,13 +29,6 @@ vi.mock("@personal-ai/plugin-research", () => ({
   runResearchInBackground: (...args: unknown[]) => mockRunResearchInBackground(...args),
 }));
 
-const mockCreateSwarmJob = vi.fn().mockReturnValue("swarm-1");
-const mockRunSwarmInBackground = vi.fn().mockResolvedValue(undefined);
-vi.mock("@personal-ai/plugin-swarm", () => ({
-  createSwarmJob: (...args: unknown[]) => mockCreateSwarmJob(...args),
-  runSwarmInBackground: (...args: unknown[]) => mockRunSwarmInBackground(...args),
-}));
-
 vi.mock("@personal-ai/plugin-assistant/web-search", () => ({
   webSearch: vi.fn(),
   formatSearchResults: vi.fn(),
@@ -91,7 +84,6 @@ function createMockCtx(): PluginContext {
     },
     backgroundJobs: {
       enqueueResearch: vi.fn().mockResolvedValue("job-1"),
-      enqueueSwarm: vi.fn().mockResolvedValue("swarm-1"),
       enqueueBriefing: vi.fn().mockResolvedValue("briefing-1"),
     },
   } as unknown as PluginContext;
@@ -307,10 +299,10 @@ describe("WorkerLoop", () => {
     loop.stop();
   });
 
-  it("creates swarm jobs for analysis schedules", () => {
+  it("creates deep research jobs for analysis schedules", () => {
     const ctx = createMockCtx();
     mockGetDueSchedules.mockReturnValue([
-      { id: "s2", label: "Weekly analysis", type: "analysis", goal: "Compare revenue trends", threadId: "t2" },
+      { id: "s2", label: "Weekly analysis", type: "analysis", goal: "Compare revenue trends", threadId: "t2", runtimeState: {} },
     ]);
 
     const loop = new WorkerLoop(ctx, {
@@ -322,11 +314,13 @@ describe("WorkerLoop", () => {
     vi.advanceTimersByTime(1000);
 
     expect(mockMarkScheduleRun).toHaveBeenCalledWith(ctx.storage, "s2");
-    expect(ctx.backgroundJobs?.enqueueSwarm).toHaveBeenCalledWith({
+    expect(ctx.backgroundJobs?.enqueueResearch).toHaveBeenCalledWith({
       goal: "Compare revenue trends",
       threadId: "t2",
       sourceKind: "schedule",
       sourceScheduleId: "s2",
+      budgetMaxSearches: 10,
+      budgetMaxPages: 15,
     });
 
     loop.stop();

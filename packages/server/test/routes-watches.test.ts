@@ -70,7 +70,6 @@ const MOCK_WATCH = {
 function createMockServerCtx(): ServerContext {
   const backgroundDispatcher = {
     enqueueResearch: vi.fn().mockResolvedValue("job-research-1"),
-    enqueueSwarm: vi.fn().mockResolvedValue("job-swarm-1"),
     enqueueBriefing: vi.fn().mockReturnValue("briefing-queued-1"),
     getJobQueueMetadata: vi.fn().mockReturnValue({ queuePosition: null, waitingReason: null }),
     getWorkState: vi.fn().mockReturnValue({
@@ -352,14 +351,23 @@ describe("watches routes", () => {
     expect(serverCtx.backgroundDispatcher.enqueueResearch).toHaveBeenCalled();
   });
 
-  it("POST /api/watches/:id/run triggers swarm for analysis mode watch", async () => {
+  it("POST /api/watches/:id/run triggers deep research for analysis mode watch", async () => {
     mockGetWatch.mockReturnValue({ ...MOCK_WATCH, executionMode: "analysis" });
-    mockResolveDepthForWatch.mockReturnValue("deep");
+    mockResolveDepthForWatch.mockReturnValue({
+      level: "deep",
+      budgetMaxSearches: 10,
+      budgetMaxPages: 15,
+    });
 
     const res = await app.inject({ method: "POST", url: "/api/watches/watch-1/run" });
     expect(res.statusCode).toBe(200);
-    expect(res.json().jobId).toBe("job-swarm-1");
-    expect(serverCtx.backgroundDispatcher.enqueueSwarm).toHaveBeenCalled();
+    expect(res.json().jobId).toBe("job-research-1");
+    expect(serverCtx.backgroundDispatcher.enqueueResearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        budgetMaxSearches: 10,
+        budgetMaxPages: 15,
+      }),
+    );
   });
 
   it("POST /api/watches/:id/run returns 404 for unknown watch", async () => {

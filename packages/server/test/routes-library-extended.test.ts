@@ -163,7 +163,6 @@ function createMockServerCtx(): ServerContext {
     agents: [],
     backgroundDispatcher: {
       enqueueResearch: vi.fn().mockResolvedValue("job-1"),
-      enqueueSwarm: vi.fn().mockResolvedValue("job-2"),
       enqueueBriefing: vi.fn().mockReturnValue("briefing-1"),
       getJobQueueMetadata: vi.fn().mockReturnValue({ queuePosition: null, waitingReason: null }),
       getWorkState: vi.fn().mockReturnValue({

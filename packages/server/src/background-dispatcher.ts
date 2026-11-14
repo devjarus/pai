@@ -1,12 +1,11 @@
 import type { BackgroundJobSourceKind, BackgroundWaitingReason, PluginContext } from "@personal-ai/core";
 import { appendMessages, getLlmTrafficConfig, getLlmTrafficSnapshot, upsertJob } from "@personal-ai/core";
 import { createResearchJob, listPendingResearchJobs, runResearchInBackground } from "@personal-ai/plugin-research";
-import { createSwarmJob, listPendingSwarmJobs, runSwarmInBackground } from "@personal-ai/plugin-swarm";
 import { formatSearchResults, isSearchConfigured, webSearch } from "@personal-ai/plugin-assistant/web-search";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { enqueueBriefingGeneration, generateBriefing, listPendingDailyBriefings } from "./briefing.js";
 
-type PendingKind = "research" | "swarm" | "briefing";
+type PendingKind = "research" | "briefing";
 
 interface PendingWorkItem {
   id: string;
@@ -112,40 +111,6 @@ export class BackgroundDispatcher {
     return jobId;
   }
 
-  async enqueueSwarm(args: {
-    goal: string;
-    threadId: string | null;
-    resultType?: string;
-    sourceKind?: BackgroundJobSourceKind;
-    sourceScheduleId?: string | null;
-  }): Promise<string> {
-    const queuedAt = new Date().toISOString();
-    const sourceKind = args.sourceKind ?? "manual";
-    const jobId = createSwarmJob(this.ctx.storage, {
-      goal: args.goal,
-      threadId: args.threadId,
-      resultType: args.resultType,
-      sourceKind,
-      sourceScheduleId: args.sourceScheduleId ?? null,
-    });
-    upsertJob(this.ctx.storage, {
-      id: jobId,
-      type: "swarm",
-      label: args.goal.slice(0, 100),
-      status: "pending",
-      progress: "queued",
-      startedAt: queuedAt,
-      queuedAt,
-      attemptCount: 0,
-      lastAttemptAt: null,
-      sourceKind,
-      sourceScheduleId: args.sourceScheduleId ?? null,
-      resultType: args.resultType as never,
-    });
-    this.nudge();
-    return jobId;
-  }
-
   enqueueBriefing(args?: { sourceKind?: BackgroundJobSourceKind; reason?: string }): string {
     const id = enqueueBriefingGeneration(this.ctx.storage, args?.sourceKind ?? "maintenance");
     this.nudge();
@@ -198,19 +163,13 @@ export class BackgroundDispatcher {
       queuedAt: job.queuedAt,
       sourceKind: job.sourceKind,
     }));
-    const swarm = listPendingSwarmJobs(this.ctx.storage).map((job) => ({
-      id: job.id,
-      kind: "swarm" as const,
-      queuedAt: job.queuedAt,
-      sourceKind: job.sourceKind,
-    }));
     const briefings = listPendingDailyBriefings(this.ctx.storage).map((briefing) => ({
       id: briefing.id,
       kind: "briefing" as const,
       queuedAt: briefing.queuedAt,
       sourceKind: briefing.sourceKind,
     }));
-    return [...research, ...swarm, ...briefings].sort(compareWork);
+    return [...research, ...briefings].sort(compareWork);
   }
 
   private hasInteractivePressure(): boolean {
@@ -246,8 +205,6 @@ export class BackgroundDispatcher {
     try {
       if (next.kind === "research") {
         await runResearchInBackground(this.buildJobContext(), next.id);
-      } else if (next.kind === "swarm") {
-        await runSwarmInBackground(this.buildJobContext(), next.id);
       } else {
         await generateBriefing(this.ctx, undefined, next.id);
       }
@@ -264,7 +221,7 @@ export class BackgroundDispatcher {
       const attemptCount = attempts[0]?.attempt_count ?? 0;
       const maxRetries = isRateLimit ? 3 : 2;
 
-      if (isTransient && (next.kind === "research" || next.kind === "swarm") && attemptCount < maxRetries) {
+      if (isTransient && next.kind === "research" && attemptCount < maxRetries) {
         // Exponential backoff: 30s, 60s, 120s
         const backoffMs = Math.min(30_000 * Math.pow(2, attemptCount), 120_000);
         this.ctx.logger.warn("Background job failed with transient error, will retry", {
@@ -375,7 +332,6 @@ export class BackgroundDispatcher {
 export function attachBackgroundDispatch(ctx: PluginContext, dispatcher: BackgroundDispatcher): void {
   ctx.backgroundJobs = {
     enqueueResearch: (args) => dispatcher.enqueueResearch(args),
-    enqueueSwarm: (args) => dispatcher.enqueueSwarm(args),
     enqueueBriefing: (args) => dispatcher.enqueueBriefing(args),
   };
 }

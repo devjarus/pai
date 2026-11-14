@@ -20,7 +20,6 @@ import { ToolKnowledgeAction } from "../tools/ToolKnowledgeAction";
 import { ToolCurateMemory } from "../tools/ToolCurateMemory";
 import { ToolCuratorAction } from "../tools/ToolCuratorAction";
 import { ToolResearchStart } from "../tools/ToolResearchStart";
-import { ToolSwarmStart } from "../tools/ToolSwarmStart";
 import { ToolScheduleAction } from "../tools/ToolScheduleAction";
 import { ToolDocumentReport } from "../tools/ToolDocumentReport";
 
@@ -162,13 +161,6 @@ export const ResearchStartToolUI = makeAssistantToolUI({
   ),
 });
 
-export const SwarmStartToolUI = makeAssistantToolUI({
-  toolName: "swarm_start",
-  render: ({ args, result, status }) => (
-    <ToolSwarmStart state={mapStatus(status)} input={args} output={result as any} />
-  ),
-});
-
 export const ProgramCreateToolUI = makeAssistantToolUI({
   toolName: "program_create",
   render: ({ args, result, status }) => (
@@ -273,7 +265,6 @@ export const AllToolUIs = () => (
     <FixIssuesToolUI />
     <ListBeliefsToolUI />
     <ResearchStartToolUI />
-    <SwarmStartToolUI />
     <ProgramCreateToolUI />
     <ProgramListToolUI />
     <ProgramDeleteToolUI />
