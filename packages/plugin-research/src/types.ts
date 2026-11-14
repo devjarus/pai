@@ -69,6 +69,12 @@ export interface ResearchContext {
   browserUrl?: string;
   /** Data directory for artifact file storage */
   dataDir?: string;
+  /**
+   * When false, research fails immediately instead of inventing a report.
+   * Callers should set this from isSearchConfigured / resolveSearchUrl.
+   * When undefined, the pre-check is skipped (tests).
+   */
+  searchConfigured?: boolean;
   /** Web search function — injected to avoid circular dependency */
   webSearch: (query: string, maxResults?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   /** Format search results for display */

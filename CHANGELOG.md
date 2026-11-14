@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Health check no longer lies about a working LLM** — `/api/health` now probes with a real 1-token chat (not `/models` or Ollama `/api/tags`), so a bad API key or unauthorized Ollama Cloud session reports `ok: false`. The response also includes a `capabilities` block for embeddings, search, sandbox, and browser; Settings surfaces them.
+- **Research no longer invents Digests when search is missing** — Unset search URL no longer defaults to `localhost:8080` / Railway / Docker guesses. Research fails visibly when search is not configured or when a run gathers no search/page results, instead of synthesizing from training data.
+- **Sandbox and browser tools stay off unless explicitly configured** — Removed Railway/Docker auto-URLs and Compose defaults that pointed at the opt-in sandbox profile. The assistant system prompt only documents `run_code` / `browse_*` when those tools are actually registered.
+- **Worker timer leak on Settings reinitialize** — Findings cleanup, belief prune/dedup, profile consolidation, and weekly compounding intervals are now tracked and cleared in `WorkerLoop.stop()`.
+
 ### Added
 - **First-class digest corrections** — Digests now support correction targets beyond memory (`recommendation`, `evidence`, `cadence`, `scope`). Corrections are stored in `digest_corrections`, resolve into durable preference beliefs, and surface in a deterministic **Applied Corrections** section on the next digest (“You told me X → this brief used Y”). The digest pencil edit no longer 400s on empty `beliefId`; Telegram `/correct <free text>` corrects the latest digest without hunting a memory ID.
 

@@ -59,23 +59,7 @@ Every claim from search results MUST have its citation inline, right next to the
 - **task_add**: Create a new task
 - **task_done**: Mark a task complete
 - **linear_issue_create**: Create a Linear issue after gathering only the missing essentials from the user
-- **run_code**: Execute Python/JS code in a sandboxed environment — for data analysis, charting, calculations. The sandbox starts inside OUTPUT_DIR so relative file saves become artifacts automatically. When generating charts for inline display, save PNG/JPEG/WebP images instead of HTML-only files unless the user asks for interactive HTML.
 - **generate_report**: Create a downloadable Markdown report — use when the user asks to generate a report, analysis document, or summary they can download and share
-- **browse_navigate**: Navigate the browser to a URL — use for JavaScript-rendered pages, SPAs, or login-gated content that read_page can't handle
-- **browse_snapshot**: Get interactive elements on the current page (buttons, links, inputs) — use to understand page structure before taking actions
-- **browse_action**: Click, type, select, scroll, or hover on page elements — use element references from browse_snapshot
-- **browse_text**: Extract the full text from the current browser page — use after navigating to get the page content
-- **browse_screenshot**: Take a screenshot of the current page — saved as an artifact
-
-## Browser tools
-When available, use browse_* tools for:
-- JavaScript-rendered pages (React/Vue/Angular SPAs) where read_page returns empty or incomplete content
-- Pages that require interaction (clicking tabs, expanding sections, filling forms) to reveal content
-- Taking screenshots when the user asks to see what a page looks like
-
-**Typical flow:** browse_navigate → browse_text (for content) or browse_snapshot → browse_action (for interaction)
-
-Do NOT use browser tools when read_page or web_search can get the information — browser tools are slower and use more resources.
 
 ## Document uploads
 Users can attach text documents (txt, md, csv, json, xml, html, code files) directly in the chat.
@@ -128,7 +112,7 @@ When you produce a chart-heavy or structured analysis response for the web chat,
 - Use real values only. Never use placeholders.
 - Use these components when helpful: Section, Grid, MetricCard, DataTable, Badge, BulletList, SourceList, Text, Markdown, LineChart, BarChart, DonutChart, ChartImage.
 - Prefer LineChart, BarChart, or DonutChart when you have trustworthy numeric series or category totals.
-- If you created artifacts with **run_code** or **browse_screenshot**, reference them with ChartImage \`src\` values like \`/api/artifacts/<artifactId>\`.
+- If you created image artifacts, reference them with ChartImage \`src\` values like \`/api/artifacts/<artifactId>\`.
 - Keep the human-readable explanation outside the \`\`\`jsonrender fence so copied/exported text still reads naturally.
 
 ## Guidelines
@@ -136,3 +120,32 @@ When you produce a chart-heavy or structured analysis response for the web chat,
 - Be concise and helpful
 - Never echo raw tool output to the user — always synthesize it into a natural response
 - When you retrieve useful facts from knowledge_search, consider storing key takeaways via memory_remember`;
+
+/**
+ * Append guidance only for tools that are actually registered.
+ * Keeps the model from inventing run_code / browse_* calls when sidecars are off.
+ */
+export function appendOptionalToolGuidance(systemPrompt: string, toolNames: Iterable<string>): string {
+  const tools = new Set(toolNames);
+  const sections: string[] = [];
+
+  if (tools.has("run_code")) {
+    sections.push(`## Code sandbox
+- **run_code**: Execute Python/JS code in a sandboxed environment — for data analysis, charting, calculations. The sandbox starts inside OUTPUT_DIR so relative file saves become artifacts automatically. When generating charts for inline display, save PNG/JPEG/WebP images instead of HTML-only files unless the user asks for interactive HTML.`);
+  }
+
+  if (tools.has("browse_navigate")) {
+    sections.push(`## Browser tools
+When available, use browse_* tools for:
+- JavaScript-rendered pages (React/Vue/Angular SPAs) where read_page returns empty or incomplete content
+- Pages that require interaction (clicking tabs, expanding sections, filling forms) to reveal content
+- Taking screenshots when the user asks to see what a page looks like
+
+**Typical flow:** browse_navigate → browse_text (for content) or browse_snapshot → browse_action (for interaction)
+
+Do NOT use browser tools when read_page or web_search can get the information — browser tools are slower and use more resources.`);
+  }
+
+  if (sections.length === 0) return systemPrompt;
+  return `${systemPrompt}\n\n${sections.join("\n\n")}`;
+}

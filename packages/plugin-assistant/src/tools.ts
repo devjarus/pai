@@ -9,7 +9,7 @@ import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-
 import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
 import { ensureProgram, listPrograms, deleteProgram } from "@personal-ai/plugin-schedules";
-import { webSearch, formatSearchResults, type SearchCategory, type TimeRange } from "./web-search.js";
+import { webSearch, formatSearchResults, isSearchConfigured, type SearchCategory, type TimeRange } from "./web-search.js";
 import { fetchPageAsMarkdown, discoverSubPages } from "./page-fetch.js";
 
 type LinearUrgency = "low" | "medium" | "high" | "urgent";
@@ -477,6 +477,10 @@ export function createAgentTools(ctx: AgentContext) {
       }),
       execute: async ({ goal, type }) => {
         try {
+          if (!isSearchConfigured(ctx.config.searchUrl)) {
+            return "Web search is not configured, so research cannot run. Set searchUrl in Settings or PAI_SEARCH_URL (for Docker Compose: http://searxng:8080), then retry.";
+          }
+
           // Get thread ID from extended context (set by server route)
           const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
 
@@ -507,6 +511,7 @@ export function createAgentTools(ctx: AgentContext) {
                 sandboxUrl: ctx.config.sandboxUrl,
                 browserUrl: ctx.config.browserUrl,
                 dataDir: ctx.config.dataDir,
+                searchConfigured: true,
                 webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
                 formatSearchResults,
                 fetchPage: fetchPageAsMarkdown,

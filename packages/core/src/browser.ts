@@ -45,15 +45,12 @@ export interface BrowserActionResult {
 
 /**
  * Resolve browser automation URL.
- * Priority: configUrl > PAI_BROWSER_URL env > Railway internal > Docker default > null.
+ * Priority: configUrl > PAI_BROWSER_URL env > null.
+ * No Railway/Docker auto-inference — the browser sidecar is opt-in and often absent.
  */
 export function resolveBrowserUrl(configUrl?: string): string | null {
   if (configUrl) return configUrl;
   if (process.env.PAI_BROWSER_URL) return process.env.PAI_BROWSER_URL;
-  // Railway internal networking
-  if (process.env.RAILWAY_VOLUME_MOUNT_PATH) return "http://sandbox.railway.internal:9867";
-  // Docker Compose networking (same container as sandbox)
-  if (process.env.PAI_DATA_DIR === "/data") return "http://sandbox:9867";
   return null;
 }
 

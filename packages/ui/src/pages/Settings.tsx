@@ -483,11 +483,42 @@ export default function Settings() {
                   ) : (
                     <>
                       <CircleXIcon className="size-3.5 text-red-400" />
-                      <span className="text-red-400">Not connected</span>
+                      <span className="text-red-400" title={health?.detail ?? health?.capabilities?.llm?.detail}>
+                        Not connected
+                      </span>
                     </>
                   )}
                 </span>
               </div>
+
+              {health?.capabilities && (
+                <div className="space-y-2 border-t border-border/30 px-5 py-3">
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    Capabilities
+                    <InfoBubble text="Each dependency is checked honestly. Search must be green for Watches and research Digests. Sandbox and browser stay off unless you set their URLs." side="right" />
+                  </span>
+                  <div className="grid gap-1.5 font-mono text-xs sm:grid-cols-2">
+                    {(
+                      [
+                        ["Embeddings", health.capabilities.embeddings],
+                        ["Search", health.capabilities.search],
+                        ["Sandbox", health.capabilities.sandbox],
+                        ["Browser", health.capabilities.browser],
+                      ] as const
+                    ).map(([label, cap]) => {
+                      const off = cap.configured === false;
+                      const tone = off ? "text-muted-foreground" : cap.ok ? "text-green-500" : "text-red-400";
+                      const status = off ? "not configured" : cap.ok ? "ok" : "unavailable";
+                      return (
+                        <div key={label} className="flex items-center justify-between gap-2">
+                          <span className="text-muted-foreground">{label}</span>
+                          <span className={tone} title={cap.detail}>{status}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* API Key Warning for cloud providers */}
               {!editing && !config.llm.hasApiKey && config.llm.provider !== "ollama" && (

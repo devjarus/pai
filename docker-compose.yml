@@ -17,9 +17,11 @@ services:
       - PAI_LLM_API_KEY=${PAI_LLM_API_KEY:-}
       - PAI_CORS_ORIGIN=${PAI_CORS_ORIGIN:-}
       - PAI_TELEGRAM_TOKEN=${PAI_TELEGRAM_TOKEN:-}
-      - PAI_SEARCH_URL=http://searxng:8080
-      - PAI_SANDBOX_URL=${PAI_SANDBOX_URL:-http://sandbox:8888}
-      - PAI_BROWSER_URL=${PAI_BROWSER_URL:-http://sandbox:9867}
+      - PAI_SEARCH_URL=${PAI_SEARCH_URL:-http://searxng:8080}
+      # Sandbox/browser are opt-in (--profile sandbox). Do NOT default these URLs —
+      # unset means tools stay unregistered instead of pointing at a missing sidecar.
+      - PAI_SANDBOX_URL=${PAI_SANDBOX_URL:-}
+      - PAI_BROWSER_URL=${PAI_BROWSER_URL:-}
       - NODE_ENV=production
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3141/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]

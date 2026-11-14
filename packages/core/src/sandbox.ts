@@ -20,16 +20,13 @@ export interface SandboxOptions {
 
 /**
  * Resolve sandbox URL.
- * Priority: configUrl > PAI_SANDBOX_URL env > Railway internal > Docker default > null.
- * Pass `config.sandboxUrl` when available to avoid needing env vars.
+ * Priority: configUrl > PAI_SANDBOX_URL env > null.
+ * No Railway/Docker auto-inference — those often point at a sidecar that is not
+ * running (sandbox is opt-in). Pass an explicit URL or leave tools unregistered.
  */
 export function resolveSandboxUrl(configUrl?: string): string | null {
   if (configUrl) return configUrl;
   if (process.env.PAI_SANDBOX_URL) return process.env.PAI_SANDBOX_URL;
-  // Railway internal networking (service named "sandbox", fixed port 8888)
-  if (process.env.RAILWAY_VOLUME_MOUNT_PATH) return "http://sandbox.railway.internal:8888";
-  // Docker Compose networking (container named "sandbox" in docker-compose.yml)
-  if (process.env.PAI_DATA_DIR === "/data") return "http://sandbox:8888";
   return null;
 }
 

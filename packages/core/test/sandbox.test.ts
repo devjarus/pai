@@ -14,6 +14,16 @@ describe("sandbox", () => {
   });
 
   describe("resolveSandboxUrl", () => {
+    const origDataDir = process.env.PAI_DATA_DIR;
+    const origRailway = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+
+    afterEach(() => {
+      if (origDataDir !== undefined) process.env.PAI_DATA_DIR = origDataDir;
+      else delete process.env.PAI_DATA_DIR;
+      if (origRailway !== undefined) process.env.RAILWAY_VOLUME_MOUNT_PATH = origRailway;
+      else delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    });
+
     it("returns null when PAI_SANDBOX_URL is not set", () => {
       delete process.env.PAI_SANDBOX_URL;
       expect(resolveSandboxUrl()).toBeNull();
@@ -26,6 +36,13 @@ describe("sandbox", () => {
 
     it("returns null for empty string", () => {
       process.env.PAI_SANDBOX_URL = "";
+      expect(resolveSandboxUrl()).toBeNull();
+    });
+
+    it("does not invent Docker or Railway URLs", () => {
+      delete process.env.PAI_SANDBOX_URL;
+      process.env.PAI_DATA_DIR = "/data";
+      process.env.RAILWAY_VOLUME_MOUNT_PATH = "/mount";
       expect(resolveSandboxUrl()).toBeNull();
     });
   });
