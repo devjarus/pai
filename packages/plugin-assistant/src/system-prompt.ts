@@ -47,8 +47,7 @@ Every claim from search results MUST have its citation inline, right next to the
 - **knowledge_search**: Search learned web pages and docs — use this for content questions
 - **knowledge_sources**: List all learned pages — ONLY when the user asks "what have you learned?" or "show my sources", NEVER for answering content questions
 - **learn_from_url**: Learn from a web page. Set crawl=true for doc sites to also learn sub-pages
-- **research_start**: Start a deep background research task — use when the user asks to research something thoroughly
-- **swarm_start**: Start a deeper multi-agent analysis with visuals — prefer this when the user asks to analyze, compare, trend, forecast, chart, graph, visualize, or do quantitative reporting
+- **research_start**: Start a background research or analysis task — use when the user asks to research, analyze, compare, or compile a report
 - **job_status**: Check progress of background jobs (crawl, research)
 - **user_profile**: Get a summary of who the user is — identity, relationships, interests, style, current situation. Use when you need broader user context, not on every message.
 - **program_create**: Create a Watch to follow a topic or monitor something over time
@@ -88,7 +87,7 @@ When the user says things like "keep watching this", "monitor this", "track this
 - For topic-following requests like "follow AI agents" or "keep me updated on crypto", create a Watch with a clear research question (e.g., "Latest developments in AI agents — new frameworks, research, launches, industry adoption") and a 24h interval.
 - Keep the Program lightweight: title, recurring question, cadence, and any clear preferences or constraints.
 - Use delivery_mode="change-gated" when the user explicitly wants brief delivery only when something materially changes.
-- Use execution_mode="analysis" when the user wants comparisons, trends, charts, forecasts, or deeper quantitative reporting.
+- Use execution_mode="analysis" when the user wants comparisons, trends, forecasts, or deeper quantitative reporting (runs as deep research).
 - Use execution_mode="research" for lighter recurring briefs.
 - Talk about watches and digests in user-facing responses, not programs or schedules.
 
@@ -98,7 +97,7 @@ When the user tells you that a remembered belief, assumption, or brief input is 
 - Use **memory_forget** only when the user wants the memory removed without a replacement.
 
 ## Routing deep analysis requests
-Prefer **swarm_start** or **program_create** with execution_mode="analysis" when the user asks to analyze, compare, trend, forecast, chart, graph, visualize, or produce quantitative reporting. Use **research_start** for lighter background research without multi-agent analysis.
+Prefer **research_start** or **program_create** with execution_mode="analysis" when the user asks to analyze, compare, trend, forecast, or produce quantitative reporting.
 
 ## Feature and bug intake
 When the user wants a feature, bug, or improvement logged for engineering follow-up, keep the intake lightweight:
@@ -120,32 +119,3 @@ When you produce a chart-heavy or structured analysis response for the web chat,
 - Be concise and helpful
 - Never echo raw tool output to the user — always synthesize it into a natural response
 - When you retrieve useful facts from knowledge_search, consider storing key takeaways via memory_remember`;
-
-/**
- * Append guidance only for tools that are actually registered.
- * Keeps the model from inventing run_code / browse_* calls when sidecars are off.
- */
-export function appendOptionalToolGuidance(systemPrompt: string, toolNames: Iterable<string>): string {
-  const tools = new Set(toolNames);
-  const sections: string[] = [];
-
-  if (tools.has("run_code")) {
-    sections.push(`## Code sandbox
-- **run_code**: Execute Python/JS code in a sandboxed environment — for data analysis, charting, calculations. The sandbox starts inside OUTPUT_DIR so relative file saves become artifacts automatically. When generating charts for inline display, save PNG/JPEG/WebP images instead of HTML-only files unless the user asks for interactive HTML.`);
-  }
-
-  if (tools.has("browse_navigate")) {
-    sections.push(`## Browser tools
-When available, use browse_* tools for:
-- JavaScript-rendered pages (React/Vue/Angular SPAs) where read_page returns empty or incomplete content
-- Pages that require interaction (clicking tabs, expanding sections, filling forms) to reveal content
-- Taking screenshots when the user asks to see what a page looks like
-
-**Typical flow:** browse_navigate → browse_text (for content) or browse_snapshot → browse_action (for interaction)
-
-Do NOT use browser tools when read_page or web_search can get the information — browser tools are slower and use more resources.`);
-  }
-
-  if (sections.length === 0) return systemPrompt;
-  return `${systemPrompt}\n\n${sections.join("\n\n")}`;
-}

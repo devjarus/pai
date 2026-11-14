@@ -18,10 +18,6 @@ services:
       - PAI_CORS_ORIGIN=${PAI_CORS_ORIGIN:-}
       - PAI_TELEGRAM_TOKEN=${PAI_TELEGRAM_TOKEN:-}
       - PAI_SEARCH_URL=${PAI_SEARCH_URL:-http://searxng:8080}
-      # Sandbox/browser are opt-in (--profile sandbox). Do NOT default these URLs —
-      # unset means tools stay unregistered instead of pointing at a missing sidecar.
-      - PAI_SANDBOX_URL=${PAI_SANDBOX_URL:-}
-      - PAI_BROWSER_URL=${PAI_BROWSER_URL:-}
       - NODE_ENV=production
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3141/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
@@ -49,34 +45,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    restart: unless-stopped
-
-  sandbox:
-    build:
-      context: .
-      dockerfile: sandbox/Dockerfile
-    container_name: personal-ai-sandbox
-    profiles:
-      - sandbox
-    ports:
-      - "8888:8888"
-      - "9867:9867"
-    mem_limit: 1536m
-    cpus: "1.0"
-    pids_limit: 128
-    shm_size: 256m
-    tmpfs:
-      - /tmp:size=256m
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8888/health')\" || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
     restart: unless-stopped
 
   ollama:

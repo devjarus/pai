@@ -9,7 +9,6 @@
   "references": [
     { "path": "../core" },
     { "path": "../plugin-assistant" },
-    { "path": "../plugin-curator" },
     { "path": "../plugin-research" },
     { "path": "../plugin-swarm" },
     { "path": "../plugin-schedules" },

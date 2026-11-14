@@ -81,22 +81,9 @@ export interface TelemetryAttributes {
   metadata?: Record<string, unknown>;
 }
 
-export interface FeatureFlags {
-  libraryDomain?: boolean;
-  watchesDomain?: boolean;
-  digestsDomain?: boolean;
-  homeDashboard?: boolean;
-}
-
-/**
- * Deployment mode — controls which infrastructure backends are used at runtime.
- * - selfhosted: SQLite, local filesystem, in-process workers (default)
- * - hosted: PostgreSQL, S3, external job queue (future)
- */
-export type DeploymentMode = "selfhosted" | "hosted";
-
 export interface Config {
-  mode: DeploymentMode;
+  /** Always self-hosted for now (hosted backends not implemented). */
+  mode: "selfhosted";
   dataDir: string;
   logLevel: LogLevel;
   llm: {
@@ -146,14 +133,8 @@ export interface Config {
   };
   /** Show debug info (render spec, raw data) on research results */
   debugResearch?: boolean;
-  /** Sandbox code execution URL (e.g. http://localhost:8888). Auto-detected in Docker/Railway if unset. */
-  sandboxUrl?: string;
   /** SearXNG web search URL (e.g. http://localhost:8080). Auto-detected in Docker/Railway if unset. */
   searchUrl?: string;
-  /** Pinchtab browser automation URL (e.g. http://localhost:9867). Auto-detected in Docker/Railway if unset. */
-  browserUrl?: string;
-  /** Feature flags for phased domain rollout */
-  features?: FeatureFlags;
 }
 
 export interface Migration {
@@ -240,7 +221,6 @@ export interface PluginContext {
   contextProvider?: (query: string) => Promise<string>;
   backgroundJobs?: {
     enqueueResearch?: (args: { goal: string; threadId: string | null; resultType?: string; sourceKind?: BackgroundJobSourceKind; sourceScheduleId?: string | null; budgetMaxSearches?: number; budgetMaxPages?: number }) => Promise<string> | string;
-    enqueueSwarm?: (args: { goal: string; threadId: string | null; resultType?: string; sourceKind?: BackgroundJobSourceKind; sourceScheduleId?: string | null }) => Promise<string> | string;
     enqueueBriefing?: (args?: { sourceKind?: BackgroundJobSourceKind; reason?: string }) => Promise<string> | string;
   };
 }

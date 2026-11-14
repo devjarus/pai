@@ -1,17 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { PluginContext } from "@personal-ai/core";
-import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads, cleanupOldTelemetrySpans, startSpan, finishSpan, syncAutomaticLinearIssues } from "@personal-ai/core";
+import { cleanupExpiredSources, cleanupOldArtifacts, listBeliefs, listThreads, cleanupOldTelemetrySpans, startSpan, finishSpan } from "@personal-ai/core";
 import { cleanupFindings } from "@personal-ai/library";
 import { getDueSchedules, markScheduleRun } from "@personal-ai/plugin-schedules";
 import { resolveDepthForWatch, getPreviousFindingsContext } from "@personal-ai/watches";
 import { getLatestBriefing } from "./briefing.js";
-import { runBackgroundLearning } from "./learning.js";
 
 export interface WorkerOptions {
   briefingIntervalMs?: number;
   scheduleCheckIntervalMs?: number;
-  learningIntervalMs?: number;
-  learningInitialDelayMs?: number;
   knowledgeCleanupIntervalMs?: number;
   artifactCleanupIntervalMs?: number;
   generateInitialBriefing?: boolean;
@@ -19,12 +16,9 @@ export interface WorkerOptions {
 
 const DEFAULT_BRIEFING_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_SCHEDULE_CHECK_INTERVAL_MS = 60 * 1000;
-const DEFAULT_LEARNING_INTERVAL_MS = 2 * 60 * 60 * 1000;
-const DEFAULT_LEARNING_INITIAL_DELAY_MS = 5 * 60 * 1000;
 const DEFAULT_KNOWLEDGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ARTIFACT_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_AUTO_LINEAR_ISSUE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const DEFAULT_ARTIFACT_MAX_AGE_DAYS = 7;
 
 /**
@@ -83,17 +77,12 @@ export function buildEnrichedResearchGoal(
 export class WorkerLoop {
   private briefingTimer: ReturnType<typeof setInterval> | null = null;
   private scheduleCheckTimer: ReturnType<typeof setInterval> | null = null;
-  private learningInitTimer: ReturnType<typeof setTimeout> | null = null;
-  private learningTimer: ReturnType<typeof setInterval> | null = null;
   private knowledgeCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private artifactCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private telemetryCleanupTimer: ReturnType<typeof setInterval> | null = null;
-  private autoLinearIssueTimer: ReturnType<typeof setInterval> | null = null;
   private findingsCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private beliefPruneTimer: ReturnType<typeof setInterval> | null = null;
   private beliefDedupTimer: ReturnType<typeof setInterval> | null = null;
-  private profileConsolidationTimer: ReturnType<typeof setInterval> | null = null;
-  private weeklyCompoundingTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private abortController = new AbortController();
 
@@ -114,12 +103,10 @@ export class WorkerLoop {
 
     const briefingMs = this.options?.briefingIntervalMs ?? DEFAULT_BRIEFING_INTERVAL_MS;
     const scheduleMs = this.options?.scheduleCheckIntervalMs ?? DEFAULT_SCHEDULE_CHECK_INTERVAL_MS;
-    const learningMs = this.options?.learningIntervalMs ?? DEFAULT_LEARNING_INTERVAL_MS;
-    const learningDelayMs = this.options?.learningInitialDelayMs ?? DEFAULT_LEARNING_INITIAL_DELAY_MS;
     const generateInitial = this.options?.generateInitialBriefing ?? true;
 
     if (!isLLMConfigured) {
-      this.ctx.logger.info("LLM not configured — skipping background briefing and learning. Configure in Settings.");
+      this.ctx.logger.info("LLM not configured — skipping background briefing. Configure in Settings.");
     }
 
     // --- Briefing generator ---
@@ -200,20 +187,6 @@ export class WorkerLoop {
       this.runWorkerTask("worker.schedule", () => this.runDueSchedules()).catch(() => {});
     }, scheduleMs);
 
-    // --- Background learning ---
-    this.learningInitTimer = setTimeout(() => {
-      if (this.ctx.config.workers?.backgroundLearning === false || !isLLMConfigured) return;
-      this.runWorkerTask("worker.learning", (telemetry) => runBackgroundLearning(this.ctx, this.abortController.signal, telemetry)).catch((err) => {
-        this.ctx.logger.warn(`Background learning failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    }, learningDelayMs);
-
-    this.learningTimer = setInterval(() => {
-      if (this.ctx.config.workers?.backgroundLearning === false || !isLLMConfigured) return;
-      this.runWorkerTask("worker.learning", (telemetry) => runBackgroundLearning(this.ctx, this.abortController.signal, telemetry)).catch((err) => {
-        this.ctx.logger.warn(`Background learning failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    }, learningMs);
 
     // --- Knowledge cleanup ---
     const knowledgeCleanupMs = this.options?.knowledgeCleanupIntervalMs ?? DEFAULT_KNOWLEDGE_CLEANUP_INTERVAL_MS;
@@ -290,50 +263,6 @@ export class WorkerLoop {
       });
     }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS);
 
-    // --- Profile consolidation (merge scattered preferences, every 24h — skips if no new beliefs) ---
-    let lastConsolidationBeliefCount = 0;
-    this.profileConsolidationTimer = setInterval(() => {
-      if (!isLLMConfigured) return;
-      this.runWorkerTask("worker.cleanup", async () => {
-        const currentCount = listBeliefs(this.ctx.storage, "active").length;
-        if (currentCount === lastConsolidationBeliefCount) return; // no change — skip
-        lastConsolidationBeliefCount = currentCount;
-
-        const { consolidateProfile } = await import("@personal-ai/core");
-        const result = await consolidateProfile(this.ctx.storage, this.ctx.llm, this.ctx.logger);
-        if (result.themesProcessed > 0) {
-          this.ctx.logger.info(`Profile consolidation: merged ${result.beliefsConsolidated} beliefs into ${result.beliefsCreated} dense profile statement(s)`);
-          lastConsolidationBeliefCount = listBeliefs(this.ctx.storage, "active").length;
-        }
-      }).catch((err) => {
-        this.ctx.logger.warn(`Profile consolidation failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS);
-
-    // --- Weekly compounding (synthesize research findings into topic insights) ---
-    const WEEKLY_MS = 7 * 24 * 60 * 60 * 1000;
-    this.weeklyCompoundingTimer = setInterval(() => {
-      if (!isLLMConfigured) return;
-      this.runWorkerTask("worker.cleanup", async () => {
-        const { runWeeklyCompounding } = await import("./compounding.js");
-        const result = await runWeeklyCompounding(this.ctx);
-        if (result.watchesProcessed > 0) {
-          this.ctx.logger.info(`Weekly compounding: ${result.insightsCreated} created, ${result.insightsUpdated} updated across ${result.watchesProcessed} watch(es)`);
-        }
-
-        // Generate weekly digest after compounding
-        try {
-          const { generateWeeklyDigest } = await import("./briefing.js");
-          await generateWeeklyDigest(this.ctx);
-          this.ctx.logger.info("Weekly digest generated");
-        } catch (err) {
-          this.ctx.logger.warn(`Weekly digest generation failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }).catch((err) => {
-        this.ctx.logger.warn(`Weekly compounding failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    }, WEEKLY_MS);
-
     const telemetryCleanupMs = DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS;
     this.telemetryCleanupTimer = setInterval(() => {
       this.runWorkerTask("worker.cleanup", async () => {
@@ -345,23 +274,6 @@ export class WorkerLoop {
         this.ctx.logger.warn(`Telemetry cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     }, telemetryCleanupMs);
-
-    this.autoLinearIssueTimer = setInterval(() => {
-      this.runWorkerTask("worker.cleanup", async () => {
-        const result = await syncAutomaticLinearIssues(this.ctx.storage, this.ctx.config, this.ctx.logger);
-        if (result.reason === "disabled" || result.reason === "not_configured") return;
-        if (result.created > 0 || result.updated > 0) {
-          this.ctx.logger.info("Automatic Linear issue sweep completed", {
-            created: result.created,
-            updated: result.updated,
-            candidates: result.candidates,
-            skipped: result.skipped,
-          });
-        }
-      }).catch((err) => {
-        this.ctx.logger.warn(`Automatic Linear issue sweep failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    }, DEFAULT_AUTO_LINEAR_ISSUE_CHECK_INTERVAL_MS);
   }
 
   stop(): void {
@@ -371,37 +283,32 @@ export class WorkerLoop {
 
     if (this.briefingTimer) { clearInterval(this.briefingTimer); this.briefingTimer = null; }
     if (this.scheduleCheckTimer) { clearInterval(this.scheduleCheckTimer); this.scheduleCheckTimer = null; }
-    if (this.learningInitTimer) { clearTimeout(this.learningInitTimer); this.learningInitTimer = null; }
-    if (this.learningTimer) { clearInterval(this.learningTimer); this.learningTimer = null; }
     if (this.knowledgeCleanupTimer) { clearInterval(this.knowledgeCleanupTimer); this.knowledgeCleanupTimer = null; }
     if (this.artifactCleanupTimer) { clearInterval(this.artifactCleanupTimer); this.artifactCleanupTimer = null; }
     if (this.telemetryCleanupTimer) { clearInterval(this.telemetryCleanupTimer); this.telemetryCleanupTimer = null; }
-    if (this.autoLinearIssueTimer) { clearInterval(this.autoLinearIssueTimer); this.autoLinearIssueTimer = null; }
     if (this.findingsCleanupTimer) { clearInterval(this.findingsCleanupTimer); this.findingsCleanupTimer = null; }
     if (this.beliefPruneTimer) { clearInterval(this.beliefPruneTimer); this.beliefPruneTimer = null; }
     if (this.beliefDedupTimer) { clearInterval(this.beliefDedupTimer); this.beliefDedupTimer = null; }
-    if (this.profileConsolidationTimer) { clearInterval(this.profileConsolidationTimer); this.profileConsolidationTimer = null; }
-    if (this.weeklyCompoundingTimer) { clearInterval(this.weeklyCompoundingTimer); this.weeklyCompoundingTimer = null; }
   }
 
   updateContext(newCtx: Partial<PluginContext>): void {
     Object.assign(this.ctx, newCtx);
   }
 
-  private hasQueuedOrRunningSchedule(scheduleId: string, type: "research" | "analysis"): boolean {
-    if (type === "research") {
-      const rows = this.ctx.storage.query<{ count: number }>(
-        "SELECT COUNT(*) as count FROM research_jobs WHERE source_schedule_id = ? AND status IN ('pending', 'running')",
-        [scheduleId],
-      );
-      return (rows[0]?.count ?? 0) > 0;
-    }
+  private hasQueuedOrRunningSchedule(scheduleId: string, _type: "research" | "analysis"): boolean {
+    // Analysis mode now enqueues research jobs (deep). Also treat leftover
+    // historical swarm rows as in-flight so we don't double-schedule.
+    const research = this.ctx.storage.query<{ count: number }>(
+      "SELECT COUNT(*) as count FROM research_jobs WHERE source_schedule_id = ? AND status IN ('pending', 'running')",
+      [scheduleId],
+    );
+    if ((research[0]?.count ?? 0) > 0) return true;
 
-    const rows = this.ctx.storage.query<{ count: number }>(
+    const swarm = this.ctx.storage.query<{ count: number }>(
       "SELECT COUNT(*) as count FROM swarm_jobs WHERE source_schedule_id = ? AND status IN ('pending', 'planning', 'running', 'synthesizing')",
       [scheduleId],
     );
-    return (rows[0]?.count ?? 0) > 0;
+    return (swarm[0]?.count ?? 0) > 0;
   }
 
   private async runDueSchedules(): Promise<void> {
@@ -414,32 +321,25 @@ export class WorkerLoop {
         this.ctx.logger.info("Running scheduled job", { id: schedule.id, label: schedule.label });
         markScheduleRun(this.ctx.storage, schedule.id);
 
-        if (schedule.type === "research") {
-          const enrichedGoal = buildEnrichedResearchGoal(this.ctx.storage, {
-            goal: schedule.goal,
-            latestBriefId: schedule.runtimeState?.latestBriefId,
-            lastDeliveredAt: schedule.runtimeState?.lastDeliveredAt,
-          });
-          const findingsContext = getPreviousFindingsContext(this.ctx.storage, schedule.id);
-
-          const fullGoal = enrichedGoal + findingsContext;
-          const depth = resolveDepthForWatch({ depthLevel: (schedule as { depthLevel?: "quick" | "standard" | "deep" }).depthLevel }, false);
-          await this.ctx.backgroundJobs?.enqueueResearch?.({
-            goal: fullGoal,
-            threadId: schedule.threadId,
-            sourceKind: "schedule",
-            sourceScheduleId: schedule.id,
-            budgetMaxSearches: depth.budgetMaxSearches,
-            budgetMaxPages: depth.budgetMaxPages,
-          });
-          continue;
-        }
-
-        await this.ctx.backgroundJobs?.enqueueSwarm?.({
+        const enrichedGoal = buildEnrichedResearchGoal(this.ctx.storage, {
           goal: schedule.goal,
+          latestBriefId: schedule.runtimeState?.latestBriefId,
+          lastDeliveredAt: schedule.runtimeState?.lastDeliveredAt,
+        });
+        const findingsContext = getPreviousFindingsContext(this.ctx.storage, schedule.id);
+        const fullGoal = enrichedGoal + findingsContext;
+        // Analysis watches run as deep research (swarm runtime removed).
+        const depthLevel = schedule.type === "analysis"
+          ? "deep" as const
+          : (schedule as { depthLevel?: "quick" | "standard" | "deep" }).depthLevel;
+        const depth = resolveDepthForWatch({ depthLevel }, false);
+        await this.ctx.backgroundJobs?.enqueueResearch?.({
+          goal: fullGoal,
           threadId: schedule.threadId,
           sourceKind: "schedule",
           sourceScheduleId: schedule.id,
+          budgetMaxSearches: depth.budgetMaxSearches,
+          budgetMaxPages: depth.budgetMaxPages,
         });
       }
     } catch (err) {

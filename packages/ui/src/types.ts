@@ -129,9 +129,7 @@ export interface ConfigInfo {
     freshnessDecayDays?: number;
   };
   debugResearch?: boolean;
-  sandboxUrl?: string;
   searchUrl?: string;
-  browserUrl?: string;
   envOverrides?: string[];
 }
 

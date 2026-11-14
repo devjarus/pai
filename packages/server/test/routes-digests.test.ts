@@ -71,7 +71,6 @@ const MOCK_BRIEFING = {
 function createMockServerCtx(): ServerContext {
   const backgroundDispatcher = {
     enqueueResearch: vi.fn().mockResolvedValue("job-research-1"),
-    enqueueSwarm: vi.fn().mockResolvedValue("job-swarm-1"),
     enqueueBriefing: vi.fn().mockReturnValue("briefing-queued-1"),
     getJobQueueMetadata: vi.fn().mockReturnValue({ queuePosition: null, waitingReason: null }),
     getWorkState: vi.fn().mockReturnValue({
@@ -85,8 +84,6 @@ function createMockServerCtx(): ServerContext {
     ctx: {
       config: {
         dataDir: "/tmp/test",
-        sandboxUrl: "http://sandbox",
-        browserUrl: "http://browser",
         logLevel: "silent" as const,
         llm: {
           provider: "ollama" as const,
@@ -487,7 +484,7 @@ describe("digest routes", () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it("POST /api/digests/:id/rerun dispatches swarm for analysis type", async () => {
+  it("POST /api/digests/:id/rerun dispatches deep research for analysis type", async () => {
     const analysisBriefing = {
       ...MOCK_BRIEFING,
       id: "swarm-briefing-1",
@@ -497,8 +494,14 @@ describe("digest routes", () => {
 
     const res = await app.inject({ method: "POST", url: "/api/digests/swarm-briefing-1/rerun" });
     expect(res.statusCode).toBe(200);
-    expect(res.json().jobId).toBe("job-swarm-1");
-    expect(serverCtx.backgroundDispatcher.enqueueSwarm).toHaveBeenCalled();
+    expect(res.json().jobId).toBe("job-research-1");
+    expect(serverCtx.backgroundDispatcher.enqueueResearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        goal: "Analyze market trends",
+        budgetMaxSearches: 10,
+        budgetMaxPages: 15,
+      }),
+    );
   });
 
   it("POST /api/digests/:id/rerun returns 400 when no goal in sections", async () => {

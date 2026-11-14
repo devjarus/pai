@@ -76,12 +76,11 @@ The contributor workflow lives in [AGENTS.md](../AGENTS.md) and [harness/README.
 
 ```
 packages/
-  core/               Config, Storage, LLM Client, Logger, Memory, Knowledge, Threads, Plugin interfaces, Research Schemas, Sandbox Client, Artifacts
+  core/               Config, Storage, LLM Client, Logger, Memory, Knowledge, Threads, Plugin interfaces, Research Schemas, Artifacts
   cli/                Commander.js CLI + MCP server (stdio, 19 tools) + `pai init`
   plugin-tasks/       Tasks with AI prioritization, clearAllTasks
-  plugin-assistant/   Personal Assistant agent — split into 3 files (system-prompt, auto-memory, index), AI SDK tools, afterResponse hook, run_code sandbox tool
-  plugin-curator/     Memory Curator agent — health analysis, dedup, contradiction resolution
-  plugin-research/    Background research — split into 6 modules (types, repository, prompts, tools, charts, research). Domain detection (flight/stock/general), domain-specific LLM prompts, structured JSON output, chart generation via sandbox
+  plugin-assistant/   Personal Assistant agent — split into 3 files (system-prompt, auto-memory, index), AI SDK tools, afterResponse hook
+  plugin-research/    Background research — split into 6 modules (types, repository, prompts, tools, charts, research). Domain detection (flight/stock/general), domain-specific LLM prompts, structured JSON output
   plugin-swarm/       Sub-agent swarm — decomposes tasks into 2-5 parallel domain-specific sub-agents with shared SQLite blackboard, budget-limited tools, and orchestrator synthesis
   plugin-schedules/   Recurring scheduled research jobs
   plugin-telegram/    Telegram bot — grammY, standalone entry point, chat pipeline
@@ -90,7 +89,6 @@ packages/
   watches/            Watch domain: templates, depth levels, delta research, re-exports from plugin-schedules
   ui/                 React + Vite + Tailwind + shadcn/ui SPA (Home, Watches, Chat, Activity, Library, Digests, Tasks, Settings) + ToolFlightResults + ToolStockReport
 
-sandbox/              Docker sidecar — Python 3.12 + Node.js 20 for isolated code execution (matplotlib, pandas, plotly, yfinance). Opt-in via `docker compose --profile sandbox`.
 ```
 
 ---
@@ -635,7 +633,6 @@ interface AgentContext extends PluginContext {
 - `afterResponse`: auto-learns URLs from user messages (fire-and-forget)
 - Web search: SearXNG (self-hosted, no API key, supports search categories)
 
-### Memory Curator (`plugin-curator`)
 
 - System prompt instructs analysis → present findings → wait for approval → fix
 - Tools: `curate_memory` (read-only health analysis), `fix_issues` (merge/prune/resolve/synthesize), `list_beliefs`
@@ -797,11 +794,6 @@ digest_ratings         (id, digest_id, rating INTEGER 1-5, feedback TEXT, create
 │  │  /data vol   │   │  (always-on)  │   │  (local only) │  │
 │  └──────┬───────┘   └───────────────┘   └───────────────┘  │
 │         │                                                   │
-│         ├──▶ ┌───────────────┐                              │
-│         │    │  sandbox      │                              │
-│         │    │  :8888        │                              │
-│         │    │  (opt-in)     │                              │
-│         │    └───────────────┘                              │
 │         ▼                                                   │
 │  ~/.personal-ai/data/                                       │
 └─────────────────────────────────────────────────────────────┘
@@ -812,7 +804,6 @@ digest_ratings         (id, digest_id, rating INTEGER 1-5, feedback TEXT, create
 **docker-compose.yml:** Services with Docker Compose profiles:
 - `pai` — always starts, configurable via env vars (`PAI_LLM_PROVIDER`, `PAI_LLM_BASE_URL`, `PAI_LLM_API_KEY`)
 - `searxng` — always starts, self-hosted web search backend (no API key, no rate limits)
-- `sandbox` — `profiles: [sandbox]`, opt-in code execution sidecar (Python 3.12 + Node.js 20). Set `PAI_SANDBOX_URL=http://sandbox:8888`.
 - `ollama` — `profiles: [local]`, only with `--profile local`
 
 **install.sh:** Interactive installer — checks Docker, asks local vs cloud, configures provider, saves `.env`, starts containers.

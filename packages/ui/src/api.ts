@@ -445,9 +445,7 @@ export function updateConfig(updates: {
   knowledgeDefaultTtlDays?: number | null;
   knowledgeFreshnessDecayDays?: number;
   debugResearch?: boolean;
-  sandboxUrl?: string;
   searchUrl?: string;
-  browserUrl?: string;
   timezone?: string;
 }): Promise<ConfigInfo> {
   return request<ConfigInfo>("/config", {

@@ -16,7 +16,6 @@ COPY packages/cli/package.json packages/cli/tsconfig.json packages/cli/
 COPY packages/server/package.json packages/server/tsconfig.json packages/server/
 COPY packages/ui/package.json packages/ui/tsconfig.json packages/ui/tsconfig.app.json packages/ui/tsconfig.node.json packages/ui/
 COPY packages/plugin-assistant/package.json packages/plugin-assistant/tsconfig.json packages/plugin-assistant/
-COPY packages/plugin-curator/package.json packages/plugin-curator/tsconfig.json packages/plugin-curator/
 COPY packages/plugin-tasks/package.json packages/plugin-tasks/tsconfig.json packages/plugin-tasks/
 COPY packages/plugin-telegram/package.json packages/plugin-telegram/tsconfig.json packages/plugin-telegram/
 COPY packages/plugin-research/package.json packages/plugin-research/tsconfig.json packages/plugin-research/
@@ -75,9 +74,6 @@ COPY --from=builder /app/packages/plugin-assistant/dist packages/plugin-assistan
 COPY --from=builder /app/packages/plugin-assistant/package.json packages/plugin-assistant/
 COPY --from=builder /app/packages/plugin-assistant/node_modules packages/plugin-assistant/node_modules
 
-COPY --from=builder /app/packages/plugin-curator/dist packages/plugin-curator/dist
-COPY --from=builder /app/packages/plugin-curator/package.json packages/plugin-curator/
-COPY --from=builder /app/packages/plugin-curator/node_modules packages/plugin-curator/node_modules
 
 COPY --from=builder /app/packages/plugin-tasks/dist packages/plugin-tasks/dist
 COPY --from=builder /app/packages/plugin-tasks/package.json packages/plugin-tasks/

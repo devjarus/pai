@@ -63,10 +63,6 @@ export interface ResearchContext {
   model?: string;
   /** Optional context window override in tokens */
   contextWindow?: number;
-  /** Sandbox URL from config (passed through to resolveSandboxUrl) */
-  sandboxUrl?: string;
-  /** Browser automation URL from config (passed through to resolveBrowserUrl) */
-  browserUrl?: string;
   /** Data directory for artifact file storage */
   dataDir?: string;
   /**

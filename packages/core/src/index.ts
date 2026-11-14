@@ -1,5 +1,5 @@
 export type {
-  Config, FeatureFlags, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult, EmbedResult, StreamEvent,
+  Config, Migration, Storage, LLMClient, ChatMessage, ChatOptions, TokenUsage, ChatResult, EmbedResult, StreamEvent,
   PluginContext, Command, Plugin, AgentPlugin, AgentContext, Logger, LogLevel, LogFileOptions,
   TelemetryAttributes, TelemetryProcess, TelemetrySpanType, TelemetryStatus, TelemetrySurface, EmbedOptions,
   LlmTrafficConfig, LlmTrafficLane, BackgroundJobSourceKind, BackgroundWaitingReason,
@@ -124,14 +124,6 @@ export {
   hasSubstantiveReportContent,
 } from "./report-presentation.js";
 export type { ReportExecution, ReportVisual, ReportPresentation } from "./report-presentation.js";
-
-// Sandbox
-export { resolveSandboxUrl, sandboxHealth, runInSandbox } from "./sandbox.js";
-export type { SandboxResult, SandboxOptions } from "./sandbox.js";
-
-// Browser automation (Pinchtab)
-export { resolveBrowserUrl, browserHealth, browserNavigate, browserSnapshot, browserAction, browserText, browserScreenshot, browserCloseAllTabs, createBrowserTools } from "./browser.js";
-export type { BrowserNavigateOptions, BrowserNavigateResult, BrowserActionOptions, BrowserActionResult, BrowserToolContext } from "./browser.js";
 
 // Context budget
 export { getContextBudget, estimateTokens, _resetBudgetCache } from "./context-budget.js";

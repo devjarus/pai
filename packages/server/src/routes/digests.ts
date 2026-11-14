@@ -186,26 +186,19 @@ export function registerDigestRoutes(app: FastifyInstance, { ctx, backgroundDisp
     if (!goal) return reply.status(400).send({ error: "No research goal found in digest" });
 
     const resultType = (sections.resultType as string | undefined) ?? "general";
-    const execution = sections.execution === "analysis" || briefing.id.startsWith("swarm-")
-      ? "analysis"
-      : "research";
+    const isAnalysis = sections.execution === "analysis" || briefing.id.startsWith("swarm-");
+    // Analysis digests re-run as deep research (swarm runtime removed).
+    const deepBudgets = isAnalysis
+      ? { budgetMaxSearches: 10, budgetMaxPages: 15 }
+      : {};
 
-    let jobId: string;
-    if (execution === "analysis") {
-      jobId = await backgroundDispatcher.enqueueSwarm({
-        goal,
-        threadId: null,
-        resultType,
-        sourceKind: "manual",
-      });
-    } else {
-      jobId = await backgroundDispatcher.enqueueResearch({
-        goal,
-        threadId: null,
-        resultType: resultType as "general" | "comparison" | "timeline" | "analysis",
-        sourceKind: "manual",
-      });
-    }
+    const jobId = await backgroundDispatcher.enqueueResearch({
+      goal,
+      threadId: null,
+      resultType: resultType as "general" | "comparison" | "timeline" | "analysis",
+      sourceKind: "manual",
+      ...deepBudgets,
+    });
 
     return { ok: true, jobId };
   });

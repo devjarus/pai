@@ -1,7 +1,7 @@
 {
   "name": "@personal-ai/plugin-swarm",
   "version": "0.1.0",
-  "description": "Sub-agent swarm — decomposes complex tasks into parallel sub-agents with shared blackboard",
+  "description": "Legacy swarm table migrations and read/cancel helpers (runtime removed)",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -26,10 +26,7 @@
   },
   "dependencies": {
     "@personal-ai/core": "workspace:*",
-    "@personal-ai/plugin-schedules": "workspace:*",
-    "ai": "^6.0.0",
-    "nanoid": "^5.0.0",
-    "zod": "^3.24.0"
+    "nanoid": "^5.0.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

@@ -9,10 +9,9 @@ import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import jwt from "jsonwebtoken";
-import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword, recoverStaleBackgroundJobs, cancelAllRunningBackgroundJobs, startSpan, finishSpan, configureLlmTraffic, resolveSandboxUrl, sandboxHealth, resolveBrowserUrl, browserHealth } from "@personal-ai/core";
+import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword, recoverStaleBackgroundJobs, cancelAllRunningBackgroundJobs, startSpan, finishSpan, configureLlmTraffic } from "@personal-ai/core";
 import type { AgentPlugin, PluginContext, ActiveTelemetrySpan } from "@personal-ai/core";
 import { assistantPlugin, searchHealth } from "@personal-ai/plugin-assistant";
-import { curatorPlugin } from "@personal-ai/plugin-curator";
 import { createBot, startResearchPushLoop } from "@personal-ai/plugin-telegram";
 import { registerAuthRoutes, extractToken } from "./routes/auth.js";
 import { registerAgentRoutes } from "./routes/agents.js";
@@ -146,7 +145,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
   const ctx: PluginContext = { config, storage, llm, logger };
   const backgroundDispatcher = new BackgroundDispatcher(ctx);
   attachBackgroundDispatch(ctx, backgroundDispatcher);
-  const agents: AgentPlugin[] = [assistantPlugin, curatorPlugin];
+  const agents: AgentPlugin[] = [assistantPlugin];
 
   // Telegram bot state — use ReturnType to avoid importing grammy types
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -163,7 +162,7 @@ export async function createServer(options?: { port?: number; host?: string }) {
     stopTelegramBot();
 
     try {
-      const bot = createBot(token, ctx, assistantPlugin, [curatorPlugin]);
+      const bot = createBot(token, ctx, assistantPlugin, []);
       telegramBot = bot;
       bot.start({
         onStart: (botInfo: { username: string }) => {
@@ -408,8 +407,6 @@ export async function createServer(options?: { port?: number; host?: string }) {
       llm: { ok: boolean; detail?: string };
       embeddings: { ok: boolean; detail?: string };
       search: { ok: boolean; configured: boolean; detail?: string };
-      sandbox: { ok: boolean; configured: boolean };
-      browser: { ok: boolean; configured: boolean };
     };
   };
   let cachedHealth: (HealthPayload & { ts: number }) | null = null;
@@ -431,14 +428,6 @@ export async function createServer(options?: { port?: number; host?: string }) {
       }
 
       const search = await searchHealth(ctx.config.searchUrl);
-      const sandboxUrl = resolveSandboxUrl(ctx.config.sandboxUrl);
-      const browserUrl = resolveBrowserUrl(ctx.config.browserUrl);
-      const sandbox = sandboxUrl
-        ? { ...(await sandboxHealth(sandboxUrl)), configured: true as const }
-        : { ok: false, configured: false as const };
-      const browser = browserUrl
-        ? { ...(await browserHealth(browserUrl)), configured: true as const }
-        : { ok: false, configured: false as const };
 
       const payload: HealthPayload = {
         ok: llm.ok,
@@ -448,8 +437,6 @@ export async function createServer(options?: { port?: number; host?: string }) {
           llm: { ok: llm.ok, ...(llm.detail ? { detail: llm.detail } : {}) },
           embeddings,
           search,
-          sandbox: { ok: sandbox.ok, configured: sandbox.configured },
-          browser: { ok: browser.ok, configured: browser.configured },
         },
       };
       cachedHealth = { ...payload, ts: now };
@@ -462,8 +449,6 @@ export async function createServer(options?: { port?: number; host?: string }) {
           llm: { ok: false },
           embeddings: { ok: false },
           search: { ok: false, configured: false },
-          sandbox: { ok: false, configured: false },
-          browser: { ok: false, configured: false },
         },
       };
       cachedHealth = { ...payload, ts: now };

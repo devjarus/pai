@@ -171,7 +171,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     : env["PAI_LINEAR_AUTO_ERRORS"] === "false" ? false
     : fileLinear.autoCreateRecurringIssues;
 
-  const mode = (env["PAI_MODE"] as Config["mode"]) ?? (dataDirConfig?.mode as Config["mode"]) ?? (fileConfig.mode as Config["mode"]) ?? "selfhosted";
+  const mode = "selfhosted" as const;
 
   const config: Config = {
     mode,
@@ -200,17 +200,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     },
     knowledge: dataDirConfig?.knowledge ?? fileConfig.knowledge,
     debugResearch: dataDirConfig?.debugResearch ?? fileConfig.debugResearch,
-    sandboxUrl: dataDirConfig?.sandboxUrl ?? env["PAI_SANDBOX_URL"] ?? fileConfig.sandboxUrl,
     searchUrl: dataDirConfig?.searchUrl ?? env["PAI_SEARCH_URL"] ?? fileConfig.searchUrl,
-    browserUrl: dataDirConfig?.browserUrl ?? env["PAI_BROWSER_URL"] ?? fileConfig.browserUrl,
-    features: {
-      libraryDomain: true,   // Phase 1 — enabled by default
-      watchesDomain: false,
-      digestsDomain: false,
-      homeDashboard: false,
-      ...(fileConfig.features ?? {}),
-      ...(dataDirConfig?.features ?? {}),
-    },
   };
 
   // Only add telegram section if any value is set

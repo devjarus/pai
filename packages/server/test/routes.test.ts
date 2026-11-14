@@ -243,9 +243,6 @@ const mockGetSwarmAgents = vi.fn();
 const mockGetBlackboardEntries = vi.fn();
 const mockCancelSwarmJob = vi.fn();
 const mockClearCompletedSwarmJobs = vi.fn();
-const mockCreateSwarmJob = vi.fn();
-const mockRunSwarmInBackground = vi.fn();
-
 vi.mock("@personal-ai/plugin-swarm", () => ({
   listSwarmJobs: (...args: unknown[]) => mockListSwarmJobs(...args),
   getSwarmJob: (...args: unknown[]) => mockGetSwarmJob(...args),
@@ -253,8 +250,6 @@ vi.mock("@personal-ai/plugin-swarm", () => ({
   getBlackboardEntries: (...args: unknown[]) => mockGetBlackboardEntries(...args),
   cancelSwarmJob: (...args: unknown[]) => mockCancelSwarmJob(...args),
   clearCompletedSwarmJobs: (...args: unknown[]) => mockClearCompletedSwarmJobs(...args),
-  createSwarmJob: (...args: unknown[]) => mockCreateSwarmJob(...args),
-  runSwarmInBackground: (...args: unknown[]) => mockRunSwarmInBackground(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -510,7 +505,6 @@ function createMockServerCtx(): ServerContext {
   const storage = createMockStorage();
   const backgroundDispatcher = {
     enqueueResearch: vi.fn().mockResolvedValue("job-research-1"),
-    enqueueSwarm: vi.fn().mockResolvedValue("job-swarm-1"),
     enqueueBriefing: vi.fn().mockReturnValue("briefing-queued-1"),
     getJobQueueMetadata: vi.fn().mockReturnValue({ queuePosition: null, waitingReason: null }),
     getWorkState: vi.fn().mockReturnValue({
@@ -524,8 +518,6 @@ function createMockServerCtx(): ServerContext {
     ctx: {
       config: {
         dataDir: "/tmp/test",
-        sandboxUrl: "http://sandbox",
-        browserUrl: "http://browser",
         logLevel: "silent" as const,
         llm: {
           provider: "ollama" as const,
@@ -3399,7 +3391,7 @@ describe("Inbox routes", () => {
     });
   });
 
-  it("POST /api/inbox/:id/rerun preserves analysis execution mode", async () => {
+  it("POST /api/inbox/:id/rerun maps analysis digests to deep research", async () => {
     mockGetBriefingById.mockReturnValue({
       id: "swarm-brief_analysis",
       sections: JSON.stringify({
@@ -3409,16 +3401,17 @@ describe("Inbox routes", () => {
       }),
       status: "ready",
     });
-    vi.mocked(serverCtx.backgroundDispatcher.enqueueSwarm).mockResolvedValue("swarm_job_1");
 
     const res = await app.inject({ method: "POST", url: "/api/inbox/swarm-brief_analysis/rerun", payload: {} });
     expect(res.statusCode).toBe(200);
-    expect(res.json().jobId).toBe("swarm_job_1");
-    expect(serverCtx.backgroundDispatcher.enqueueSwarm).toHaveBeenCalledWith({
+    expect(res.json().jobId).toBe("job-research-1");
+    expect(serverCtx.backgroundDispatcher.enqueueResearch).toHaveBeenCalledWith({
       goal: "Compare AI model pricing trends",
       threadId: null,
       resultType: "comparison",
       sourceKind: "manual",
+      budgetMaxSearches: 10,
+      budgetMaxPages: 15,
     });
   });
 });

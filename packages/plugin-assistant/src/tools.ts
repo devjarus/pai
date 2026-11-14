@@ -1,12 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { AgentContext } from "@personal-ai/core";
-import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, correctBelief, recordProductEvent, learnFromContent, knowledgeSearch, listSources, forgetSource, runInSandbox, resolveSandboxUrl, storeArtifact, guessMimeType, createBrowserTools, createLinearIssue, isLinearIssueIntakeConfigured } from "@personal-ai/core";
+import { retrieveContext, remember, listBeliefs, searchBeliefs, forgetBelief, correctBelief, recordProductEvent, learnFromContent, knowledgeSearch, listSources, forgetSource, storeArtifact, createLinearIssue, isLinearIssueIntakeConfigured } from "@personal-ai/core";
 import type { Storage, LLMClient } from "@personal-ai/core";
 import { upsertJob, updateJobStatus, listJobs, clearCompletedBackgroundJobs, formatDateTime } from "@personal-ai/core";
 import type { BackgroundJob } from "@personal-ai/core";
 import { createResearchJob, runResearchInBackground } from "@personal-ai/plugin-research";
-import { createSwarmJob, runSwarmInBackground } from "@personal-ai/plugin-swarm";
 import { addTask, listTasks, completeTask } from "@personal-ai/plugin-tasks";
 import { ensureProgram, listPrograms, deleteProgram } from "@personal-ai/plugin-schedules";
 import { webSearch, formatSearchResults, isSearchConfigured, type SearchCategory, type TimeRange } from "./web-search.js";
@@ -470,7 +469,7 @@ export function createAgentTools(ctx: AgentContext) {
     }),
 
     research_start: tool({
-      description: "Start a deep research task that runs in the background. Use when the user asks you to research a topic thoroughly, investigate something in depth, or compile a report. Prefer swarm_start instead when the user wants analysis, comparison, trends, forecasts, charts, graphs, visualizations, or quantitative reporting. The research runs autonomously and delivers results to the Inbox.",
+      description: "Start a background research task. Use when the user asks to research, analyze, compare, investigate, trend, forecast, or compile a report. The research runs autonomously and delivers results to Digests.",
       inputSchema: z.object({
         goal: z.string().describe("What to research — be specific about the topic and what kind of information to find"),
         type: z.string().describe("Research domain — a short label describing the type of research. Examples: 'flight', 'stock', 'crypto', 'news', 'comparison', 'shopping', 'real-estate', 'sports', 'general'. Use whatever fits best."),
@@ -508,8 +507,6 @@ export function createAgentTools(ctx: AgentContext) {
                 provider: ctx.config.llm.provider,
                 model: ctx.config.llm.model,
                 contextWindow: ctx.config.llm.contextWindow,
-                sandboxUrl: ctx.config.sandboxUrl,
-                browserUrl: ctx.config.browserUrl,
                 dataDir: ctx.config.dataDir,
                 searchConfigured: true,
                 webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
@@ -523,73 +520,20 @@ export function createAgentTools(ctx: AgentContext) {
           }
 
           const domainLabel = resultType === "flight" ? "flight search" : resultType === "stock" ? "stock analysis" : "research";
-          return `Research queued! I'm preparing a ${domainLabel} for "${goal.slice(0, 80)}". The report will appear in your Inbox when it's done. Use job_status to check progress.`;
+          return `Research queued! I'm preparing a ${domainLabel} for "${goal.slice(0, 80)}". The report will appear in Digests when it's done. Use job_status to check progress.`;
         } catch (err) {
           return `Failed to start research: ${err instanceof Error ? err.message : "unknown error"}`;
         }
       },
     }),
 
-    swarm_start: tool({
-      description: "Start a multi-agent swarm analysis that runs in the background. Prefer this for requests to analyze, compare, trend, forecast, chart, graph, visualize, or produce quantitative reporting. The swarm decomposes the goal into subtasks, runs specialized sub-agents in parallel with a shared blackboard, and synthesizes results into a unified report with visuals delivered to the Inbox.",
-      inputSchema: z.object({
-        goal: z.string().describe("What to analyze — be specific about the topic, comparison, or question to investigate"),
-        type: z.string().describe("Research domain — a short label describing the type of analysis. Examples: 'flight', 'stock', 'crypto', 'news', 'comparison', 'shopping', 'real-estate', 'sports', 'general'. Use whatever fits best."),
-      }),
-      execute: async ({ goal, type }) => {
-        try {
-          const threadId = (ctx as unknown as Record<string, unknown>).threadId as string | undefined;
-
-          const jobId = ctx.backgroundJobs?.enqueueSwarm
-            ? await ctx.backgroundJobs.enqueueSwarm({
-              goal,
-              threadId: threadId ?? null,
-              resultType: type,
-              sourceKind: "manual",
-            })
-            : createSwarmJob(ctx.storage, {
-              goal,
-              threadId: threadId ?? null,
-              resultType: type,
-            });
-
-          if (!ctx.backgroundJobs?.enqueueSwarm) {
-            runSwarmInBackground(
-              {
-                storage: ctx.storage,
-                llm: ctx.llm,
-                logger: ctx.logger,
-                timezone: ctx.config.timezone,
-                provider: ctx.config.llm.provider,
-                model: ctx.config.llm.model,
-                contextWindow: ctx.config.llm.contextWindow,
-                sandboxUrl: ctx.config.sandboxUrl,
-                browserUrl: ctx.config.browserUrl,
-                dataDir: ctx.config.dataDir,
-                webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
-                formatSearchResults,
-                fetchPage: fetchPageAsMarkdown,
-              },
-              jobId,
-            ).catch((err) => {
-              ctx.logger.error(`Swarm background execution failed: ${err instanceof Error ? err.message : String(err)}`);
-            });
-          }
-
-          return `Swarm analysis queued! I'm preparing a ${type} analysis of "${goal.slice(0, 80)}". The synthesized report will appear in your Inbox when done. Use job_status to check progress.`;
-        } catch (err) {
-          return `Failed to start swarm: ${err instanceof Error ? err.message : "unknown error"}`;
-        }
-      },
-    }),
-
     program_create: tool({
-      description: "Create a Watch to follow a topic or monitor something over time. Use this when the user asks to follow, watch, monitor, track, or keep updated on something. Use execution_mode='analysis' for deeper multi-agent reports with visuals and execution_mode='research' for lighter recurring research.",
+      description: "Create a Watch to follow a topic or monitor something over time. Use this when the user asks to follow, watch, monitor, track, or keep updated on something. Use execution_mode='analysis' for deeper recurring research and execution_mode='research' for lighter recurring research.",
       inputSchema: z.object({
         title: z.string().describe("Short human-readable title, max 5 words. Examples: 'Crypto Market Watch', 'GPU Price Tracker', 'AI News Daily', 'Flight Deals Tokyo'. NEVER use the full question or goal as the title."),
         question: z.string().describe("The recurring question or commitment this Program should keep watching"),
         family: z.enum(["general", "work", "travel", "buying"]).optional().describe("Optional Program family when the domain is clear"),
-        execution_mode: z.enum(["research", "analysis"]).optional().describe("Use 'analysis' for deeper multi-agent analysis with chart visuals; otherwise use 'research'. Defaults to 'research'."),
+        execution_mode: z.enum(["research", "analysis"]).optional().describe("Use 'analysis' for deeper recurring research budgets; otherwise use 'research'. Defaults to 'research'."),
         interval_hours: z.number().optional().describe("Hours between briefs (default: 24 = daily). Use 168 for weekly, 12 for twice daily."),
         start_at: z.string().optional().describe("ISO 8601 date-time for the first run (e.g., '2026-02-27T08:00:00'). If omitted, the first brief is interval_hours from now."),
         preferences: z.array(z.string()).optional().describe("Optional user preferences that should shape future briefs"),
@@ -761,73 +705,5 @@ export function createAgentTools(ctx: AgentContext) {
         }
       },
     }),
-
-    // Browser tools (shared from core — conditional on browser availability)
-    ...createBrowserTools({
-      logger: ctx.logger,
-      browserUrl: ctx.config.browserUrl,
-      storeArtifact: (name, mimeType, data) => {
-        const threadId = (ctx as unknown as Record<string, unknown>).threadId as string ?? "browser";
-        return storeArtifact(ctx.storage, ctx.config.dataDir, { jobId: threadId, name, mimeType, data });
-      },
-    }),
-
-    // Conditionally add sandbox tool
-    ...(resolveSandboxUrl(ctx.config.sandboxUrl) ? {
-      run_code: tool({
-        description: "Execute Python or JavaScript code in an isolated sandbox. Use for data analysis, chart generation, calculations, or file processing. The sandbox starts inside OUTPUT_DIR, so relative file writes like `plt.savefig(\"chart.png\")` are saved as artifacts automatically. For charts the UI can preview inline, write PNG, JPEG, or WebP image files instead of HTML-only outputs unless the user explicitly asks for an interactive HTML file. Available packages: matplotlib, pandas, numpy, plotly, yfinance.",
-        inputSchema: z.object({
-          language: z.enum(["python", "node"]).describe("Programming language to execute"),
-          code: z.string().describe("The code to execute"),
-          purpose: z.string().describe("Brief description of what this code does (for audit logging)"),
-          timeout: z.number().optional().describe("Execution timeout in seconds (default 30, max 120)"),
-        }),
-        execute: async ({ language, code, purpose, timeout }) => {
-          try {
-            ctx.logger.info("Sandbox execution", { purpose, language });
-            const result = await runInSandbox({ language, code, timeout }, ctx.logger, ctx.config.sandboxUrl);
-
-            // Store any output files as artifacts
-            const savedArtifacts: Array<{ id: string; name: string; mimeType: string }> = [];
-            if (result.files.length > 0) {
-              const jobId = (ctx as unknown as Record<string, unknown>).threadId as string ?? "sandbox";
-              for (const file of result.files) {
-                const mimeType = guessMimeType(file.name);
-                const artifactId = storeArtifact(ctx.storage, ctx.config.dataDir, {
-                  jobId,
-                  name: file.name,
-                  mimeType,
-                  data: Buffer.from(file.data, "base64"),
-                });
-                savedArtifacts.push({ id: artifactId, name: file.name, mimeType });
-              }
-            }
-
-            if (result.exitCode !== 0) {
-              ctx.logger.warn("Sandbox run_code non-zero exit", {
-                purpose,
-                exitCode: result.exitCode,
-                stderr: result.stderr.slice(0, 500),
-              });
-            }
-
-            return {
-              stdout: result.stdout,
-              stderr: result.stderr,
-              exitCode: result.exitCode,
-              artifacts: savedArtifacts,
-              ...(result.exitCode !== 0 ? { error: `Code exited with code ${result.exitCode}` } : {}),
-            };
-          } catch (err) {
-            ctx.logger.error("Sandbox run_code failed", {
-              purpose,
-              language,
-              error: err instanceof Error ? err.message : String(err),
-            });
-            return { error: `Sandbox execution failed: ${err instanceof Error ? err.message : "unknown error"}` };
-          }
-        },
-      }),
-    } : {}),
   };
 }

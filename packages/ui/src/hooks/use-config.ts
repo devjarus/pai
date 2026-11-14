@@ -51,9 +51,7 @@ export function useUpdateConfig() {
       llmTrafficSwarmAgentConcurrency?: number;
       llmTrafficReservedInteractiveSlots?: number;
       debugResearch?: boolean;
-      sandboxUrl?: string;
       searchUrl?: string;
-      browserUrl?: string;
     }) => updateConfig(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: configKeys.all });

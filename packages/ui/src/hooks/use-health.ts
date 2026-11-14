@@ -14,8 +14,6 @@ export interface HealthStatus {
     llm: CapabilityStatus;
     embeddings: CapabilityStatus;
     search: CapabilityStatus;
-    sandbox: CapabilityStatus;
-    browser: CapabilityStatus;
   };
 }
 

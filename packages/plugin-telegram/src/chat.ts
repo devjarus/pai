@@ -15,7 +15,6 @@ import {
 import { stepCountIs, tool } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
-import { appendOptionalToolGuidance } from "@personal-ai/plugin-assistant";
 
 const MAX_MESSAGES_PER_THREAD = 500;
 
@@ -41,7 +40,7 @@ export interface ChatPipelineOptions {
 export interface ChatPipelineResult {
   text: string;
   toolCalls: Array<{ name: string }>;
-  /** Image artifacts produced during tool calls (e.g. browse_screenshot) */
+  /** Artifacts produced during tool calls (e.g. generate_report) */
   artifacts: Array<{ id: string; name: string }>;
 }
 
@@ -204,10 +203,6 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
     systemPrompt += `\n\nThis is a group chat. Messages from users are prefixed with [Name (@username)]: to identify the speaker. Address users by name when responding. Do not confuse different users.`;
   }
 
-  if (tools && agentPlugin.name === "assistant") {
-    systemPrompt = appendOptionalToolGuidance(systemPrompt, Object.keys(tools));
-  }
-
   // Label message with sender identity for group chats
   const labeledMessage = isGroup && sender
     ? `[${sender.displayName ?? sender.username ?? "Unknown"}${sender.username ? ` (@${sender.username})` : ""}]: ${message}`
@@ -349,7 +344,7 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
     });
   }
 
-  // Extract artifacts from all tool results (screenshots, reports, sandbox charts)
+  // Extract artifacts from tool results (e.g. generate_report)
   const artifacts: Array<{ id: string; name: string }> = [];
   if (result.steps) {
     for (const step of result.steps) {
@@ -362,14 +357,8 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
           if (!tc || !tr) continue;
           const res = tr.output ?? tr.result ?? tr;
 
-          if (tc.toolName === "browse_screenshot" && res?.ok && res.artifactId) {
-            artifacts.push({ id: res.artifactId, name: "screenshot.png" });
-          } else if (tc.toolName === "generate_report" && res?.ok && res.artifactId) {
+          if (tc.toolName === "generate_report" && res?.ok && res.artifactId) {
             artifacts.push({ id: res.artifactId, name: res.fileName ?? "report.md" });
-          } else if (tc.toolName === "run_code" && Array.isArray(res?.artifacts)) {
-            for (const a of res.artifacts) {
-              if (a.id) artifacts.push({ id: a.id, name: a.name ?? "output" });
-            }
           }
         }
       }
