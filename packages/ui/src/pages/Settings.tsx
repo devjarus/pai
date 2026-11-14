@@ -496,6 +496,7 @@ export default function Settings() {
                         ["Search", health.capabilities.search],
                       ] as const
                     ).map(([label, cap]) => {
+                      if (!cap) return null;
                       const off = cap.configured === false;
                       const tone = off ? "text-muted-foreground" : cap.ok ? "text-green-500" : "text-red-400";
                       const status = off ? "not configured" : cap.ok ? "ok" : "unavailable";
