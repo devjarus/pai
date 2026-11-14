@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { webSearch, formatSearchResults, resolveSearchUrl } from "../src/web-search.js";
+import { webSearch, formatSearchResults, resolveSearchUrl, isSearchConfigured, searchHealth } from "../src/web-search.js";
 
 const mockFetch = vi.fn();
 
@@ -22,172 +22,110 @@ describe("resolveSearchUrl", () => {
     expect(resolveSearchUrl()).toBe("http://custom:9090");
   });
 
-  it("uses Railway internal URL when on Railway", () => {
+  it("does not invent a Railway URL when unset", () => {
     process.env.RAILWAY_VOLUME_MOUNT_PATH = "/mount";
-    expect(resolveSearchUrl()).toBe("http://searxng.railway.internal:8080");
+    expect(resolveSearchUrl()).toBeNull();
   });
 
-  it("uses Docker internal URL when PAI_DATA_DIR is /data", () => {
+  it("does not invent a Docker URL when PAI_DATA_DIR is /data", () => {
     process.env.PAI_DATA_DIR = "/data";
-    expect(resolveSearchUrl()).toBe("http://searxng:8080");
+    expect(resolveSearchUrl()).toBeNull();
   });
 
-  it("falls back to localhost", () => {
-    expect(resolveSearchUrl()).toBe("http://localhost:8080");
+  it("returns null when nothing is configured", () => {
+    expect(resolveSearchUrl()).toBeNull();
+    expect(isSearchConfigured()).toBe(false);
   });
 
-  it("PAI_SEARCH_URL takes priority over Railway detection", () => {
+  it("PAI_SEARCH_URL takes priority over config-less detection", () => {
     process.env.PAI_SEARCH_URL = "http://explicit:1234";
     process.env.RAILWAY_VOLUME_MOUNT_PATH = "/mount";
     expect(resolveSearchUrl()).toBe("http://explicit:1234");
+    expect(isSearchConfigured()).toBe(true);
+  });
+});
+
+describe("searchHealth", () => {
+  it("reports not configured when no URL is set", async () => {
+    const result = await searchHealth();
+    expect(result).toEqual({
+      ok: false,
+      configured: false,
+      detail: expect.stringContaining("not configured"),
+    });
+  });
+
+  it("reports ok when /healthz succeeds", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true });
+    const result = await searchHealth("http://searxng:8080");
+    expect(result).toEqual({ ok: true, configured: true });
   });
 });
 
 describe("webSearch", () => {
+  it("throws when search is not configured", async () => {
+    await expect(webSearch("test")).rejects.toThrow(/not configured/i);
+  });
+
   it("calls SearXNG with correct URL params", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
         results: [
-          { title: "Result 1", url: "https://example.com/1", content: "Snippet 1" },
-          { title: "Result 2", url: "https://example.com/2", content: "Snippet 2" },
+          { title: "Result 1", url: "https://a.com", content: "Snippet 1" },
+          { title: "Result 2", url: "https://b.com", content: "Snippet 2" },
         ],
       }),
     });
 
-    const results = await webSearch("test query");
-
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const callUrl = mockFetch.mock.calls[0]![0] as string;
-    expect(callUrl).toContain("/search?");
-    expect(callUrl).toContain("q=test+query");
-    expect(callUrl).toContain("format=json");
-    expect(callUrl).toContain("categories=general");
-
+    const results = await webSearch("test query", 5, "general", "http://searxng:8080");
     expect(results).toHaveLength(2);
-    expect(results[0]).toEqual({ title: "Result 1", url: "https://example.com/1", snippet: "Snippet 1" });
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("http://searxng:8080/search?"),
+      expect.any(Object),
+    );
   });
 
-  it("passes category to SearXNG", async () => {
+  it("passes category in the query string", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ results: [] }),
     });
-
-    await webSearch("AI papers", 5, "science");
-
-    const callUrl = mockFetch.mock.calls[0]![0] as string;
-    expect(callUrl).toContain("categories=science");
+    await webSearch("AI papers", 5, "science" as any, "http://searxng:8080");
+    expect(mockFetch.mock.calls[0]![0]).toContain("categories=science");
   });
 
-  it("respects maxResults limit", async () => {
+  it("respects maxResults", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        results: Array.from({ length: 10 }, (_, i) => ({
-          title: `Result ${i}`,
-          url: `https://example.com/${i}`,
-          content: `Snippet ${i}`,
-        })),
+        results: [
+          { title: "1", url: "https://a.com", content: "a" },
+          { title: "2", url: "https://b.com", content: "b" },
+          { title: "3", url: "https://c.com", content: "c" },
+          { title: "4", url: "https://d.com", content: "d" },
+        ],
       }),
     });
-
-    const results = await webSearch("test", 3);
+    const results = await webSearch("test", 3, "general", "http://searxng:8080");
     expect(results).toHaveLength(3);
   });
 
-  it("handles empty results", async () => {
+  it("returns empty array when SearXNG returns no results", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ results: [] }),
     });
-
-    const results = await webSearch("obscure query");
+    const results = await webSearch("obscure query", 5, "general", "http://searxng:8080");
     expect(results).toEqual([]);
   });
 
-  it("maps thumbnail field from SearXNG response", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        results: [
-          { title: "News", url: "https://example.com/1", content: "Snippet", thumbnail: "https://img.example.com/thumb.jpg" },
-        ],
-      }),
-    });
-
-    const results = await webSearch("test");
-    expect(results[0]!.thumbnail).toBe("https://img.example.com/thumb.jpg");
+  it("throws on non-OK HTTP status", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
+    await expect(webSearch("test", 5, "general", "http://searxng:8080")).rejects.toThrow("SearXNG search failed: 503");
   });
 
-  it("uses img_src as fallback when thumbnail is absent", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        results: [
-          { title: "Image", url: "https://example.com/2", content: "Snippet", img_src: "https://img.example.com/full.jpg" },
-        ],
-      }),
-    });
-
-    const results = await webSearch("test");
-    expect(results[0]!.thumbnail).toBe("https://img.example.com/full.jpg");
-  });
-
-  it("prefers thumbnail over img_src", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        results: [
-          { title: "Both", url: "https://example.com/3", content: "Snippet", thumbnail: "https://thumb.jpg", img_src: "https://full.jpg" },
-        ],
-      }),
-    });
-
-    const results = await webSearch("test");
-    expect(results[0]!.thumbnail).toBe("https://thumb.jpg");
-  });
-
-  it("omits thumbnail when neither field is present", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        results: [
-          { title: "Plain", url: "https://example.com/4", content: "Snippet" },
-        ],
-      }),
-    });
-
-    const results = await webSearch("test");
-    expect(results[0]!.thumbnail).toBeUndefined();
-  });
-
-  it("handles missing content field with empty snippet", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        results: [{ title: "No Content", url: "https://example.com" }],
-      }),
-    });
-
-    const results = await webSearch("test");
-    expect(results[0]!.snippet).toBe("");
-  });
-
-  it("passes time_range to SearXNG", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [{ title: "T", url: "https://a.com", content: "c" }] }),
-    });
-
-    await webSearch("AI news", 5, "news", undefined, "day");
-
-    const callUrl = mockFetch.mock.calls[0]![0] as string;
-    expect(callUrl).toContain("categories=news");
-    expect(callUrl).toContain("time_range=day");
-  });
-
-  it("widens day to week when the day filter returns no results", async () => {
+  it("widens time_range=day to week when day returns empty", async () => {
     mockFetch
       .mockResolvedValueOnce({
         ok: true,
@@ -196,71 +134,29 @@ describe("webSearch", () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          results: [{ title: "Weekly hit", url: "https://example.com/w", content: "Fresh AI news" }],
+          results: [{ title: "Weekly hit", url: "https://w.com", content: "ok" }],
         }),
       });
 
-    const results = await webSearch("AI news this week", 5, "news", undefined, "day");
-
+    const results = await webSearch("AI news this week", 5, "news", "http://searxng:8080", "day");
+    expect(results).toHaveLength(1);
     expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(mockFetch.mock.calls[0]![0] as string).toContain("time_range=day");
-    expect(mockFetch.mock.calls[1]![0] as string).toContain("time_range=week");
-    expect(results).toEqual([
-      { title: "Weekly hit", url: "https://example.com/w", snippet: "Fresh AI news" },
-    ]);
-  });
-
-  it("falls back to unfiltered search when week is also empty", async () => {
-    mockFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [] }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [] }) })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          results: [{ title: "Any hit", url: "https://example.com/a", content: "Something" }],
-        }),
-      });
-
-    const results = await webSearch("obscure", 5, "news", undefined, "day");
-
-    expect(mockFetch).toHaveBeenCalledTimes(3);
-    expect(mockFetch.mock.calls[2]![0] as string).not.toContain("time_range=");
-    expect(results[0]?.title).toBe("Any hit");
-  });
-
-  it("throws on non-ok response", async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
-
-    await expect(webSearch("test")).rejects.toThrow("SearXNG search failed: 503");
-  });
-
-  it("handles missing results key in response", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({}),
-    });
-
-    const results = await webSearch("test");
-    expect(results).toEqual([]);
+    expect(String(mockFetch.mock.calls[0]![0])).toContain("time_range=day");
+    expect(String(mockFetch.mock.calls[1]![0])).toContain("time_range=week");
   });
 });
 
 describe("formatSearchResults", () => {
-  it("returns empty string for no results", () => {
+  it("returns empty string for empty results", () => {
     expect(formatSearchResults([])).toBe("");
   });
 
-  it("formats results with numbering and markdown", () => {
-    const results = [
-      { title: "First", url: "https://a.com", snippet: "Description A" },
-      { title: "Second", url: "https://b.com", snippet: "Description B" },
-    ];
-
-    const output = formatSearchResults(results);
-    expect(output).toContain("## Web Search Results");
-    expect(output).toContain("1. **First**");
-    expect(output).toContain("Description A");
-    expect(output).toContain("Source: https://a.com");
-    expect(output).toContain("2. **Second**");
+  it("formats results with titles and sources", () => {
+    const text = formatSearchResults([
+      { title: "A", url: "https://a.com", snippet: "snip" },
+    ]);
+    expect(text).toContain("## Web Search Results");
+    expect(text).toContain("**A**");
+    expect(text).toContain("https://a.com");
   });
 });

@@ -287,50 +287,31 @@ export function createLLMClient(llmConfig: Config["llm"], logger?: Logger, stora
     };
   }
 
-  async function health(): Promise<{ ok: boolean; provider: string }> {
+  async function health(): Promise<{ ok: boolean; provider: string; detail?: string }> {
+    // Listing /models or Ollama /api/tags is not enough — those can succeed without
+    // auth while chat fails (e.g. Ollama Cloud). Probe with a 1-token chat instead.
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      if (provider === "ollama") {
-        const headers: Record<string, string> = {};
-        if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-        const res = await fetch(`${baseUrl}/api/tags`, { headers });
-        return { ok: res.ok, provider: "ollama" };
-      }
-      if (provider === "anthropic") {
-        const url = baseUrl.replace(/\/+$/, "") + "/v1/models";
-        const res = await fetch(url, {
-          headers: { "x-api-key": apiKey ?? "", "anthropic-version": "2023-06-01" },
-        });
-        return { ok: res.ok, provider: "anthropic" };
-      }
-      if (provider === "google") {
-        // Google AI: list models endpoint to verify connectivity + API key
-        const url = baseUrl.replace(/\/+$/, "") + "/models";
-        const res = await fetch(url, {
-          headers: { "x-goog-api-key": apiKey ?? "" },
-        });
-        return { ok: res.ok, provider: "google" };
-      }
-      if (provider === "cerebras") {
-        const url = baseUrl.replace(/\/+$/, "") + "/models";
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${apiKey ?? ""}` },
-        });
-        return { ok: res.ok, provider: "cerebras" };
-      }
-      if (provider === "openrouter") {
-        const res = await fetch("https://openrouter.ai/api/v1/models", {
-          headers: { Authorization: `Bearer ${apiKey ?? ""}` },
-        });
-        return { ok: res.ok, provider: "openrouter" };
-      }
-      // openai (default)
-      const res = await fetch(`${baseUrl}/models`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      return { ok: res.ok, provider: "openai" };
+      await Promise.race([
+        chat(
+          [{ role: "user", content: "ping" }],
+          {
+            maxTokens: 1,
+            temperature: 0,
+            telemetry: { process: "health.check", surface: "worker" },
+          },
+        ),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("Health check timed out after 15s")), 15_000);
+        }),
+      ]);
+      return { ok: true, provider };
     } catch (err) {
-      log.error("Health check failed", { provider, error: err instanceof Error ? err.message : String(err) });
-      return { ok: false, provider };
+      const detail = humanizeError(provider, err);
+      log.error("Health check failed", { provider, error: detail });
+      return { ok: false, provider, detail };
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     }
   }
 

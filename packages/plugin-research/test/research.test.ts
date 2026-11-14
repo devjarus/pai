@@ -142,6 +142,20 @@ describe("Research jobs", () => {
       expect(job!.status).toBe("failed");
     });
 
+    it("fails immediately when searchConfigured is false", async () => {
+      const ctx = { ...makeCtx(), searchConfigured: false };
+      const id = createResearchJob(storage, {
+        goal: "No search backend",
+        threadId: null,
+      });
+
+      await expect(runResearchInBackground(ctx, id)).rejects.toThrow(/not configured/i);
+
+      const job = getResearchJob(storage, id);
+      expect(job!.status).toBe("failed");
+      expect(job!.report).toBeNull();
+    });
+
     it("registers job in background_jobs DB table", async () => {
       const { generateText } = await import("ai");
       (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({

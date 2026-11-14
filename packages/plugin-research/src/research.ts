@@ -358,6 +358,13 @@ export async function runResearchInBackground(
   });
 
   try {
+    // Fail fast when callers know search is missing — do not burn an LLM pass.
+    if (ctx.searchConfigured === false) {
+      throw new Error(
+        "Web search is not configured. Set searchUrl in Settings or PAI_SEARCH_URL (e.g. http://searxng:8080).",
+      );
+    }
+
     const tools = createResearchTools(ctx, jobId, job);
 
     // Select domain-specific system prompt
@@ -523,26 +530,13 @@ export async function runResearchInBackground(
                     { role: "assistant", content: `I've gathered the following research data:\n\n${toolResults}` },
                     { role: "user", content: "Now synthesize all findings into the structured markdown report." },
                   ]
-                  : await (async () => {
-                    // No tool results — use previous findings from Library as context
-                    let previousContext = "";
-                    if (agentCtx.previousFindings.length > 0) {
-                      previousContext = agentCtx.previousFindings.map((finding) => finding.summary).join("\n\n");
-                    }
-                    if (!previousContext) {
-                      const goalClean = job.goal.split("\n")[0]?.slice(0, 150) ?? job.goal;
-                      const searchContext = await agentCtx.services.knowledge?.searchContext?.(goalClean, 3) ?? [];
-                      if (searchContext.length > 0) {
-                        previousContext = searchContext.map((item) => item.snippet).join("\n\n");
-                      }
-                    }
-
-                    const context = previousContext
-                      ? `\n\nPREVIOUS FINDINGS (use as basis — update with any new information you know):\n${previousContext}`
-                      : "";
-                    return [
-                      { role: "user" as const, content: `Write a research report on: ${job.goal}${context}\n\nNote: web search was unavailable this time. Summarize what is known from previous research and note that fresh data could not be fetched.` },
-                    ];
+                  : (() => {
+                    // Never invent a "fresh" report from training data or stale findings
+                    // when search/tools produced nothing — fail the job loudly instead.
+                    throw new Error(
+                      "Research failed: no web search or page results were gathered. " +
+                      "Configure search (Settings → Search URL / PAI_SEARCH_URL) and ensure the search backend is reachable, then retry.",
+                    );
                   })(),
                 maxRetries: 1,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any

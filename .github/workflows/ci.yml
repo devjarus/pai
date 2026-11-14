@@ -8,7 +8,8 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # Pin to 24.04 — ubuntu-latest moved to 26.04, which Playwright 1.58.2 does not support.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         node-version: [20, 22]

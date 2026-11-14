@@ -15,6 +15,7 @@ import {
 import { stepCountIs, tool } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
+import { appendOptionalToolGuidance } from "@personal-ai/plugin-assistant";
 
 const MAX_MESSAGES_PER_THREAD = 500;
 
@@ -201,6 +202,10 @@ export async function runAgentChat(opts: ChatPipelineOptions): Promise<ChatPipel
 
   if (isGroup) {
     systemPrompt += `\n\nThis is a group chat. Messages from users are prefixed with [Name (@username)]: to identify the speaker. Address users by name when responding. Do not confuse different users.`;
+  }
+
+  if (tools && agentPlugin.name === "assistant") {
+    systemPrompt = appendOptionalToolGuidance(systemPrompt, Object.keys(tools));
   }
 
   // Label message with sender identity for group chats

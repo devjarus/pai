@@ -2,7 +2,7 @@ import type { BackgroundJobSourceKind, BackgroundWaitingReason, PluginContext } 
 import { appendMessages, getLlmTrafficConfig, getLlmTrafficSnapshot, upsertJob } from "@personal-ai/core";
 import { createResearchJob, listPendingResearchJobs, runResearchInBackground } from "@personal-ai/plugin-research";
 import { createSwarmJob, listPendingSwarmJobs, runSwarmInBackground } from "@personal-ai/plugin-swarm";
-import { formatSearchResults, webSearch } from "@personal-ai/plugin-assistant/web-search";
+import { formatSearchResults, isSearchConfigured, webSearch } from "@personal-ai/plugin-assistant/web-search";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { enqueueBriefingGeneration, generateBriefing, listPendingDailyBriefings } from "./briefing.js";
 
@@ -376,6 +376,7 @@ export class BackgroundDispatcher {
       sandboxUrl: this.ctx.config.sandboxUrl,
       browserUrl: this.ctx.config.browserUrl,
       dataDir: this.ctx.config.dataDir,
+      searchConfigured: isSearchConfigured(this.ctx.config.searchUrl),
       webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", this.ctx.config.searchUrl),
       formatSearchResults,
       fetchPage: fetchPageAsMarkdown,

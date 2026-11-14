@@ -199,7 +199,8 @@ export interface LLMClient {
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult>;
   streamChat(messages: ChatMessage[], options?: ChatOptions): AsyncGenerator<StreamEvent>;
   embed(text: string, options?: EmbedOptions): Promise<EmbedResult>;
-  health(): Promise<{ ok: boolean; provider: string }>;
+  /** Capability probe — must prove chat works (not just that /models is reachable). */
+  health(): Promise<{ ok: boolean; provider: string; detail?: string }>;
   /** Get the underlying AI SDK LanguageModel for direct streamText usage */
   getModel(): unknown;
 }

@@ -9,9 +9,9 @@ import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import jwt from "jsonwebtoken";
-import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword, recoverStaleBackgroundJobs, cancelAllRunningBackgroundJobs, startSpan, finishSpan, configureLlmTraffic } from "@personal-ai/core";
+import { loadConfig, writeConfig, createStorage, createLLMClient, createLogger, hasOwner, getJwtSecret, resetOwnerPassword, recoverStaleBackgroundJobs, cancelAllRunningBackgroundJobs, startSpan, finishSpan, configureLlmTraffic, resolveSandboxUrl, sandboxHealth, resolveBrowserUrl, browserHealth } from "@personal-ai/core";
 import type { AgentPlugin, PluginContext, ActiveTelemetrySpan } from "@personal-ai/core";
-import { assistantPlugin } from "@personal-ai/plugin-assistant";
+import { assistantPlugin, searchHealth } from "@personal-ai/plugin-assistant";
 import { curatorPlugin } from "@personal-ai/plugin-curator";
 import { createBot, startResearchPushLoop } from "@personal-ai/plugin-telegram";
 import { registerAuthRoutes, extractToken } from "./routes/auth.js";
@@ -397,20 +397,77 @@ export async function createServer(options?: { port?: number; host?: string }) {
     authEnabled: !isLocal,
   };
 
-  // Health endpoint (auth-exempt, cached to prevent DoS via external calls)
-  let cachedHealth: { ok: boolean; provider: string; ts: number } | null = null;
+  // Health endpoint (auth-exempt, cached to prevent DoS via external calls).
+  // `ok` remains LLM-usable for backwards compatibility with OfflineBanner / chat warnings.
+  // `capabilities` reports each dependency honestly so deploys cannot look green while broken.
+  type HealthPayload = {
+    ok: boolean;
+    provider: string;
+    detail?: string;
+    capabilities: {
+      llm: { ok: boolean; detail?: string };
+      embeddings: { ok: boolean; detail?: string };
+      search: { ok: boolean; configured: boolean; detail?: string };
+      sandbox: { ok: boolean; configured: boolean };
+      browser: { ok: boolean; configured: boolean };
+    };
+  };
+  let cachedHealth: (HealthPayload & { ts: number }) | null = null;
   app.get("/api/health", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async () => {
     const now = Date.now();
     if (cachedHealth && now - cachedHealth.ts < 30_000) {
-      return { ok: cachedHealth.ok, provider: cachedHealth.provider };
+      const { ts, ...payload } = cachedHealth;
+      void ts;
+      return payload;
     }
     try {
-      const result = await ctx.llm.health();
-      cachedHealth = { ok: result.ok, provider: result.provider, ts: now };
-      return { ok: result.ok, provider: result.provider };
+      const llm = await ctx.llm.health();
+      let embeddings: { ok: boolean; detail?: string } = { ok: false };
+      try {
+        const emb = await ctx.llm.embed("health");
+        embeddings = { ok: Array.isArray(emb.embedding) && emb.embedding.length > 0 };
+      } catch (err) {
+        embeddings = { ok: false, detail: err instanceof Error ? err.message : String(err) };
+      }
+
+      const search = await searchHealth(ctx.config.searchUrl);
+      const sandboxUrl = resolveSandboxUrl(ctx.config.sandboxUrl);
+      const browserUrl = resolveBrowserUrl(ctx.config.browserUrl);
+      const sandbox = sandboxUrl
+        ? { ...(await sandboxHealth(sandboxUrl)), configured: true as const }
+        : { ok: false, configured: false as const };
+      const browser = browserUrl
+        ? { ...(await browserHealth(browserUrl)), configured: true as const }
+        : { ok: false, configured: false as const };
+
+      const payload: HealthPayload = {
+        ok: llm.ok,
+        provider: llm.provider,
+        ...(llm.detail ? { detail: llm.detail } : {}),
+        capabilities: {
+          llm: { ok: llm.ok, ...(llm.detail ? { detail: llm.detail } : {}) },
+          embeddings,
+          search,
+          sandbox: { ok: sandbox.ok, configured: sandbox.configured },
+          browser: { ok: browser.ok, configured: browser.configured },
+        },
+      };
+      cachedHealth = { ...payload, ts: now };
+      return payload;
     } catch {
-      cachedHealth = { ok: false, provider: "unknown", ts: now };
-      return { ok: false, provider: "unknown" };
+      const payload: HealthPayload = {
+        ok: false,
+        provider: "unknown",
+        capabilities: {
+          llm: { ok: false },
+          embeddings: { ok: false },
+          search: { ok: false, configured: false },
+          sandbox: { ok: false, configured: false },
+          browser: { ok: false, configured: false },
+        },
+      };
+      cachedHealth = { ...payload, ts: now };
+      return payload;
     }
   });
 

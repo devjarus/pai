@@ -7,7 +7,7 @@ import { listResearchJobs, createResearchJob, runResearchInBackground } from "@p
 import type { ResearchContext } from "@personal-ai/plugin-research";
 import { listSwarmJobs } from "@personal-ai/plugin-swarm";
 import { listPrograms } from "@personal-ai/plugin-schedules";
-import { webSearch, formatSearchResults } from "@personal-ai/plugin-assistant/web-search";
+import { webSearch, formatSearchResults, isSearchConfigured } from "@personal-ai/plugin-assistant/web-search";
 import { fetchPageAsMarkdown } from "@personal-ai/plugin-assistant/page-fetch";
 import { runAgentChat, createThread, clearThread as clearThreadMessages } from "./chat.js";
 import {
@@ -577,6 +577,11 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
           resultType: "general",
         });
 
+      if (!isSearchConfigured(ctx.config.searchUrl)) {
+        await tgCtx.reply("Web search is not configured, so research cannot run. Set searchUrl in Settings or PAI_SEARCH_URL, then retry.");
+        return;
+      }
+
       const researchCtx: ResearchContext = {
         storage: ctx.storage,
         llm: ctx.llm,
@@ -588,6 +593,7 @@ export function createBot(token: string, ctx: PluginContext, agentPlugin: AgentP
         sandboxUrl: ctx.config.sandboxUrl,
         browserUrl: ctx.config.browserUrl,
         dataDir: ctx.config.dataDir,
+        searchConfigured: true,
         webSearch: (query: string, maxResults?: number) => webSearch(query, maxResults, "general", ctx.config.searchUrl),
         formatSearchResults,
         fetchPage: fetchPageAsMarkdown,

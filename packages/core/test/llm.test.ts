@@ -134,8 +134,11 @@ describe("LLMClient", () => {
     );
   });
 
-  it("health should return ok for openai", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+  it("health should return ok for openai when chat works", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "pong",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    } as any);
     const client = createLLMClient({
       provider: "openai",
       model: "gpt-4.1-mini",
@@ -146,10 +149,14 @@ describe("LLMClient", () => {
     const result = await client.health();
     expect(result.ok).toBe(true);
     expect(result.provider).toBe("openai");
+    expect(mockGenerateText).toHaveBeenCalled();
   });
 
-  it("health should return ok for ollama", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+  it("health should return ok for ollama when chat works", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "pong",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    } as any);
     const client = createLLMClient({
       provider: "ollama",
       model: "llama3.2",
@@ -159,6 +166,21 @@ describe("LLMClient", () => {
     const result = await client.health();
     expect(result.ok).toBe(true);
     expect(result.provider).toBe("ollama");
+  });
+
+  it("health should return not ok when chat auth fails even if models list would succeed", async () => {
+    mockGenerateText.mockRejectedValue(new Error("Unauthorized"));
+    const client = createLLMClient({
+      provider: "ollama",
+      model: "llama3.2",
+      baseUrl: "http://127.0.0.1:11434",
+      apiKey: "bad-key",
+      fallbackMode: "local-first",
+    });
+    const result = await client.health();
+    expect(result.ok).toBe(false);
+    expect(result.provider).toBe("ollama");
+    expect(result.detail).toMatch(/Invalid API key|Unauthorized|ollama/i);
   });
 
   it("embed should return embedding vector via ollama provider", async () => {
@@ -199,8 +221,8 @@ describe("LLMClient", () => {
     expect(result.embedding).toEqual([0.4, 0.5, 0.6]);
   });
 
-  it("health should return not ok on fetch failure", async () => {
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+  it("health should return not ok on chat failure", async () => {
+    mockGenerateText.mockRejectedValue(new Error("Network error"));
     const client = createLLMClient({
       provider: "ollama",
       model: "llama3.2",
@@ -247,9 +269,11 @@ describe("LLMClient", () => {
     expect(result.usage.totalTokens).toBe(18);
   });
 
-  it("health should return ok for anthropic", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
-    globalThis.fetch = mockFetch;
+  it("health should return ok for anthropic when chat works", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "pong",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    } as any);
     const client = createLLMClient({
       provider: "anthropic",
       model: "claude-opus-4-6",
@@ -260,13 +284,7 @@ describe("LLMClient", () => {
     const result = await client.health();
     expect(result.ok).toBe(true);
     expect(result.provider).toBe("anthropic");
-    // Verify it calls the right endpoint with x-api-key header
-    expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.anthropic.com/v1/models",
-      expect.objectContaining({
-        headers: expect.objectContaining({ "x-api-key": "sk-ant-test" }),
-      }),
-    );
+    expect(mockGenerateText).toHaveBeenCalled();
   });
 
   it("embed should use local fallback for anthropic provider (no native embeddings)", async () => {
@@ -324,9 +342,11 @@ describe("LLMClient", () => {
     expect(result.usage.totalTokens).toBe(27);
   });
 
-  it("health should return ok for cerebras", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
-    globalThis.fetch = mockFetch;
+  it("health should return ok for cerebras when chat works", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "pong",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    } as any);
     const client = createLLMClient({
       provider: "cerebras",
       model: "zai-glm-4.7",
@@ -337,12 +357,7 @@ describe("LLMClient", () => {
     const result = await client.health();
     expect(result.ok).toBe(true);
     expect(result.provider).toBe("cerebras");
-    expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.cerebras.ai/v1/models",
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer csk-test" }),
-      }),
-    );
+    expect(mockGenerateText).toHaveBeenCalled();
   });
 
   it("embed should use local fallback for cerebras provider (no native embeddings)", async () => {
@@ -395,9 +410,11 @@ describe("LLMClient", () => {
     expect(result.usage.totalTokens).toBe(22);
   });
 
-  it("health should return ok for google", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
-    globalThis.fetch = mockFetch;
+  it("health should return ok for google when chat works", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "pong",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    } as any);
     const client = createLLMClient({
       provider: "google",
       model: "gemini-2.0-flash",
@@ -407,13 +424,7 @@ describe("LLMClient", () => {
     const result = await client.health();
     expect(result.ok).toBe(true);
     expect(result.provider).toBe("google");
-    // Verify it calls the models endpoint with API key in header (not query string)
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/models"),
-      expect.objectContaining({
-        headers: expect.objectContaining({ "x-goog-api-key": "AIza-test" }),
-      }),
-    );
+    expect(mockGenerateText).toHaveBeenCalled();
   });
 
   it("embed should return embedding vector via google provider", async () => {

@@ -89,6 +89,11 @@ export class WorkerLoop {
   private artifactCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private telemetryCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private autoLinearIssueTimer: ReturnType<typeof setInterval> | null = null;
+  private findingsCleanupTimer: ReturnType<typeof setInterval> | null = null;
+  private beliefPruneTimer: ReturnType<typeof setInterval> | null = null;
+  private beliefDedupTimer: ReturnType<typeof setInterval> | null = null;
+  private profileConsolidationTimer: ReturnType<typeof setInterval> | null = null;
+  private weeklyCompoundingTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private abortController = new AbortController();
 
@@ -239,7 +244,7 @@ export class WorkerLoop {
     }, artifactCleanupMs);
 
     // --- Findings cleanup (keep 5 per watch, delete orphans > 30 days) ---
-    setInterval(() => {
+    this.findingsCleanupTimer = setInterval(() => {
       this.runWorkerTask("worker.cleanup", async () => {
         const deleted = cleanupFindings(this.ctx.storage, { maxAgeDays: 30, keepPerWatch: 5 });
         if (deleted > 0) {
@@ -251,7 +256,7 @@ export class WorkerLoop {
     }, DEFAULT_TELEMETRY_CLEANUP_INTERVAL_MS); // same 24h interval as telemetry
 
     // --- Belief pruning (remove decayed beliefs, every 24h) ---
-    setInterval(() => {
+    this.beliefPruneTimer = setInterval(() => {
       this.runWorkerTask("worker.cleanup", async () => {
         const { pruneBeliefs } = await import("@personal-ai/core");
         const pruned = pruneBeliefs(this.ctx.storage);
@@ -265,7 +270,7 @@ export class WorkerLoop {
 
     // --- Belief dedup (merge near-duplicate beliefs, every 24h — skips if no new beliefs) ---
     let lastDedupBeliefCount = 0;
-    setInterval(() => {
+    this.beliefDedupTimer = setInterval(() => {
       this.runWorkerTask("worker.cleanup", async () => {
         const currentCount = listBeliefs(this.ctx.storage, "active").length;
         if (currentCount === lastDedupBeliefCount) return; // no new beliefs — skip
@@ -287,7 +292,7 @@ export class WorkerLoop {
 
     // --- Profile consolidation (merge scattered preferences, every 24h — skips if no new beliefs) ---
     let lastConsolidationBeliefCount = 0;
-    setInterval(() => {
+    this.profileConsolidationTimer = setInterval(() => {
       if (!isLLMConfigured) return;
       this.runWorkerTask("worker.cleanup", async () => {
         const currentCount = listBeliefs(this.ctx.storage, "active").length;
@@ -307,7 +312,7 @@ export class WorkerLoop {
 
     // --- Weekly compounding (synthesize research findings into topic insights) ---
     const WEEKLY_MS = 7 * 24 * 60 * 60 * 1000;
-    setInterval(() => {
+    this.weeklyCompoundingTimer = setInterval(() => {
       if (!isLLMConfigured) return;
       this.runWorkerTask("worker.cleanup", async () => {
         const { runWeeklyCompounding } = await import("./compounding.js");
@@ -372,6 +377,11 @@ export class WorkerLoop {
     if (this.artifactCleanupTimer) { clearInterval(this.artifactCleanupTimer); this.artifactCleanupTimer = null; }
     if (this.telemetryCleanupTimer) { clearInterval(this.telemetryCleanupTimer); this.telemetryCleanupTimer = null; }
     if (this.autoLinearIssueTimer) { clearInterval(this.autoLinearIssueTimer); this.autoLinearIssueTimer = null; }
+    if (this.findingsCleanupTimer) { clearInterval(this.findingsCleanupTimer); this.findingsCleanupTimer = null; }
+    if (this.beliefPruneTimer) { clearInterval(this.beliefPruneTimer); this.beliefPruneTimer = null; }
+    if (this.beliefDedupTimer) { clearInterval(this.beliefDedupTimer); this.beliefDedupTimer = null; }
+    if (this.profileConsolidationTimer) { clearInterval(this.profileConsolidationTimer); this.profileConsolidationTimer = null; }
+    if (this.weeklyCompoundingTimer) { clearInterval(this.weeklyCompoundingTimer); this.weeklyCompoundingTimer = null; }
   }
 
   updateContext(newCtx: Partial<PluginContext>): void {

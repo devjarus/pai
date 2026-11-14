@@ -95,8 +95,10 @@ pai includes optional Docker sidecars for enhanced functionality:
 
 **Sandbox** (opt-in) — Isolated Python 3.12 + Node.js 20 environment for code execution, chart generation (matplotlib, plotly), and data analysis. Enable with:
 ```bash
-docker compose --profile sandbox up -d
+PAI_SANDBOX_URL=http://sandbox:8888 PAI_BROWSER_URL=http://sandbox:9867 \
+  docker compose --profile sandbox up -d
 ```
+Without those env vars, `run_code` and browser tools stay unregistered (Compose no longer invents sidecar URLs).
 
 **Ollama** (opt-in) — Local LLM inference. Enable with:
 ```bash

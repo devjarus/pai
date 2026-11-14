@@ -48,6 +48,7 @@ vi.mock("../src/briefing.js", () => ({
 vi.mock("@personal-ai/plugin-assistant/web-search", () => ({
   webSearch: vi.fn(),
   formatSearchResults: vi.fn(),
+  isSearchConfigured: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock("@personal-ai/plugin-assistant/page-fetch", () => ({
